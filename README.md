@@ -34,19 +34,19 @@ Swift 6 language mode with complete strict concurrency and no unsafe flags.
 
 ## Adding it to a project
 
-The package lives in the `swift/` directory of the [libtmux][] repository.
-SwiftPM resolves a package from a repository root, so there is no URL to depend
-on yet and no tag. Until one is published, depend on a checkout by path:
-
 ```swift
-.package(path: "../libtmux/swift")
+.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")
 ```
 
-SwiftPM takes a path dependency's identity from the directory, not from the
-`name:` in its manifest, so the product is named against `swift`:
+```swift
+.product(name: "LibTmux", package: "libtmux-swift")
+```
+
+No version is tagged yet, so until one is, depend on a branch or a checkout by
+path:
 
 ```swift
-.product(name: "LibTmux", package: "swift")
+.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
 ```
 
 [libtmux]: https://github.com/tmux-python/libtmux

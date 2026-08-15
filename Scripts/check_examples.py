@@ -28,12 +28,13 @@ SNIPPETS = ROOT / "Snippets"
 DOCUMENTS = [ROOT / "README.md", *sorted((ROOT / "Sources").rglob("*.docc/*.md"))]
 
 # Excerpts from a consumer's `Package.swift`. They are Swift, and they are
-# fenced as Swift so they highlight, but neither is a statement that can compile
-# on its own. Listed rather than detected, so a third one has to be a decision
+# fenced as Swift so they highlight, but none is a statement that can compile on
+# its own. Listed rather than detected, so the next one has to be a decision
 # somebody made rather than a heuristic somebody's example happened to match.
 MANIFEST_EXCERPTS = {
-    '.package(path: "../libtmux/swift")',
-    '.product(name: "LibTmux", package: "swift")',
+    '.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")',
+    '.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")',
+    '.product(name: "LibTmux", package: "libtmux-swift")',
 }
 
 FENCE = re.compile(r"```swift\n(.*?)```", re.DOTALL)
