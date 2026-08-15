@@ -33036,8 +33036,8 @@
   ],
   "pythonSource": {
     "commit": "988b02a74a027e1959525a6d354096f455050311",
-    "describe": "v0.62.0-60-g988b02a74",
-    "remote": "git+ssh://git@github.com/tmux-python/libtmux.git"
+    "describe": "v0.62.0-60-g988b02a74a02",
+    "remote": "https://github.com/tmux-python/libtmux.git"
   },
   "schemaVersion": 1,
   "sourceFingerprint": "sha256:c7371b6a0e967918e240c2dbbb8fc16ec7104514d4eb09746cdc5ce532ca0394"

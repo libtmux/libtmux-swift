@@ -2802,6 +2802,56 @@ def validate_contracts(
         raise ValueError(msg)
 
 
+def canonical_remote(url: str) -> str:
+    """Rewrite a git remote to the one spelling every clone agrees on.
+
+    A remote records how *this* checkout reaches a repository, not which
+    repository it is. The same libtmux is ``git@github.com:…`` over SSH,
+    ``https://github.com/…`` over HTTPS, and ``git+ssh://…`` when pip wrote the
+    URL. Recording that difference makes a manifest reproducible only on the
+    machine that generated it, which is the opposite of what a provenance field
+    is for, so the transport is normalised away and the identity kept.
+
+    Parameters
+    ----------
+    url : str
+        A remote URL in any of git's spellings, or an empty string.
+
+    Returns
+    -------
+    str
+        The ``https://host/path`` form, or an empty string when given one.
+
+    Examples
+    --------
+    >>> canonical_remote("git+ssh://git@github.com/tmux-python/libtmux.git")
+    'https://github.com/tmux-python/libtmux.git'
+    >>> canonical_remote("git@github.com:tmux-python/libtmux.git")
+    'https://github.com/tmux-python/libtmux.git'
+    >>> canonical_remote("https://github.com/tmux-python/libtmux.git")
+    'https://github.com/tmux-python/libtmux.git'
+    >>> canonical_remote("")
+    ''
+    """
+    if not url:
+        return ""
+    remainder = url.removeprefix("git+")
+    for scheme in ("ssh://", "https://", "http://", "git://"):
+        if remainder.startswith(scheme):
+            remainder = remainder.removeprefix(scheme)
+            break
+    else:
+        # An scp-like `git@host:owner/repo.git`, whose colon separates host
+        # from path rather than naming a port.
+        host, separator, path = remainder.partition(":")
+        if separator:
+            remainder = f"{host}/{path}"
+    # Any `user@` in front of the host is this checkout's credential, not the
+    # repository's name.
+    _, _, remainder = remainder.rpartition("@")
+    return f"https://{remainder.rstrip('/')}"
+
+
 def python_provenance(repo_root: pathlib.Path) -> Json:
     """Describe the libtmux checkout a manifest was built from.
 
@@ -2856,9 +2906,13 @@ def python_provenance(repo_root: pathlib.Path) -> Json:
         return completed.stdout.strip()
 
     return {
-        "remote": ask("config", "--get", "remote.origin.url"),
+        "remote": canonical_remote(ask("config", "--get", "remote.origin.url")),
         "commit": ask("rev-parse", "HEAD"),
-        "describe": ask("describe", "--tags", "--always", "--dirty"),
+        # `--abbrev` is pinned because git sizes it from how many objects the
+        # local repository happens to hold: the same commit describes as
+        # `g988b02a7` in a fresh clone and `g988b02a74` in an older one, so an
+        # unpinned length records the clone rather than the commit.
+        "describe": ask("describe", "--tags", "--always", "--dirty", "--abbrev=12"),
     }
 
 
