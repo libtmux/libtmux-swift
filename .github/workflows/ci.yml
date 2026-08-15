@@ -84,10 +84,11 @@ jobs:
           swift-version: "6.2"
 
       - name: Check formatting
-        run: swift format lint --recursive --strict Sources Tests Snippets Package.swift
+        run: swift format lint --recursive --strict Sources Tests Snippets Benchmarks Package.swift
 
       # The checks below are about the repository rather than the platform, so
       # one lane runs them. A missing DocC link is not a per-runner fact.
+
       # Pinned, because the action defaults to whatever ruff released most
       # recently and lints an unchanged tree against it. 0.16.3 added a rule
       # this tooling does not satisfy and turned CI red on a commit that

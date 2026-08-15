@@ -57,7 +57,7 @@ $ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
 Each of these gates CI, and each can fail:
 
 ```console
-$ swift format lint --recursive --strict Sources Tests Snippets Package.swift
+$ swift format lint --recursive --strict Sources Tests Snippets Benchmarks Package.swift
 ```
 
 ```console
@@ -105,7 +105,7 @@ fails when a fence appears in no snippet.
 ## Measured claims are generated, not typed
 
 The mode matrix in `README.md` and `Modes.md` is written by
-`swift run libtmux-bench --markdown` through `Scripts/update_mode_matrix.py`.
+`swift run --package-path Benchmarks libtmux-bench --markdown` through `Scripts/update_mode_matrix.py`.
 Never edit the table between its markers.
 
 `Scripts/parity_report.py` sorts Python libtmux's API into covered, declined,

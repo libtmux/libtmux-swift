@@ -60,15 +60,10 @@ let package = Package(
             name: "libtmux-mcp",
             dependencies: ["LibTmux", "LibTmuxMCP"]
         ),
-        // Prints the mode comparison in the docs. Kept as a target rather than
-        // a script so the numbers come from the library as shipped, and it
-        // reaps its servers through the same fixture the suites use.
-        .executableTarget(
-            name: "libtmux-bench",
-            dependencies: ["LibTmux", "TmuxFixture"]
-        ),
         // Shared by every suite that talks to a real tmux, so that all of them
-        // provision and reap servers the same way.
+        // provision and reap servers the same way. `Benchmarks/` symlinks this
+        // directory rather than being handed a product, so the benchmark
+        // provisions servers the same way without widening what ships.
         .target(
             name: "TmuxFixture",
             dependencies: ["LibTmux"],
