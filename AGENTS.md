@@ -61,8 +61,21 @@ $ swift format lint --recursive --strict Sources Tests Snippets Package.swift
 ```
 
 ```console
-$ swift test
+$ swift test --traits YAMLWorkspaces
 ```
+
+The trait is off by default, and six tests come with it — the YAML reader and
+everything that exercises it. A bare `swift test` passes while covering less,
+which is why the gate names the trait. That the default configuration still
+builds is its own check:
+
+```console
+$ swift build
+```
+
+Run the trait-on command last: a default-trait resolve drops the Yams pin from
+`Package.resolved`, and SwiftPM will not put it back into a file that is
+missing it. Committing that deletion is the mistake to avoid.
 
 ```console
 $ swift package generate-documentation --target LibTmux

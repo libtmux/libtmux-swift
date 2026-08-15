@@ -35,6 +35,13 @@ MANIFEST_EXCERPTS = {
     '.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")',
     '.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")',
     '.product(name: "LibTmux", package: "libtmux-swift")',
+    (
+        '.package(\n'
+        '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
+        '    from: "0.1.0",\n'
+        '    traits: ["YAMLWorkspaces"]\n'
+        ")"
+    ),
 }
 
 FENCE = re.compile(r"```swift\n(.*?)```", re.DOTALL)

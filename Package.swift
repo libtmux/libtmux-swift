@@ -11,15 +11,18 @@ let package = Package(
         .library(name: "LibTmuxMCP", targets: ["LibTmuxMCP"]),
         .executable(name: "libtmux-mcp", targets: ["libtmux-mcp"]),
     ],
+    // Reading tmuxp files is the one thing here that needs a YAML parser, and
+    // a trait is what keeps that from being everyone's problem: with it off,
+    // SwiftPM drops Yams before resolution rather than after, so a consumer of
+    // LibTmux alone never fetches it. WorkspaceBuilder still builds without it
+    // — workspaces described in Swift or in JSON need no parser — and only
+    // `Workspace.decode(yaml:)` goes away.
+    traits: [.default(enabledTraits: []), "YAMLWorkspaces"],
     dependencies: [
         .package(
             url: "https://github.com/swiftlang/swift-subprocess.git",
             .upToNextMinor(from: "1.0.0")
         ),
-        // Used only by WorkspaceBuilder, and named as that target's
-        // dependency rather than the library's: building LibTmux alone compiles
-        // none of it. A consumer of the core still resolves the checkout, which
-        // is the whole of what it costs them.
         .package(
             url: "https://github.com/jpsim/Yams.git",
             .upToNextMinor(from: "6.2.2")
@@ -42,7 +45,11 @@ let package = Package(
             name: "WorkspaceBuilder",
             dependencies: [
                 "LibTmux",
-                .product(name: "Yams", package: "Yams"),
+                .product(
+                    name: "Yams",
+                    package: "Yams",
+                    condition: .when(traits: ["YAMLWorkspaces"])
+                ),
             ]
         ),
         .target(

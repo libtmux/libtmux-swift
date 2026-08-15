@@ -155,6 +155,13 @@ jobs:
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
           python3 Scripts/update_mode_matrix.py --check
 
+      # The trait is off by default, so this proves the configuration a consumer
+      # gets without asking for anything still compiles. It runs before the
+      # suite because a default-trait resolve drops the Yams pin, and the
+      # trait-on run below puts the checkout back.
+      - name: Build with default traits
+        run: swift build
+
       - name: Test
         run: |
           # Every test resolves its tmux through this, so the whole suite runs
@@ -162,4 +169,6 @@ jobs:
           # happens to ship.
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
-          swift test
+          # Named rather than left to the default: the YAML reader and the six
+          # tests behind it are only built when the trait is on.
+          swift test --traits YAMLWorkspaces

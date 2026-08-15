@@ -1,6 +1,9 @@
 import Foundation
 import LibTmux
-import Yams
+
+#if YAMLWorkspaces
+    import Yams
+#endif
 
 /// A tmux layout described as data, in tmuxp's vocabulary.
 ///
@@ -40,11 +43,24 @@ public struct Workspace: Sendable, Hashable, Codable {
         try JSONDecoder().decode(Workspace.self, from: json)
     }
 
-    /// Reads a workspace from YAML, which is how tmuxp files are usually
-    /// written.
-    public static func decode(yaml: String) throws -> Workspace {
-        try YAMLDecoder().decode(Workspace.self, from: yaml)
-    }
+    #if YAMLWorkspaces
+        /// Reads a workspace from YAML, which is how tmuxp files are usually
+        /// written.
+        ///
+        /// Available when the `YAMLWorkspaces` trait is enabled, which is what
+        /// pulls in the YAML parser:
+        ///
+        /// ```swift
+        /// .package(
+        ///     url: "https://github.com/libtmux/libtmux-swift.git",
+        ///     from: "0.1.0",
+        ///     traits: ["YAMLWorkspaces"]
+        /// )
+        /// ```
+        public static func decode(yaml: String) throws -> Workspace {
+            try YAMLDecoder().decode(Workspace.self, from: yaml)
+        }
+    #endif
 }
 
 /// One window, and the panes in it.

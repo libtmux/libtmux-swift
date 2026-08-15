@@ -27,7 +27,7 @@ Swift 6 language mode with complete strict concurrency and no unsafe flags.
 | Swift | 6.2 or later |
 | Platforms | macOS 13+, Linux |
 | tmux | 3.2a through 3.7b |
-| Dependencies | [swift-subprocess][] for the core; [Yams][] for `WorkspaceBuilder` alone |
+| Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 [swift-subprocess]: https://github.com/swiftlang/swift-subprocess
 [Yams]: https://github.com/jpsim/Yams
@@ -49,6 +49,18 @@ path:
 .package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
 ```
 
+Reading a workspace from YAML needs a YAML parser, and asking for it is what
+pulls one in. Without the `YAMLWorkspaces` trait nothing here resolves Yams;
+with it, `Workspace.decode(yaml:)` exists:
+
+```swift
+.package(
+    url: "https://github.com/libtmux/libtmux-swift.git",
+    from: "0.1.0",
+    traits: ["YAMLWorkspaces"]
+)
+```
+
 [libtmux]: https://github.com/tmux-python/libtmux
 
 ## Products
@@ -56,7 +68,7 @@ path:
 | Product | What it is for |
 | --- | --- |
 | `LibTmux` | The library. One dependency, and the only one most callers need. |
-| `WorkspaceBuilder` | Builds a session from a [tmuxp][] workspace in YAML or JSON. |
+| `WorkspaceBuilder` | Builds a session from a [tmuxp][] workspace, written in Swift or JSON — or in YAML, with the `YAMLWorkspaces` trait. |
 | `LibTmuxMCP` | tmux as MCP tools, and `libtmux-mcp` is the server that serves them. |
 
 [tmuxp]: https://tmuxp.git-pull.com/
