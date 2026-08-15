@@ -1,0 +1,15 @@
+# `swift package archive-source` builds a registry release from `git archive`,
+# so `export-ignore` decides what a published version contains. Everything
+# below is repository infrastructure: it gates changes here and is dead weight
+# in a consumer's checkout.
+#
+# Nothing named in `Package.swift` may appear in this list. `Tests/` holds the
+# `TmuxFixture` target and `Snippets/` holds the snippet targets, so ignoring
+# either produces an archive whose manifest names sources that are not there.
+dev/ export-ignore
+Scripts/ export-ignore
+Parity/ export-ignore
+.github/ export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore
+.mise.toml export-ignore
