@@ -124,7 +124,7 @@ jobs:
           git -C "${RUNNER_TEMP}/libtmux" checkout --quiet --detach "$commit"
           python3 -m pip install --quiet pytest tomlkit --editable "${RUNNER_TEMP}/libtmux"
           export LIBTMUX_PYTHON_REPO="${RUNNER_TEMP}/libtmux"
-          python3 -m pytest Scripts/parity Utilities/Spikes/PythonTests -q
+          python3 -m pytest Scripts/parity dev/Spikes/PythonTests -q
           python3 Scripts/extract-python-parity.py --check \
             --python-repo "${LIBTMUX_PYTHON_REPO}"
 

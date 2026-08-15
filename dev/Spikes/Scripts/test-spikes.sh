@@ -49,8 +49,8 @@ if ((lane_environment_count != 3)) \
 fi
 
 spikes_directory=$(cd "$script_directory/.." && pwd)
-swift build --package-path Spikes
-binary_directory=$(swift build --package-path Spikes --show-bin-path)
+swift build --package-path "$spikes_directory"
+binary_directory=$(swift build --package-path "$spikes_directory" --show-bin-path)
 fixture_owner_helper="$binary_directory/fixture-owner-helper"
 process_probe="$binary_directory/process-probe"
 pty_client_probe="$binary_directory/pty-client-probe"
@@ -108,7 +108,7 @@ export LIBTMUX_SIGPIPE_PROBE="$sigpipe_probe"
 export LIBTMUX_FIXTURE_OWNER_HELPER="$fixture_owner_helper"
 export LIBTMUX_PYTHON_REPLY_ORACLE="$python_reply_oracle"
 unset LIBTMUX_REGISTRY_IDENTITY_PROBE
-swift test --package-path Spikes "$@"
+swift test --package-path "$spikes_directory" "$@"
 
 registry_probe_environment=(
     env -i
@@ -133,7 +133,7 @@ TMPDIR="$registry_probe_directory" bash "$group_wrapper" \
     -- \
     "${registry_probe_environment[@]}" \
     swift test \
-        --package-path Spikes \
+        --package-path "$spikes_directory" \
         --skip-build \
         --filter FixtureFailureTests/registryRejectsDuplicatePublicCaseIdentity
 registry_probe_status=$?

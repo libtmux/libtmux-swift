@@ -13,7 +13,7 @@ DerivedData/
 # executable, and pinning is what makes a CI failure reproducible. The spike
 # package resolves whatever is current on purpose: it exists to find out how
 # something behaves today.
-Spikes/Package.resolved
+dev/Spikes/Package.resolved
 
 # The tooling under Scripts/ is Python.
 __pycache__/

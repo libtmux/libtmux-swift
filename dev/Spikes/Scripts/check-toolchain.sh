@@ -2,18 +2,23 @@
 
 set -euo pipefail
 
+# Resolved from the script's own location rather than the caller's, so moving
+# the package moves the checks with it and the cwd stops mattering.
+script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+spikes_directory=$(cd "$script_directory/.." && pwd)
+
 swift_version="$(swift --version)"
 if [[ "$swift_version" != *"Swift version 6.2.4 "* ]]; then
     printf '%s\n' "expected Swift 6.2.4" >&2
     exit 1
 fi
 
-if rg --quiet 'unsafeFlags|\.plugin\(|\.macro\(' Spikes/Package.swift; then
+if rg --quiet 'unsafeFlags|\.plugin\(|\.macro\(' "$spikes_directory/Package.swift"; then
     printf '%s\n' "manifest contains a forbidden setting or target" >&2
     exit 1
 fi
 
-swift package dump-package --package-path Spikes |
+swift package dump-package --package-path "$spikes_directory" |
     jq --exit-status '
         .swiftLanguageVersions == ["6"] and
         ([.targets[] | select(.type == "plugin" or .type == "macro")] | length == 0) and
