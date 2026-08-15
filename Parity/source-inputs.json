@@ -1,0 +1,122 @@
+{
+  "documentKind": "libtmux.python-parity-source-inputs",
+  "entries": [
+    {
+      "authorityFamily": "package-exports",
+      "byteCount": 740,
+      "fingerprint": "sha256:7a8c27dc88eafcb6f74c7e5ae1293042b975305074d1fe503e62e4232d3432fc",
+      "inputCount": 1,
+      "paths": [
+        "src/libtmux/__init__.py"
+      ]
+    },
+    {
+      "authorityFamily": "project-metadata",
+      "byteCount": 7063,
+      "fingerprint": "sha256:915394a1c1322b519c7c913549729db8f9e9a7e1081a5572676aec8c1c81cb9f",
+      "inputCount": 1,
+      "paths": [
+        "pyproject.toml"
+      ]
+    },
+    {
+      "authorityFamily": "public-api-policy",
+      "byteCount": 1813,
+      "fingerprint": "sha256:082e68d0af363866ffb1297981db129e90b2c05a1bdef1afa0b1df6380a1ff0b",
+      "inputCount": 1,
+      "paths": [
+        "docs/project/public-api.md"
+      ]
+    },
+    {
+      "authorityFamily": "python-source",
+      "byteCount": 565447,
+      "fingerprint": "sha256:06d7b085c50a0bedfcac6de18f288ece3ce326bbe175d760912cd2a9e40c2201",
+      "inputCount": 33,
+      "paths": [
+        "src/libtmux/__about__.py",
+        "src/libtmux/__init__.py",
+        "src/libtmux/_compat.py",
+        "src/libtmux/_internal/__init__.py",
+        "src/libtmux/_internal/constants.py",
+        "src/libtmux/_internal/control_mode.py",
+        "src/libtmux/_internal/dataclasses.py",
+        "src/libtmux/_internal/env.py",
+        "src/libtmux/_internal/query_list.py",
+        "src/libtmux/_internal/sparse_array.py",
+        "src/libtmux/_internal/types.py",
+        "src/libtmux/_vendor/__init__.py",
+        "src/libtmux/_vendor/_structures.py",
+        "src/libtmux/_vendor/version.py",
+        "src/libtmux/client.py",
+        "src/libtmux/common.py",
+        "src/libtmux/constants.py",
+        "src/libtmux/exc.py",
+        "src/libtmux/formats.py",
+        "src/libtmux/hooks.py",
+        "src/libtmux/neo.py",
+        "src/libtmux/options.py",
+        "src/libtmux/pane.py",
+        "src/libtmux/pytest_plugin.py",
+        "src/libtmux/server.py",
+        "src/libtmux/session.py",
+        "src/libtmux/test/__init__.py",
+        "src/libtmux/test/constants.py",
+        "src/libtmux/test/environment.py",
+        "src/libtmux/test/random.py",
+        "src/libtmux/test/retry.py",
+        "src/libtmux/test/temporary.py",
+        "src/libtmux/window.py"
+      ]
+    },
+    {
+      "authorityFamily": "python-tests",
+      "byteCount": 539964,
+      "fingerprint": "sha256:b2a399216a2fee7b59add8ad987779f7dda0e500854ae587342483fbe694476f",
+      "inputCount": 39,
+      "paths": [
+        "tests/__init__.py",
+        "tests/_internal/__init__.py",
+        "tests/_internal/test_query_list.py",
+        "tests/conftest.py",
+        "tests/legacy_api/__init__.py",
+        "tests/legacy_api/test_common.py",
+        "tests/legacy_api/test_pane.py",
+        "tests/legacy_api/test_server.py",
+        "tests/legacy_api/test_session.py",
+        "tests/legacy_api/test_tmuxobject.py",
+        "tests/legacy_api/test_version.py",
+        "tests/legacy_api/test_window.py",
+        "tests/python_parity_behavior_probes.py",
+        "tests/test/test_constants.py",
+        "tests/test/test_environment.py",
+        "tests/test/test_random.py",
+        "tests/test/test_retry.py",
+        "tests/test/test_sparse_array.py",
+        "tests/test/test_temporary.py",
+        "tests/test_client.py",
+        "tests/test_common.py",
+        "tests/test_control_mode.py",
+        "tests/test_dataclasses.py",
+        "tests/test_from_env.py",
+        "tests/test_hooks.py",
+        "tests/test_logging.py",
+        "tests/test_neo.py",
+        "tests/test_options.py",
+        "tests/test_pane.py",
+        "tests/test_pane_capture_pane.py",
+        "tests/test_pytest_plugin.py",
+        "tests/test_python_parity_authority.py",
+        "tests/test_python_parity_behavior_contracts.py",
+        "tests/test_resolution.py",
+        "tests/test_server.py",
+        "tests/test_session.py",
+        "tests/test_tmuxobject.py",
+        "tests/test_version.py",
+        "tests/test_window.py"
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceFingerprint": "sha256:61f820ea650eafe6bd6a1932bf6b15ae9d2260ed25531d3812fd621611d9f6d6"
+}
