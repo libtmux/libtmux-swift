@@ -1,0 +1,762 @@
+{
+  "documentKind": "libtmux.python-query-contracts",
+  "entries": [
+    {
+      "behaviorFamilyId": "query.cardinality.ambiguity",
+      "contractId": "python-get-ambiguity",
+      "expectedMatchIds": [
+        "a",
+        "b"
+      ],
+      "expectedOutcome": {
+        "kind": "error",
+        "name": "MultipleObjectsReturned"
+      },
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "apple"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_get_multiple_objects_exposes_ambiguity_data"
+      ],
+      "query": {
+        "name": "apple"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.cardinality.default",
+      "contractId": "python-get-default",
+      "defaultValue": "fallback",
+      "expectedMatchIds": [],
+      "expectedOutcome": {
+        "kind": "value",
+        "value": "fallback"
+      },
+      "inheritance": "inherited",
+      "inputRows": [],
+      "normativeDifference": "The Python edge preserves get(default=); native Swift callers use oneOrNil and nil coalescing",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_get_default_with_broad_eq_is_returned"
+      ],
+      "query": {
+        "missing": "x"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.cardinality.exactly-one",
+      "contractId": "swift-exactly-one-outcomes",
+      "expectedOutcome": {
+        "multiple": "CardinalityError.multipleMatches",
+        "none": "CardinalityError.noMatch",
+        "one": "value"
+      },
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "apple"
+        }
+      ],
+      "normativeDifference": "Swift names the operation and closes both failure cases in CardinalityError",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name": "apple"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.cardinality.no-match",
+      "behaviorProbe": true,
+      "contractId": "python-get-no-match",
+      "expectedMatchIds": [],
+      "expectedOutcome": {
+        "kind": "error",
+        "name": "ObjectDoesNotExist"
+      },
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup"
+      ],
+      "query": {
+        "name": "pear"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.cardinality.one-or-nil",
+      "contractId": "swift-one-or-nil-outcomes",
+      "expectedOutcome": {
+        "multiple": "MultipleMatchesError",
+        "none": null,
+        "one": "value"
+      },
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "apple"
+        }
+      ],
+      "normativeDifference": "Swift returns nil only for absence and keeps ambiguity loud",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name": "apple"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.logic.conjunction",
+      "contractId": "all-predicates-must-match",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "city": "Tampa",
+          "id": "a",
+          "state": "Florida"
+        },
+        {
+          "city": "Tampa",
+          "id": "b",
+          "state": "Illinois"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "city": "Tampa",
+        "state": "Florida"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.contains",
+      "contractId": "contains-string",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "red apple"
+        },
+        {
+          "id": "b",
+          "name": "mango"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__contains": "apple"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.endswith",
+      "contractId": "endswith-string",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "application"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__endswith": "le"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.eq",
+      "contractId": "eq-scalar",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "Apple"
+        },
+        {
+          "id": "b",
+          "name": "Mango"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__eq": "Apple"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.exact",
+      "contractId": "exact-alias",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "Apple"
+        },
+        {
+          "id": "b",
+          "name": "apple"
+        }
+      ],
+      "normativeDifference": "Swift accepts exact as a decode alias and encodes eq as canonical",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__exact": "Apple"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.icontains",
+      "contractId": "icontains-fixed-unicode-lowercase",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "RED APPLE"
+        },
+        {
+          "id": "b",
+          "name": "mango"
+        }
+      ],
+      "normativeDifference": "Swift applies the fixed wire lowercase mapping",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__icontains": "apple"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.iendswith",
+      "contractId": "iendswith-fixed-unicode-lowercase",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "APPLE"
+        },
+        {
+          "id": "b",
+          "name": "pear"
+        }
+      ],
+      "normativeDifference": "Swift applies the fixed wire lowercase mapping",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__iendswith": "le"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.iexact",
+      "contractId": "iexact-fixed-unicode-lowercase",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "CAFÉ"
+        },
+        {
+          "id": "b",
+          "name": "Cafe"
+        }
+      ],
+      "normativeDifference": "Swift uses the schema's fixed Unicode lowercase mapping rather than a locale or Python runtime table",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__iexact": "café"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.in",
+      "contractId": "in-membership",
+      "expectedMatchIds": [
+        "a",
+        "b"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "mango"
+        },
+        {
+          "id": "c",
+          "name": "pear"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__in": [
+          "apple",
+          "mango"
+        ]
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.iregex",
+      "contractId": "iregex-subset-search",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "APPLE"
+        },
+        {
+          "id": "b",
+          "name": "maple"
+        }
+      ],
+      "normativeDifference": "Swift accepts the declared regex subset with an explicit case-insensitive flag",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__iregex": "^app.*"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.istartswith",
+      "contractId": "istartswith-fixed-unicode-lowercase",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "APPLE"
+        },
+        {
+          "id": "b",
+          "name": "pear"
+        }
+      ],
+      "normativeDifference": "Swift applies the fixed wire lowercase mapping",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__istartswith": "app"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.nin",
+      "contractId": "nin-membership",
+      "expectedMatchIds": [
+        "c"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "mango"
+        },
+        {
+          "id": "c",
+          "name": "pear"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__nin": [
+          "apple",
+          "mango"
+        ]
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.regex",
+      "contractId": "regex-subset-search",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "adapted",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "maple"
+        }
+      ],
+      "normativeDifference": "Swift accepts only the declared cross-language regex subset, while Python uses re.search",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__regex": "^app.*"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.lookup.startswith",
+      "contractId": "startswith-string",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "id": "a",
+          "name": "apple"
+        },
+        {
+          "id": "b",
+          "name": "pineapple"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "name__startswith": "app"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.paths.missing",
+      "contractId": "missing-path-no-match",
+      "expectedMatchIds": [],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "food": {},
+          "id": "a"
+        },
+        {
+          "id": "b"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "food__breakfast": "cereal"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.paths.nested",
+      "contractId": "nested-path",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "inherited",
+      "inputRows": [
+        {
+          "food": {
+            "breakfast": "cereal"
+          },
+          "id": "a"
+        },
+        {
+          "food": {
+            "breakfast": "waffles"
+          },
+          "id": "b"
+        }
+      ],
+      "normativeDifference": null,
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/_internal/test_query_list.py::test_filter"
+      ],
+      "query": {
+        "food__breakfast": "cereal"
+      }
+    },
+    {
+      "behaviorFamilyId": "query.relation.every",
+      "contractId": "relation-every-empty-is-true",
+      "expectedMatchIds": [
+        "a",
+        "b"
+      ],
+      "inheritance": "swift-schema",
+      "inputRows": [
+        {
+          "id": "a",
+          "panes": [
+            {
+              "active": "1"
+            }
+          ]
+        },
+        {
+          "id": "b",
+          "panes": []
+        },
+        {
+          "id": "c",
+          "panes": [
+            {
+              "active": "0"
+            }
+          ]
+        }
+      ],
+      "normativeDifference": "New Swift-schema contract; every is true for an empty loaded relation",
+      "pythonSymbols": [],
+      "pythonTestNodes": [],
+      "query": {
+        "panes": {
+          "every": {
+            "active__eq": "1"
+          }
+        }
+      }
+    },
+    {
+      "behaviorFamilyId": "query.relation.is",
+      "contractId": "relation-is",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "swift-schema",
+      "inputRows": [
+        {
+          "id": "a",
+          "session": {
+            "name": "work"
+          }
+        },
+        {
+          "id": "b",
+          "session": null
+        }
+      ],
+      "normativeDifference": "New Swift-schema to-one relation contract; Python QueryList traverses plain nested attributes instead",
+      "pythonSymbols": [],
+      "pythonTestNodes": [],
+      "query": {
+        "session": {
+          "is": {
+            "name__eq": "work"
+          }
+        }
+      }
+    },
+    {
+      "behaviorFamilyId": "query.relation.none",
+      "contractId": "relation-none",
+      "expectedMatchIds": [
+        "b"
+      ],
+      "inheritance": "swift-schema",
+      "inputRows": [
+        {
+          "id": "a",
+          "panes": [
+            {
+              "command": "nvim"
+            }
+          ]
+        },
+        {
+          "id": "b",
+          "panes": [
+            {
+              "command": "sh"
+            }
+          ]
+        }
+      ],
+      "normativeDifference": "New Swift-schema relation contract; Python QueryList has no relation operator",
+      "pythonSymbols": [],
+      "pythonTestNodes": [],
+      "query": {
+        "panes": {
+          "none": {
+            "command__eq": "nvim"
+          }
+        }
+      }
+    },
+    {
+      "behaviorFamilyId": "query.relation.some",
+      "contractId": "relation-some",
+      "expectedMatchIds": [
+        "a"
+      ],
+      "inheritance": "swift-schema",
+      "inputRows": [
+        {
+          "id": "a",
+          "panes": [
+            {
+              "command": "nvim"
+            },
+            {
+              "command": "sh"
+            }
+          ]
+        },
+        {
+          "id": "b",
+          "panes": [
+            {
+              "command": "sh"
+            }
+          ]
+        }
+      ],
+      "normativeDifference": "New Swift-schema relation contract; Python QueryList has no relation operator",
+      "pythonSymbols": [],
+      "pythonTestNodes": [],
+      "query": {
+        "panes": {
+          "some": {
+            "command__eq": "nvim"
+          }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceFingerprint": "sha256:61f820ea650eafe6bd6a1932bf6b15ae9d2260ed25531d3812fd621611d9f6d6"
+}

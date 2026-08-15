@@ -1,0 +1,4503 @@
+{
+  "documentKind": "libtmux.python-parity-manifest",
+  "entries": [
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "active_window_index",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.active_window_index",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "alternate_saved_x",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.alternate_saved_x",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "alternate_saved_y",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.alternate_saved_y",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "bracket_paste_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.bracket_paste_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "buffer_name",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.buffer_name",
+      "referenceFamilies": [],
+      "scope": "buffer",
+      "sourceFamilies": [
+        "buffer"
+      ],
+      "sourceFamily": "buffer",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "buffer_sample",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.buffer_sample",
+      "referenceFamilies": [],
+      "scope": "buffer",
+      "sourceFamilies": [
+        "buffer"
+      ],
+      "sourceFamily": "buffer",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "buffer_size",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.buffer_size",
+      "referenceFamilies": [],
+      "scope": "buffer",
+      "sourceFamilies": [
+        "buffer"
+      ],
+      "sourceFamily": "buffer",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_activity",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_activity",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_cell_height",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_cell_height",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_cell_width",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_cell_width",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_control_mode",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_control_mode",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_created",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_created",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_discarded",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_discarded",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_flags",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_server.py::test_new_session_client_flags"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_flags",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_height",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_height",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_key_table",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_key_table",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_last_session",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_last_session",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_mode_format",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_mode_format",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_name",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_client.py::test_client_refresh_raises_when_client_name_is_none",
+        "tests/test_control_mode.py::test_control_mode_client_name",
+        "tests/test_control_mode.py::test_control_mode_client_name_matches_spawned_client"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_name",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_pid",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_pid",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_prefix",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_prefix",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_readonly",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_client.py::test_client_readonly_default_zero"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_readonly",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_session",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_client.py::test_client_session_reports_attached_session"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_session",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_termfeatures",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_termfeatures",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_termname",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_termname",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_termtype",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_termtype",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_tty",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_tty",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_uid",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_uid",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_user",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_user",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_utf8",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_utf8",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_width",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_width",
+      "referenceFamilies": [
+        "list-client"
+      ],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "client_written",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.client_written",
+      "referenceFamilies": [],
+      "scope": "client",
+      "sourceFamilies": [
+        "list-client"
+      ],
+      "sourceFamily": "list-client",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "command_list_alias",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.command_list_alias",
+      "referenceFamilies": [],
+      "scope": "context",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "command_list_name",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.command_list_name",
+      "referenceFamilies": [],
+      "scope": "context",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "command_list_usage",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.command_list_usage",
+      "referenceFamilies": [],
+      "scope": "context",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "config_files",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.config_files",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "copy_cursor_line",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.copy_cursor_line",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "copy_cursor_word",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.copy_cursor_word",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "copy_cursor_x",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.copy_cursor_x",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "copy_cursor_y",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.copy_cursor_y",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "current_file",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.current_file",
+      "referenceFamilies": [],
+      "scope": "context",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "cursor_character",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.cursor_character",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "cursor_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.cursor_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "cursor_x",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.cursor_x",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "cursor_y",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.cursor_y",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "history_bytes",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.history_bytes",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "history_limit",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.history_limit",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "history_size",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.history_size",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "insert_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.insert_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "keypad_cursor_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.keypad_cursor_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "keypad_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.keypad_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "last_window_index",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.last_window_index",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "line",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_options.py::test_stable_baseline_options_and_hooks"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.line",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "mouse_all_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.mouse_all_flag",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "mouse_any_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.mouse_any_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "mouse_button_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.mouse_button_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "mouse_sgr_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.mouse_sgr_flag",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "mouse_standard_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.mouse_standard_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "next_session_id",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.next_session_id",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "origin_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.origin_flag",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_active",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_active",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_at_bottom",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_at_bottom",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_at_left",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_at_left",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_at_right",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_at_right",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_at_top",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_at_top",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_bg",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_bg",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_bottom",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_bottom",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_current_command",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_current_command",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_current_path",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_current_path",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_dead",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_pane_dead_signal_gated_to_3_3",
+        "tests/test_neo.py::test_pane_dead_time_gated_to_3_3"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_dead",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_dead_signal",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.3",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_pane_dead_signal_gated_to_3_3"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_dead_signal",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.3"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_dead_status",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_dead_status",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_dead_time",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.3",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_pane_dead_time_gated_to_3_3"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_dead_time",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.3"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_fg",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_fg",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_flags",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_pane_capture_pane.py::test_capture_pane_flags"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_flags",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_floating_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_floating_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_format",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_pane.py::test_pane_format_field_declared_and_hydrated"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_format",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_height",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_height",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_id",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_from_env.py::test_pane_from_env_bad_pane_id",
+        "tests/test_pane.py::test_pane_refresh_raises_when_pane_id_is_none"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_id",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_in_mode",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_in_mode",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_index",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_index",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_input_off",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_input_off",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_last",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_pane.py::test_select_pane_last"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_last",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_left",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_left",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_marked",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_marked",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_marked_set",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_marked_set",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_mode",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_mode",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_path",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_path",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_pb_progress",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_pb_progress",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_pb_state",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_pb_state",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_pid",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_pid",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_pipe",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_pipe",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_pipe_pid",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_pipe_pid",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_right",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_right",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_search_string",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_search_string",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_start_command",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_start_command",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_start_path",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_start_path",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_synchronized",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_pane.py::test_pane_synchronized_reflects_window_state"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_synchronized",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_tabs",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_tabs",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_title",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_title",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_top",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_top",
+      "referenceFamilies": [],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_tty",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_tty",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_width",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_width",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_x",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_x",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_y",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_y",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_z",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_z",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pane_zoomed_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pane_zoomed_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "pid",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.pid",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "scroll_position",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.scroll_position",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "scroll_region_lower",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.scroll_region_lower",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "scroll_region_upper",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.scroll_region_upper",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "search_match",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.search_match",
+      "referenceFamilies": [],
+      "scope": "context",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "selection_end_x",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.selection_end_x",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "selection_end_y",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.selection_end_y",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "selection_start_x",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.selection_start_x",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "selection_start_y",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.selection_start_y",
+      "referenceFamilies": [],
+      "scope": "event",
+      "sourceFamilies": [
+        "context-only"
+      ],
+      "sourceFamily": "context-only",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_activity",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_activity",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_alerts",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_alerts",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_attached",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_attached",
+      "referenceFamilies": [
+        "list-session"
+      ],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_attached_list",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_attached_list",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_created",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_created",
+      "referenceFamilies": [
+        "list-session"
+      ],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_format",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_session.py::test_session_format_field_declared_and_hydrated"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_format",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_group",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_session.py::test_kill_session_group"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_group",
+      "referenceFamilies": [
+        "list-session"
+      ],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_group_attached",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_group_attached",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_group_attached_list",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_group_attached_list",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_group_list",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_group_list",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_group_many_attached",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_group_many_attached",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_group_size",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_group_size",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_grouped",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_grouped",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_id",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_from_env.py::test_from_env_ignores_stale_session_id",
+        "tests/test_session.py::test_cmd_inserts_session_id",
+        "tests/test_session.py::test_session_refresh_raises_when_session_id_is_none"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_id",
+      "referenceFamilies": [
+        "list-session"
+      ],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_last_attached",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_last_attached",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_many_attached",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_many_attached",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_marked",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_marked",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_name",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test/test_random.py::test_get_test_session_name_collision_handling",
+        "tests/test/test_random.py::test_get_test_session_name_custom_prefix",
+        "tests/test/test_random.py::test_get_test_session_name_default_prefix",
+        "tests/test/test_random.py::test_get_test_session_name_doctest_examples",
+        "tests/test/test_random.py::test_get_test_session_name_implementation_details",
+        "tests/test/test_random.py::test_get_test_session_name_loop_behavior",
+        "tests/test_session.py::test_periods_raise_bad_session_name"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_name",
+      "referenceFamilies": [
+        "list-session"
+      ],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_path",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_path",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_stack",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_stack",
+      "referenceFamilies": [],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "session_windows",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.session_windows",
+      "referenceFamilies": [
+        "list-session"
+      ],
+      "scope": "session",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "socket_path",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_from_env.py::test_server_from_env_socket_path",
+        "tests/test_server.py::test_socket_path",
+        "tests/test_server.py::test_socket_path_not_derived_from_socket_name"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.socket_path",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "start_time",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.start_time",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "synchronized_output_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.7",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.synchronized_output_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.7"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "uid",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.uid",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "user",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_options.py::test_user_keys"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.user",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "version",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/legacy_api/test_common.py::test_allows_master_version",
+        "tests/legacy_api/test_common.py::test_allows_next_version",
+        "tests/legacy_api/test_common.py::test_error_version_less_1_7",
+        "tests/legacy_api/test_common.py::test_get_libtmux_version",
+        "tests/legacy_api/test_common.py::test_get_version_openbsd",
+        "tests/legacy_api/test_common.py::test_get_version_too_low",
+        "tests/legacy_api/test_common.py::test_has_gt_version",
+        "tests/legacy_api/test_common.py::test_has_gte_version"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.version",
+      "referenceFamilies": [],
+      "scope": "universal",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-session",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_active",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_active",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_active_clients",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_active_clients",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_active_clients_list",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_active_clients_list",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_active_sessions",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_active_sessions",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_active_sessions_list",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_active_sessions_list",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_activity",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_activity",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_activity_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_activity_flag",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_bell_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_bell_flag",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_bigger",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_bigger",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_cell_height",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_cell_height",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_cell_width",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_cell_width",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_end_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_end_flag",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_flags",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_window.py::test_window_flags_field_returns_string"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_flags",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_format",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_window.py::test_window_format_field_declared_and_hydrated"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_format",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_height",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_height",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_id",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_window.py::test_window_refresh_raises_when_window_id_is_none"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_id",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_index",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_index",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_last_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_last_flag",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_layout",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_layout",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_linked",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_linked",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_linked_sessions",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_linked_sessions",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_linked_sessions_list",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_linked_sessions_list",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_marked_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_marked_flag",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_name",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test/test_random.py::test_get_test_window_name_branch_coverage",
+        "tests/test/test_random.py::test_get_test_window_name_collision_handling",
+        "tests/test/test_random.py::test_get_test_window_name_custom_prefix",
+        "tests/test/test_random.py::test_get_test_window_name_default_prefix",
+        "tests/test/test_random.py::test_get_test_window_name_doctest_examples",
+        "tests/test/test_random.py::test_get_test_window_name_loop_behavior",
+        "tests/test/test_random.py::test_get_test_window_name_null_prefix",
+        "tests/test/test_random.py::test_get_test_window_name_requires_prefix"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_name",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_offset_x",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_offset_x",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_offset_y",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_offset_y",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_panes",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_panes",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_raw_flags",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_raw_flags",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_silence_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_silence_flag",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_stack_index",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_stack_index",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_start_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_start_flag",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_visible_layout",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_visible_layout",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_width",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_width",
+      "referenceFamilies": [
+        "list-window"
+      ],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "window_zoomed_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_window.py::test_window_zoomed_flag_field_toggle"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.window_zoomed_flag",
+      "referenceFamilies": [],
+      "scope": "window",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-window",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    },
+    {
+      "behaviorFamilyId": "format.projection",
+      "disposition": "direct",
+      "fieldName": "wrap_flag",
+      "kind": "format-field",
+      "minimumTmuxVersion": "3.2a",
+      "pythonTestNodes": [
+        "tests/test_neo.py::test_every_obj_field_classifies_to_known_scope"
+      ],
+      "qualifiedName": "libtmux.neo.Obj.wrap_flag",
+      "referenceFamilies": [
+        "list-pane"
+      ],
+      "scope": "pane",
+      "sourceFamilies": [
+        "list-client",
+        "list-pane",
+        "list-session",
+        "list-window"
+      ],
+      "sourceFamily": "list-pane",
+      "sourceFile": "src/libtmux/neo.py",
+      "versionPredicate": {
+        "comparison": ">=",
+        "rawVersion": "3.2a"
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceFingerprint": "sha256:61f820ea650eafe6bd6a1932bf6b15ae9d2260ed25531d3812fd621611d9f6d6"
+}

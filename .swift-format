@@ -1,0 +1,13 @@
+{
+  "indentation": {
+    "spaces": 4
+  },
+  "lineLength": 100,
+  "maximumBlankLines": 1,
+  "rules": {
+    "DoNotUseSemicolons": true,
+    "OrderedImports": true
+  },
+  "tabWidth": 4,
+  "version": 1
+}

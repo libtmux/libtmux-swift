@@ -1,0 +1,1563 @@
+{
+  "documentKind": "libtmux.python-behavior-contracts",
+  "entries": [
+    {
+      "behaviorFamilyId": "format.projection",
+      "contractGroup": "formats",
+      "exitStderrPolicy": {
+        "status": "NEEDS_CONTEXT"
+      },
+      "expectedResultShape": {
+        "fields": {
+          "count": 125,
+          "itemTypes": [
+            "builtins.str"
+          ],
+          "pythonType": "builtins.tuple"
+        },
+        "formatSeparatorCount": 125,
+        "parsed": {
+          "count": 2,
+          "keys": [
+            "session_id",
+            "window_id"
+          ],
+          "pythonType": "builtins.dict",
+          "valueTypes": [
+            "builtins.str"
+          ]
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NEEDS_CONTEXT"
+      },
+      "pythonSymbols": [
+        "libtmux.neo.Obj"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": [
+        {
+          "fieldCount": 123,
+          "hasPaneDeadSignal": false,
+          "hasPaneFlags": false,
+          "rawVersion": "3.2a"
+        },
+        {
+          "fieldCount": 125,
+          "hasPaneDeadSignal": true,
+          "hasPaneFlags": false,
+          "rawVersion": "3.3"
+        },
+        {
+          "fieldCount": 136,
+          "hasPaneDeadSignal": true,
+          "hasPaneFlags": true,
+          "rawVersion": "3.7"
+        },
+        {
+          "fieldCount": 125,
+          "hasPaneDeadSignal": true,
+          "hasPaneFlags": false,
+          "rawVersion": "3.7a"
+        }
+      ]
+    },
+    {
+      "behaviorFamilyId": "lifecycle.cleanup",
+      "contractGroup": "lifecycle",
+      "exitStderrPolicy": {
+        "exception": "builtins.RuntimeError",
+        "sameExceptionInstance": true
+      },
+      "expectedResultShape": {
+        "controlClientsAfter": 0,
+        "controlClientsInside": 1,
+        "paneReaped": true,
+        "serverReaped": true,
+        "sessionReaped": true,
+        "windowReaped": true
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.kill"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.cancellation.propagates",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": "Cancellation bypasses lenient LibTmuxException handling",
+      "expectedResultShape": "Cancellation remains cancellation and is never converted to an empty array",
+      "inheritance": "adapted",
+      "listLeniency": "never-empty-on-cancel",
+      "pythonSymbols": [
+        "libtmux.server.Server.cmd"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_authority.py::test_list_cancellation_propagates"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": [
+        "all-supported"
+      ]
+    },
+    {
+      "behaviorFamilyId": "list.liveness.is-alive",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "commandException": false,
+        "missingExecutable": false
+      },
+      "expectedResultShape": {
+        "deadSocket": false,
+        "live": true
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.is_alive"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.liveness.require-alive",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "deadSocket": {
+          "exception": "subprocess.CalledProcessError",
+          "outcome": "raise"
+        },
+        "missingExecutable": {
+          "exception": "libtmux.exc.TmuxCommandNotFound",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "live": {
+          "outcome": "return",
+          "pythonType": "builtins.NoneType",
+          "value": null
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.raise_if_dead"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.predicate.server.malformed-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "count": 0,
+        "itemTypes": [],
+        "pythonType": "libtmux._internal.query_list.QueryList",
+        "values": []
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailableReturnsEmpty": true,
+        "otherErrorPropagates": true
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.search_sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.predicate.session.malformed-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "count": 0,
+        "itemTypes": [],
+        "pythonType": "libtmux._internal.query_list.QueryList",
+        "values": []
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailableReturnsEmpty": false,
+        "otherErrorPropagates": true
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.search_windows"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.predicate.window.malformed-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "count": 0,
+        "itemTypes": [],
+        "pythonType": "libtmux._internal.query_list.QueryList",
+        "values": []
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailableReturnsEmpty": false,
+        "otherErrorPropagates": true
+      },
+      "pythonSymbols": [
+        "libtmux.window.Window.search_panes"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.server.attached-sessions.any-error-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": "Shares Server.sessions error absorption",
+      "expectedResultShape": "Filtered session list; empty when the sessions source is empty",
+      "inheritance": "adapted",
+      "listLeniency": "all-lib-errors-empty",
+      "pythonSymbols": [
+        "libtmux.server.Server.attached_sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_server.py::test_no_server_attached_sessions"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": [
+        "all-supported"
+      ]
+    },
+    {
+      "behaviorFamilyId": "list.server.clients.any-error-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "libtmuxException": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.client.Client"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "libtmuxException": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.clients"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.server.panes.daemon-unavailable-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.pane.Pane"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.panes"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.server.search-panes.daemon-unavailable-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.pane.Pane"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.search_panes"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.server.search-sessions.daemon-unavailable-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.session.Session"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.search_sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.server.search-windows.daemon-unavailable-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.window.Window"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.search_windows"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.server.sessions.any-error-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "libtmuxException": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.session.Session"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "libtmuxException": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.server.windows.daemon-unavailable-empty",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.window.Window"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "daemonUnavailable": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "otherLibTmuxException": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.windows"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.session.active-pane.optional",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "live": {
+          "pythonType": "libtmux.pane.Pane"
+        },
+        "noActivePane": {
+          "pythonType": "builtins.NoneType",
+          "value": null
+        },
+        "window": {
+          "pythonType": "libtmux.window.Window"
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.active_pane"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.session.active-window.cardinality",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "multipleActive": {
+          "exception": "libtmux.exc.MultipleActiveWindows",
+          "outcome": "raise"
+        },
+        "noActive": {
+          "exception": "libtmux.exc.NoActiveWindow",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "pythonType": "libtmux.window.Window"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.active_window"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.session.panes.propagate",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.pane.Pane"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.panes"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.session.search-panes.propagate",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.pane.Pane"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.search_panes"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.session.search-windows.propagate",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.window.Window"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.search_windows"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.session.windows.propagate",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.window.Window"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.windows"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.strict-view.propagate",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": "Swift-only opt-in reverses leniency without changing the default accessor",
+      "expectedResultShape": "Scoped strict view returns rows or propagates every listing failure",
+      "inheritance": "adapted",
+      "listLeniency": "strict-opt-in",
+      "pythonSymbols": [
+        "libtmux.server.Server.sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_server.py::test_server_sessions_returns_empty_on_tmux_error"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": [
+        "all-supported"
+      ]
+    },
+    {
+      "behaviorFamilyId": "list.window.linked-sessions.either-source-empty-deduplicated",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "list-sessions": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "list-windows": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        }
+      },
+      "expectedResultShape": {
+        "count": 1,
+        "itemTypes": [
+          "libtmux.session.Session"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList",
+        "sessionIds": [
+          "$probe"
+        ]
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "list-sessions": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        },
+        "list-windows": {
+          "count": 0,
+          "itemTypes": [],
+          "outcome": "return",
+          "pythonType": "libtmux._internal.query_list.QueryList",
+          "values": []
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.window.Window.linked_sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.window.panes.propagate",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.pane.Pane"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.window.Window.panes"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "list.window.search-panes.propagate",
+      "contractGroup": "list-error",
+      "exitStderrPolicy": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "itemTypes": [
+          "libtmux.pane.Pane"
+        ],
+        "pythonType": "libtmux._internal.query_list.QueryList"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.window.Window.search_panes"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "public.surface",
+      "contractGroup": "surface",
+      "exitStderrPolicy": {
+        "status": "NOT_APPLICABLE"
+      },
+      "expectedResultShape": {
+        "status": "NEEDS_CONTEXT"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.Server"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "consolidated",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "refresh.client",
+      "contractGroup": "refresh",
+      "exitStderrPolicy": {
+        "missingIdentity": {
+          "exception": "builtins.ValueError",
+          "outcome": "raise"
+        },
+        "missingLiveObject": {
+          "exception": "libtmux.exc.TmuxObjectDoesNotExist",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "pythonType": "libtmux.client.Client",
+        "sameInstance": true
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.client.Client.refresh"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "refresh.pane",
+      "contractGroup": "refresh",
+      "exitStderrPolicy": {
+        "missingIdentity": {
+          "exception": "builtins.ValueError",
+          "outcome": "raise"
+        },
+        "missingLiveObject": {
+          "exception": "libtmux.exc.TmuxObjectDoesNotExist",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "pythonType": "libtmux.pane.Pane",
+        "sameInstance": true
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.pane.Pane.refresh"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "refresh.session",
+      "contractGroup": "refresh",
+      "exitStderrPolicy": {
+        "missingIdentity": {
+          "exception": "builtins.ValueError",
+          "outcome": "raise"
+        },
+        "missingLiveObject": {
+          "exception": "libtmux.exc.TmuxObjectDoesNotExist",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "pythonType": "libtmux.session.Session",
+        "sameInstance": true
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.session.Session.refresh"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "refresh.stale-object",
+      "contractGroup": "refresh",
+      "exitStderrPolicy": {
+        "refreshAfterKill": {
+          "exception": "libtmux.exc.TmuxObjectDoesNotExist",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "identityPreserved": true,
+        "pythonType": "libtmux.pane.Pane"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "refreshAfterKill": {
+          "exception": "libtmux.exc.TmuxObjectDoesNotExist",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.pane.Pane.refresh"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "refresh.window",
+      "contractGroup": "refresh",
+      "exitStderrPolicy": {
+        "missingIdentity": {
+          "exception": "builtins.ValueError",
+          "outcome": "raise"
+        },
+        "missingLiveObject": {
+          "exception": "libtmux.exc.TmuxObjectDoesNotExist",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "pythonType": "libtmux.window.Window",
+        "sameInstance": true
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "listingFailure": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise"
+        }
+      },
+      "pythonSymbols": [
+        "libtmux.window.Window.refresh"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "sessions.attached-truthiness",
+      "contractGroup": "relations",
+      "exitStderrPolicy": "Uses the sessions accessor error boundary",
+      "expectedResultShape": "Attached sessions are rows where session_attached is not zero",
+      "inheritance": "adapted",
+      "listLeniency": "all-lib-errors-empty",
+      "pythonSymbols": [
+        "libtmux.server.Server.attached_sessions"
+      ],
+      "pythonTestNodes": [
+        "tests/test_server.py::test_no_server_attached_sessions"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": [
+        "all-supported"
+      ]
+    },
+    {
+      "behaviorFamilyId": "state.environments",
+      "contractGroup": "state",
+      "exitStderrPolicy": {
+        "invalidSet": {
+          "exception": "builtins.ValueError",
+          "outcome": "raise"
+        },
+        "missingTargetShow": {
+          "count": 0,
+          "keys": [],
+          "outcome": "return",
+          "pythonType": "builtins.dict",
+          "valueTypes": []
+        }
+      },
+      "expectedResultShape": {
+        "empty": {
+          "pythonType": "builtins.str",
+          "value": ""
+        },
+        "hidden": {
+          "pythonType": "builtins.NoneType",
+          "value": null
+        },
+        "unset": {
+          "pythonType": "builtins.NoneType",
+          "value": null
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.common.EnvironmentMixin"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "consolidated",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "state.hooks",
+      "contractGroup": "state",
+      "exitStderrPolicy": {
+        "invalidHook": {
+          "exception": "libtmux.exc.InvalidOption",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "scalar": {
+          "indices": [
+            "0"
+          ],
+          "keyTypes": [
+            "builtins.int"
+          ],
+          "pythonType": "libtmux._internal.sparse_array.SparseArray",
+          "valueTypes": [
+            "builtins.str"
+          ]
+        },
+        "sparse": {
+          "indices": [
+            "0",
+            "5"
+          ],
+          "keyTypes": [
+            "builtins.int"
+          ],
+          "pythonType": "libtmux._internal.sparse_array.SparseArray",
+          "valueTypes": [
+            "builtins.str"
+          ]
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.hooks.HooksMixin"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "consolidated",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "state.options",
+      "contractGroup": "state",
+      "exitStderrPolicy": {
+        "ambiguous": {
+          "exception": "libtmux.exc.AmbiguousOption",
+          "outcome": "raise"
+        },
+        "invalid": {
+          "exception": "libtmux.exc.InvalidOption",
+          "outcome": "raise"
+        }
+      },
+      "expectedResultShape": {
+        "array": {
+          "keyTypes": [
+            "builtins.str"
+          ],
+          "pythonType": "builtins.dict",
+          "valueTypes": [
+            "builtins.str"
+          ]
+        },
+        "flag": {
+          "pythonType": "builtins.bool",
+          "value": false
+        },
+        "scalar": {
+          "pythonType": "builtins.int",
+          "value": 50
+        },
+        "sparse": {
+          "keyTypes": [
+            "builtins.int"
+          ],
+          "pythonType": "libtmux._internal.sparse_array.SparseArray",
+          "valueTypes": [
+            "builtins.str"
+          ]
+        },
+        "style": {
+          "pythonType": "builtins.str",
+          "value": "fg=red"
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.options.OptionsMixin"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "consolidated",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "state.sparse-arrays",
+      "contractGroup": "state",
+      "exitStderrPolicy": {
+        "status": "NEEDS_CONTEXT"
+      },
+      "expectedResultShape": {
+        "indices": [
+          "0",
+          "5",
+          "99"
+        ],
+        "keyTypes": [
+          "builtins.int"
+        ],
+        "pythonType": "libtmux._internal.sparse_array.SparseArray",
+        "valueTypes": [
+          "builtins.bool",
+          "builtins.int"
+        ],
+        "values": [
+          true,
+          false,
+          100
+        ]
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.options.OptionsMixin.show_options"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "transport.cmd.invalid-bytes",
+      "contractGroup": "transport",
+      "exitStderrPolicy": {
+        "statusPreserved": true,
+        "stderrOwned": true,
+        "stdoutOwned": true
+      },
+      "expectedResultShape": {
+        "pythonType": "libtmux.common.tmux_cmd",
+        "returncode": 7,
+        "stderr": [
+          "\\xfeerr"
+        ],
+        "stdout": [
+          "\\xffout"
+        ]
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.common.tmux_cmd"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "adapted",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "transport.cmd.nonzero",
+      "contractGroup": "transport",
+      "exitStderrPolicy": {
+        "raiseIfStderr": {
+          "exception": "libtmux.exc.LibTmuxException",
+          "outcome": "raise",
+          "subcommand": "list-clients"
+        }
+      },
+      "expectedResultShape": {
+        "pythonType": "libtmux.common.tmux_cmd",
+        "returncode": 1,
+        "stderrCount": 1,
+        "stdout": []
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.common.raise_if_stderr"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "transport.cmd.result",
+      "contractGroup": "transport",
+      "exitStderrPolicy": {
+        "raisedByRawCommand": false,
+        "rawNonzeroReturn": {
+          "pythonType": "libtmux.common.tmux_cmd"
+        }
+      },
+      "expectedResultShape": {
+        "nonzero": {
+          "returncode": 1,
+          "stderrCount": 1,
+          "stdout": []
+        },
+        "success": {
+          "returncode": 0,
+          "stderr": [],
+          "stdout": [
+            "parity-probe"
+          ]
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.common.tmux_cmd"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "transport.has-session",
+      "contractGroup": "transport",
+      "exitStderrPolicy": {
+        "mirrored": true,
+        "rawStderr": [
+          "can't find session: missing-parity-probe"
+        ],
+        "rawStdout": [
+          "can't find session: missing-parity-probe"
+        ],
+        "returncode": 1
+      },
+      "expectedResultShape": {
+        "existing": {
+          "pythonType": "builtins.bool",
+          "value": true
+        },
+        "missing": {
+          "pythonType": "builtins.bool",
+          "value": false
+        }
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.server.Server.has_session"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": {
+        "status": "NEEDS_CONTEXT"
+      }
+    },
+    {
+      "behaviorFamilyId": "versions.feature-gates",
+      "contractGroup": "versions",
+      "exitStderrPolicy": {
+        "status": "NEEDS_CONTEXT"
+      },
+      "expectedResultShape": {
+        "laneResultType": "builtins.bool"
+      },
+      "inheritance": "inherited",
+      "listLeniency": {
+        "status": "NOT_APPLICABLE"
+      },
+      "pythonSymbols": [
+        "libtmux.common.get_version_str"
+      ],
+      "pythonTestNodes": [
+        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+      ],
+      "swiftAdaptation": "direct",
+      "versionLanes": [
+        {
+          "matchesRawPredicate": false,
+          "meets3_3Minimum": false,
+          "numericVersion": "3.2",
+          "rawVersion": "3.2a"
+        },
+        {
+          "matchesRawPredicate": true,
+          "meets3_3Minimum": true,
+          "numericVersion": "3.3",
+          "rawVersion": "3.3"
+        },
+        {
+          "matchesRawPredicate": true,
+          "meets3_3Minimum": true,
+          "numericVersion": "3.7",
+          "rawVersion": "3.7"
+        },
+        {
+          "matchesRawPredicate": false,
+          "meets3_3Minimum": true,
+          "numericVersion": "3.7",
+          "rawVersion": "3.7a"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceFingerprint": "sha256:61f820ea650eafe6bd6a1932bf6b15ae9d2260ed25531d3812fd621611d9f6d6"
+}
