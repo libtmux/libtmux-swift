@@ -7,7 +7,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "LibTmux", targets: ["LibTmux"]),
-        .library(name: "WorkspaceBuilder", targets: ["WorkspaceBuilder"]),
+        .library(name: "TmuxWorkspace", targets: ["TmuxWorkspace"]),
         .library(name: "LibTmuxMCP", targets: ["LibTmuxMCP"]),
         .executable(name: "libtmux-mcp", targets: ["libtmux-mcp"]),
     ],
@@ -46,7 +46,7 @@ let package = Package(
             exclude: ["README.md"]
         ),
         .target(
-            name: "WorkspaceBuilder",
+            name: "TmuxWorkspace",
             dependencies: [
                 "LibTmux",
                 .product(
@@ -90,8 +90,8 @@ let package = Package(
             dependencies: ["LibTmux", "TmuxFixture"]
         ),
         .testTarget(
-            name: "WorkspaceBuilderTests",
-            dependencies: ["WorkspaceBuilder", "LibTmux", "TmuxFixture"],
+            name: "TmuxWorkspaceTests",
+            dependencies: ["TmuxWorkspace", "LibTmux", "TmuxFixture"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(

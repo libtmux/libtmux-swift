@@ -6,7 +6,7 @@
 
 import Foundation
 import LibTmux
-import WorkspaceBuilder
+import TmuxWorkspace
 
 func describeAWorkspaceInSwift() -> Workspace {
     Workspace(

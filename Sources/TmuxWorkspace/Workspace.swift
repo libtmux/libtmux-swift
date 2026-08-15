@@ -102,7 +102,7 @@ public struct WindowPlan: Sendable, Hashable, Codable {
 /// literal here means — type it and press enter. The long form, `{cmd:,
 /// enter:}`, exists to leave a command sitting in the pane unrun, which is why
 /// `enter` is modelled rather than dropped.
-public struct ShellCommand: Sendable, Hashable, Codable, ExpressibleByStringLiteral {
+public struct TmuxShellCommand: Sendable, Hashable, Codable, ExpressibleByStringLiteral {
     /// The line to type into the pane.
     public let command: String
     /// Whether to press enter after typing it. False leaves the line sitting
@@ -157,11 +157,11 @@ public struct ShellCommand: Sendable, Hashable, Codable, ExpressibleByStringLite
 /// that spelling decodes too.
 public struct PanePlan: Sendable, Hashable, Codable {
     /// What to run in the pane, in order, once it exists.
-    public let shellCommands: [ShellCommand]
+    public let shellCommands: [TmuxShellCommand]
     /// Where this pane starts, overriding the window's and the workspace's.
     public let startDirectory: String?
 
-    public init(shellCommands: [ShellCommand] = [], startDirectory: String? = nil) {
+    public init(shellCommands: [TmuxShellCommand] = [], startDirectory: String? = nil) {
         self.shellCommands = shellCommands
         self.startDirectory = startDirectory
     }
@@ -180,7 +180,7 @@ public struct PanePlan: Sendable, Hashable, Codable {
                 return
             }
             if let command = try? single.decode(String.self) {
-                self.init(shellCommands: [ShellCommand(command)])
+                self.init(shellCommands: [TmuxShellCommand(command)])
                 return
             }
         }
@@ -194,13 +194,13 @@ public struct PanePlan: Sendable, Hashable, Codable {
         // Elements are optional because a list is allowed to hold a null
         // where a command would go, which means there is no command there.
         if let list = try? container.decodeIfPresent(
-            [ShellCommand?].self,
+            [TmuxShellCommand?].self,
             forKey: .shellCommands
         ) {
             self.init(shellCommands: list.compactMap { $0 }, startDirectory: directory)
         } else {
             let single = try container.decodeIfPresent(
-                ShellCommand.self,
+                TmuxShellCommand.self,
                 forKey: .shellCommands
             )
             self.init(

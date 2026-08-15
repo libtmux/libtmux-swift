@@ -3,7 +3,7 @@
     import Foundation
     import Testing
 
-    @testable import WorkspaceBuilder
+    @testable import TmuxWorkspace
 
     /// tmuxp ships each example twice, as YAML and as JSON. Decoding both and
     /// comparing tests the two readers against each other over files this project

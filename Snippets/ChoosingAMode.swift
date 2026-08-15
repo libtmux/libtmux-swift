@@ -1,7 +1,7 @@
 // The examples in <doc:Modes>, and the mode section of the README.
 
 import LibTmux
-import WorkspaceBuilder
+import TmuxWorkspace
 
 func direct(_ server: Server) async throws {
     let sessions = try await server.sessions()

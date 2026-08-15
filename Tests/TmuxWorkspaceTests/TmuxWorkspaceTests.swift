@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@testable import WorkspaceBuilder
+@testable import TmuxWorkspace
 
 @Suite("workspace decoding", .timeLimit(.minutes(1)))
 struct WorkspaceDecodingTests {
@@ -174,7 +174,7 @@ struct WorkspaceBuildingTests {
                 sessionName: "unrun",
                 windows: [
                     WindowPlan(panes: [
-                        PanePlan(shellCommands: [ShellCommand("sleep 43", enter: false)])
+                        PanePlan(shellCommands: [TmuxShellCommand("sleep 43", enter: false)])
                     ])
                 ]
             )

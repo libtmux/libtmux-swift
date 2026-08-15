@@ -1,14 +1,21 @@
-# `WorkspaceBuilder`
+# `TmuxWorkspace`
 
 Builds a whole tmux session from a [tmuxp][] workspace — written in Swift, read
 from JSON, or read from YAML.
 
+The module is `TmuxWorkspace` and the thing that does the building is
+`WorkspaceBuilder`. Swift has no namespaces worth the name: importing a module
+puts its types straight into your file, so the module carries the prefix that
+says which `Workspace` this is, and the type keeps the verb. The rest of the
+family names it the same way — [`tmux-workspace`][rs], [`@libtmux/workspace`][ts],
+[`libtmux-workspace`][java], [`LibTmux.Workspace`][cs].
+
 ```swift
-.product(name: "WorkspaceBuilder", package: "libtmux-swift")
+.product(name: "TmuxWorkspace", package: "libtmux-swift")
 ```
 
 ```swift
-import WorkspaceBuilder
+import TmuxWorkspace
 
 let workspace = Workspace(
     sessionName: "work",
@@ -53,7 +60,11 @@ modelled, and a file using them builds its windows and ignores the rest.
 
 The suite decodes tmuxp's own example files both ways and compares them, which
 tests the two readers against each other over files this project did not write.
-See [the fixtures' notice](../../Tests/WorkspaceBuilderTests/Fixtures/NOTICE.md).
+See [the fixtures' notice](../../Tests/TmuxWorkspaceTests/Fixtures/NOTICE.md).
 
 [tmuxp]: https://tmuxp.git-pull.com/
+[rs]: https://github.com/libtmux/libtmux-rs
+[ts]: https://github.com/libtmux/libtmux-ts
+[java]: https://github.com/libtmux/libtmux-java
+[cs]: https://github.com/libtmux/libtmux-csharp
 [Yams]: https://github.com/jpsim/Yams

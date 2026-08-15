@@ -54,14 +54,14 @@ unless you ask.
 | Product | Source | What it is for | Depends on |
 | --- | --- | --- | --- |
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
-| **[`WorkspaceBuilder`][p-ws]** | [`Sources/WorkspaceBuilder/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
+| **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
 | **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
 
 Each has its own README with an install snippet, a usage example, and what it
 does and does not cover.
 
-`WorkspaceBuilder` and `LibTmuxMCP` are both written against `Server` and
+`TmuxWorkspace` and `LibTmuxMCP` are both written against `Server` and
 neither mentions a mode, which is how the mode switch below is kept honest.
 
 ## Install
@@ -297,7 +297,7 @@ try await server.connected(attachingTo: "work") { server, events in
 
 ## Workspaces, from a file or from Swift
 
-`WorkspaceBuilder` builds a whole session in one go, from a [tmuxp][] workspace.
+`TmuxWorkspace` builds a whole session in one go, from a [tmuxp][] workspace.
 Written in Swift, it is ordinary values:
 
 ```swift
@@ -424,7 +424,7 @@ What that means concretely:
   number only tells you which alpha you have.
 - **Pin an exact version**, for the reasons under [Install](#install).
 - **`LibTmux` is the part to build on.** It is the largest, the most exercised,
-  and the closest to settled. `WorkspaceBuilder` and `LibTmuxMCP` are newer and
+  and the closest to settled. `TmuxWorkspace` and `LibTmuxMCP` are newer and
   thinner, and are likelier to move.
 - **The tmux behaviour is the tested part.** Compatibility with 3.2a through
   3.7b is checked in CI against each release built from its own tag, so what
@@ -530,7 +530,7 @@ rather than an omission.
 ## Related projects
 
 - [libtmux][] — the Python library this is a port of
-- [tmuxp][] — tmux session manager, and the workspace format `WorkspaceBuilder`
+- [tmuxp][] — tmux session manager, and the workspace format `TmuxWorkspace`
   reads
 - [libtmux-mcp][py-mcp] — the Python MCP server for tmux
 - [The Tao of tmux][tao] — the book
@@ -551,7 +551,7 @@ MIT. See [LICENSE](LICENSE).
 [benchmarks]: Benchmarks/
 [parity]: Parity/
 [p-lib]: Sources/LibTmux/
-[p-ws]: Sources/WorkspaceBuilder/
+[p-ws]: Sources/TmuxWorkspace/
 [p-mcp]: Sources/LibTmuxMCP/
 [p-server]: Sources/libtmux-mcp/
 [py-mcp]: https://libtmux-mcp.git-pull.com

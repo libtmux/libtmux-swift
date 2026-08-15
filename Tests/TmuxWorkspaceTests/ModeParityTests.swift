@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@testable import WorkspaceBuilder
+@testable import TmuxWorkspace
 
 /// The mode switch has to read the same from a consumer as it does from the
 /// library, and produce the same workspace either way.

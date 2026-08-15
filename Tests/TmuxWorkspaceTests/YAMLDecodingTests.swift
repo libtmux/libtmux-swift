@@ -3,7 +3,7 @@
     import Foundation
     import Testing
 
-    @testable import WorkspaceBuilder
+    @testable import TmuxWorkspace
 
     /// The YAML reader lives behind the `YAMLWorkspaces` trait, so its tests do
     /// too. Keeping them in their own file makes the boundary a file boundary
@@ -74,7 +74,7 @@
                     """
             )
             let pane = try #require(workspace.windows.first?.panes.first)
-            #expect(pane.shellCommands == ["echo one", ShellCommand("echo two", enter: false)])
+            #expect(pane.shellCommands == ["echo one", TmuxShellCommand("echo two", enter: false)])
         }
     }
 
