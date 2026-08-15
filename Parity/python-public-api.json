@@ -82,14 +82,14 @@
       "formatFields": [],
       "kind": "re-export",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.Server",
       "sourceFile": "src/libtmux/__init__.py",
@@ -103,14 +103,14 @@
       "formatFields": [],
       "kind": "re-export",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
         "tests/legacy_api/test_common.py::test_session_check_name",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server_list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attach_session_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_pane_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_kill_session_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.Session",
       "sourceFile": "src/libtmux/__init__.py",
@@ -124,14 +124,14 @@
       "formatFields": [],
       "kind": "re-export",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_window_malformed_native_filter_is_empty",
         "tests/legacy_api/test_pane.py::test_split_window_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__windows_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error",
-        "tests/legacy_api/test_tmuxobject.py::test_window_find_where_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.Window",
       "sourceFile": "src/libtmux/__init__.py",
@@ -3974,14 +3974,14 @@
       "formatFields": [],
       "kind": "dataclass-field",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.client.Client.server",
       "sourceFile": "src/libtmux/client.py",
@@ -5567,14 +5567,14 @@
       "formatFields": [],
       "kind": "enum-member",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.constants.OptionScope.Server",
       "sourceFile": "src/libtmux/constants.py",
@@ -5589,14 +5589,14 @@
       "formatFields": [],
       "kind": "enum-member",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
         "tests/legacy_api/test_common.py::test_session_check_name",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server_list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attach_session_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_pane_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_kill_session_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.constants.OptionScope.Session",
       "sourceFile": "src/libtmux/constants.py",
@@ -5611,14 +5611,14 @@
       "formatFields": [],
       "kind": "enum-member",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_window_malformed_native_filter_is_empty",
         "tests/legacy_api/test_pane.py::test_split_window_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__windows_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error",
-        "tests/legacy_api/test_tmuxobject.py::test_window_find_where_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.constants.OptionScope.Window",
       "sourceFile": "src/libtmux/constants.py",
@@ -5848,14 +5848,14 @@
       "formatFields": [],
       "kind": "enum-member",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
         "tests/test/test_environment.py::test_environment_var_guard_cleanup_on_exception",
         "tests/test/test_temporary.py::test_temp_session_cleanup_on_exception",
         "tests/test/test_temporary.py::test_temp_window_cleanup_on_exception",
         "tests/test_control_mode.py::test_control_mode_cleanup",
-        "tests/test_hooks.py::test_show_hook_indexed_lookup",
-        "tests/test_pane.py::test_display_popup_close_existing"
+        "tests/test_hooks.py::test_show_hook_indexed_lookup"
       ],
       "qualifiedName": "libtmux.constants.ResizeAdjustmentDirection.Up",
       "sourceFile": "src/libtmux/constants.py",
@@ -10619,14 +10619,14 @@
       "formatFields": [],
       "kind": "dataclass-field",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.neo.Obj.server",
       "sourceFile": "src/libtmux/neo.py",
@@ -15318,14 +15318,14 @@
       "kind": "method",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup",
         "tests/_internal/test_query_list.py::test_get_default_with_broad_eq_is_returned",
         "tests/_internal/test_query_list.py::test_get_multiple_objects_exposes_ambiguity_data",
         "tests/legacy_api/test_common.py::test_get_libtmux_version",
         "tests/legacy_api/test_common.py::test_get_version_openbsd",
         "tests/legacy_api/test_common.py::test_get_version_too_low",
         "tests/legacy_api/test_pane.py::test_pane_get_raises_deprecated_error",
-        "tests/legacy_api/test_pane.py::test_pane_getitem_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_get_by_id_raises_deprecated_error"
+        "tests/legacy_api/test_pane.py::test_pane_getitem_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.pane.Pane.get",
       "signature": "(self, key: str, default: t.Any | None=None) -> t.Any",
@@ -16848,14 +16848,14 @@
       "formatFields": [],
       "kind": "dataclass-field",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.pane.Pane.server",
       "sourceFile": "src/libtmux/pane.py",
@@ -16870,14 +16870,14 @@
       "kind": "property",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
         "tests/legacy_api/test_common.py::test_session_check_name",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server_list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attach_session_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_pane_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_kill_session_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.pane.Pane.session",
       "signature": "(self) -> Session",
@@ -17680,14 +17680,14 @@
       "kind": "property",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_window_malformed_native_filter_is_empty",
         "tests/legacy_api/test_pane.py::test_split_window_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__windows_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error",
-        "tests/legacy_api/test_tmuxobject.py::test_window_find_where_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.pane.Pane.window",
       "signature": "(self) -> Window",
@@ -18360,14 +18360,14 @@
       "kind": "function",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.pytest_plugin.server",
       "signature": "(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, config_file: pathlib.Path) -> Server",
@@ -18382,14 +18382,14 @@
       "kind": "function",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
         "tests/legacy_api/test_common.py::test_session_check_name",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server_list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attach_session_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_pane_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_kill_session_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.pytest_plugin.session",
       "signature": "(request: pytest.FixtureRequest, session_params: dict[str, t.Any], server: Server) -> Session",
@@ -18443,14 +18443,14 @@
       "formatFields": [],
       "kind": "module",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.server",
       "sourceFile": "src/libtmux/server.py",
@@ -18876,14 +18876,14 @@
       ],
       "kind": "class",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.server.Server",
       "signature": "(socket_name: str | None=None, socket_path: str | pathlib.Path | None=None, config_file: str | None=None, colors: int | None=None, on_init: t.Callable[[Server], None] | None=None, socket_name_factory: t.Callable[[], str] | None=None, tmux_bin: str | pathlib.Path | None=None, **kwargs: t.Any) -> None",
@@ -20467,14 +20467,14 @@
       "formatFields": [],
       "kind": "module",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
         "tests/legacy_api/test_common.py::test_session_check_name",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server_list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attach_session_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_pane_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_kill_session_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.session",
       "sourceFile": "src/libtmux/session.py",
@@ -22568,14 +22568,14 @@
       ],
       "kind": "class",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
         "tests/legacy_api/test_common.py::test_session_check_name",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server_list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attach_session_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_pane_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_kill_session_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.session.Session",
       "signature": "(server: Server, active_window_index: str | None = None, alternate_saved_x: str | None = None, alternate_saved_y: str | None = None, bracket_paste_flag: str | None = None, buffer_name: str | None = None, buffer_sample: str | None = None, buffer_size: str | None = None, client_activity: str | None = None, client_cell_height: str | None = None, client_cell_width: str | None = None, client_control_mode: str | None = None, client_created: str | None = None, client_discarded: str | None = None, client_flags: str | None = None, client_height: str | None = None, client_key_table: str | None = None, client_last_session: str | None = None, client_mode_format: str | None = None, client_name: str | None = None, client_pid: str | None = None, client_prefix: str | None = None, client_readonly: str | None = None, client_session: str | None = None, client_termfeatures: str | None = None, client_termname: str | None = None, client_termtype: str | None = None, client_tty: str | None = None, client_uid: str | None = None, client_user: str | None = None, client_utf8: str | None = None, client_width: str | None = None, client_written: str | None = None, command_list_alias: str | None = None, command_list_name: str | None = None, command_list_usage: str | None = None, config_files: str | None = None, copy_cursor_line: str | None = None, copy_cursor_word: str | None = None, copy_cursor_x: str | None = None, copy_cursor_y: str | None = None, current_file: str | None = None, cursor_character: str | None = None, cursor_flag: str | None = None, cursor_x: str | None = None, cursor_y: str | None = None, history_bytes: str | None = None, history_limit: str | None = None, history_size: str | None = None, insert_flag: str | None = None, keypad_cursor_flag: str | None = None, keypad_flag: str | None = None, last_window_index: str | None = None, line: str | None = None, mouse_all_flag: str | None = None, mouse_any_flag: str | None = None, mouse_button_flag: str | None = None, mouse_sgr_flag: str | None = None, mouse_standard_flag: str | None = None, next_session_id: str | None = None, origin_flag: str | None = None, pane_active: str | None = None, pane_at_bottom: str | None = None, pane_at_left: str | None = None, pane_at_right: str | None = None, pane_at_top: str | None = None, pane_bg: str | None = None, pane_bottom: str | None = None, pane_current_command: str | None = None, pane_current_path: str | None = None, pane_dead: str | None = None, pane_dead_signal: str | None = None, pane_dead_status: str | None = None, pane_dead_time: str | None = None, pane_fg: str | None = None, pane_flags: str | None = None, pane_floating_flag: str | None = None, pane_format: str | None = None, pane_height: str | None = None, pane_id: str | None = None, pane_in_mode: str | None = None, pane_index: str | None = None, pane_input_off: str | None = None, pane_last: str | None = None, pane_left: str | None = None, pane_marked: str | None = None, pane_marked_set: str | None = None, pane_mode: str | None = None, pane_path: str | None = None, pane_pb_progress: str | None = None, pane_pb_state: str | None = None, pane_pid: str | None = None, pane_pipe: str | None = None, pane_pipe_pid: str | None = None, pane_right: str | None = None, pane_search_string: str | None = None, pane_start_command: str | None = None, pane_start_path: str | None = None, pane_synchronized: str | None = None, pane_tabs: str | None = None, pane_title: str | None = None, pane_top: str | None = None, pane_tty: str | None = None, pane_width: str | None = None, pane_x: str | None = None, pane_y: str | None = None, pane_z: str | None = None, pane_zoomed_flag: str | None = None, pid: str | None = None, scroll_position: str | None = None, scroll_region_lower: str | None = None, scroll_region_upper: str | None = None, search_match: str | None = None, selection_end_x: str | None = None, selection_end_y: str | None = None, selection_start_x: str | None = None, selection_start_y: str | None = None, session_activity: str | None = None, session_alerts: str | None = None, session_attached: str | None = None, session_attached_list: str | None = None, session_created: str | None = None, session_format: str | None = None, session_group: str | None = None, session_group_attached: str | None = None, session_group_attached_list: str | None = None, session_group_list: str | None = None, session_group_many_attached: str | None = None, session_group_size: str | None = None, session_grouped: str | None = None, session_id: str | None = None, session_last_attached: str | None = None, session_many_attached: str | None = None, session_marked: str | None = None, session_name: str | None = None, session_path: str | None = None, session_stack: str | None = None, session_windows: str | None = None, socket_path: str | None = None, start_time: str | None = None, synchronized_output_flag: str | None = None, uid: str | None = None, user: str | None = None, version: str | None = None, window_active: str | None = None, window_active_clients: str | None = None, window_active_clients_list: str | None = None, window_active_sessions: str | None = None, window_active_sessions_list: str | None = None, window_activity: str | None = None, window_activity_flag: str | None = None, window_bell_flag: str | None = None, window_bigger: str | None = None, window_cell_height: str | None = None, window_cell_width: str | None = None, window_end_flag: str | None = None, window_flags: str | None = None, window_format: str | None = None, window_height: str | None = None, window_id: str | None = None, window_index: str | None = None, window_last_flag: str | None = None, window_layout: str | None = None, window_linked: str | None = None, window_linked_sessions: str | None = None, window_linked_sessions_list: str | None = None, window_marked_flag: str | None = None, window_name: str | None = None, window_offset_x: str | None = None, window_offset_y: str | None = None, window_panes: str | None = None, window_raw_flags: str | None = None, window_silence_flag: str | None = None, window_stack_index: str | None = None, window_start_flag: str | None = None, window_visible_layout: str | None = None, window_width: str | None = None, window_zoomed_flag: str | None = None, wrap_flag: str | None = None, default_option_scope: OptionScope | None = None, default_hook_scope: OptionScope | None = None) -> None",
@@ -23592,14 +23592,14 @@
       "kind": "method",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup",
         "tests/_internal/test_query_list.py::test_get_default_with_broad_eq_is_returned",
         "tests/_internal/test_query_list.py::test_get_multiple_objects_exposes_ambiguity_data",
         "tests/legacy_api/test_common.py::test_get_libtmux_version",
         "tests/legacy_api/test_common.py::test_get_version_openbsd",
         "tests/legacy_api/test_common.py::test_get_version_too_low",
         "tests/legacy_api/test_pane.py::test_pane_get_raises_deprecated_error",
-        "tests/legacy_api/test_pane.py::test_pane_getitem_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_get_by_id_raises_deprecated_error"
+        "tests/legacy_api/test_pane.py::test_pane_getitem_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.session.Session.get",
       "signature": "(self, key: str, default: t.Any | None=None) -> t.Any",
@@ -25153,14 +25153,14 @@
       "formatFields": [],
       "kind": "dataclass-field",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.session.Session.server",
       "sourceFile": "src/libtmux/session.py",
@@ -26467,14 +26467,14 @@
       "formatFields": [],
       "kind": "module",
       "pythonTestNodes": [
-        "tests/_internal/test_query_list.py::test_filter",
-        "tests/_internal/test_query_list.py::test_get_default_with_broad_eq_is_returned",
-        "tests/_internal/test_query_list.py::test_get_multiple_objects_exposes_ambiguity_data",
-        "tests/_internal/test_query_list.py::test_object_does_not_exist_exposes_query",
-        "tests/_internal/test_query_list.py::test_query_exception_annotations_resolve",
-        "tests/legacy_api/test_common.py::test_allows_master_version",
-        "tests/legacy_api/test_common.py::test_allows_next_version",
-        "tests/legacy_api/test_common.py::test_error_version_less_1_7"
+        "Scripts/parity/test_python_parity_authority.py::test_list_cancellation_propagates",
+        "Scripts/parity/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup",
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
+        "Scripts/parity/test_python_parity_authority.py::test_window_malformed_native_filter_is_empty",
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation",
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_malformed_predicate_leniency_changes_with_accessor_outcome",
+        "tests/_internal/test_query_list.py::test_filter"
       ],
       "qualifiedName": "libtmux.test",
       "sourceFile": "src/libtmux/test/__init__.py",
@@ -26817,14 +26817,14 @@
       "formatFields": [],
       "kind": "module",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_window_malformed_native_filter_is_empty",
         "tests/legacy_api/test_pane.py::test_split_window_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__windows_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error",
-        "tests/legacy_api/test_tmuxobject.py::test_window_find_where_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.window",
       "sourceFile": "src/libtmux/window.py",
@@ -28951,14 +28951,14 @@
       ],
       "kind": "class",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_window_malformed_native_filter_is_empty",
         "tests/legacy_api/test_pane.py::test_split_window_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_session__windows_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error",
-        "tests/legacy_api/test_tmuxobject.py::test_window_find_where_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_session_list_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.window.Window",
       "signature": "(server: Server, active_window_index: str | None = None, alternate_saved_x: str | None = None, alternate_saved_y: str | None = None, bracket_paste_flag: str | None = None, buffer_name: str | None = None, buffer_sample: str | None = None, buffer_size: str | None = None, client_activity: str | None = None, client_cell_height: str | None = None, client_cell_width: str | None = None, client_control_mode: str | None = None, client_created: str | None = None, client_discarded: str | None = None, client_flags: str | None = None, client_height: str | None = None, client_key_table: str | None = None, client_last_session: str | None = None, client_mode_format: str | None = None, client_name: str | None = None, client_pid: str | None = None, client_prefix: str | None = None, client_readonly: str | None = None, client_session: str | None = None, client_termfeatures: str | None = None, client_termname: str | None = None, client_termtype: str | None = None, client_tty: str | None = None, client_uid: str | None = None, client_user: str | None = None, client_utf8: str | None = None, client_width: str | None = None, client_written: str | None = None, command_list_alias: str | None = None, command_list_name: str | None = None, command_list_usage: str | None = None, config_files: str | None = None, copy_cursor_line: str | None = None, copy_cursor_word: str | None = None, copy_cursor_x: str | None = None, copy_cursor_y: str | None = None, current_file: str | None = None, cursor_character: str | None = None, cursor_flag: str | None = None, cursor_x: str | None = None, cursor_y: str | None = None, history_bytes: str | None = None, history_limit: str | None = None, history_size: str | None = None, insert_flag: str | None = None, keypad_cursor_flag: str | None = None, keypad_flag: str | None = None, last_window_index: str | None = None, line: str | None = None, mouse_all_flag: str | None = None, mouse_any_flag: str | None = None, mouse_button_flag: str | None = None, mouse_sgr_flag: str | None = None, mouse_standard_flag: str | None = None, next_session_id: str | None = None, origin_flag: str | None = None, pane_active: str | None = None, pane_at_bottom: str | None = None, pane_at_left: str | None = None, pane_at_right: str | None = None, pane_at_top: str | None = None, pane_bg: str | None = None, pane_bottom: str | None = None, pane_current_command: str | None = None, pane_current_path: str | None = None, pane_dead: str | None = None, pane_dead_signal: str | None = None, pane_dead_status: str | None = None, pane_dead_time: str | None = None, pane_fg: str | None = None, pane_flags: str | None = None, pane_floating_flag: str | None = None, pane_format: str | None = None, pane_height: str | None = None, pane_id: str | None = None, pane_in_mode: str | None = None, pane_index: str | None = None, pane_input_off: str | None = None, pane_last: str | None = None, pane_left: str | None = None, pane_marked: str | None = None, pane_marked_set: str | None = None, pane_mode: str | None = None, pane_path: str | None = None, pane_pb_progress: str | None = None, pane_pb_state: str | None = None, pane_pid: str | None = None, pane_pipe: str | None = None, pane_pipe_pid: str | None = None, pane_right: str | None = None, pane_search_string: str | None = None, pane_start_command: str | None = None, pane_start_path: str | None = None, pane_synchronized: str | None = None, pane_tabs: str | None = None, pane_title: str | None = None, pane_top: str | None = None, pane_tty: str | None = None, pane_width: str | None = None, pane_x: str | None = None, pane_y: str | None = None, pane_z: str | None = None, pane_zoomed_flag: str | None = None, pid: str | None = None, scroll_position: str | None = None, scroll_region_lower: str | None = None, scroll_region_upper: str | None = None, search_match: str | None = None, selection_end_x: str | None = None, selection_end_y: str | None = None, selection_start_x: str | None = None, selection_start_y: str | None = None, session_activity: str | None = None, session_alerts: str | None = None, session_attached: str | None = None, session_attached_list: str | None = None, session_created: str | None = None, session_format: str | None = None, session_group: str | None = None, session_group_attached: str | None = None, session_group_attached_list: str | None = None, session_group_list: str | None = None, session_group_many_attached: str | None = None, session_group_size: str | None = None, session_grouped: str | None = None, session_id: str | None = None, session_last_attached: str | None = None, session_many_attached: str | None = None, session_marked: str | None = None, session_name: str | None = None, session_path: str | None = None, session_stack: str | None = None, session_windows: str | None = None, socket_path: str | None = None, start_time: str | None = None, synchronized_output_flag: str | None = None, uid: str | None = None, user: str | None = None, version: str | None = None, window_active: str | None = None, window_active_clients: str | None = None, window_active_clients_list: str | None = None, window_active_sessions: str | None = None, window_active_sessions_list: str | None = None, window_activity: str | None = None, window_activity_flag: str | None = None, window_bell_flag: str | None = None, window_bigger: str | None = None, window_cell_height: str | None = None, window_cell_width: str | None = None, window_end_flag: str | None = None, window_flags: str | None = None, window_format: str | None = None, window_height: str | None = None, window_id: str | None = None, window_index: str | None = None, window_last_flag: str | None = None, window_layout: str | None = None, window_linked: str | None = None, window_linked_sessions: str | None = None, window_linked_sessions_list: str | None = None, window_marked_flag: str | None = None, window_name: str | None = None, window_offset_x: str | None = None, window_offset_y: str | None = None, window_panes: str | None = None, window_raw_flags: str | None = None, window_silence_flag: str | None = None, window_stack_index: str | None = None, window_start_flag: str | None = None, window_visible_layout: str | None = None, window_width: str | None = None, window_zoomed_flag: str | None = None, wrap_flag: str | None = None, default_option_scope: OptionScope | None = OptionScope.Window, default_hook_scope: OptionScope | None = OptionScope.Window) -> None",
@@ -29896,14 +29896,14 @@
       "kind": "method",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup",
         "tests/_internal/test_query_list.py::test_get_default_with_broad_eq_is_returned",
         "tests/_internal/test_query_list.py::test_get_multiple_objects_exposes_ambiguity_data",
         "tests/legacy_api/test_common.py::test_get_libtmux_version",
         "tests/legacy_api/test_common.py::test_get_version_openbsd",
         "tests/legacy_api/test_common.py::test_get_version_too_low",
         "tests/legacy_api/test_pane.py::test_pane_get_raises_deprecated_error",
-        "tests/legacy_api/test_pane.py::test_pane_getitem_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_get_by_id_raises_deprecated_error"
+        "tests/legacy_api/test_pane.py::test_pane_getitem_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.window.Window.get",
       "signature": "(self, key: str, default: t.Any | None=None) -> t.Any",
@@ -31611,14 +31611,14 @@
       "formatFields": [],
       "kind": "dataclass-field",
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_server_malformed_native_filter_is_empty",
         "tests/legacy_api/test_server.py::test_kill_server_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_panes_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__list_windows_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__update_panes_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error",
-        "tests/legacy_api/test_server.py::test_server_children_raises_deprecated_error"
+        "tests/legacy_api/test_server.py::test_server__update_windows_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.window.Window.server",
       "sourceFile": "src/libtmux/window.py",
@@ -31633,14 +31633,14 @@
       "kind": "property",
       "overloadSignatures": [],
       "pythonTestNodes": [
+        "Scripts/parity/test_python_parity_authority.py::test_session_malformed_native_filter_is_empty",
         "tests/legacy_api/test_common.py::test_session_check_name",
         "tests/legacy_api/test_server.py::test_server__list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server__sessions_raises_deprecated_error",
         "tests/legacy_api/test_server.py::test_server_list_sessions_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attach_session_raises_deprecated_error",
         "tests/legacy_api/test_session.py::test_attached_pane_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error",
-        "tests/legacy_api/test_session.py::test_kill_session_raises_deprecated_error"
+        "tests/legacy_api/test_session.py::test_attached_window_raises_deprecated_error"
       ],
       "qualifiedName": "libtmux.window.Window.session",
       "signature": "(self) -> Session",
@@ -33035,10 +33035,10 @@
     }
   ],
   "pythonSource": {
-    "commit": "46a61d4df30829a7a3ca1848b3748bbf5060fbbd",
-    "describe": "v0.62.0-158-g46a61d4df",
+    "commit": "988b02a74a027e1959525a6d354096f455050311",
+    "describe": "v0.62.0-60-g988b02a74",
     "remote": "git+ssh://git@github.com/tmux-python/libtmux.git"
   },
   "schemaVersion": 1,
-  "sourceFingerprint": "sha256:61f820ea650eafe6bd6a1932bf6b15ae9d2260ed25531d3812fd621611d9f6d6"
+  "sourceFingerprint": "sha256:c7371b6a0e967918e240c2dbbb8fc16ec7104514d4eb09746cdc5ce532ca0394"
 }

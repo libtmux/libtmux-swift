@@ -107,7 +107,7 @@
         "libtmux.server.Server.sessions"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup"
+        "Scripts/parity/test_python_parity_authority.py::test_query_get_no_match_raises_from_real_lookup"
       ],
       "query": {
         "name": "pear"
@@ -758,10 +758,10 @@
     }
   ],
   "pythonSource": {
-    "commit": "46a61d4df30829a7a3ca1848b3748bbf5060fbbd",
-    "describe": "v0.62.0-158-g46a61d4df",
+    "commit": "988b02a74a027e1959525a6d354096f455050311",
+    "describe": "v0.62.0-60-g988b02a74",
     "remote": "git+ssh://git@github.com/tmux-python/libtmux.git"
   },
   "schemaVersion": 1,
-  "sourceFingerprint": "sha256:61f820ea650eafe6bd6a1932bf6b15ae9d2260ed25531d3812fd621611d9f6d6"
+  "sourceFingerprint": "sha256:c7371b6a0e967918e240c2dbbb8fc16ec7104514d4eb09746cdc5ce532ca0394"
 }

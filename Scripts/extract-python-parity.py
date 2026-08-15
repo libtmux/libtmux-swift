@@ -42,6 +42,14 @@ DEFAULT_TMUX_VERSION = "3.2a"
 SOURCE_INPUTS = "source-inputs.json"
 #: The Python package these manifests describe.
 PACKAGE_NAME = "libtmux"
+#: This package's own root, and the parity authorities it keeps.
+PARITY_HOME = pathlib.Path(__file__).resolve().parents[1]
+AUTHORITY_HOME = PARITY_HOME / "Scripts" / "parity"
+#: The executable observation every inherited behaviour contract cites.
+AUTHORITY_NODE = (
+    "Scripts/parity/test_python_parity_behavior_contracts.py::"
+    "test_inherited_behavior_contract_matches_observation"
+)
 
 LIST_ERROR_FAMILY_IDS: tuple[str, ...] = (
     "list.server.sessions.any-error-empty",
@@ -583,26 +591,58 @@ def _deprecations(node: ast.AST) -> list[Json]:
 def _collect_test_nodes(repo_root: pathlib.Path) -> set[str]:
     """Collect stable function-level pytest node IDs from syntax.
 
+    Reads the libtmux checkout's own suite and this port's parity authorities
+    together. The authorities are the executable evidence a contract cites, and
+    they live here rather than upstream, so a contract would otherwise cite a
+    node no tree being read contains.
+
     Parameters
     ----------
     repo_root : pathlib.Path
-        Repo root used by this helper.
+        Root of the libtmux checkout being described.
 
     Returns
     -------
     set[str]
-        Result produced by _collect_test_nodes.
+        Node IDs, each relative to the tree that holds it.
 
     Examples
     --------
-    >>> nodes = _collect_test_nodes(pathlib.Path("."))
-    >>> "tests/test_server.py::test_new_session" in nodes
+    >>> nodes = _collect_test_nodes(pathlib.Path("/nonexistent"))
+    >>> AUTHORITY_NODE in nodes
     True
     """
     nodes: set[str] = set()
-    for path in sorted((repo_root / "tests").rglob("*.py")):
+    roots = [(repo_root, repo_root / "tests"), (PARITY_HOME, AUTHORITY_HOME)]
+    for base, directory in roots:
+        nodes |= _nodes_under(base, directory)
+    return nodes
+
+
+def _nodes_under(base: pathlib.Path, directory: pathlib.Path) -> set[str]:
+    """Collect pytest node IDs from one directory, named relative to a base.
+
+    Parameters
+    ----------
+    base : pathlib.Path
+        Root that node IDs are spelled relative to.
+    directory : pathlib.Path
+        Directory to walk.
+
+    Returns
+    -------
+    set[str]
+        Node IDs found beneath `directory`.
+
+    Examples
+    --------
+    >>> _nodes_under(pathlib.Path("/nonexistent"), pathlib.Path("/nonexistent"))
+    set()
+    """
+    nodes: set[str] = set()
+    for path in sorted(directory.rglob("*.py")):
         tree = ast.parse(path.read_bytes(), filename=str(path))
-        relative = _relative(repo_root, path)
+        relative = _relative(base, path)
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if node.name.startswith("test_"):
@@ -2692,10 +2732,7 @@ def validate_contracts(
                 f"{contract['behaviorFamilyId']}"
             )
             raise ValueError(msg)
-        behavior_authority_node = (
-            "tests/test_python_parity_behavior_contracts.py::"
-            "test_inherited_behavior_contract_matches_observation"
-        )
+        behavior_authority_node = AUTHORITY_NODE
         if (
             id(contract) in behavior_entry_ids
             and inheritance == "inherited"

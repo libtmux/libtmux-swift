@@ -36,7 +36,7 @@
         "libtmux.neo.Obj"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": [
@@ -89,7 +89,7 @@
         "libtmux.server.Server.kill"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": {
@@ -107,7 +107,7 @@
         "libtmux.server.Server.cmd"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_authority.py::test_list_cancellation_propagates"
+        "Scripts/parity/test_python_parity_authority.py::test_list_cancellation_propagates"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": [
@@ -133,7 +133,7 @@
         "libtmux.server.Server.is_alive"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -168,7 +168,7 @@
         "libtmux.server.Server.raise_if_dead"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": {
@@ -206,7 +206,7 @@
         "libtmux.server.Server.search_sessions"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": {
@@ -241,7 +241,7 @@
         "libtmux.session.Session.search_windows"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": {
@@ -276,7 +276,7 @@
         "libtmux.window.Window.search_panes"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": {
@@ -333,7 +333,7 @@
         "libtmux.server.Server.clients"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -380,7 +380,7 @@
         "libtmux.server.Server.panes"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -427,7 +427,7 @@
         "libtmux.server.Server.search_panes"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -474,7 +474,7 @@
         "libtmux.server.Server.search_sessions"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -521,7 +521,7 @@
         "libtmux.server.Server.search_windows"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -560,7 +560,7 @@
         "libtmux.server.Server.sessions"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -607,7 +607,7 @@
         "libtmux.server.Server.windows"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -646,7 +646,7 @@
         "libtmux.session.Session.active_pane"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -680,7 +680,7 @@
         "libtmux.session.Session.active_window"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -713,7 +713,7 @@
         "libtmux.session.Session.panes"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -746,7 +746,7 @@
         "libtmux.session.Session.search_panes"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -779,7 +779,7 @@
         "libtmux.session.Session.search_windows"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -812,7 +812,7 @@
         "libtmux.session.Session.windows"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -887,7 +887,7 @@
         "libtmux.window.Window.linked_sessions"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -920,7 +920,7 @@
         "libtmux.window.Window.panes"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -953,7 +953,7 @@
         "libtmux.window.Window.search_panes"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -977,7 +977,7 @@
         "libtmux.Server"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "consolidated",
       "versionLanes": {
@@ -1012,7 +1012,7 @@
         "libtmux.client.Client.refresh"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1047,7 +1047,7 @@
         "libtmux.pane.Pane.refresh"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1082,7 +1082,7 @@
         "libtmux.session.Session.refresh"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1113,7 +1113,7 @@
         "libtmux.pane.Pane.refresh"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1148,7 +1148,7 @@
         "libtmux.window.Window.refresh"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1211,7 +1211,7 @@
         "libtmux.common.EnvironmentMixin"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "consolidated",
       "versionLanes": {
@@ -1262,7 +1262,7 @@
         "libtmux.hooks.HooksMixin"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "consolidated",
       "versionLanes": {
@@ -1322,7 +1322,7 @@
         "libtmux.options.OptionsMixin"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "consolidated",
       "versionLanes": {
@@ -1363,7 +1363,7 @@
         "libtmux.options.OptionsMixin.show_options"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": {
@@ -1396,7 +1396,7 @@
         "libtmux.common.tmux_cmd"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "adapted",
       "versionLanes": {
@@ -1427,7 +1427,7 @@
         "libtmux.common.raise_if_stderr"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1465,7 +1465,7 @@
         "libtmux.common.tmux_cmd"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1503,7 +1503,7 @@
         "libtmux.server.Server.has_session"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": {
@@ -1527,7 +1527,7 @@
         "libtmux.common.get_version_str"
       ],
       "pythonTestNodes": [
-        "tests/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
+        "Scripts/parity/test_python_parity_behavior_contracts.py::test_inherited_behavior_contract_matches_observation"
       ],
       "swiftAdaptation": "direct",
       "versionLanes": [
@@ -1559,10 +1559,10 @@
     }
   ],
   "pythonSource": {
-    "commit": "46a61d4df30829a7a3ca1848b3748bbf5060fbbd",
-    "describe": "v0.62.0-158-g46a61d4df",
+    "commit": "988b02a74a027e1959525a6d354096f455050311",
+    "describe": "v0.62.0-60-g988b02a74",
     "remote": "git+ssh://git@github.com/tmux-python/libtmux.git"
   },
   "schemaVersion": 1,
-  "sourceFingerprint": "sha256:61f820ea650eafe6bd6a1932bf6b15ae9d2260ed25531d3812fd621611d9f6d6"
+  "sourceFingerprint": "sha256:c7371b6a0e967918e240c2dbbb8fc16ec7104514d4eb09746cdc5ce532ca0394"
 }
