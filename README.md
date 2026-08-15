@@ -20,6 +20,30 @@ what it throws, and the mutable part — the process boundary, the live
 connection — sits behind an actor the value shares. The package builds under
 Swift 6 language mode with complete strict concurrency and no unsafe flags.
 
+## Project status
+
+**Alpha.** The library works and its suite runs against eight tmux releases on
+every push, but nothing is tagged, the API has had no outside use, and names
+are still moving. Expect to update code when you update the package.
+
+What that means concretely:
+
+- **The public API can change in any release**, with no deprecation first.
+  Semantic versioning starts saying something at `0.1.0`; until then a version
+  number only tells you which alpha you have.
+- **Pin an exact version**, for the reasons under [Adding it to a
+  project](#adding-it-to-a-project).
+- **`LibTmux` is the part to build on.** It is the largest, the most exercised,
+  and the closest to settled. `WorkspaceBuilder` and `LibTmuxMCP` are newer and
+  thinner, and are likelier to move.
+- **The tmux behaviour is the tested part.** Compatibility with 3.2a through
+  3.7b is checked in CI against each release built from its own tag, so what
+  the library claims about tmux is evidence rather than intent. The Swift
+  surface around it is what has not settled.
+
+Useful now for a tool you control and can update. Not yet something to put
+under a dependency you do not.
+
 ## Requirements
 
 | | |
