@@ -1,10 +1,7 @@
-# LibTmux
+# libtmux for Swift
 
-Drive tmux from Swift.
-
-You address a server, ask it what exists, and send it commands. Everything that
-comes back is a value — a `Session` you hold is what the server looked like when
-you asked, not a live handle that changes under you. Ask again for a newer view.
+Drive tmux from Swift. A port of [libtmux][] for Python, in the same family of
+ports and holding to what that library established about tmux.
 
 ```swift
 import LibTmux
@@ -15,48 +12,56 @@ for session in try await server.sessions() {
 }
 ```
 
-Every type that crosses your API is `Sendable` and `Codable`, every call states
-what it throws, and the mutable part — the process boundary, the live
-connection — sits behind an actor the value shares. The package builds under
-Swift 6 language mode with complete strict concurrency and no unsafe flags.
+You address a server, ask it what exists, and send it commands. Everything that
+comes back is a value — a `Session` you hold is what the server looked like when
+you asked, not a live handle that changes under you. Ask again for a newer view.
 
-## Project status
+> [!WARNING]
+> **Alpha.** The API can change in any release, with no deprecation first.
+> Pin an exact version. See [Project status](#project-status).
 
-**Alpha.** The library works and its suite runs against eight tmux releases on
-every push, but nothing is tagged, the API has had no outside use, and names
-are still moving. Expect to update code when you update the package.
+**Contents** — [Is this for you?](#is-this-for-you) ·
+[Products](#products) · [Install](#install) · [Asking](#ask-what-is-there) ·
+[Changing](#change-what-is-there) · [Filtering](#filters-that-travel) ·
+[Modes](#one-switch-changes-how-work-reaches-tmux) ·
+[Workspaces](#workspaces-from-a-file-or-from-swift) ·
+[MCP](#tmux-as-mcp-tools) · [Status](#project-status) ·
+[Docs](#documentation) · [Tests](#tests)
 
-What that means concretely:
+## Is this for you?
 
-- **The public API can change in any release**, with no deprecation first.
-  Semantic versioning starts saying something at `0.1.0`; until then a version
-  number only tells you which alpha you have.
-- **Pin an exact version**, for the reasons under [Adding it to a
-  project](#adding-it-to-a-project).
-- **`LibTmux` is the part to build on.** It is the largest, the most exercised,
-  and the closest to settled. `WorkspaceBuilder` and `LibTmuxMCP` are newer and
-  thinner, and are likelier to move.
-- **The tmux behaviour is the tested part.** Compatibility with 3.2a through
-  3.7b is checked in CI against each release built from its own tag, so what
-  the library claims about tmux is evidence rather than intent. The Swift
-  surface around it is what has not settled.
+**Yes, if** you are writing a tool that drives tmux — a session manager, a test
+harness, a dashboard, an agent that needs somewhere to run things — and you want
+tmux's own vocabulary rather than a wrapper around shelling out.
 
-Useful now for a tool you control and can update. Not yet something to put
-under a dependency you do not.
+**Yes, if** you care that `Session`, `Window`, `Pane`, and `Client` are
+`Sendable` and `Codable` values, that every call states what it throws, and that
+the package builds under Swift 6 language mode with complete strict concurrency
+and no unsafe flags.
 
-## Requirements
+**Not yet, if** you need a stable API. Nothing is tagged and names are still
+moving — see [Project status](#project-status).
 
-| | |
-| --- | --- |
-| Swift | 6.2 or later |
-| Platforms | macOS 13+, Linux |
-| tmux | 3.2a through 3.7b |
-| Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
+**No, if** you want to render or emulate a terminal. This talks to tmux; it does
+not draw one.
 
-[swift-subprocess]: https://github.com/swiftlang/swift-subprocess
-[Yams]: https://github.com/jpsim/Yams
+## Products
 
-## Adding it to a project
+Four things ship from this one package. Take only what you need — the core has
+one dependency, and the YAML reader is behind a trait so you do not pay for it
+unless you ask.
+
+| Product | What it is for | Depends on |
+| --- | --- | --- |
+| **`LibTmux`** | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
+| **`WorkspaceBuilder`** | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
+| **`LibTmuxMCP`** | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
+| **`libtmux-mcp`** | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
+
+`WorkspaceBuilder` and `LibTmuxMCP` are both written against `Server` and
+neither mentions a mode, which is how the mode switch below is kept honest.
+
+## Install
 
 Nothing is tagged yet, so depend on the branch:
 
@@ -93,24 +98,99 @@ with it, `Workspace.decode(yaml:)` exists:
 )
 ```
 
-[libtmux]: https://github.com/tmux-python/libtmux
+## Ask what is there
 
-## Products
+Three listings, each returning plain arrays of values:
 
-| Product | What it is for |
-| --- | --- |
-| `LibTmux` | The library. One dependency, and the only one most callers need. |
-| `WorkspaceBuilder` | Builds a session from a [tmuxp][] workspace, written in Swift or JSON — or in YAML, with the `YAMLWorkspaces` trait. |
-| `LibTmuxMCP` | tmux as MCP tools, and `libtmux-mcp` is the server that serves them. |
+```swift
+let sessions = try await server.sessions()
+let windows = try await server.windows()
+let panes = try await server.panes()
+```
 
-[tmuxp]: https://tmuxp.git-pull.com/
+A pane knows what is running in it and where:
 
-Both consumers are written against `Server` and neither mentions a mode, which
-is how the mode switch below is kept honest.
+```swift
+for pane in try await server.panes() {
+    print(pane.id, pane.currentCommand, pane.currentPath)
+}
+```
 
-## One switch changes how work reaches tmux, never what you get back
+Questions tmux answers with an exit code are answered here with a `Bool`:
 
-`TmuxMode` is the dial, and it has two settings:
+```swift
+guard try await server.hasSession("work") else { return }
+```
+
+And anything this library does not model is one step away, in either mode. A
+tmux command that runs and reports a nonzero status is a *reply*, not an error —
+`has-session` answers a question that way, so `run(_:)` hands back both rather
+than throwing:
+
+```swift
+let reply = try await server.run(
+    TmuxCommand("display-message", ["-p", "#{client_termname}"])
+)
+print(reply.isSuccess ? reply.text : reply.errorText)
+```
+
+### One consistent picture
+
+Three listings are three moments. `snapshot()` takes one, and the relationships
+are resolved inside it rather than by matching ids yourself:
+
+```swift
+let snapshot = try await server.snapshot()
+for window in snapshot.windows(of: session) {
+    print(window.name, snapshot.panes(of: window).count)
+}
+```
+
+## Change what is there
+
+```swift
+let session = try await server.newSession(named: "work", windowName: "editor")
+let logs = try await server.newWindow(in: session, named: "logs")
+let pane = try await server.splitWindow(logs, direction: .right)
+try await server.run("tail -f /tmp/build.log", in: pane)
+```
+
+Read a pane back the way a person would:
+
+```swift
+let lines = try await server.capture(pane)
+```
+
+When several changes belong together, a command list spends one tmux invocation
+on all of them instead of one each:
+
+```swift
+var plan = TmuxCommandList()
+for name in ["edit", "test", "logs"] {
+    plan = plan.then("new-window", ["-d", "-n", name])
+}
+_ = try await server.run(plan)
+```
+
+## Filters that travel
+
+Filter with the standard library when the predicate is local to your code.
+`FilterExpr` is for when the filter has to leave it — stored in a config, sent to
+another process, handed to a tool. It is built from key paths, so the compiler
+rejects a text operator on a number, and it holds no closures, so it encodes:
+
+```swift
+let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let matching = try await server.panes().filter(expression)
+```
+
+This is what lets the [MCP tools](#tmux-as-mcp-tools) offer filtering to a
+client that does not speak Swift. The full vocabulary — operators, aliases, and
+which fields carry which type — is in [`Filtering.md`][filtering].
+
+## One switch changes how work reaches tmux
+
+…and never what you get back. `TmuxMode` is the dial, and it has two settings:
 
 | Mode | How work travels | Where it wins |
 | --- | --- | --- |
@@ -131,13 +211,9 @@ let names = try await server.using(.connected(to: "main")) { server in
 }
 ```
 
-The calls inside are the same calls and return the same types. A mode decides
-whether work crosses a process boundary or a connection that is already open —
-never what the caller receives. `run(_:)` is one step away in either mode, for
-anything this library does not model.
-
-Because the mode is a value rather than a shape of call, a program that decides
-at runtime writes the decision:
+The calls inside are the same calls and return the same types. Because the mode
+is a value rather than a shape of call, a program that decides at runtime writes
+the decision:
 
 ```swift
 let mode: TmuxMode = shouldAttach ? .connected(to: "main") : .direct
@@ -163,12 +239,12 @@ which mode a value carries, so the rule can be read rather than trusted.
 
 ### What it costs
 
-`swift run --package-path Benchmarks libtmux-bench` runs each scenario under each mode behind a shim
-standing in for the tmux binary, counting a process every time one starts and a
-round trip every time a command line is handed over. The table below is written
-by that benchmark rather than transcribed from it —
-`Scripts/update_mode_matrix.py --check` fails if it has drifted, and CI runs that
-check.
+`swift run --package-path Benchmarks libtmux-bench` runs each scenario under
+each mode behind a shim standing in for the tmux binary, counting a process
+every time one starts and a round trip every time a command line is handed over.
+The table below is written by that benchmark rather than transcribed from it —
+`Scripts/update_mode_matrix.py --check` fails if it has drifted, and CI runs
+that check.
 
 <!-- mode-matrix:start -->
 
@@ -202,6 +278,8 @@ cost the same one process, and only the round trips tell them apart.
 The benchmark also prints wall-clock medians, which move with the machine — run
 it yourself for those.
 
+### Being told rather than asking
+
 A connection can do one thing a process cannot, which is report what changed
 without being asked:
 
@@ -214,21 +292,138 @@ try await server.connected(attachingTo: "work") { server, events in
 }
 ```
 
-## Filtering that travels
+## Workspaces, from a file or from Swift
 
-Filter with the standard library when the predicate is local to your code.
-`FilterExpr` is for when the filter has to leave it — stored in a config, sent to
-another process, handed to a tool. It is built from key paths, so the compiler
-rejects a text operator on a number, and it holds no closures, so it encodes:
+`WorkspaceBuilder` builds a whole session in one go, from a [tmuxp][] workspace.
+Written in Swift, it is ordinary values:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
-let matching = try await server.panes().filter(expression)
+Workspace(
+    sessionName: "work",
+    windows: [
+        WindowPlan(
+            windowName: "editor",
+            layout: "even-horizontal",
+            panes: [PanePlan(), PanePlan()]
+        ),
+        WindowPlan(
+            windowName: "logs",
+            panes: [PanePlan(shellCommands: ["tail -f /tmp/build.log"])]
+        ),
+    ]
+)
 ```
+
+```swift
+let session = try await WorkspaceBuilder.build(workspace, on: server)
+```
+
+Building refuses rather than adopting a session that already has the name: two
+callers building the same workspace should not silently share one.
+
+JSON needs no trait, because tmuxp's keys decode straight into these types.
+Reading the YAML that tmuxp files are usually written in needs a parser, which
+is what the `YAMLWorkspaces` trait pulls in:
+
+```swift
+try Workspace.decode(yaml: text)
+```
+
+The fixtures the suite tests against are tmuxp's own examples, decoded both ways
+and compared — a stronger claim than either parsing alone.
+
+## tmux as MCP tools
+
+`libtmux-mcp` is a [Model Context Protocol][MCP] server. It speaks JSON-RPC 2.0
+over stdio, one message per line, so anything that launches an MCP server can
+drive tmux through it.
+
+```console
+$ swift build --product libtmux-mcp
+```
+
+Point a client at the built binary. It takes no flags — which tmux it talks to
+is environment, so a client config is where you say so:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "/path/to/.build/debug/libtmux-mcp",
+      "env": {
+        "LIBTMUX_SOCKET": "default",
+        "LIBTMUX_TMUX_BIN": "tmux"
+      }
+    }
+  }
+}
+```
+
+| Variable | Default | What it selects |
+| --- | --- | --- |
+| `LIBTMUX_SOCKET` | `default` | The socket *name*, in tmux's own socket directory |
+| `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
+
+Both are optional; with neither set it serves the `default` socket through the
+first `tmux` on `PATH`. Anything the server wants to tell a human goes to
+stderr, because stdout is the protocol and a stray line there corrupts it.
+
+`LIBTMUX_SOCKET` is a name rather than a path, and tmux resolves a name inside
+its own socket directory. If your tmux keeps its sockets elsewhere — anything
+that sets `TMUX_TMPDIR` — this server cannot reach them yet, because it runs
+tmux in a controlled environment that does not carry that variable through.
+
+| Tool | What it does |
+| --- | --- |
+| `list_sessions` | Every session, optionally selected by what its panes run |
+| `list_windows` | Every window on the server |
+| `list_panes` | Every pane, optionally filtered |
+| `describe_filters` | The filterable fields, their types, and their aliases |
+| `read_format` | Evaluates a tmux format, reaching fields the listings do not carry |
+| `run_command` | Runs one tmux command and returns what tmux said |
+
+`describe_filters` is what makes the rest usable: a client that does not speak
+Swift learns the filterable vocabulary from it, instead of hard coding field
+names that a rename would break.
+
+`LibTmuxMCP` is the same tools as a library, if you would rather embed them in a
+server of your own than run this one.
+
+## Project status
+
+**Alpha.** The library works and its suite runs against eight tmux releases on
+every push, but nothing is tagged, the API has had no outside use, and names
+are still moving. Expect to update code when you update the package.
+
+What that means concretely:
+
+- **The public API can change in any release**, with no deprecation first.
+  Semantic versioning starts saying something at `0.1.0`; until then a version
+  number only tells you which alpha you have.
+- **Pin an exact version**, for the reasons under [Install](#install).
+- **`LibTmux` is the part to build on.** It is the largest, the most exercised,
+  and the closest to settled. `WorkspaceBuilder` and `LibTmuxMCP` are newer and
+  thinner, and are likelier to move.
+- **The tmux behaviour is the tested part.** Compatibility with 3.2a through
+  3.7b is checked in CI against each release built from its own tag, so what
+  the library claims about tmux is evidence rather than intent. The Swift
+  surface around it is what has not settled.
+
+Useful now for a tool you control and can update. Not yet something to put
+under a dependency you do not.
+
+## Requirements
+
+| | |
+| --- | --- |
+| Swift | 6.2 or later |
+| Platforms | macOS 13+, Linux |
+| tmux | 3.2a through 3.7b |
+| Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 ## Documentation
 
-The DocC catalogue is the reference, and covers modes, snapshots, filtering,
+The [DocC][] catalogue is the reference, and covers modes, snapshots, filtering,
 streaming, and platform support:
 
 ```console
@@ -237,25 +432,43 @@ $ swift package --disable-sandbox preview-documentation --target LibTmux
 
 CI builds it and fails the job on any warning.
 
+Every Swift example in this file is also a file under [`Snippets/`][snippets],
+which `swift build` compiles — an example that stops compiling stops the build.
+`Scripts/check_examples.py` fails if a fence here appears in no snippet, so what
+you read above is what the compiler accepted.
+
 ## Tests
 
 The suite runs against real tmux — no mocks of the server — one private socket
 per case, with servers reaped even when a run is killed outright.
 
 ```console
-$ swift test
+$ swift test --traits YAMLWorkspaces
 ```
 
-Point it at a particular release to test against that one:
+The trait is off by default and six tests come with it, so the gate names it.
+Point the suite at a particular release to test against that one:
 
 ```console
 $ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
 ```
 
-CI runs the suite on Linux and macOS against each of tmux 3.2a, 3.3a, 3.4, 3.5,
-3.6, 3.7, 3.7a, and 3.7b, each built from its own release tarball.
+CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
+3.7a, and 3.7b, each built from its own release tarball.
 
-## What has been exercised, and what has not
+## Repository layout
+
+| Path | What is in it |
+| --- | --- |
+| [`Sources/`][sources] | The four products |
+| [`Tests/`][tests] | The suite, and the fixture every suite provisions servers through |
+| [`Snippets/`][snippets] | Every documented example, compiled by `swift build` |
+| [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
+| [`Parity/`][parity] | What Python libtmux exposes, recorded, and what this port does about each of it |
+| `Scripts/` | The Python tooling CI runs |
+| `dev/Spikes/` | Disposable experiment packages. Not part of a release |
+
+## Platform notes
 
 Linux is where this has run: the suite passes there against every supported tmux
 release, sequentially and eight ways in parallel. macOS is supported and the
@@ -275,14 +488,27 @@ need for it is known.
 
 ## Relationship to Python libtmux
 
-This is a port in the same repository as [libtmux][] for Python, and follows it
-where following it earns its place. Where Swift wants something else, it gets
-something else: results are plain arrays rather than a query list, a single
-typed `TmuxError` replaces an exception hierarchy, and objects are values rather
-than live handles. `Scripts/parity_report.py` measures the surface against
-Python's recorded API and names each divergence, so a difference reads as a
-decision rather than an omission.
+This is a port of [libtmux][] for Python, and follows it where following it
+earns its place. Where Swift wants something else, it gets something else:
+results are plain arrays rather than a query list, a single typed `TmuxError`
+replaces an exception hierarchy, and objects are values rather than live
+handles. `Scripts/parity_report.py` measures the surface against Python's
+recorded API and names each divergence, so a difference reads as a decision
+rather than an omission.
 
 ## License
 
-MIT, the same as the rest of the repository.
+MIT. See [LICENSE](LICENSE).
+
+[libtmux]: https://github.com/tmux-python/libtmux
+[tmuxp]: https://tmuxp.git-pull.com/
+[swift-subprocess]: https://github.com/swiftlang/swift-subprocess
+[Yams]: https://github.com/jpsim/Yams
+[MCP]: https://modelcontextprotocol.io
+[DocC]: https://www.swift.org/documentation/docc/
+[sources]: Sources/
+[tests]: Tests/
+[snippets]: Snippets/
+[benchmarks]: Benchmarks/
+[parity]: Parity/
+[filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
