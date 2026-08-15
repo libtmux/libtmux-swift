@@ -177,6 +177,12 @@ jobs:
           # happens to ship.
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
+          # tmux resolves a socket *name* inside this, and its default is
+          # shared with every other tmux on the machine. Naming it here rather
+          # than having the suite set it keeps the fixture out of `environ`,
+          # which other cases are concurrently reading.
+          export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
+          mkdir -p "$TMUX_TMPDIR"
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
           swift test --traits YAMLWorkspaces

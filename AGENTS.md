@@ -110,9 +110,18 @@ the number that are executed is a fact rather than a claim.
 
 Those tests provision servers through the same fixture as everything else, which
 keeps every socket under `/tmp/libtmux-swift-test/`. `withNamedTmuxServer` is the
-socket-*name* half: names are resolved by tmux inside `TMUX_TMPDIR`, so the
-fixture points that at a directory in the same root rather than letting a name
-land in the machine-wide default where the other ports' servers live.
+socket-*name* half, and a name is resolved by tmux inside `TMUX_TMPDIR` — whose
+default is shared with every other tmux on this machine, the other ports'
+included. So the run names the directory and the suite reads it:
+
+```console
+$ TMUX_TMPDIR=/tmp/libtmux-swift-test/named swift test --traits YAMLWorkspaces
+```
+
+Without it those cases skip and say why. The fixture does not set the variable
+itself: `setenv` writes to `environ` while other cases are concurrently reading
+it to build a tmux environment, which is a data race whether or not it has
+bitten yet.
 
 ## Measured claims are generated, not typed
 

@@ -184,7 +184,11 @@ struct ReadmeExampleTests {
 /// for when tmux already knows the server by name, and until `TMUX_TMPDIR`
 /// reached tmux it could only ever address the machine-wide default directory.
 /// Running an example through it keeps that fixed.
-@Suite("README examples, by socket name", .timeLimit(.minutes(1)))
+@Suite(
+    "README examples, by socket name",
+    .timeLimit(.minutes(1)),
+    .enabled(if: namedSocketsAvailable, "needs TMUX_TMPDIR under the suite root")
+)
 struct ReadmeExamplesByNameTests {
     @Test("a server addressed by name answers the same listings")
     func listingsByName() async throws {

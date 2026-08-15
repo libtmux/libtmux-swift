@@ -93,28 +93,38 @@ public func withTmuxServer<Result>(
     }
 }
 
-/// Points `TMUX_TMPDIR` at a directory inside this suite's root, once.
+/// The directory a socket *name* resolves inside, when the run provides one.
 ///
-/// A socket *name* is resolved by tmux inside `TMUX_TMPDIR`, and its default is
-/// shared with every other tmux on the machine — including the ones the other
-/// libtmux ports are running. A suite that addressed servers by name without
-/// moving that directory would put its sockets where anything sweeping by
-/// prefix can reach them, which is the thing this whole root exists to prevent.
+/// tmux looks a name up in `TMUX_TMPDIR`, whose default is shared with every
+/// other tmux on the machine — the other libtmux ports' included. A suite that
+/// addressed servers by name without moving that directory would put its
+/// sockets exactly where anything sweeping by prefix can reach them, which is
+/// what this whole root exists to prevent.
 ///
-/// Set once for the process rather than per case, because it is process-wide
-/// state and cases run concurrently: each case takes a unique *name* inside the
-/// shared directory instead. Cases that address a socket by path are unaffected
-/// either way, `-S` being absolute.
-private let namedSocketRoot: URL = {
-    let root = socketRoot.appendingPathComponent("named")
-    try? FileManager.default.createDirectory(
-        at: root,
-        withIntermediateDirectories: true,
-        attributes: [.posixPermissions: 0o700]
-    )
-    setenv("TMUX_TMPDIR", root.path, 1)
-    return root
-}()
+/// So the directory is taken from the environment rather than set into it. The
+/// obvious alternative — `setenv` from the fixture — writes to `environ` while
+/// other cases are concurrently reading it to build a tmux environment, and
+/// that is a data race whether or not it has bitten yet. Cases that address a
+/// socket by path do not care either way, `-S` being absolute.
+///
+/// `AGENTS.md` and CI name the directory; ``namedSocketsAvailable`` is what the
+/// suite checks so a run without one skips those cases rather than scattering
+/// sockets.
+public let namedSocketRoot: URL? = ProcessInfo.processInfo.environment["TMUX_TMPDIR"]
+    .map { URL(fileURLWithPath: $0) }
+
+/// Whether this run can address servers by socket name inside the suite's root.
+public var namedSocketsAvailable: Bool {
+    guard let root = namedSocketRoot else { return false }
+    return root.path.hasPrefix(socketRoot.path)
+}
+
+/// Thrown when a name-addressed case runs without a directory to put it in.
+public struct NamedSocketRootMissing: Error, CustomStringConvertible {
+    public var description: String {
+        "set TMUX_TMPDIR to a directory under /tmp/libtmux-swift-test"
+    }
+}
 
 /// Runs `body` against a private tmux server addressed by socket *name*, and
 /// always kills it.
@@ -126,6 +136,16 @@ public func withNamedTmuxServer<Result>(
     _ body: (Server) async throws -> Result
 ) async throws -> Result {
     _ = sigpipeIgnoredOnce
+    guard let root = namedSocketRoot, namedSocketsAvailable else {
+        // Reached only if a case forgot its `.enabled(if:)`; better to say so
+        // than to put a socket in the machine-wide directory.
+        throw NamedSocketRootMissing()
+    }
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
     let name = "s\(UUID().uuidString.prefix(8))"
     // tmux does not put the socket in `TMUX_TMPDIR` itself: it creates a
     // `tmux-<uid>` directory inside it and puts the socket there, so that one
@@ -133,7 +153,7 @@ public func withNamedTmuxServer<Result>(
     // The reaper has to be told the path tmux will actually use, or it removes
     // nothing and every case leaves its socket behind.
     let socket =
-        namedSocketRoot
+        root
         .appendingPathComponent("tmux-\(getuid())")
         .appendingPathComponent(name)
 
