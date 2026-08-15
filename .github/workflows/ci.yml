@@ -16,17 +16,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux only, as the other libtmux ports do. This repository is
-        # private on a plan that meters Actions, and macOS runners are billed
-        # at ten times the rate — eight tmux builds there would spend the
-        # month's minutes on one push. macOS is supported and its handling is
-        # written; it is exercised by hand until there is a reason to pay for
-        # it on every commit. `workflow_dispatch` below is that lane.
         os: [ubuntu-latest]
         # The releases the library claims to support. Building each from its
         # own tag is what makes a compatibility claim evidence rather than an
         # assertion: behaviour differs between 3.2a, 3.4 and 3.7 on one machine.
         tmux: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b"]
+        # macOS at the ends of the supported range rather than across all of
+        # it. What differs on Darwin is this package's own handling — the
+        # `TMPDIR` a socket path cannot afford, keg-only libevent and ncurses,
+        # `F_SETNOSIGPIPE` — and none of that varies by tmux release. Which
+        # tmux behaves how is what the eight Linux lanes are for, and it is not
+        # an answer that changes with the kernel underneath.
+        include:
+          - os: macos-latest
+            tmux: "3.7b"
+          - os: macos-latest
+            tmux: "3.2a"
 
     steps:
       - uses: actions/checkout@v4

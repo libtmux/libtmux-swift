@@ -1,4 +1,17 @@
+# What Swift Package Index builds when it indexes this repository.
+#
+# All three library products rather than the core alone: a reader who arrives
+# at the hosted documentation looking for `WorkspaceBuilder` or the MCP tools
+# should find them instead of concluding they are undocumented. `libtmux-mcp`
+# is absent because it is an executable, with no module to document.
+#
+# Built with default traits, so `Workspace.decode(yaml:)` will not appear —
+# there is no manifest key for enabling one here. Its own README says what the
+# trait adds.
 version: 1
 builder:
   configs:
-    - documentation_targets: [LibTmux]
+    - documentation_targets:
+        - LibTmux
+        - TmuxWorkspace
+        - LibTmuxMCP
