@@ -14,7 +14,7 @@ import typing as t
 
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 EXTRACTOR_PATH = REPO_ROOT / "Scripts" / "extract-python-parity.py"
 PARITY_ROOT = REPO_ROOT / "Parity"
 #: libtmux for Python is a separate repository now, so there is nothing to
