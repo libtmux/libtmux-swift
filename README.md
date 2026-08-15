@@ -439,7 +439,7 @@ under a dependency you do not.
 | | |
 | --- | --- |
 | Swift | 6.2 or later |
-| Platforms | macOS 13+, Linux |
+| Platforms | Linux, and macOS 26+ — see [below](#platform-notes) for why that floor is so high |
 | tmux | 3.2a through 3.7b |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
@@ -501,9 +501,18 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 
 ## Platform notes
 
-Linux is where this has run: the suite passes there against every supported tmux
-release, sequentially and eight ways in parallel. macOS is supported and the
-Darwin-specific handling is written, but the suite has not yet been run there.
+Linux is where this has run longest: the suite passes there against every
+supported tmux release, sequentially and eight ways in parallel. macOS runs the
+suite too, at both ends of the supported tmux range — what differs on Darwin is
+this package's own handling rather than tmux's behaviour, and that does not vary
+by release.
+
+**Why the macOS floor is 26.** Nothing here needs it. [swift-subprocess][] 1.0.0
+— its only release — has a `run` overload taking a `borrowing Span` and calling
+`.bytes` on it, both macOS 26 API with no availability guard. This library never
+calls that overload, but a module compiles as a whole, so a lower deployment
+target fails in the dependency rather than here. The floor comes down when a
+release upstream fixes it.
 
 A program that opens connections should ignore `SIGPIPE`, because a write to a
 tmux that went away first will otherwise end the process:

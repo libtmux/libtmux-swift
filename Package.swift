@@ -4,7 +4,13 @@ import PackageDescription
 
 let package = Package(
     name: "libtmux",
-    platforms: [.macOS(.v13)],
+    // macOS 26 rather than the 13 this library needs, because
+    // swift-subprocess 1.0.0 — its only release — has a `run` overload taking
+    // a `borrowing Span` and calling `.bytes` on it, and both are macOS 26
+    // API carrying no availability guard. Nothing here calls that overload,
+    // but a module compiles as a whole, so the floor is upstream's rather
+    // than ours. Lower it again when a release fixes that.
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "LibTmux", targets: ["LibTmux"]),
         .library(name: "TmuxWorkspace", targets: ["TmuxWorkspace"]),

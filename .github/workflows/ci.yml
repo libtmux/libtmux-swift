@@ -61,6 +61,7 @@ jobs:
         if: steps.tmux-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
+          configure_flags=""
           # Exported here rather than into the environment every later step
           # inherits: these point at Homebrew's copies of libevent and ncurses,
           # and nothing but tmux's configure should be reading them.
@@ -73,13 +74,20 @@ jobs:
             export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
             export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
             export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+            # From 3.7, tmux's configure refuses to guess on Darwin: it warns
+            # that macOS renders complex codepoints poorly without utf8proc and
+            # exits unless told which way to go. Nothing here reads a pane for
+            # emoji, so the answer that keeps the lane closest to the Linux one
+            # is to build without it.
+            configure_flags="--disable-utf8proc"
           fi
           curl --location --fail --silent --show-error \
             "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
             --output tmux.tar.gz
           tar -xzf tmux.tar.gz
           cd "tmux-${{ matrix.tmux }}"
-          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}"
+          # shellcheck disable=SC2086 — empty on Linux, one flag on Darwin.
+          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" $configure_flags
           make -j"$(getconf _NPROCESSORS_ONLN)"
           make install
 
