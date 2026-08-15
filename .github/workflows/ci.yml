@@ -88,10 +88,17 @@ jobs:
 
       # The checks below are about the repository rather than the platform, so
       # one lane runs them. A missing DocC link is not a per-runner fact.
+      # Pinned, because the action defaults to whatever ruff released most
+      # recently and lints an unchanged tree against it. 0.16.3 added a rule
+      # this tooling does not satisfy and turned CI red on a commit that
+      # touched no Python. Everything else here is pinned — the Swift
+      # toolchain, the tmux tags, the resolved dependencies — for the reason
+      # this demonstrates.
       - name: Lint the Python tooling
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         uses: astral-sh/ruff-action@v3
         with:
+          version: "0.16.1"
           args: check Scripts/
 
       # The parity manifests are data this repository ships a claim about, and
