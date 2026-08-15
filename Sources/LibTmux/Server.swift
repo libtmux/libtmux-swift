@@ -269,7 +269,7 @@ actor ServerRuntime {
         return try await transport.run(
             executable: executable,
             arguments: arguments,
-            environment: ["LC_ALL": "C"]
+            environment: TmuxProcessEnvironment.variables()
         )
     }
 }

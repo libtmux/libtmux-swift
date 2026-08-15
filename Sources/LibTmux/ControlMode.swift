@@ -303,7 +303,13 @@ extension Server {
             Subprocess.Configuration(
                 executable: .path(FilePath(tmuxExecutablePath)),
                 arguments: Arguments(arguments),
-                environment: .custom([Subprocess.Environment.Key(rawValue: "LC_ALL")!: "C"]),
+                environment: .custom(
+                    TmuxProcessEnvironment.variables().reduce(into: [:]) {
+                        keys, variable in
+                        keys[Subprocess.Environment.Key(rawValue: variable.key)!] =
+                            variable.value
+                    }
+                ),
                 platformOptions: platformOptions
             ),
             input: .inputWriter,
