@@ -166,9 +166,41 @@ private func toolCall(_ params: JSONValue?) -> ToolCall? {
 
 // MARK: - Entry
 
+/// Resolves a bare command name against this process's `PATH`.
+///
+/// The library runs tmux in an environment it controls — `LC_ALL=C`, and
+/// nothing else — so that what tmux prints does not depend on the locale its
+/// caller happened to have. That environment has no `PATH`, so a bare `tmux`
+/// cannot be found at the moment of spawning and every call fails with an
+/// executable that is not there. Resolving the name here, against the
+/// environment this server was itself started in, is what lets the default
+/// work without handing the subprocess an environment back.
+private func resolvedExecutable(
+    _ name: String,
+    searching environment: [String: String]
+) -> String? {
+    guard !name.contains("/") else { return name }
+    let searchPath = environment["PATH"] ?? "/usr/local/bin:/usr/bin:/bin"
+    for directory in searchPath.split(separator: ":") {
+        let candidate = "\(directory)/\(name)"
+        if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+    }
+    return nil
+}
+
 let environment = ProcessInfo.processInfo.environment
 let socketName = environment["LIBTMUX_SOCKET"] ?? "default"
-let executable = environment["LIBTMUX_TMUX_BIN"] ?? "tmux"
+let requestedExecutable = environment["LIBTMUX_TMUX_BIN"] ?? "tmux"
+
+guard
+    let executable = resolvedExecutable(
+        requestedExecutable,
+        searching: environment
+    )
+else {
+    note("cannot find \(requestedExecutable) on PATH; set LIBTMUX_TMUX_BIN to it")
+    exit(1)
+}
 
 let server: Server
 do {
