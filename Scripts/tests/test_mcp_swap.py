@@ -21,8 +21,7 @@ import typing as t
 import pytest
 import tomlkit
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_SCRIPT = _REPO_ROOT / "Scripts" / "mcp_swap.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "mcp_swap.py"
 
 _spec = importlib.util.spec_from_file_location("mcp_swap", _SCRIPT)
 assert _spec and _spec.loader
