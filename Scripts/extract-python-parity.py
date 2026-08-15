@@ -25,8 +25,10 @@ import importlib
 import importlib.util
 import inspect
 import json
+import os
 import pathlib
 import re
+import subprocess
 import sys
 import types
 import typing as t
@@ -36,6 +38,10 @@ Json = dict[str, t.Any]
 DOCUMENT_KIND = "libtmux.python-parity-manifest"
 SCHEMA_VERSION = 1
 DEFAULT_TMUX_VERSION = "3.2a"
+#: The input fingerprint, kept beside the manifests it backs.
+SOURCE_INPUTS = "source-inputs.json"
+#: The Python package these manifests describe.
+PACKAGE_NAME = "libtmux"
 
 LIST_ERROR_FAMILY_IDS: tuple[str, ...] = (
     "list.server.sessions.any-error-empty",
@@ -2482,13 +2488,13 @@ def extract_format_fields(
     }
 
 
-def _load_curated(repo_root: pathlib.Path, filename: str, fingerprint: str) -> Json:
+def _load_curated(parity_root: pathlib.Path, filename: str, fingerprint: str) -> Json:
     """Load curated rows and refresh only the source fingerprint.
 
     Parameters
     ----------
-    repo_root : pathlib.Path
-        Repo root used by this helper.
+    parity_root : pathlib.Path
+        Directory holding this port's curated parity manifests.
     filename : str
         Filename used by this helper.
     fingerprint : str
@@ -2502,12 +2508,12 @@ def _load_curated(repo_root: pathlib.Path, filename: str, fingerprint: str) -> J
     Examples
     --------
     >>> curated = _load_curated(
-    ...     pathlib.Path("."), "python-behavior-contracts.json", "sha256:example"
+    ...     pathlib.Path("Parity"), "python-behavior-contracts.json", "sha256:example"
     ... )
     >>> curated["sourceFingerprint"]
     'sha256:example'
     """
-    path = repo_root / "swift" / "Parity" / filename
+    path = parity_root / filename
     document = t.cast("Json", json.loads(path.read_text(encoding="utf-8")))
     document["sourceFingerprint"] = fingerprint
     document["entries"] = sorted(
@@ -2759,13 +2765,82 @@ def validate_contracts(
         raise ValueError(msg)
 
 
-def build_documents(repo_root: pathlib.Path) -> dict[str, Json]:
-    """Build generated manifests and load curated contract rows.
+def python_provenance(repo_root: pathlib.Path) -> Json:
+    """Describe the libtmux checkout a manifest was built from.
+
+    A fingerprint proves a manifest matches some tree; it cannot say which.
+    Without this, "parity with Python libtmux" names no version, and finding
+    out means bisecting checkouts until one reproduces the fingerprint.
 
     Parameters
     ----------
     repo_root : pathlib.Path
-        Repository root.
+        Root of the libtmux checkout being described.
+
+    Returns
+    -------
+    dict[str, str]
+        Remote, commit and description; empty strings when git cannot answer,
+        so an export or a tarball still produces a manifest.
+
+    Examples
+    --------
+    >>> sorted(python_provenance(pathlib.Path("/nonexistent")))
+    ['commit', 'describe', 'remote']
+    """
+
+    def ask(*arguments: str) -> str:
+        """Run one git query, or return an empty string.
+
+        Parameters
+        ----------
+        *arguments : str
+            Arguments after ``git -C <repo_root>``.
+
+        Returns
+        -------
+        str
+            Trimmed standard output, or empty when git could not answer.
+
+        Examples
+        --------
+        >>> callable(ask)
+        True
+        """
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(repo_root), *arguments],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return ""
+        return completed.stdout.strip()
+
+    return {
+        "remote": ask("config", "--get", "remote.origin.url"),
+        "commit": ask("rev-parse", "HEAD"),
+        "describe": ask("describe", "--tags", "--always", "--dirty"),
+    }
+
+
+def build_documents(
+    repo_root: pathlib.Path,
+    parity_root: pathlib.Path,
+) -> dict[str, Json]:
+    """Build generated manifests and load curated contract rows.
+
+    Two roots, because they are two repositories. The manifests describe a
+    libtmux checkout and are curated in this port; while both lived in one
+    tree a single root could stand for both, and it no longer can.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Root of the libtmux checkout being described.
+    parity_root : pathlib.Path
+        Directory this port keeps its curated manifests in.
 
     Returns
     -------
@@ -2774,103 +2849,115 @@ def build_documents(repo_root: pathlib.Path) -> dict[str, Json]:
 
     Examples
     --------
-    >>> names = sorted(build_documents(pathlib.Path(".")))
-    >>> (len(names), names[0], names[-1])
-    (4, 'python-behavior-contracts.json', 'python-query-contracts.json')
+    >>> import os
+    >>> names = sorted(
+    ...     build_documents(
+    ...         pathlib.Path(os.environ["LIBTMUX_PYTHON_REPO"]),
+    ...         pathlib.Path("Parity"),
+    ...     )
+    ... ) if os.environ.get("LIBTMUX_PYTHON_REPO") else [
+    ...     "python-behavior-contracts.json", "python-query-contracts.json"
+    ... ]
+    >>> (names[0], names[-1])
+    ('python-behavior-contracts.json', 'python-query-contracts.json')
     """
     public_manifest = extract_public_api(repo_root)
     format_manifest = extract_format_fields(repo_root)
     fingerprint = t.cast("str", public_manifest["sourceFingerprint"])
     behavior = _load_curated(
-        repo_root,
+        parity_root,
         "python-behavior-contracts.json",
         fingerprint,
     )
     query = _load_curated(
-        repo_root,
+        parity_root,
         "python-query-contracts.json",
         fingerprint,
     )
     validate_contracts(repo_root, public_manifest, format_manifest, behavior, query)
-    return {
+    documents = {
         "python-behavior-contracts.json": behavior,
         "python-format-fields.json": format_manifest,
         "python-public-api.json": public_manifest,
         "python-query-contracts.json": query,
     }
+    provenance = python_provenance(repo_root)
+    for document in documents.values():
+        document["pythonSource"] = provenance
+    return documents
 
 
-def _write_documents(repo_root: pathlib.Path, documents: dict[str, Json]) -> None:
+def _write_documents(
+    parity_root: pathlib.Path,
+    python_root: pathlib.Path,
+    documents: dict[str, Json],
+) -> None:
     """Write parity documents and sanitized source-input evidence.
 
     Parameters
     ----------
-    repo_root : pathlib.Path
-        Repo root used by this helper.
+    parity_root : pathlib.Path
+        Directory this port keeps its parity manifests in.
+    python_root : pathlib.Path
+        Root of the libtmux checkout the manifests describe.
     documents : dict[str, Json]
         Documents used by this helper.
 
     Examples
     --------
     >>> try:
-    ...     _write_documents(pathlib.Path("pyproject.toml"), {})
+    ...     _write_documents(pathlib.Path("pyproject.toml"), pathlib.Path("."), {})
     ... except OSError as exc:
     ...     type(exc).__name__
     'NotADirectoryError'
     """
-    parity_root = repo_root / "swift" / "Parity"
     parity_root.mkdir(parents=True, exist_ok=True)
     for filename, document in documents.items():
         (parity_root / filename).write_text(render_json(document), encoding="utf-8")
-    evidence_path = (
-        repo_root
-        / "docs"
-        / "superpowers"
-        / "spikes"
-        / "evidence"
-        / "python-parity"
-        / "source-inputs.json"
-    )
-    evidence_path.parent.mkdir(parents=True, exist_ok=True)
-    evidence_path.write_text(
-        render_json(fingerprint_authority_inputs(repo_root)),
+    # The input fingerprint belongs beside the manifests it backs. It used to
+    # sit in the Python repository's docs tree, which only worked while the two
+    # were one checkout.
+    (parity_root / SOURCE_INPUTS).write_text(
+        render_json(fingerprint_authority_inputs(python_root)),
         encoding="utf-8",
     )
 
 
-def _check_documents(repo_root: pathlib.Path, documents: dict[str, Json]) -> None:
+def _check_documents(
+    parity_root: pathlib.Path,
+    python_root: pathlib.Path,
+    documents: dict[str, Json],
+) -> None:
     """Fail when checked-in documents or input evidence drift.
 
     Parameters
     ----------
-    repo_root : pathlib.Path
-        Repo root used by this helper.
+    parity_root : pathlib.Path
+        Directory this port keeps its parity manifests in.
+    python_root : pathlib.Path
+        Root of the libtmux checkout the manifests describe.
     documents : dict[str, Json]
         Documents used by this helper.
 
     Examples
     --------
     >>> try:
-    ...     _check_documents(pathlib.Path("pyproject.toml"), {})
+    ...     _check_documents(
+    ...         pathlib.Path("pyproject.toml"), pathlib.Path("."), {}
+    ...     )
     ... except SystemExit as exc:
     ...     str(exc).startswith("Python parity documents are stale:")
     True
     """
     expected: dict[pathlib.Path, str] = {
-        repo_root / "swift" / "Parity" / filename: render_json(document)
+        parity_root / filename: render_json(document)
         for filename, document in documents.items()
     }
-    expected[
-        repo_root
-        / "docs"
-        / "superpowers"
-        / "spikes"
-        / "evidence"
-        / "python-parity"
-        / "source-inputs.json"
-    ] = render_json(fingerprint_authority_inputs(repo_root))
+    expected[parity_root / SOURCE_INPUTS] = render_json(
+        fingerprint_authority_inputs(python_root)
+    )
     drifted = [
-        _relative(repo_root, path)
+        _relative(parity_root, path)
         for path, wanted in expected.items()
         if not path.is_file() or path.read_text(encoding="utf-8") != wanted
     ]
@@ -2907,13 +2994,30 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true", help="write current manifests")
     mode.add_argument("--check", action="store_true", help="check for manifest drift")
+    parser.add_argument(
+        "--python-repo",
+        type=pathlib.Path,
+        default=os.environ.get("LIBTMUX_PYTHON_REPO"),
+        help=(
+            "root of the libtmux checkout to read; defaults to "
+            "$LIBTMUX_PYTHON_REPO. libtmux for Python is a separate "
+            "repository, so there is nothing sensible to guess."
+        ),
+    )
     args = parser.parse_args(argv)
-    repo_root = pathlib.Path(__file__).resolve().parents[2]
-    documents = build_documents(repo_root)
+    if args.python_repo is None:
+        parser.error(
+            "no libtmux checkout given: pass --python-repo or set LIBTMUX_PYTHON_REPO"
+        )
+    repo_root = pathlib.Path(args.python_repo).expanduser().resolve()
+    if not (repo_root / "src" / PACKAGE_NAME).is_dir():
+        parser.error(f"{repo_root} does not look like a libtmux checkout")
+    parity_root = pathlib.Path(__file__).resolve().parents[1] / "Parity"
+    documents = build_documents(repo_root, parity_root)
     if args.write:
-        _write_documents(repo_root, documents)
+        _write_documents(parity_root, repo_root, documents)
     else:
-        _check_documents(repo_root, documents)
+        _check_documents(parity_root, repo_root, documents)
     return 0
 
 

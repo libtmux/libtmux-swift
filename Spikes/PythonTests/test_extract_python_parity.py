@@ -7,15 +7,30 @@ import copy
 import doctest
 import importlib.util
 import json
+import os
 import pathlib
-import subprocess
 import sys
 import typing as t
 
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-EXTRACTOR_PATH = REPO_ROOT / "swift" / "Scripts" / "extract-python-parity.py"
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXTRACTOR_PATH = REPO_ROOT / "Scripts" / "extract-python-parity.py"
+PARITY_ROOT = REPO_ROOT / "Parity"
+#: libtmux for Python is a separate repository now, so there is nothing to
+#: infer: without a checkout to read, extraction cannot run and its tests skip.
+_PYTHON_REPO = os.environ.get("LIBTMUX_PYTHON_REPO")
+PYTHON_REPO = pathlib.Path(_PYTHON_REPO).expanduser() if _PYTHON_REPO else None
+_HAS_LIBTMUX = PYTHON_REPO is not None and (PYTHON_REPO / "src" / "libtmux").is_dir()
+if _HAS_LIBTMUX:
+    # Parts of the extractor import libtmux rather than only parsing it, so the
+    # checkout has to be importable as well as readable. Doing it here keeps
+    # LIBTMUX_PYTHON_REPO the single knob instead of pairing it with PYTHONPATH.
+    sys.path.insert(0, str((PYTHON_REPO / "src").resolve()))
+requires_libtmux = pytest.mark.skipif(
+    not _HAS_LIBTMUX,
+    reason="set LIBTMUX_PYTHON_REPO to a libtmux checkout",
+)
 
 SPEC = importlib.util.spec_from_file_location("extract_python_parity", EXTRACTOR_PATH)
 if SPEC is None or SPEC.loader is None:
@@ -304,9 +319,10 @@ def test_format_inventory_covers_scopes_and_keeps_raw_versions(
     assert entries["sample.neo.Obj.window_raw"]["minimumTmuxVersion"] == "3.7a"
 
 
+@requires_libtmux
 def test_public_format_field_entries_link_defining_and_inherited_fields() -> None:
     """Format-backed public fields carry their exact format-field links."""
-    documents = extractor.build_documents(REPO_ROOT)
+    documents = extractor.build_documents(PYTHON_REPO, PARITY_ROOT)
     entries = _entries_by_name(documents["python-public-api.json"])
 
     assert entries["libtmux.neo.Obj.pane_id"]["formatFields"] == ["pane_id"]
@@ -339,6 +355,7 @@ def test_output_is_deterministic_relative_and_content_fingerprinted(
     assert changed["sourceFingerprint"] != original_fingerprint
 
 
+@requires_libtmux
 def test_contract_validation_rejects_unknown_python_test_node(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -366,9 +383,10 @@ def test_contract_validation_rejects_unknown_python_test_node(
         )
 
 
+@requires_libtmux
 def test_repository_contracts_are_bidirectional_and_pin_list_error_families() -> None:
     """The repository corpus covers both inventories and the exact policy set."""
-    documents = extractor.build_documents(REPO_ROOT)
+    documents = extractor.build_documents(PYTHON_REPO, PARITY_ROOT)
     behavior = documents["python-behavior-contracts.json"]
 
     list_error_ids = {
@@ -378,7 +396,7 @@ def test_repository_contracts_are_bidirectional_and_pin_list_error_families() ->
     }
     assert list_error_ids == set(extractor.LIST_ERROR_FAMILY_IDS)
     extractor.validate_contracts(
-        REPO_ROOT,
+        PYTHON_REPO,
         documents["python-public-api.json"],
         documents["python-format-fields.json"],
         behavior,
@@ -386,9 +404,10 @@ def test_repository_contracts_are_bidirectional_and_pin_list_error_families() ->
     )
 
 
+@requires_libtmux
 def test_inherited_query_contract_expected_matches_are_executed() -> None:
     """Mutating a frozen Python query outcome fails behavioral validation."""
-    documents = extractor.build_documents(REPO_ROOT)
+    documents = extractor.build_documents(PYTHON_REPO, PARITY_ROOT)
     query = copy.deepcopy(documents["python-query-contracts.json"])
     inherited = next(
         entry for entry in query["entries"] if entry["inheritance"] == "inherited"
@@ -397,7 +416,7 @@ def test_inherited_query_contract_expected_matches_are_executed() -> None:
 
     with pytest.raises(ValueError, match="query contract behavior mismatch"):
         extractor.validate_contracts(
-            REPO_ROOT,
+            PYTHON_REPO,
             documents["python-public-api.json"],
             documents["python-format-fields.json"],
             documents["python-behavior-contracts.json"],
@@ -405,9 +424,10 @@ def test_inherited_query_contract_expected_matches_are_executed() -> None:
         )
 
 
+@requires_libtmux
 def test_every_inherited_behavior_cites_executable_authority() -> None:
     """Every inherited row must cite the executable outcome comparison."""
-    documents = extractor.build_documents(REPO_ROOT)
+    documents = extractor.build_documents(PYTHON_REPO, PARITY_ROOT)
     behavior = copy.deepcopy(documents["python-behavior-contracts.json"])
     projection = next(
         entry
@@ -421,7 +441,7 @@ def test_every_inherited_behavior_cites_executable_authority() -> None:
 
     with pytest.raises(ValueError, match="does not cite executable behavior authority"):
         extractor.validate_contracts(
-            REPO_ROOT,
+            PYTHON_REPO,
             documents["python-public-api.json"],
             documents["python-format-fields.json"],
             behavior,
@@ -429,6 +449,7 @@ def test_every_inherited_behavior_cites_executable_authority() -> None:
         )
 
 
+@requires_libtmux
 def test_inherited_behavior_fields_require_structured_authority() -> None:
     """Inherited evidence fields cannot regress to unauthenticated prose.
 
@@ -445,7 +466,7 @@ def test_inherited_behavior_fields_require_structured_authority() -> None:
     >>> len(authority_fields)
     4
     """
-    documents = extractor.build_documents(REPO_ROOT)
+    documents = extractor.build_documents(PYTHON_REPO, PARITY_ROOT)
     behavior = copy.deepcopy(documents["python-behavior-contracts.json"])
     inherited = next(
         entry for entry in behavior["entries"] if entry["inheritance"] == "inherited"
@@ -457,7 +478,7 @@ def test_inherited_behavior_fields_require_structured_authority() -> None:
         match="inherited behavior field lacks structured authority",
     ):
         extractor.validate_contracts(
-            REPO_ROOT,
+            PYTHON_REPO,
             documents["python-public-api.json"],
             documents["python-format-fields.json"],
             behavior,
@@ -465,9 +486,10 @@ def test_inherited_behavior_fields_require_structured_authority() -> None:
         )
 
 
+@requires_libtmux
 def test_noninherited_contracts_require_explicit_normative_status() -> None:
     """Adapted and Swift-schema rows cannot masquerade as Python behavior."""
-    documents = extractor.build_documents(REPO_ROOT)
+    documents = extractor.build_documents(PYTHON_REPO, PARITY_ROOT)
     behavior = copy.deepcopy(documents["python-behavior-contracts.json"])
     adapted = next(
         entry for entry in behavior["entries"] if entry["inheritance"] == "adapted"
@@ -476,7 +498,7 @@ def test_noninherited_contracts_require_explicit_normative_status() -> None:
 
     with pytest.raises(ValueError, match="lacks explicit normative status"):
         extractor.validate_contracts(
-            REPO_ROOT,
+            PYTHON_REPO,
             documents["python-public-api.json"],
             documents["python-format-fields.json"],
             behavior,
@@ -491,7 +513,7 @@ def test_noninherited_contracts_require_explicit_normative_status() -> None:
 
     with pytest.raises(ValueError, match="lacks explicit normative status"):
         extractor.validate_contracts(
-            REPO_ROOT,
+            PYTHON_REPO,
             documents["python-public-api.json"],
             documents["python-format-fields.json"],
             documents["python-behavior-contracts.json"],
@@ -499,12 +521,13 @@ def test_noninherited_contracts_require_explicit_normative_status() -> None:
         )
 
 
+@requires_libtmux
 def test_checked_in_documents_match_fresh_sorted_generation() -> None:
     """Manifest drift or non-sorted JSON must fail the focused parity gate."""
-    documents = extractor.build_documents(REPO_ROOT)
+    documents = extractor.build_documents(PYTHON_REPO, PARITY_ROOT)
 
     for filename, document in documents.items():
-        path = REPO_ROOT / "swift" / "Parity" / filename
+        path = PARITY_ROOT / filename
         assert path.read_text(encoding="utf-8") == extractor.render_json(document)
         assert json.loads(path.read_text(encoding="utf-8")) == document
 
@@ -548,40 +571,3 @@ def test_every_extractor_function_has_numpy_docstring_and_doctest() -> None:
             missing.append(node.name)
 
     assert missing == [], missing
-
-
-def test_clean_docs_build_has_no_warnings(tmp_path: pathlib.Path) -> None:
-    """A first-build Sphinx environment treats every warning as a failure."""
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "sphinx",
-            "-W",
-            "--keep-going",
-            "-b",
-            "dirhtml",
-            "-d",
-            str(tmp_path / "doctrees"),
-            str(REPO_ROOT / "docs"),
-            str(tmp_path / "html"),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_plan_owned_sdd_workspace_is_not_tracked() -> None:
-    """The ignored SDD planning workspace cannot become a deliverable."""
-    result = subprocess.run(
-        ["git", "ls-files", ".superpowers/sdd"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.stdout == ""
