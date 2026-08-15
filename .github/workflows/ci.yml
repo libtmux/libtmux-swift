@@ -3,6 +3,7 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -15,7 +16,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        # Linux only, as the other libtmux ports do. This repository is
+        # private on a plan that meters Actions, and macOS runners are billed
+        # at ten times the rate — eight tmux builds there would spend the
+        # month's minutes on one push. macOS is supported and its handling is
+        # written; it is exercised by hand until there is a reason to pay for
+        # it on every commit. `workflow_dispatch` below is that lane.
+        os: [ubuntu-latest]
         # The releases the library claims to support. Building each from its
         # own tag is what makes a compatibility claim evidence rather than an
         # assertion: behaviour differs between 3.2a, 3.4 and 3.7 on one machine.
