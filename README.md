@@ -51,12 +51,15 @@ Four things ship from this one package. Take only what you need — the core has
 one dependency, and the YAML reader is behind a trait so you do not pay for it
 unless you ask.
 
-| Product | What it is for | Depends on |
-| --- | --- | --- |
-| **`LibTmux`** | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
-| **`WorkspaceBuilder`** | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
-| **`LibTmuxMCP`** | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
-| **`libtmux-mcp`** | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
+| Product | Source | What it is for | Depends on |
+| --- | --- | --- | --- |
+| **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
+| **[`WorkspaceBuilder`][p-ws]** | [`Sources/WorkspaceBuilder/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
+| **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
+
+Each has its own README with an install snippet, a usage example, and what it
+does and does not cover.
 
 `WorkspaceBuilder` and `LibTmuxMCP` are both written against `Server` and
 neither mentions a mode, which is how the mode switch below is kept honest.
@@ -547,6 +550,10 @@ MIT. See [LICENSE](LICENSE).
 [snippets]: Snippets/
 [benchmarks]: Benchmarks/
 [parity]: Parity/
+[p-lib]: Sources/LibTmux/
+[p-ws]: Sources/WorkspaceBuilder/
+[p-mcp]: Sources/LibTmuxMCP/
+[p-server]: Sources/libtmux-mcp/
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md

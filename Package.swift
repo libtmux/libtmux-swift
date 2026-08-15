@@ -39,7 +39,11 @@ let package = Package(
             name: "LibTmux",
             dependencies: [
                 .product(name: "Subprocess", package: "swift-subprocess")
-            ]
+            ],
+            // Beside the sources it documents, and named here because
+            // SwiftPM treats an undeclared file in a target directory as a
+            // resource somebody forgot.
+            exclude: ["README.md"]
         ),
         .target(
             name: "WorkspaceBuilder",
@@ -50,15 +54,27 @@ let package = Package(
                     package: "Yams",
                     condition: .when(traits: ["YAMLWorkspaces"])
                 ),
-            ]
+            ],
+            // Beside the sources it documents, and named here because
+            // SwiftPM treats an undeclared file in a target directory as a
+            // resource somebody forgot.
+            exclude: ["README.md"]
         ),
         .target(
             name: "LibTmuxMCP",
-            dependencies: ["LibTmux"]
+            dependencies: ["LibTmux"],
+            // Beside the sources it documents, and named here because
+            // SwiftPM treats an undeclared file in a target directory as a
+            // resource somebody forgot.
+            exclude: ["README.md"]
         ),
         .executableTarget(
             name: "libtmux-mcp",
-            dependencies: ["LibTmux", "LibTmuxMCP"]
+            dependencies: ["LibTmux", "LibTmuxMCP"],
+            // Beside the sources it documents, and named here because
+            // SwiftPM treats an undeclared file in a target directory as a
+            // resource somebody forgot.
+            exclude: ["README.md"]
         ),
         // Shared by every suite that talks to a real tmux, so that all of them
         // provision and reap servers the same way. `Benchmarks/` symlinks this
