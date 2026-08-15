@@ -4,13 +4,13 @@ import PackageDescription
 
 let package = Package(
     name: "LibTmuxSpikes",
-    // macOS 26 rather than the 13 this library needs, because
-    // swift-subprocess 1.0.0 — its only release — has a `run` overload taking
-    // a `borrowing Span` and calling `.bytes` on it, and both are macOS 26
-    // API carrying no availability guard. Nothing here calls that overload,
-    // but a module compiles as a whole, so the floor is upstream's rather
-    // than ours. Lower it again when a release fixes that.
-    platforms: [.macOS(.v26)],
+    // macOS 13 is what this library needs. It cannot currently be built for
+    // any macOS at all: swift-subprocess 1.0.0 — its only release — has a
+    // `run` overload taking a `borrowing Span` and calling `.bytes` on it,
+    // both macOS 26 API with no availability guard, and SwiftPM compiles a
+    // dependency at that dependency's own declared minimum rather than the
+    // root's. Raising this number does not help; only a release upstream does.
+    platforms: [.macOS(.v13)],
     products: [
         .executable(name: "fixture-owner-helper", targets: ["FixtureOwnerHelper"]),
         .executable(name: "process-probe", targets: ["ProcessProbe"]),

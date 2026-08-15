@@ -4,7 +4,8 @@ What has been exercised, and what has not.
 
 ## Overview
 
-The package builds for Linux, and for macOS 26 and later, and supports the tmux
+The package builds for Linux. macOS is written but blocked upstream, and
+supports the tmux
 releases 3.2a through 3.7b.
 
 The test suite runs against real tmux, one private server and socket per case.

@@ -439,7 +439,7 @@ under a dependency you do not.
 | | |
 | --- | --- |
 | Swift | 6.2 or later |
-| Platforms | Linux, and macOS 26+ — see [below](#platform-notes) for why that floor is so high |
+| Platforms | Linux. macOS is written but does not currently build — see [Platform notes](#platform-notes) |
 | tmux | 3.2a through 3.7b |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
@@ -501,18 +501,21 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 
 ## Platform notes
 
-Linux is where this has run longest: the suite passes there against every
-supported tmux release, sequentially and eight ways in parallel. macOS runs the
-suite too, at both ends of the supported tmux range — what differs on Darwin is
-this package's own handling rather than tmux's behaviour, and that does not vary
-by release.
+Linux is where this runs: the suite passes there against every supported tmux
+release, sequentially and eight ways in parallel.
 
-**Why the macOS floor is 26.** Nothing here needs it. [swift-subprocess][] 1.0.0
-— its only release — has a `run` overload taking a `borrowing Span` and calling
-`.bytes` on it, both macOS 26 API with no availability guard. This library never
-calls that overload, but a module compiles as a whole, so a lower deployment
-target fails in the dependency rather than here. The floor comes down when a
-release upstream fixes it.
+**macOS does not build at present, and it is not this package's doing.**
+[swift-subprocess][] 1.0.0 — its only release — has a `run` overload taking a
+`borrowing Span` and calling `.bytes` on it, both macOS 26 API carrying no
+availability guard. Nothing here calls that overload, but a module compiles as
+a whole, and SwiftPM compiles a dependency at *that dependency's* declared
+minimum rather than the root package's, so no deployment target set here can
+reach it. It is fixed by a release upstream and by nothing else.
+
+The Darwin-specific handling is written and reviewed — the `TMPDIR` a socket
+path cannot afford, keg-only libevent and ncurses, `F_SETNOSIGPIPE` — and CI
+keeps a macOS lane running so the day it starts passing is a day something
+tells you. It is not allowed to fail the run in the meantime.
 
 A program that opens connections should ignore `SIGPIPE`, because a write to a
 tmux that went away first will otherwise end the process:
