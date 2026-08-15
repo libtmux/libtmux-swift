@@ -34,19 +34,27 @@ Swift 6 language mode with complete strict concurrency and no unsafe flags.
 
 ## Adding it to a project
 
+Nothing is tagged yet, so depend on the branch:
+
 ```swift
-.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")
+.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
 ```
 
 ```swift
 .product(name: "LibTmux", package: "libtmux-swift")
 ```
 
-No version is tagged yet, so until one is, depend on a branch or a checkout by
-path:
+Every tag until `0.1.0` will be a prerelease, and a prerelease has to be named
+exactly. `from: "0.1.0"` matches none of them — SwiftPM keeps prereleases out
+of a range whose bound has none — and `from: "0.1.0-alpha.1"` errs the other
+way, resolving forward into `0.2.0-alpha.1` and every prerelease after it.
+Neither is what you want from alpha software, so name the one you tested:
 
 ```swift
-.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
+.package(
+    url: "https://github.com/libtmux/libtmux-swift.git",
+    exact: "0.1.0-alpha.1"
+)
 ```
 
 Reading a workspace from YAML needs a YAML parser, and asking for it is what
@@ -56,7 +64,7 @@ with it, `Workspace.decode(yaml:)` exists:
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    from: "0.1.0",
+    exact: "0.1.0-alpha.1",
     traits: ["YAMLWorkspaces"]
 )
 ```

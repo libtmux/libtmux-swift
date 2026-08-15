@@ -32,13 +32,18 @@ DOCUMENTS = [ROOT / "README.md", *sorted((ROOT / "Sources").rglob("*.docc/*.md")
 # its own. Listed rather than detected, so the next one has to be a decision
 # somebody made rather than a heuristic somebody's example happened to match.
 MANIFEST_EXCERPTS = {
-    '.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")',
     '.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")',
     '.product(name: "LibTmux", package: "libtmux-swift")',
     (
         '.package(\n'
         '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
-        '    from: "0.1.0",\n'
+        '    exact: "0.1.0-alpha.1"\n'
+        ")"
+    ),
+    (
+        '.package(\n'
+        '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
+        '    exact: "0.1.0-alpha.1",\n'
         '    traits: ["YAMLWorkspaces"]\n'
         ")"
     ),

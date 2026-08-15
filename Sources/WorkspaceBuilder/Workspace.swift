@@ -53,7 +53,7 @@ public struct Workspace: Sendable, Hashable, Codable {
         /// ```swift
         /// .package(
         ///     url: "https://github.com/libtmux/libtmux-swift.git",
-        ///     from: "0.1.0",
+        ///     exact: "0.1.0-alpha.1",
         ///     traits: ["YAMLWorkspaces"]
         /// )
         /// ```
