@@ -95,12 +95,24 @@ $ python3 Scripts/update_mode_matrix.py --check
 Python under `Scripts/` is held to the ruff configuration beside it, in
 `Scripts/.ruff.toml`.
 
-## Documented examples are compiled
+## Documented examples are compiled, and most are run
 
 Anything inside a `swift` fenced block in `README.md` or the DocC catalogue must
 also appear in a file under `Snippets/`, which the build compiles. Add the
 example to a snippet rather than writing it twice — `Scripts/check_examples.py`
 fails when a fence appears in no snippet.
+
+An example that can address a live server belongs in `ReadmeExampleTests.swift`
+instead, where the suite runs it. That counts as compiled and is worth more:
+a renamed call stops the build either way, but a call that kept its name and
+changed its answer is only caught by running it. The check reports the split, so
+the number that are executed is a fact rather than a claim.
+
+Those tests provision servers through the same fixture as everything else, which
+keeps every socket under `/tmp/libtmux-swift-test/`. `withNamedTmuxServer` is the
+socket-*name* half: names are resolved by tmux inside `TMUX_TMPDIR`, so the
+fixture points that at a directory in the same root rather than letting a name
+land in the machine-wide default where the other ports' servers live.
 
 ## Measured claims are generated, not typed
 

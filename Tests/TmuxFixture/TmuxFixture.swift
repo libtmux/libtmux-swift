@@ -93,6 +93,76 @@ public func withTmuxServer<Result>(
     }
 }
 
+/// Points `TMUX_TMPDIR` at a directory inside this suite's root, once.
+///
+/// A socket *name* is resolved by tmux inside `TMUX_TMPDIR`, and its default is
+/// shared with every other tmux on the machine — including the ones the other
+/// libtmux ports are running. A suite that addressed servers by name without
+/// moving that directory would put its sockets where anything sweeping by
+/// prefix can reach them, which is the thing this whole root exists to prevent.
+///
+/// Set once for the process rather than per case, because it is process-wide
+/// state and cases run concurrently: each case takes a unique *name* inside the
+/// shared directory instead. Cases that address a socket by path are unaffected
+/// either way, `-S` being absolute.
+private let namedSocketRoot: URL = {
+    let root = socketRoot.appendingPathComponent("named")
+    try? FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
+    setenv("TMUX_TMPDIR", root.path, 1)
+    return root
+}()
+
+/// Runs `body` against a private tmux server addressed by socket *name*, and
+/// always kills it.
+///
+/// The same guarantees as ``withTmuxServer(_:)`` — its own server, killed on
+/// the way out and reaped if this process is killed outright — for the half of
+/// ``Endpoint`` that a path-addressed fixture never exercises.
+public func withNamedTmuxServer<Result>(
+    _ body: (Server) async throws -> Result
+) async throws -> Result {
+    _ = sigpipeIgnoredOnce
+    let name = "s\(UUID().uuidString.prefix(8))"
+    // tmux does not put the socket in `TMUX_TMPDIR` itself: it creates a
+    // `tmux-<uid>` directory inside it and puts the socket there, so that one
+    // directory can be shared between users without their sockets colliding.
+    // The reaper has to be told the path tmux will actually use, or it removes
+    // nothing and every case leaves its socket behind.
+    let socket =
+        namedSocketRoot
+        .appendingPathComponent("tmux-\(getuid())")
+        .appendingPathComponent(name)
+
+    // The reaper covers a run that is killed outright; it cannot cover the
+    // ordinary exit, because `kill-server` takes tmux's background jobs with
+    // it before the job can remove anything. tmux does not reliably unlink a
+    // socket on its way out, so the ordinary path is cleaned here — the same
+    // division of labour the path-addressed fixture uses for its directory.
+    defer { try? FileManager.default.removeItem(at: socket) }
+
+    let server = try Server(
+        socketName: name,
+        tmuxExecutable: tmuxExecutablePath()
+    )
+    _ = try await server.run([
+        TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+        TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
+        reaperCommand(root: socket),
+    ])
+    do {
+        let result = try await body(server)
+        _ = try await server.run(TmuxCommand("kill-server"))
+        return result
+    } catch {
+        _ = try? await server.run(TmuxCommand("kill-server"))
+        throw error
+    }
+}
+
 /// A reaper that outlives this process, so a killed run leaves no server
 /// behind.
 ///

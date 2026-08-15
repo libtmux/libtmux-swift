@@ -369,9 +369,9 @@ first `tmux` on `PATH`. Anything the server wants to tell a human goes to
 stderr, because stdout is the protocol and a stray line there corrupts it.
 
 `LIBTMUX_SOCKET` is a name rather than a path, and tmux resolves a name inside
-its own socket directory. If your tmux keeps its sockets elsewhere — anything
-that sets `TMUX_TMPDIR` — this server cannot reach them yet, because it runs
-tmux in a controlled environment that does not carry that variable through.
+`TMUX_TMPDIR`. Set that in the same `env` block when your tmux keeps its sockets
+somewhere other than the default, and the name will mean the same server to this
+package that it means to you.
 
 | Tool | What it does |
 | --- | --- |
@@ -385,6 +385,25 @@ tmux in a controlled environment that does not carry that variable through.
 `describe_filters` is what makes the rest usable: a client that does not speak
 Swift learns the filterable vocabulary from it, instead of hard coding field
 names that a rename would break.
+
+### What it feels like
+
+> **You:** Which of my panes are sitting in an editor?
+>
+> **Agent:** Three — `%4` and `%7` are running `nvim`, `%12` is running `vim`.
+> `%4` is in `~/work/api`, the other two are in `~/work/web`.
+
+The agent asked `describe_filters` what a pane can be filtered on, then
+`list_panes` with `currentCommand in [nvim, vim]`. It did not shell out, parse
+`tmux list-panes` output, or guess a format string.
+
+### When it earns its keep
+
+For a single `tmux send-keys`, it does not — run tmux. It earns its keep when
+something has to be *asked* rather than done: which pane is running the failing
+test, what a long process last printed, whether the session you are about to
+create already exists. The filter vocabulary travels to the client, so those
+questions are answered in one call instead of a listing plus a regex.
 
 `LibTmuxMCP` is the same tools as a library, if you would rather embed them in a
 server of your own than run this one.
@@ -432,10 +451,19 @@ $ swift package --disable-sandbox preview-documentation --target LibTmux
 
 CI builds it and fails the job on any warning.
 
-Every Swift example in this file is also a file under [`Snippets/`][snippets],
-which `swift build` compiles — an example that stops compiling stops the build.
-`Scripts/check_examples.py` fails if a fence here appears in no snippet, so what
-you read above is what the compiler accepted.
+Every Swift example in this file is also code the build compiles, and most of
+it is code the suite *runs*. Compiling catches a call that was renamed; only
+running catches one that quietly began answering something else — so the
+examples that can address a live server are kept in `ReadmeExampleTests.swift`
+and executed against real tmux, on sockets under this suite's own namespace.
+
+```console
+$ python3 Scripts/check_examples.py
+32 documented examples, each compiled; 18 of them run against a real tmux
+```
+
+That check fails if a fence here appears in neither place, so what you read
+above is what the compiler accepted and, mostly, what tmux actually did.
 
 ## Tests
 
@@ -496,6 +524,14 @@ handles. `Scripts/parity_report.py` measures the surface against Python's
 recorded API and names each divergence, so a difference reads as a decision
 rather than an omission.
 
+## Related projects
+
+- [libtmux][] — the Python library this is a port of
+- [tmuxp][] — tmux session manager, and the workspace format `WorkspaceBuilder`
+  reads
+- [libtmux-mcp][py-mcp] — the Python MCP server for tmux
+- [The Tao of tmux][tao] — the book
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
@@ -511,4 +547,6 @@ MIT. See [LICENSE](LICENSE).
 [snippets]: Snippets/
 [benchmarks]: Benchmarks/
 [parity]: Parity/
+[py-mcp]: https://libtmux-mcp.git-pull.com
+[tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md

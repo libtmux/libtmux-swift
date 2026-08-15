@@ -10,6 +10,12 @@ every build and in CI. This checks the other half: that each ```swift block in
 the README and the DocC catalogue appears in one of those snippets, rather than
 being a copy that drifted away from it.
 
+Compiling is not the whole claim. A call that was renamed stops the build, but
+one that quietly began answering something else does not, so the examples that
+can be run against a real tmux are also kept in `ReadmeExampleTests.swift` and
+executed by the suite. Those count as compiled too, and the summary says how
+many of the documented examples are covered that way.
+
     python3 Scripts/check_examples.py
 
 Matching is by line sequence after removing each block's own indentation, so an
@@ -25,6 +31,8 @@ import textwrap
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SNIPPETS = ROOT / "Snippets"
+# Homes for an example that is executed rather than only compiled.
+EXECUTED = sorted((ROOT / "Tests").rglob("ReadmeExampleTests.swift"))
 DOCUMENTS = [ROOT / "README.md", *sorted((ROOT / "Sources").rglob("*.docc/*.md"))]
 
 # Excerpts from a consumer's `Package.swift`. They are Swift, and they are
@@ -75,14 +83,20 @@ def main() -> int:
         print(f"no snippets in {SNIPPETS}", file=sys.stderr)
         return 1
 
+    executed = {path: lines_of(path.read_text()) for path in EXECUTED}
+
     orphans: list[tuple[pathlib.Path, str]] = []
     checked = 0
+    run_against_tmux = 0
     for document in DOCUMENTS:
         for block in FENCE.findall(document.read_text()):
             if block.strip() in MANIFEST_EXCERPTS:
                 continue
             checked += 1
             wanted = lines_of(block)
+            if any(contains(body, wanted) for body in executed.values()):
+                run_against_tmux += 1
+                continue
             if not any(contains(body, wanted) for body in snippets.values()):
                 orphans.append((document, block.strip()))
 
@@ -103,7 +117,10 @@ def main() -> int:
         )
         return 1
 
-    print(f"{checked} documented examples, each compiled by a snippet")
+    print(
+        f"{checked} documented examples, each compiled; "
+        f"{run_against_tmux} of them run against a real tmux"
+    )
     return 0
 
 
