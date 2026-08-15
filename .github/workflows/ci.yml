@@ -1,0 +1,124 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / tmux ${{ matrix.tmux }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+        # The releases the library claims to support. Building each from its
+        # own tag is what makes a compatibility claim evidence rather than an
+        # assertion: behaviour differs between 3.2a, 3.4 and 3.7 on one machine.
+        tmux: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sixteen jobs building the same eight releases from source, on every
+      # push, is most of this workflow's runtime. A release tarball never
+      # changes, so the version and the runner are the whole key.
+      - name: Restore tmux ${{ matrix.tmux }}
+        id: tmux-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/tmux-${{ matrix.tmux }}
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux' && steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bison libevent-dev libncurses-dev pkg-config
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS' && steps.tmux-cache.outputs.cache-hit != 'true'
+        run: brew install automake bison libevent ncurses pkg-config
+
+      - name: Build tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          # Exported here rather than into the environment every later step
+          # inherits: these point at Homebrew's copies of libevent and ncurses,
+          # and nothing but tmux's configure should be reading them.
+          if [ "${RUNNER_OS}" = "macOS" ]; then
+            # Keg-only formulae, so Homebrew leaves them off PATH and out of
+            # pkg-config's search. tmux's configure finds neither without being
+            # told, and fails in a way that reads like a missing library.
+            PATH="$(brew --prefix bison)/bin:${PATH}"
+            export PATH
+            export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
+            export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
+            export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+          fi
+          curl --location --fail --silent --show-error \
+            "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
+            --output tmux.tar.gz
+          tar -xzf tmux.tar.gz
+          cd "tmux-${{ matrix.tmux }}"
+          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}"
+          make -j"$(getconf _NPROCESSORS_ONLN)"
+          make install
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+
+      - name: Check formatting
+        run: swift format lint --recursive --strict Sources Tests Snippets Package.swift
+
+      # The checks below are about the repository rather than the platform, so
+      # one lane runs them. A missing DocC link is not a per-runner fact.
+      - name: Lint the Python tooling
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: check Scripts/
+
+      # `swift build` compiles Snippets, so a documented example that no longer
+      # compiles fails the job. This checks the other half: that the examples on
+      # the page are the ones in the snippets, rather than copies that drifted.
+      - name: Check documented examples are compiled
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_examples.py
+
+      - name: Build documentation
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: |
+          set -euo pipefail
+          swift package generate-documentation --target LibTmux 2>&1 | tee docs.log
+          if grep -q 'warning:' docs.log; then
+            echo "::error::DocC reported warnings"
+            grep -A3 'warning:' docs.log
+            exit 1
+          fi
+
+      # The documented process and round-trip counts are the benchmark's own
+      # output. If they have drifted from what the code now does, the table is
+      # wrong and saying so here is cheaper than a reader trusting it.
+      - name: Check the mode matrix is current
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: |
+          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          python3 Scripts/update_mode_matrix.py --check
+
+      - name: Test
+        run: |
+          # Every test resolves its tmux through this, so the whole suite runs
+          # against the release being exercised rather than whatever the runner
+          # happens to ship.
+          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          "$LIBTMUX_TMUX_BIN" -V
+          swift test
