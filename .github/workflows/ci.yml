@@ -98,10 +98,6 @@ jobs:
       # nothing else in CI reads them. This catches a corrupted manifest or a
       # report that stopped running.
       #
-      # `extract-python-parity.py --check` is deliberately absent: it needs a
-      # libtmux checkout carrying the parity authorities, and the commit these
-      # manifests were built from is not on any remote. Regenerating them is a
-      # local operation until that changes.
       - name: Check the parity report runs
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/parity_report.py
@@ -110,7 +106,27 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: |
           python3 -m pip install --quiet pytest tomlkit
-          python3 -m pytest Scripts/tests Spikes/PythonTests -q
+          python3 -m pytest Scripts/tests -q
+
+      # The manifests name the libtmux commit they describe, so the checkout to
+      # verify against is read out of them rather than pinned twice. The parity
+      # authorities are pytest files in this repository: they observe libtmux's
+      # behaviour so a contract calling itself inherited has something
+      # executable behind the claim, and this is where that gets run.
+      - name: Check the parity manifests against libtmux
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: |
+          set -euo pipefail
+          export PATH="${HOME}/tmux-${{ matrix.tmux }}/bin:${PATH}"
+          commit=$(python3 -c "import json; print(json.load(open('Parity/python-public-api.json'))['pythonSource']['commit'])")
+          git clone --quiet --filter=blob:none \
+            https://github.com/tmux-python/libtmux.git "${RUNNER_TEMP}/libtmux"
+          git -C "${RUNNER_TEMP}/libtmux" checkout --quiet --detach "$commit"
+          python3 -m pip install --quiet pytest tomlkit --editable "${RUNNER_TEMP}/libtmux"
+          export LIBTMUX_PYTHON_REPO="${RUNNER_TEMP}/libtmux"
+          python3 -m pytest Scripts/parity Spikes/PythonTests -q
+          python3 Scripts/extract-python-parity.py --check \
+            --python-repo "${LIBTMUX_PYTHON_REPO}"
 
       # `swift build` compiles Snippets, so a documented example that no longer
       # compiles fails the job. This checks the other half: that the examples on
