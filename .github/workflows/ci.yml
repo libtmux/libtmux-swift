@@ -28,14 +28,14 @@ jobs:
         # its own macOS minimum.
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Sixteen jobs building the same eight releases from source, on every
       # push, is most of this workflow's runtime. A release tarball never
       # changes, so the version and the runner are the whole key.
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/tmux-${{ matrix.tmux }}
           key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
@@ -88,14 +88,14 @@ jobs:
       # Resolving fetches five repositories on every run, and a clone that
       # times out fails a lane that has nothing wrong with it.
       - name: Restore the SwiftPM cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/org.swift.swiftpm
           key: swiftpm-linux-${{ hashFiles('Package.resolved', 'Examples/Package.resolved') }}
           restore-keys: swiftpm-linux-
 
       - name: Set up Swift
-        uses: swift-actions/setup-swift@v2
+        uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2"
 
