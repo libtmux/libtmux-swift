@@ -104,6 +104,14 @@ jobs:
       - name: Build with default traits
         run: xcrun swift build
 
+      # Every pane is a pty, the suite runs its cases in parallel, and Darwin
+      # caps ptys far lower than Linux does — past the cap tmux reports
+      # `fork failed: Device not configured` from a window it could not open.
+      - name: Raise the pty limit
+        run: |
+          set -euo pipefail
+          echo "before: $(sysctl -n kern.tty.ptmx_max)"
+          sudo sysctl -w kern.tty.ptmx_max=999
       - name: Test
         run: |
           set -euo pipefail
