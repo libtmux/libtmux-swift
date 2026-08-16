@@ -440,7 +440,7 @@ under a dependency you do not.
 | | |
 | --- | --- |
 | Swift | 6.2 or later |
-| Platforms | Linux. macOS is written but does not currently build — see [Platform notes](#platform-notes) |
+| Platforms | Linux and macOS — see [Platform notes](#platform-notes) |
 | tmux | 3.2a through 3.7b |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
@@ -502,21 +502,18 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 
 ## Platform notes
 
-Linux is where this runs: the suite passes there against every supported tmux
-release, sequentially and eight ways in parallel.
+The suite runs on both. Linux covers every supported tmux release, eight ways
+in parallel; macOS runs the ends of that range, because what differs on Darwin
+is this package's own handling — the `TMPDIR` a socket path cannot afford,
+keg-only libevent and ncurses, `F_SETNOSIGPIPE` — and none of it varies by tmux
+release.
 
-**macOS does not build at present, and it is not this package's doing.**
-[swift-subprocess][] 1.0.0 — its only release — has a `run` overload taking a
-`borrowing Span` and calling `.bytes` on it, both macOS 26 API carrying no
-availability guard. Nothing here calls that overload, but a module compiles as
-a whole, and SwiftPM compiles a dependency at *that dependency's* declared
-minimum rather than the root package's, so no deployment target set here can
-reach it. It is fixed by a release upstream and by nothing else.
-
-The Darwin-specific handling is written and reviewed — the `TMPDIR` a socket
-path cannot afford, keg-only libevent and ncurses, `F_SETNOSIGPIPE` — and the
-macOS lane is commented out in the workflow rather than deleted, ready to
-uncomment the day upstream moves.
+**On Darwin, build with Xcode's toolchain rather than one from swift.org.**
+[swift-subprocess][] reaches `Span.bytes`, whose accessor back-deploys only from
+Swift 6.3, so a 6.2 toolchain fails inside the dependency at any deployment
+target below macOS 26 — and SwiftPM compiles a dependency at *that dependency's*
+declared minimum, so no number set here reaches it. Xcode 26 ships Swift 6.3,
+which is what the macOS lane and upstream's own CI both use.
 
 A program that opens connections should ignore `SIGPIPE`, because a write to a
 tmux that went away first will otherwise end the process:

@@ -4,10 +4,11 @@ import PackageDescription
 
 let package = Package(
     name: "libtmux",
-    // macOS 13 is what this library needs, and no macOS can build it:
-    // swift-subprocess 1.0.0 calls macOS 26 API with no availability guard, and
-    // SwiftPM compiles a dependency at that dependency's own declared minimum.
-    // Raising this number does not help; only a release upstream does.
+    // macOS 13 is what this library needs. Building for Darwin needs Xcode's
+    // toolchain rather than one from swift.org: swift-subprocess reaches
+    // `Span.bytes`, whose accessor back-deploys only from Swift 6.3, and
+    // SwiftPM compiles a dependency at that dependency's own declared minimum,
+    // so raising this number does not reach it either.
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "LibTmux", targets: ["LibTmux"]),
