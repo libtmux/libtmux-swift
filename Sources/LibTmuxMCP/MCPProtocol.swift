@@ -1,4 +1,5 @@
 import Foundation
+import LibTmux
 
 // The JSON-RPC half of `libtmux-mcp`, kept here rather than in the executable
 // because top-level code in an executable target cannot be imported and so
@@ -76,7 +77,7 @@ struct MCPRequest: Decodable {
 public struct MCPRequestHandler: Sendable {
     public static let protocolVersion = "2024-11-05"
     public static let serverName = "libtmux"
-    public static let serverVersion = "0.1.0"
+    public static let serverVersion = LibTmuxVersion.current
 
     private let tools: TmuxTools
     private let encoder = JSONEncoder()

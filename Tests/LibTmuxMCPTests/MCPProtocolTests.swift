@@ -27,6 +27,9 @@ struct MCPProtocolTests {
         let result = try #require(body["result"])
         #expect(result["protocolVersion"]?.stringValue == MCPRequestHandler.protocolVersion)
         #expect(result["serverInfo"]?["name"]?.stringValue == MCPRequestHandler.serverName)
+        // What a client is told this server is, which is the package's
+        // own version rather than a number kept beside it.
+        #expect(result["serverInfo"]?["version"]?.stringValue == LibTmuxVersion.current)
     }
 
     @Test("an integer id comes back an integer, not a float")

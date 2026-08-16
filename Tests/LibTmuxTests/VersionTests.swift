@@ -88,3 +88,21 @@ struct VersionTests {
         }
     }
 }
+
+@Suite("the version this package is released as")
+struct PackageVersionTests {
+    @Test("it is the bare semver a tag carries")
+    func itIsBareSemver() throws {
+        let current = LibTmuxVersion.current
+        #expect(!current.hasPrefix("v"), "a Swift package tags 1.2.3, not v1.2.3")
+
+        // Split before parsing, because a prerelease suffix is part of the
+        // version and not part of the numbers.
+        let core = current.split(separator: "-", maxSplits: 1).first ?? ""
+        let parts = core.split(separator: ".")
+        #expect(parts.count == 3, "expected major.minor.patch, got \(core)")
+        for part in parts {
+            #expect(Int(part) != nil, "\(part) is not a number")
+        }
+    }
+}
