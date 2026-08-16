@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # The root package is the only one with external dependencies. Benchmarks and
+  # Examples reach the library by path, and dev/Spikes is export-ignored.
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      swift:
+        patterns: ["*"]
+    # The trailing space stops Dependabot appending a colon.
+    commit-message:
+      prefix: "swift(deps) "
+    # Time enough for a compromised release to be reported.
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps) "
+    cooldown:
+      default-days: 7
