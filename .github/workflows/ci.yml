@@ -164,6 +164,12 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_script_modes.py
 
+      # A pin that names a version nobody tagged sends a reader nowhere, and
+      # the release workflow refuses a tag this file disagrees with.
+      - name: Check every version pin agrees
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_version.py
+
       - name: Build documentation
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: |
