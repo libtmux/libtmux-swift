@@ -11,6 +11,8 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-08-16
+
 ### Added
 
 - Waiting that is driven by tmux rather than by a timer.
@@ -99,6 +101,10 @@ version number says only which alpha you have. Pin an exact one.
   disagree.
 
 ## [0.1.0-alpha.1] - 2026-08-16
+
+Never tagged: this was superseded by `0.1.0-alpha.2` before it was
+published, so there is no release to install. The notes are kept because
+they describe what the package is, which the next entry then changes.
 
 The first alpha. Everything below is new, so this says what the package is
 rather than what changed in it.

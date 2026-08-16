@@ -81,14 +81,14 @@ Nothing is tagged yet, so depend on the branch:
 
 Every tag until `0.1.0` will be a prerelease, and a prerelease has to be named
 exactly. `from: "0.1.0"` matches none of them — SwiftPM keeps prereleases out
-of a range whose bound has none — and `from: "0.1.0-alpha.1"` errs the other
+of a range whose bound has none — and `from: "0.1.0-alpha.2"` errs the other
 way, resolving forward into `0.2.0-alpha.1` and every prerelease after it.
 Neither is what you want from alpha software, so name the one you tested:
 
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.1"
+    exact: "0.1.0-alpha.2"
 )
 ```
 
@@ -99,7 +99,7 @@ with it, `Workspace.decode(yaml:)` exists:
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.1",
+    exact: "0.1.0-alpha.2",
     traits: ["YAMLWorkspaces"]
 )
 ```
@@ -527,8 +527,8 @@ server of your own than run this one.
 ## Project status
 
 **Alpha.** The library works and its suite runs against eight tmux releases on
-every push, but nothing is tagged, the API has had no outside use, and names
-are still moving. Expect to update code when you update the package.
+every push, but the API has had no outside use and names are still moving.
+Expect to update code when you update the package.
 
 What that means concretely:
 

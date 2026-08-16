@@ -8,5 +8,5 @@
 public enum LibTmuxVersion {
     /// The current version, in the form a git tag carries it: bare semver, no
     /// `v`, with a prerelease suffix while the API may still change.
-    public static let current = "0.1.0-alpha.1"
+    public static let current = "0.1.0-alpha.2"
 }
