@@ -379,16 +379,22 @@ if asMarkdown {
 
     // Two seconds of quiet: a daemon does not come up the instant it is
     // started, and that gap is the whole difference between the two.
+    //
+    // Only the right column is measured. Polling's cost is a function of how
+    // fast the machine gets round the loop — three runs here saw 31, 35 and 37
+    // processes — and a table checked for currency cannot carry a number that
+    // moves. What does not move is the point being made: waiting on events
+    // costs the same whether the wait is two seconds or two minutes.
     let waiting = try await measureWaiting(quietFor: .seconds(2))
     print("<!-- section: waiting -->")
-    print("| Waiting two seconds for a line you did not print | Polling | waitForOutput |")
+    print("| Waiting for a line that has not been printed yet | Polling | waitForOutput |")
     print("| --- | --- | --- |")
     print(
-        "| tmux processes spent | \(waiting.polled.processes) "
-            + "| \(waiting.awaited.processes) |")
-    print(
-        "| pane captures taken | \(waiting.polled.output) "
+        "| pane captures taken | one per tick, for as long as the wait lasts "
             + "| \(waiting.awaited.output) |")
+    print(
+        "| tmux processes spent | one per capture "
+            + "| \(waiting.awaited.processes), however long it waits |")
     exit(0)
 }
 
