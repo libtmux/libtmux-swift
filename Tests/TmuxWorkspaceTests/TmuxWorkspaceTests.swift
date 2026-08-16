@@ -109,10 +109,14 @@ struct WorkspaceBuildingTests {
             let snapshot = try await server.snapshot()
             let pane = try #require(snapshot.panes(of: session).first)
             // Darwin makes `/tmp` a symlink to `/private/tmp`, and tmux reports
-            // where the pane actually is, not the name it was asked for.
-            let expected = URL(fileURLWithPath: "/tmp")
-                .resolvingSymlinksInPath().path
-            #expect(pane.currentPath == expected)
+            // where the pane actually is. Both sides go through the same
+            // resolution because Foundation's also strips a leading `/private`,
+            // so resolving only the asked-for name leaves it unchanged and
+            // comparing it to what tmux said fails.
+            let resolved = { (path: String) in
+                URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            }
+            #expect(resolved(pane.currentPath) == resolved("/tmp"))
         }
     }
 
