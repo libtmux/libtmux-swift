@@ -299,6 +299,70 @@ let firstLine: String? = try await server.connected(attachingTo: "work") { serve
 }
 ```
 
+## Waiting without polling
+
+tmux has no hook that fires when a pane prints something, so a wait built from
+commands alone has to re-read the pane on a timer and spend a process per tick.
+A control connection is told instead, and that makes three waits cheaper than
+the loop everyone writes first. Reach for them in this order.
+
+**You wrote the command.** Compose a channel into it: tmux blocks server-side
+and returns on the signal itself, so nothing is inferred from what the screen
+looks like.
+
+```swift
+try await server.run("make && tmux wait-for -S built", in: pane)
+try await server.wait(for: "built")
+```
+
+**The question is about state.** Subscribe to a format and tmux reports each
+time its value changes — no capture, no scrollback, no prompt regex.
+`#{pane_current_command}` answers "is my command done?" exactly:
+
+```swift
+try await server.connected(attachingTo: "work") { server, control in
+    try await control.watch(
+        FormatSubscription(
+            name: "cmd",
+            scope: .pane(pane.id),
+            format: "#{pane_current_command}"
+        )
+    )
+    for await change in control.changes(named: "cmd") where change.value == "sh" {
+        return
+    }
+}
+```
+
+**You did not write the command.** For a daemon printing `ready` or a dev
+server someone else started, wait on the pane's output. `%output` wakes the
+wait as the pane writes, and the matching runs against the rendered grid, so a
+quiet pane costs nothing while this waits:
+
+```swift
+let waited = try await server.waitForOutput(
+    in: pane,
+    matching: ["Listening on"],
+    stoppingAt: ["EADDRINUSE", "error"]
+)
+```
+
+Pass `stops` whenever a failure marker exists — a build that fails after five
+seconds should end the wait then, not hold it open to report the same failure
+later.
+
+The condition is checked before it is blocked on, the way any other wait on a
+predicate works: text already on screen returns at once with
+`matchedAtEntry: true`, because "wait until it is listening" is answered by
+something already listening. Pass `requiringFreshOutput` when only a new
+occurrence counts. When a wait does end without a match, the result says which
+of the three things happened: `sawNewOutput: false` means the pane stayed quiet
+and no pattern will fix it, and otherwise `tail` holds what actually arrived so
+the pattern can be fixed from the output rather than from memory.
+
+The DocC catalogue's `Waiting` article covers why the output stream is a
+doorbell rather than the text being matched.
+
 ## Workspaces, from a file or from Swift
 
 `TmuxWorkspace` builds a whole session in one go, from a [tmuxp][] workspace.
@@ -450,7 +514,7 @@ under a dependency you do not.
 ## Documentation
 
 The [DocC][] catalogue is the reference, and covers modes, snapshots, filtering,
-streaming, and platform support:
+streaming, waiting, and platform support:
 
 ```console
 $ swift package --disable-sandbox preview-documentation --target LibTmux

@@ -41,6 +41,7 @@ command explains itself on standard error — so
 - <doc:Snapshots>
 - <doc:Filtering>
 - <doc:Streaming>
+- <doc:Waiting>
 - <doc:PlatformSupport>
 
 ### Addressing a server
@@ -63,6 +64,9 @@ command explains itself on standard error — so
 
 ### Waiting for work to finish
 
+- <doc:Waiting>
+- ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
+- ``OutputWait``
 - ``Server/wait(for:)``
 - ``Server/signal(_:)``
 
@@ -103,6 +107,8 @@ command explains itself on standard error — so
 - ``ControlSession``
 - ``ControlReply``
 - ``ControlNotification``
+- ``FormatSubscription``
+- ``SubscriptionChange``
 
 ### Failures
 

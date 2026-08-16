@@ -101,7 +101,7 @@ DocC warnings fail the job, so a broken symbol link is an error rather than a
 note.
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 29
+$ python3 Scripts/check_examples.py --min-executed 35
 ```
 
 ```console
