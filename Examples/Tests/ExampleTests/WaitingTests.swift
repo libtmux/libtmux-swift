@@ -84,6 +84,28 @@ struct WaitingTests {
         }
     }
 
+    @Test("the documented watch answers the difference and then nothing")
+    func documentedWatchSendsTheDifference() async throws {
+        try await withTmuxServer { server in
+            let pane = try await onlyPane(server)
+            // `building` false runs the example's setup and leaves the loop
+            // immediately, which is the part with a documented contract: the
+            // first read establishes a mark rather than dumping the backlog.
+            try await watchingForChanges(server, pane: pane, building: false)
+
+            let started = try await server.capture(pane, since: nil)
+            #expect(started.lines.isEmpty)
+            try await server.run("printf 'watched-line\\n'", in: pane)
+            var update = started
+            for _ in 0..<30 {
+                update = try await server.capture(pane, since: update.cursor)
+                if !update.lines.isEmpty { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            #expect(update.lines.contains { $0.contains("watched-line") })
+        }
+    }
+
     @Test("the documented output wait ends on the line it was given")
     func documentedOutputWaitMatches() async throws {
         try await withTmuxServer { server in

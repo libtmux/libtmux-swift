@@ -99,6 +99,11 @@ struct OutputSchemaTests {
                 on: tools
             )
             try await check(
+                "capture_since",
+                .object(["pane": .string(pane.id)]),
+                on: tools
+            )
+            try await check(
                 "search_panes",
                 .object(["pattern": .string("nothing-matches-this")]),
                 on: tools

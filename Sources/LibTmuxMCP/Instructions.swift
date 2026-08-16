@@ -60,6 +60,8 @@ enum Instructions {
             METADATA vs CONTENT: list_* and filters read what a pane *is* — command, \
             path, size. search_panes and capture_pane read what it has *printed*. \
             Asking a listing about text finds nothing and looks like an empty server.
+            Watching a pane across turns: capture_since, which answers only the \
+            difference. capture_pane re-sends the whole screen every call.
             """,
 
             """

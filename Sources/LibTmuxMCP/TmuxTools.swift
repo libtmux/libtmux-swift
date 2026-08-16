@@ -68,6 +68,7 @@ public struct TmuxTools: Sendable {
         case "list_panes": return try await listPanes(arguments)
         case "snapshot": return try await readSnapshot()
         case "capture_pane": return try await capturePane(arguments)
+        case "capture_since": return try await captureSince(arguments)
         case "search_panes": return try await searchPanes(arguments, progress)
         case "read_format": return try await readFormat(arguments)
 

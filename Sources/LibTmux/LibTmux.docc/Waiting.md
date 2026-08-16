@@ -72,6 +72,35 @@ Pass `stops` whenever a failure marker exists. A build that fails after five
 seconds should end the wait then, rather than holding it open for the rest of
 the timeout to report the same failure later.
 
+## Watching, rather than waiting
+
+Waiting blocks until something happens. *Watching* is the other shape: come
+back now and then and ask what has happened since. Capturing the pane each
+time answers that with the whole screen, nearly all of which the caller has
+already read — which for an agent is context spent on nothing.
+
+``Server/capture(_:since:limit:)`` answers the difference:
+
+```swift
+var mark = try await server.capture(pane, since: nil).cursor
+while building {
+    let update = try await server.capture(pane, since: mark)
+    for line in update.lines { print(line) }
+    mark = update.cursor
+}
+```
+
+The first call with `nil` establishes where the pane is and returns nothing,
+so a watcher starts at "from now on" rather than with a screenful of backlog.
+A pane that has been quiet answers an empty list.
+
+The cursor is positional *and* remembers what the last row said, because a row
+can be rewritten in place — a spinner, a progress bar, a prompt redrawing. A
+position alone cannot tell a row already reported from the same row saying
+something new. It also carries the pane's process, so a respawn is reported as
+``IncrementalCapture/restarted`` instead of one program's output being read as
+another's.
+
 ## Why waitForOutput captures instead of reading the stream
 
 `%output` carries raw terminal bytes rather than text. A line typed into a
@@ -137,6 +166,12 @@ per tick and streaming nothing at all.
 
 - ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
 - ``OutputWait``
+
+### Watching a pane
+
+- ``Server/capture(_:since:limit:)``
+- ``CaptureCursor``
+- ``IncrementalCapture``
 
 ### Watching a format
 

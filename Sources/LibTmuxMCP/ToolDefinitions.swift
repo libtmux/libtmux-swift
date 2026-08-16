@@ -198,6 +198,53 @@ extension TmuxTools {
                 ], required: ["pane", "lines", "droppedLines"])
         ),
         ToolDefinition(
+            name: "capture_since",
+            title: "Read what a pane has printed since last time",
+            summary:
+                "Answers only what is new since a cursor, so watching a pane "
+                + "does not re-send what you have already read.",
+            detail: """
+                The tool for watching something over several turns. Call it once \
+                with no cursor to start — it answers nothing and hands back a \
+                mark — then pass that cursor to each later call and get only the \
+                difference. A pane that has been quiet answers an empty list.
+
+                `linesMissed` says the pane scrolled further than its history \
+                keeps, so some output is gone for good. `restarted` says the pane \
+                was respawned, so the cursor described a program that is no longer \
+                running.
+
+                Use wait_for_output instead when you want to block until something \
+                appears rather than to check what has appeared.
+                """,
+            tier: .readonly,
+            arguments: [
+                paneTarget,
+                ToolArgument(
+                    name: "cursor",
+                    summary:
+                        "The cursor a previous call returned. Omit to start "
+                        + "watching from now."
+                ),
+                ToolArgument(
+                    name: "max_lines",
+                    summary: "Keep at most this many new lines, dropping the oldest.",
+                    kind: .integer,
+                    defaultValue: .number(200)
+                ),
+            ],
+            outputSchema: Schema.object(
+                [
+                    "pane": Schema.string,
+                    "lines": Schema.array(of: Schema.string),
+                    "cursor": Schema.string,
+                    "linesMissed": Schema.boolean,
+                    "restarted": Schema.boolean,
+                ],
+                required: ["pane", "lines", "cursor", "linesMissed", "restarted"]
+            )
+        ),
+        ToolDefinition(
             name: "search_panes",
             title: "Search what panes have printed",
             summary: "Finds a regular expression in the contents of every pane.",

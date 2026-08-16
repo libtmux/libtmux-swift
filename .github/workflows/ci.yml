@@ -158,7 +158,7 @@ jobs:
       # that drifted — and that the number of them actually run has not slid.
       - name: Check documented examples are compiled
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
-        run: python3 Scripts/check_examples.py --min-executed 35
+        run: python3 Scripts/check_examples.py --min-executed 36
 
       # AGENTS.md states the socket-namespace rule in prose; this is what makes
       # it fail rather than be remembered. `/tmp` is shared with every other

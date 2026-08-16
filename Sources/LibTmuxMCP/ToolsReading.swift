@@ -208,3 +208,39 @@ struct MatchExpression {
             != nil
     }
 }
+
+extension TmuxTools {
+    func captureSince(_ arguments: Arguments) async throws -> ToolOutcome {
+        let pane = try await pane(try arguments.string("pane"))
+        let limit = max(1, try arguments.integer("max_lines", or: 200))
+        var cursor: CaptureCursor?
+        if let text = try arguments.optionalString("cursor") {
+            // A cursor the caller mangled is not worth guessing at: starting
+            // over is honest and costs one empty answer, where reading a wrong
+            // anchor would report rows that were never there.
+            cursor = try? JSONDecoder().decode(CaptureCursor.self, from: Data(text.utf8))
+            guard cursor != nil else {
+                throw ToolError.wrongArgumentType(
+                    "cursor",
+                    expected: "a cursor a previous capture_since returned"
+                )
+            }
+        }
+        let read = try await server.capture(pane, since: cursor, limit: limit)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let encoded = String(
+            decoding: (try? encoder.encode(read.cursor)) ?? Data(),
+            as: UTF8.self
+        )
+        return .init(
+            CaptureSinceResult(
+                pane: pane.id,
+                lines: read.lines,
+                cursor: encoded,
+                linesMissed: read.linesMissed,
+                restarted: read.restarted
+            )
+        )
+    }
+}

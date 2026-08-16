@@ -384,7 +384,7 @@ extension Server {
         switch start {
         case .none: break
         case .start: arguments += ["-S", "-"]
-        case let .rowsAbove(rows): arguments += ["-S", "-\(rows)"]
+        case let .line(row): arguments += ["-S", "\(row)"]
         }
         let reply = try await run(TmuxCommand("capture-pane", arguments))
         guard reply.isSuccess else {
@@ -402,8 +402,9 @@ extension Server {
     enum CaptureStart: Sendable, Hashable {
         /// The start of the pane's retained history.
         case start
-        /// A bounded number of rows above the visible region.
-        case rowsAbove(Int)
+        /// A row, counted as tmux counts them: `0` is the top of the visible
+        /// region and negative goes back into the scrollback.
+        case line(Int)
     }
 
     // MARK: Reading one object back

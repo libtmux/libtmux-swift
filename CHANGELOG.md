@@ -45,6 +45,12 @@ version number says only which alpha you have. Pin an exact one.
 
 ### Changed
 
+- `Server.capture(_:since:limit:)` and the `capture_since` tool read only what
+  a pane has printed since a cursor, so watching something across turns stops
+  re-sending the screen. The cursor remembers what the last row said as well as
+  where it was, because a row rewritten in place — a spinner, a progress bar —
+  is new content at an old position. A respawned pane is reported rather than
+  read as a continuation of the program it replaced.
 - MCP tools declare an `outputSchema` wherever the answer's shape is
   guaranteed, and listings answer under a name — `{"panes": [...]}` rather
   than a bare array. MCP types `structuredContent` as an object, so an array

@@ -273,7 +273,7 @@ extension Server {
     /// bounded lookback each time makes that independent of how fast the reader
     /// was scheduled. Bounded rather than the whole history because this runs
     /// once per burst, and a scrollback is as long as the user configured it.
-    static let waitLookback = CaptureStart.rowsAbove(200)
+    static let waitLookback = CaptureStart.line(-200)
 
     private static func elapsed(since start: ContinuousClock.Instant) -> Double {
         let interval = ContinuousClock.now - start

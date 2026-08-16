@@ -470,6 +470,69 @@ struct TmuxToolsTests {
         }
     }
 
+    @Test("watching a pane sends the difference, not the screen")
+    func captureSinceSendsOnlyWhatIsNew() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+
+            let started = try await tools.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object(["pane": .string(pane.id)])
+                )
+            ).decode(CaptureSinceResult.self)
+            // Starting to watch is not the same as asking for the backlog.
+            #expect(started.lines.isEmpty)
+            #expect(!started.cursor.isEmpty)
+
+            try await server.run("printf 'incremental-marker\\n'", in: pane)
+            var caught = started
+            for _ in 0..<30 {
+                caught = try await tools.call(
+                    ToolCall(
+                        name: "capture_since",
+                        arguments: .object([
+                            "pane": .string(pane.id), "cursor": .string(caught.cursor),
+                        ])
+                    )
+                ).decode(CaptureSinceResult.self)
+                if !caught.lines.isEmpty { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            #expect(caught.lines.contains { $0.contains("incremental-marker") })
+
+            let quiet = try await tools.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object([
+                        "pane": .string(pane.id), "cursor": .string(caught.cursor),
+                    ])
+                )
+            ).decode(CaptureSinceResult.self)
+            // The whole point: a second look at a pane that has not moved
+            // costs one call and no content.
+            #expect(quiet.lines.isEmpty)
+        }
+    }
+
+    @Test("a cursor that is not one is refused rather than guessed at")
+    func malformedCursorIsRefused() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            await #expect(throws: ToolError.self) {
+                try await TmuxTools(server: server).call(
+                    ToolCall(
+                        name: "capture_since",
+                        arguments: .object([
+                            "pane": .string(pane.id), "cursor": .string("not-a-cursor"),
+                        ])
+                    )
+                )
+            }
+        }
+    }
+
     @Test("a stale pane id fails with the id in the message")
     func stalePaneIDIsNamed() async throws {
         try await withTmuxServer { server in

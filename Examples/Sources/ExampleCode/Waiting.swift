@@ -31,3 +31,16 @@ public func waitingOnOutput(_ server: Server, pane: Pane) async throws -> Output
     )
     return waited
 }
+
+public func watchingForChanges(
+    _ server: Server,
+    pane: Pane,
+    building: Bool
+) async throws {
+    var mark = try await server.capture(pane, since: nil).cursor
+    while building {
+        let update = try await server.capture(pane, since: mark)
+        for line in update.lines { print(line) }
+        mark = update.cursor
+    }
+}

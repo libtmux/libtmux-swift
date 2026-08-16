@@ -171,3 +171,17 @@ public struct BatchResult: Sendable, Hashable, Codable {
     /// itself does with a command list.
     public let stoppedEarly: Bool
 }
+
+public struct CaptureSinceResult: Sendable, Hashable, Codable {
+    public let pane: String
+    /// Only what arrived since the cursor. Empty means the pane has been quiet.
+    public let lines: [String]
+    /// Hand this back on the next call. Opaque: what it holds is the server's
+    /// business, and a caller that read the fields would depend on something
+    /// free to change.
+    public let cursor: String
+    /// The pane scrolled past what its history keeps, so some output is gone.
+    public let linesMissed: Bool
+    /// The pane was respawned, so the cursor described a different program.
+    public let restarted: Bool
+}
