@@ -513,9 +513,9 @@ minimum rather than the root package's, so no deployment target set here can
 reach it. It is fixed by a release upstream and by nothing else.
 
 The Darwin-specific handling is written and reviewed — the `TMPDIR` a socket
-path cannot afford, keg-only libevent and ncurses, `F_SETNOSIGPIPE` — and CI
-keeps a macOS lane running so the day it starts passing is a day something
-tells you. It is not allowed to fail the run in the meantime.
+path cannot afford, keg-only libevent and ncurses, `F_SETNOSIGPIPE` — and the
+macOS lane is commented out in the workflow rather than deleted, ready to
+uncomment the day upstream moves.
 
 A program that opens connections should ignore `SIGPIPE`, because a write to a
 tmux that went away first will otherwise end the process:
