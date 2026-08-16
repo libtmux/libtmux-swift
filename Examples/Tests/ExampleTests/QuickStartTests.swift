@@ -33,9 +33,16 @@ struct QuickStartTests {
 
         let process = Process()
         process.executableURL = binary
+        // The example names no tmux, so the child resolves one from PATH. The
+        // lane's binary has to come first: a client of a different release
+        // reaches the socket, fails to talk to the server behind it, and the
+        // listing comes back empty rather than erroring.
+        let inheritedPath = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        let tmuxDirectory = URL(fileURLWithPath: tmuxExecutablePath())
+            .deletingLastPathComponent().path
         process.environment = [
             "TMUX_TMPDIR": root.path,
-            "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+            "PATH": "\(tmuxDirectory):\(inheritedPath)",
         ]
         let output = Pipe()
         process.standardOutput = output
