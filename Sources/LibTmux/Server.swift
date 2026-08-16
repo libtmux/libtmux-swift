@@ -22,6 +22,14 @@ public struct Server: Sendable, Hashable {
     /// The session the connection attached to, so ``mode`` can name it.
     private let attachedSession: String?
 
+    /// The tmux this server runs, resolved to a path.
+    ///
+    /// A consumer that spawns its own tmux — to find other servers, or to build
+    /// a command line — should use this one rather than whatever is on `PATH`,
+    /// because a client of a different protocol version cannot talk to this
+    /// server at all.
+    public var tmuxExecutable: String { tmuxExecutablePath }
+
     /// How work from this server reaches tmux.
     ///
     /// A mode belongs to the value, not to the process or the task, so this is

@@ -62,6 +62,10 @@ public struct TmuxTools: Sendable {
         switch request.name {
         case "describe_server": return try await describeServer()
         case "describe_filters": return .init(FilterSchema.current)
+        case "list_servers": return try await listServers(arguments)
+        case "show_options": return try await showOptions(arguments)
+        case "show_environment": return try await showEnvironment(arguments)
+        case "show_hooks": return try await showHooks(arguments)
 
         case "list_sessions": return try await listSessions(arguments)
         case "list_windows": return try await listWindows(arguments)
@@ -84,10 +88,18 @@ public struct TmuxTools: Sendable {
         case "split_pane": return try await splitPane(arguments)
         case "apply_workspace": return try await applyWorkspace(arguments)
         case "set_option": return try await setOption(arguments)
+        case "set_environment": return try await setEnvironment(arguments)
+        case "rename": return try await rename(arguments)
+        case "select": return try await select(arguments)
+        case "resize_pane": return try await resizePane(arguments)
+        case "select_layout": return try await selectLayout(arguments)
+        case "respawn_pane": return try await respawnPane(arguments)
+        case "paste_text": return try await pasteText(arguments)
 
         case "kill_pane": return try await killPane(arguments)
         case "kill_window": return try await killWindow(arguments)
         case "kill_session": return try await killSession(arguments)
+        case "kill_server": return try await killServer(arguments)
 
         case "run_command": return try await runCommand(arguments)
         case "run_commands": return try await runCommands(arguments)

@@ -85,6 +85,10 @@ struct OutputSchemaTests {
             let pane = try #require(try await server.panes().first)
 
             try await check("describe_server", .object([:]), on: tools)
+            try await check("list_servers", .object([:]), on: tools)
+            try await check("show_options", .object([:]), on: tools)
+            try await check("show_environment", .object([:]), on: tools)
+            try await check("show_hooks", .object([:]), on: tools)
             try await check("list_sessions", .object([:]), on: tools)
             try await check("list_windows", .object([:]), on: tools)
             try await check("list_panes", .object([:]), on: tools)
@@ -205,6 +209,40 @@ struct OutputSchemaTests {
                     "name": .string("@schema"), "value": .string("yes"),
                     "scope": .string("server"),
                 ]),
+                on: tools
+            )
+
+            try await check(
+                "set_environment",
+                .object(["name": .string("LIBTMUX_SCHEMA"), "value": .string("yes")]),
+                on: tools
+            )
+            try await check(
+                "paste_text",
+                .object(["pane": .string(pane.id), "text": .string("pasted")]),
+                on: tools
+            )
+            try await check(
+                "rename",
+                .object(["target": .string(pane.sessionID), "name": .string("renamed")]),
+                on: tools
+            )
+            try await check("select", .object(["target": .string(pane.id)]), on: tools)
+            try await check(
+                "resize_pane",
+                .object(["pane": .string(pane.id), "height": .number(10)]),
+                on: tools
+            )
+            try await check(
+                "select_layout",
+                .object([
+                    "target": .string(pane.windowID), "layout": .string("even-vertical"),
+                ]),
+                on: tools
+            )
+            try await check(
+                "respawn_pane",
+                .object(["pane": .string(pane.id)]),
                 on: tools
             )
 

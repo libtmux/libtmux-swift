@@ -77,6 +77,49 @@ extension TmuxTools {
                 ])
         ),
         ToolDefinition(
+            name: "list_servers",
+            title: "Find the tmux servers that are running",
+            summary:
+                "Every tmux server listening on a socket, which is the one "
+                + "question no other tool can answer.",
+            detail: """
+                Everything else here addresses the server this process was \
+                pointed at. This says what else is there — for arriving in an \
+                unfamiliar machine, or for noticing that the session you want is \
+                on a different socket.
+
+                A socket file is not a running server: tmux leaves the file \
+                behind when it exits, so each one is asked whether it answers \
+                and the ones that do not are left out.
+                """,
+            tier: .readonly,
+            isIdempotent: true,
+            arguments: [
+                ToolArgument(
+                    name: "directories",
+                    summary:
+                        "Where to look. Defaults to TMUX_TMPDIR, or tmux's own "
+                        + "default socket directory for this user.",
+                    kind: .stringArray
+                )
+            ],
+            outputSchema: Schema.object(
+                [
+                    "servers": Schema.array(
+                        of: Schema.object(
+                            [
+                                "socketPath": Schema.string,
+                                "processID": Schema.nullableInteger,
+                                "sessionCount": Schema.integer,
+                            ],
+                            required: ["socketPath", "sessionCount"]
+                        )
+                    )
+                ],
+                required: ["servers"]
+            )
+        ),
+        ToolDefinition(
             name: "describe_filters",
             title: "Describe the filter vocabulary",
             summary: "The filterable fields of each object, their types, and aliases.",
@@ -315,6 +358,126 @@ extension TmuxTools {
                 ),
             ],
             outputSchema: Schema.object(["value": Schema.nullableString])
+        ),
+
+        ToolDefinition(
+            name: "show_options",
+            title: "Read tmux options",
+            summary: "What a tmux option is set to, or every option in a table.",
+            detail: """
+                Reports what tmux has been *told*, not its built-in defaults, so \
+                a fresh server's session table is legitimately empty. The \
+                counterpart to set_option: reading configuration and changing it \
+                should not need two different mental models.
+                """,
+            tier: .readonly,
+            isIdempotent: true,
+            arguments: [
+                ToolArgument(
+                    name: "name",
+                    summary: "One option to read. Omit for every option in the table."
+                ),
+                ToolArgument(
+                    name: "scope",
+                    summary: "Which level to read.",
+                    allowed: ["server", "session", "window", "pane"],
+                    defaultValue: .string("server")
+                ),
+                ToolArgument(
+                    name: "global",
+                    summary: "Read the global table rather than the object's own.",
+                    kind: .boolean,
+                    defaultValue: .bool(false)
+                ),
+            ],
+            outputSchema: Schema.object(
+                [
+                    "options": Schema.array(
+                        of: Schema.object(
+                            ["name": Schema.string, "value": Schema.string],
+                            required: ["name", "value"]
+                        )
+                    )
+                ],
+                required: ["options"]
+            )
+        ),
+        ToolDefinition(
+            name: "show_environment",
+            title: "Read the environment new panes inherit",
+            summary:
+                "The variables tmux gives a process it starts, which is not this "
+                + "process's environment.",
+            detail: """
+                A pane inherits tmux's environment, not the one the client was \
+                launched with. This is where to look when a command works in your \
+                shell and not in a pane, and set_environment is where to fix it — \
+                for panes started *after* the change.
+                """,
+            tier: .readonly,
+            isIdempotent: true,
+            arguments: [
+                ToolArgument(
+                    name: "scope",
+                    summary: "The global environment, or one session's.",
+                    allowed: ["global", "session"],
+                    defaultValue: .string("global")
+                ),
+                target("The session, when the scope is session.", required: false),
+            ],
+            outputSchema: Schema.object(
+                [
+                    "variables": Schema.array(
+                        of: Schema.object(
+                            ["name": Schema.string, "value": Schema.nullableString],
+                            required: ["name"]
+                        )
+                    )
+                ],
+                required: ["variables"]
+            )
+        ),
+        ToolDefinition(
+            name: "show_hooks",
+            title: "Read the hooks that are bound",
+            summary: "The commands tmux runs when something happens.",
+            detail: """
+                Read-only on purpose. A hook outlives this process — it is server \
+                state, not a subscription — so one written from here would keep \
+                firing long after the conversation that set it ended, with nothing \
+                to say where it came from. Put hooks in your tmux config, where \
+                they can be read and removed.
+
+                Only bound hooks are listed. tmux knows many names with nothing \
+                on them, and an unbound name is a place a hook could go rather \
+                than a hook.
+                """,
+            tier: .readonly,
+            isIdempotent: true,
+            arguments: [
+                ToolArgument(
+                    name: "scope",
+                    summary: "The global table, or one session's.",
+                    allowed: ["global", "session"],
+                    defaultValue: .string("global")
+                ),
+                target("The session, when the scope is session.", required: false),
+            ],
+            outputSchema: Schema.object(
+                [
+                    "hooks": Schema.array(
+                        of: Schema.object(
+                            [
+                                "name": Schema.string,
+                                "index": Schema.integer,
+                                "command": Schema.string,
+                            ],
+                            required: ["name", "index", "command"]
+                        )
+                    )
+                ],
+                required: ["hooks"]
+            )
         ),
 
         // MARK: Waiting
@@ -650,6 +813,169 @@ extension TmuxTools {
             ]
         ),
         ToolDefinition(
+            name: "rename",
+            title: "Rename a session or window",
+            summary: "Gives a session or window a new name.",
+            detail: """
+                Names are what a person reads; ids are what a tool should target. \
+                Renaming does not change an id, so anything already holding one \
+                keeps working.
+                """,
+            tier: .mutating,
+            isIdempotent: true,
+            arguments: [
+                target("The session or window id to rename."),
+                ToolArgument(name: "name", summary: "What to call it.", isRequired: true),
+            ],
+            outputSchema: Schema.object(
+                ["kind": Schema.string, "id": Schema.string, "name": Schema.string],
+                required: ["kind", "id", "name"]
+            )
+        ),
+        ToolDefinition(
+            name: "select",
+            title: "Make a pane or window active",
+            summary: "Changes which pane or window is the active one.",
+            detail: """
+                Worth knowing because "active" is what a command reaches when it \
+                names a window and stops there — so this changes what later calls \
+                mean, not just what a person would see.
+                """,
+            tier: .mutating,
+            isIdempotent: true,
+            arguments: [target("The pane or window id to make active.")],
+            outputSchema: Schema.object(
+                ["kind": Schema.string, "id": Schema.string],
+                required: ["kind", "id"]
+            )
+        ),
+        ToolDefinition(
+            name: "resize_pane",
+            title: "Resize a pane",
+            summary: "Sets a pane's width or height in cells.",
+            tier: .mutating,
+            isIdempotent: true,
+            arguments: [
+                paneTarget,
+                ToolArgument(name: "width", summary: "Columns.", kind: .integer),
+                ToolArgument(name: "height", summary: "Rows.", kind: .integer),
+            ],
+            outputSchema: Schema.object(
+                ["pane": Schema.string, "width": Schema.integer, "height": Schema.integer],
+                required: ["pane", "width", "height"]
+            )
+        ),
+        ToolDefinition(
+            name: "select_layout",
+            title: "Apply a layout to a window",
+            summary: "Rearranges a window's panes with one of tmux's own layouts.",
+            detail: """
+                One call instead of resizing panes individually, and the result is \
+                a layout tmux maintains rather than sizes that drift as panes come \
+                and go.
+                """,
+            tier: .mutating,
+            isIdempotent: true,
+            arguments: [
+                target("The window id to lay out."),
+                ToolArgument(
+                    name: "layout",
+                    summary: "A tmux layout name, or a layout string tmux printed.",
+                    isRequired: true,
+                    allowed: [
+                        "even-horizontal", "even-vertical", "main-horizontal",
+                        "main-vertical", "tiled",
+                    ]
+                ),
+            ],
+            outputSchema: Schema.object(
+                ["window": Schema.string, "layout": Schema.string],
+                required: ["window", "layout"]
+            )
+        ),
+        ToolDefinition(
+            name: "respawn_pane",
+            title: "Restart what runs in a pane",
+            summary: "Replaces the process in a pane, keeping the pane itself.",
+            detail: """
+                The recovery action: a pane whose program has wedged or exited \
+                gets a new one without the pane id changing, so anything holding \
+                that id keeps working. Watchers are told — capture_since reports \
+                `restarted` rather than reading the new program's output as a \
+                continuation of the old one's.
+                """,
+            tier: .mutating,
+            arguments: [
+                paneTarget,
+                ToolArgument(
+                    name: "command",
+                    summary: "What to run. Omit for the pane's default command.",
+                    kind: .stringArray
+                ),
+            ],
+            outputSchema: Schema.object(
+                ["pane": Schema.string],
+                required: ["pane"]
+            )
+        ),
+        ToolDefinition(
+            name: "paste_text",
+            title: "Paste text into a pane",
+            summary:
+                "Puts text into a pane without any of it being read as a key name.",
+            detail: """
+                send_keys interprets `C-c`, `Enter` and the rest, which is what \
+                you want for driving a program and exactly wrong for text that \
+                might contain them. This pastes, so the content arrives as \
+                content.
+
+                The staging buffer is deleted afterwards, so nothing is left in \
+                tmux's paste history.
+                """,
+            tier: .mutating,
+            arguments: [
+                paneTarget,
+                ToolArgument(
+                    name: "text",
+                    summary: "The text to paste.",
+                    isRequired: true
+                ),
+            ],
+            outputSchema: Schema.object(
+                ["pane": Schema.string, "characters": Schema.integer],
+                required: ["pane", "characters"]
+            )
+        ),
+        ToolDefinition(
+            name: "set_environment",
+            title: "Set what new panes inherit",
+            summary: "Sets a variable in the environment tmux gives processes it starts.",
+            detail: """
+                Takes effect for panes started *after* it. A pane already running \
+                has the environment it was given, and nothing can reach into it.
+                """,
+            tier: .mutating,
+            isIdempotent: true,
+            arguments: [
+                ToolArgument(name: "name", summary: "The variable.", isRequired: true),
+                ToolArgument(
+                    name: "value",
+                    summary: "What to set it to. Omit to unset it.",
+                ),
+                ToolArgument(
+                    name: "scope",
+                    summary: "The global environment, or one session's.",
+                    allowed: ["global", "session"],
+                    defaultValue: .string("global")
+                ),
+                target("The session, when the scope is session.", required: false),
+            ],
+            outputSchema: Schema.object(
+                ["name": Schema.string, "value": Schema.nullableString],
+                required: ["name"]
+            )
+        ),
+        ToolDefinition(
             name: "set_option",
             title: "Set a tmux option",
             summary: "Sets a tmux option at server, session, window or pane scope.",
@@ -701,6 +1027,18 @@ extension TmuxTools {
             arguments: [target("The session id or name to kill."), confirmSelf],
             outputSchema: Schema.object(
                 ["kind": Schema.string, "id": Schema.string], required: ["kind", "id"])
+        ),
+
+        ToolDefinition(
+            name: "kill_server",
+            title: "Kill the whole tmux server",
+            summary: "Ends every session on this server, and the server with them.",
+            tier: .destructive,
+            arguments: [confirmSelf],
+            outputSchema: Schema.object(
+                ["kind": Schema.string, "id": Schema.string],
+                required: ["kind", "id"]
+            )
         ),
 
         // MARK: tmux itself

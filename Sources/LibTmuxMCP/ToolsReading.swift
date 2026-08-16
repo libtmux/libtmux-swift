@@ -244,3 +244,90 @@ extension TmuxTools {
         )
     }
 }
+
+extension TmuxTools {
+    func listServers(_ arguments: Arguments) async throws -> ToolOutcome {
+        let directories = try arguments.optionalStrings("directories")
+        let found = await TmuxServers.discover(
+            in: directories,
+            tmuxExecutable: server.tmuxExecutable
+        )
+        return .listing("servers", JSONValue.encoding(found))
+    }
+
+    func showOptions(_ arguments: Arguments) async throws -> ToolOutcome {
+        let scope: OptionScope =
+            switch try arguments.string("scope", or: "server") {
+            case "session": .session
+            case "window": .window
+            case "pane": .pane
+            default: .server
+            }
+        let global = try arguments.bool("global", or: false)
+        let listed = try await server.options(scope, global: global)
+        let selected =
+            if let name = try arguments.optionalString("name") {
+                listed.filter { $0.name == name }
+            } else {
+                listed
+            }
+        return .listing(
+            "options",
+            .array(
+                selected.map {
+                    .object(["name": .string($0.name), "value": .string($0.value)])
+                }
+            )
+        )
+    }
+
+    func showEnvironment(_ arguments: Arguments) async throws -> ToolOutcome {
+        let scope = try environmentScope(arguments)
+        let variables = try await server.environment(scope)
+        return .listing(
+            "variables",
+            .array(
+                variables.map { variable in
+                    .object([
+                        "name": .string(variable.name),
+                        "value": variable.value.map(JSONValue.string) ?? .null,
+                    ])
+                }
+            )
+        )
+    }
+
+    func showHooks(_ arguments: Arguments) async throws -> ToolOutcome {
+        var scope = HookScope.global
+        if try arguments.string("scope", or: "global") == "session" {
+            guard let target = try arguments.optionalString("target") else {
+                throw ToolError.missingArgument("target")
+            }
+            scope = .session(target)
+        }
+        let hooks = try await server.hooks(scope)
+        return .listing(
+            "hooks",
+            .array(
+                hooks.map { hook in
+                    .object([
+                        "name": .string(hook.name),
+                        "index": .number(Double(hook.index)),
+                        "command": .string(hook.command),
+                    ])
+                }
+            )
+        )
+    }
+
+    /// Reads the scope both environment tools take, and the session it needs.
+    func environmentScope(_ arguments: Arguments) throws -> EnvironmentScope {
+        guard try arguments.string("scope", or: "global") == "session" else {
+            return .global
+        }
+        guard let target = try arguments.optionalString("target") else {
+            throw ToolError.missingArgument("target")
+        }
+        return .session(target)
+    }
+}

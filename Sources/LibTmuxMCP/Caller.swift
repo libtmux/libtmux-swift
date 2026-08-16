@@ -86,6 +86,17 @@ struct CallerGuard: Sendable {
         )
     }
 
+    func checkServer(override: Bool) throws {
+        guard !override, isSameServer else { return }
+        throw ToolError.refusedForSafety(
+            """
+            This is the tmux server the MCP runs inside, and killing it takes \
+            every session on it — the one you are talking through included. Pass \
+            confirm_self=true if that is genuinely the intent.
+            """
+        )
+    }
+
     private func checkContainer(
         _ described: String,
         holds: (Pane) -> Bool,

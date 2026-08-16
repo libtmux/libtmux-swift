@@ -854,6 +854,148 @@ struct TmuxToolsTests {
     }
 }
 
+@Suite("the tools added for reach", .timeLimit(.minutes(2)))
+struct ReachToolTests {
+    @Test("what set_option wrote, show_options reads back")
+    func optionsRoundTrip() async throws {
+        try await withTmuxServer { server in
+            let tools = TmuxTools(server: server)
+            _ = try await tools.call(
+                ToolCall(
+                    name: "set_option",
+                    arguments: .object([
+                        "name": .string("@round-trip"), "value": .string("yes"),
+                        "scope": .string("server"),
+                    ])
+                )
+            )
+            let outcome = try await tools.call(
+                ToolCall(
+                    name: "show_options",
+                    arguments: .object([
+                        "name": .string("@round-trip"), "scope": .string("server"),
+                    ])
+                )
+            )
+            // Reading and writing configuration should not need two different
+            // mental models, which is what an asymmetric pair produces.
+            let options = try #require(outcome.structured["options"]?.arrayValue)
+            #expect(options.first?["value"]?.stringValue == "yes")
+        }
+    }
+
+    @Test("paste_text puts key names in as text rather than pressing them")
+    func pasteDoesNotInterpretKeys() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            // send_keys would read this as an interrupt and a newline. That it
+            // does is right for driving a program and exactly wrong for text.
+            _ = try await tools.call(
+                ToolCall(
+                    name: "paste_text",
+                    arguments: .object([
+                        "pane": .string(pane.id), "text": .string("C-c Enter"),
+                    ])
+                )
+            )
+            var seen = false
+            for _ in 0..<30 {
+                let rows = try await server.capture(pane)
+                if rows.contains(where: { $0.contains("C-c Enter") }) {
+                    seen = true
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            #expect(seen, "the text did not arrive as text")
+        }
+    }
+
+    @Test("respawn keeps the pane, and a watcher is told the program changed")
+    func respawnKeepsThePaneAndSaysSo() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let watching = try await tools.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object(["pane": .string(pane.id)])
+                )
+            ).decode(CaptureSinceResult.self)
+
+            _ = try await tools.call(
+                ToolCall(name: "respawn_pane", arguments: .object(["pane": .string(pane.id)]))
+            )
+            try await Task.sleep(for: .milliseconds(400))
+
+            // The id survives, so anything holding it keeps working — which is
+            // exactly why a watcher has to be told, or it would read the new
+            // program's output as the old one's.
+            #expect(try await server.panes().contains { $0.id == pane.id })
+            let after = try await tools.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object([
+                        "pane": .string(pane.id), "cursor": .string(watching.cursor),
+                    ])
+                )
+            ).decode(CaptureSinceResult.self)
+            #expect(after.restarted)
+        }
+    }
+
+    @Test("list_servers finds a running server and not a socket left behind")
+    func listServersFindsWhatIsRunning() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(path) = server.endpoint else { return }
+            let directory = (path as NSString).deletingLastPathComponent
+            let outcome = try await TmuxTools(server: server).call(
+                ToolCall(
+                    name: "list_servers",
+                    arguments: .object(["directories": .array([.string(directory)])])
+                )
+            )
+            let servers = try #require(outcome.structured["servers"]?.arrayValue)
+            #expect(servers.count == 1)
+            #expect(servers.first?["socketPath"]?.stringValue == path)
+        }
+    }
+
+    @Test("killing the caller's own server is refused unless it is confirmed")
+    func killServerIsGuarded() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let identity = CallerIdentity(
+                paneID: pane.id,
+                sessionID: pane.sessionID,
+                socketPath: nil,
+                serverProcessID: try await server.serverProcessID()
+            )
+            let tools = TmuxTools(server: server, tier: .destructive, caller: identity)
+            await #expect(throws: ToolError.self) {
+                try await tools.call(ToolCall(name: "kill_server"))
+            }
+            // Still running, which is the point of the guard.
+            #expect(try await server.isRunning())
+        }
+    }
+
+    @Test("hooks can be read and are deliberately not writable")
+    func hooksAreReadOnly() async throws {
+        try await withTmuxServer { server in
+            try await server.setHook("after-new-window", to: "display-message hooked")
+            let outcome = try await TmuxTools(server: server)
+                .call(ToolCall(name: "show_hooks"))
+            let hooks = try #require(outcome.structured["hooks"]?.arrayValue)
+            #expect(hooks.contains { $0["name"]?.stringValue == "after-new-window" })
+            // A hook outlives this process, so writing one from here would keep
+            // firing long after the conversation that set it ended.
+            #expect(TmuxTools.byName["set_hook"] == nil)
+        }
+    }
+}
+
 @Suite("relation queries across the boundary", .timeLimit(.minutes(1)))
 struct RelationQueryBoundaryTests {
     @Test("a relation query travels as one value and selects by it")

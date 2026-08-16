@@ -292,6 +292,15 @@ struct Arguments {
         return number
     }
 
+    /// Distinguishes an omitted number from one that happens to be zero.
+    func optionalInteger(_ name: String) throws -> Int? {
+        guard let value = values[name], !value.isNull else { return nil }
+        guard let number = value.intValue else {
+            throw ToolError.wrongArgumentType(name, expected: "a whole number")
+        }
+        return number
+    }
+
     func seconds(_ name: String, or fallback: Double) throws -> Double {
         guard let value = values[name], !value.isNull else { return fallback }
         guard let number = value.doubleValue ?? value.intValue.map(Double.init) else {

@@ -185,3 +185,35 @@ public struct CaptureSinceResult: Sendable, Hashable, Codable {
     /// The pane was respawned, so the cursor described a different program.
     public let restarted: Bool
 }
+
+public struct Renamed: Sendable, Hashable, Codable {
+    public let kind: String
+    public let id: String
+    public let name: String
+}
+
+public struct Resized: Sendable, Hashable, Codable {
+    public let pane: String
+    public let width: Int
+    public let height: Int
+}
+
+public struct LaidOut: Sendable, Hashable, Codable {
+    public let window: String
+    public let layout: String
+}
+
+public struct Respawned: Sendable, Hashable, Codable {
+    public let pane: String
+}
+
+public struct Pasted: Sendable, Hashable, Codable {
+    public let pane: String
+    public let characters: Int
+}
+
+public struct EnvironmentSet: Sendable, Hashable, Codable {
+    public let name: String
+    /// Absent when the variable was unset rather than given a value.
+    public let value: String?
+}

@@ -451,18 +451,22 @@ package that it means to you.
 
 | Tool | What it answers |
 | --- | --- |
-| `describe_server` | Which tmux, which features, which pane is the caller's own |
+| `describe_server` `list_servers` | Which tmux this is and which pane is your own; what other servers are running |
 | `describe_filters` | The filterable fields, their types, and their aliases |
 | `list_sessions` `list_windows` `list_panes` | Listings, filtered, projected to the fields you asked for |
 | `snapshot` | Every level at once, proven to have existed together |
-| `capture_pane` `search_panes` | What a pane is showing, and which pane mentions something |
+| `capture_pane` `capture_since` | What a pane is showing; what it has printed since last time |
+| `search_panes` | Which pane mentions something |
 | `read_format` | Any tmux format, reaching fields the listings do not carry |
+| `show_options` `show_environment` `show_hooks` | What tmux has been configured to do |
 | `run_shell` | Runs a command, waits for it, reports its exit status |
 | `wait_for_output` `watch_format` `wait_for_channel` `signal_channel` | The four waits, all bounded and cancellable |
-| `send_keys` | Raw input, for keystrokes a program is meant to interpret |
-| `new_session` `new_window` `split_pane` `set_option` | Building and configuring |
+| `send_keys` `paste_text` | Keystrokes a program should interpret; text that should not be |
+| `new_session` `new_window` `split_pane` | Building |
+| `rename` `select` `resize_pane` `select_layout` `respawn_pane` | Rearranging, and restarting a pane that wedged |
+| `set_option` `set_environment` | Configuring |
 | `apply_workspace` | A whole session from one declarative plan |
-| `kill_pane` `kill_window` `kill_session` | Ending things, at the destructive tier only |
+| `kill_pane` `kill_window` `kill_session` `kill_server` | Ending things, at the destructive tier only |
 | `run_command` `run_commands` | One tmux command, or a batch that says which step failed |
 
 Alongside them, `tmux://` resources for a client that would rather browse than
@@ -486,7 +490,12 @@ job safely.
 **It will not spend context you did not ask it to.** Listings take a `fields`
 argument, so one field can be one field rather than every record in full.
 `capture_pane` caps its lines and says how many it dropped. `run_shell` returns
-only what that command printed, not the whole screen.
+only what that command printed, not the whole screen. `capture_since` returns a
+cursor, so watching something across turns sends the difference rather than the
+screen — a pane that has been quiet answers nothing at all.
+
+**It will tell you it is still there.** A wait that runs for a minute reports
+progress the whole time, when the client asks for it with a `progressToken`.
 
 **It will not end the conversation.** When the server runs inside tmux it knows
 which pane is its own: `list_panes` marks that row, `describe_server` names it,

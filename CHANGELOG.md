@@ -45,6 +45,17 @@ version number says only which alpha you have. Pin an exact one.
 
 ### Changed
 
+- Thirteen more MCP tools, chosen to close the gaps an agent actually hits:
+  `list_servers` (the one question no other tool can answer), `show_options`,
+  `show_environment` and `show_hooks` (reading configuration, where only
+  writing it existed), `rename`, `select`, `resize_pane`, `select_layout`,
+  `respawn_pane`, `paste_text` (text that must not be read as key names),
+  `set_environment` and `kill_server`.
+- `TmuxServers.discover(in:tmuxExecutable:)` finds the tmux servers running on
+  a machine. A socket file is not a server — tmux leaves the file behind when
+  it exits — so each candidate is asked whether it answers.
+- `Server.tmuxExecutable` and `Server.shellInvocation`, for a consumer that
+  must spawn or compose a tmux command reaching this same server.
 - `Server.capture(_:since:limit:)` and the `capture_since` tool read only what
   a pane has printed since a cursor, so watching something across turns stops
   re-sending the screen. The cursor remembers what the last row said as well as

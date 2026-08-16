@@ -233,3 +233,99 @@ extension TmuxTools {
         return .init(Killed(kind: "session", id: session.id))
     }
 }
+
+extension TmuxTools {
+    func rename(_ arguments: Arguments) async throws -> ToolOutcome {
+        let target = try arguments.string("target")
+        let name = try arguments.string("name")
+        if let window = try await server.windows().first(where: { $0.id == target }) {
+            try await server.rename(window, to: name)
+            return .init(Renamed(kind: "window", id: window.id, name: name))
+        }
+        guard
+            let session = try await server.sessions().first(where: {
+                $0.id == target || $0.name == target
+            })
+        else {
+            throw ToolError.refusedForSafety(
+                "no session or window \(target) on this server"
+            )
+        }
+        try await server.rename(session, to: name)
+        return .init(Renamed(kind: "session", id: session.id, name: name))
+    }
+
+    func select(_ arguments: Arguments) async throws -> ToolOutcome {
+        let target = try arguments.string("target")
+        if let pane = try await server.panes().first(where: { $0.id == target }) {
+            try await server.select(pane)
+            return .init(Killed(kind: "pane", id: pane.id))
+        }
+        guard let window = try await server.windows().first(where: { $0.id == target })
+        else {
+            throw ToolError.refusedForSafety("no pane or window \(target) on this server")
+        }
+        try await server.select(window)
+        return .init(Killed(kind: "window", id: window.id))
+    }
+
+    func resizePane(_ arguments: Arguments) async throws -> ToolOutcome {
+        let pane = try await pane(try arguments.string("pane"))
+        let width = try arguments.optionalInteger("width")
+        let height = try arguments.optionalInteger("height")
+        guard width != nil || height != nil else {
+            throw ToolError.missingArgument("width or height")
+        }
+        try await server.resize(pane, width: width, height: height)
+        let after = try await self.pane(pane.id)
+        return .init(Resized(pane: after.id, width: after.width, height: after.height))
+    }
+
+    func selectLayout(_ arguments: Arguments) async throws -> ToolOutcome {
+        let target = try arguments.string("target")
+        guard let window = try await server.windows().first(where: { $0.id == target })
+        else {
+            throw ToolError.refusedForSafety("no window \(target) on this server")
+        }
+        let layout = try arguments.string("layout")
+        try await server.selectLayout(window, layout)
+        return .init(LaidOut(window: window.id, layout: layout))
+    }
+
+    func respawnPane(_ arguments: Arguments) async throws -> ToolOutcome {
+        let pane = try await pane(try arguments.string("pane"))
+        try await server.respawn(pane, running: try arguments.strings("command"))
+        return .init(Respawned(pane: pane.id))
+    }
+
+    func pasteText(_ arguments: Arguments) async throws -> ToolOutcome {
+        let pane = try await pane(try arguments.string("pane"))
+        let text = try arguments.string("text")
+        // Named per call and deleted after: tmux's paste buffers are shared
+        // with the user's own, and leaving one behind puts this text into a
+        // history they will page through later.
+        let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
+        try await server.setBuffer(text, named: buffer)
+        defer { Task { try? await server.deleteBuffer(named: buffer) } }
+        try await server.paste(buffer: buffer, into: pane)
+        return .init(Pasted(pane: pane.id, characters: text.count))
+    }
+
+    func setEnvironment(_ arguments: Arguments) async throws -> ToolOutcome {
+        let scope = try environmentScope(arguments)
+        let name = try arguments.string("name")
+        guard let value = try arguments.optionalString("value") else {
+            try await server.unsetEnvironment(name, in: scope)
+            return .init(EnvironmentSet(name: name, value: nil))
+        }
+        _ = try await server.setEnvironment(name, to: value, in: scope)
+        return .init(EnvironmentSet(name: name, value: value))
+    }
+
+    func killServer(_ arguments: Arguments) async throws -> ToolOutcome {
+        try await guardForCaller()
+            .checkServer(override: try arguments.bool("confirm_self", or: false))
+        try await server.killServer()
+        return .init(Killed(kind: "server", id: server.tmuxExecutable))
+    }
+}
