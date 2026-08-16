@@ -92,4 +92,47 @@ struct MCPServeTests {
             #expect(made)
         }
     }
+
+    @Test("every argument a tool advertises survives the trip over the wire")
+    func advertisedArgumentsSurviveTheWire() async throws {
+        try await withTmuxServer { server in
+            let tools = TmuxTools(server: server, tier: .destructive)
+            let handler = MCPRequestHandler(tools: tools)
+            // The defect this exists for: `read_format` advertised `template`
+            // and `target`, the protocol layer carried neither, and every call
+            // failed as though the client had sent nothing. Both halves were
+            // tested — separately, either side of the seam that was wrong.
+            for definition in tools.visibleDefinitions {
+                var members: [String: JSONValue] = [:]
+                for argument in definition.arguments {
+                    members[argument.name] = Self.sample(for: argument)
+                }
+                let request = MCPRequestHandler.toolCall(
+                    .object([
+                        "name": .string(definition.name),
+                        "arguments": .object(members),
+                    ])
+                )
+                let call = try #require(request)
+                #expect(
+                    throws: Never.self,
+                    "\(definition.name) cannot receive what it advertises"
+                ) {
+                    try Arguments(call, for: definition)
+                }
+            }
+            _ = handler
+        }
+    }
+
+    private static func sample(for argument: ToolArgument) -> JSONValue {
+        if let first = argument.allowed.first { return .string(first) }
+        switch argument.kind {
+        case .string: return .string("%0")
+        case .integer, .number: return .number(1)
+        case .boolean: return .bool(false)
+        case .stringArray: return .array([.string("x")])
+        case .object: return .object([:])
+        }
+    }
 }

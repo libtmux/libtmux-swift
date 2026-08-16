@@ -19,7 +19,7 @@ struct ModeParityTests {
             let call = ToolCall(name: "list_sessions")
             func answer(under mode: TmuxMode) async throws -> Data {
                 try await server.using(mode) { server in
-                    try await TmuxTools(server: server).call(call)
+                    Data(try await TmuxTools(server: server).call(call).text.utf8)
                 }
             }
 

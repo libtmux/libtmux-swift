@@ -72,7 +72,7 @@ let package = Package(
         ),
         .target(
             name: "LibTmuxMCP",
-            dependencies: ["LibTmux"],
+            dependencies: ["LibTmux", "TmuxWorkspace"],
             exclude: ["README.md"]
         ),
         .executableTarget(
@@ -103,7 +103,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LibTmuxMCPTests",
-            dependencies: ["LibTmuxMCP", "LibTmux", "TmuxFixture"]
+            dependencies: ["LibTmuxMCP", "LibTmux", "TmuxWorkspace", "TmuxFixture"]
         ),
     ],
     swiftLanguageModes: [.v6]

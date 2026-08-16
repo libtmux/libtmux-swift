@@ -15,19 +15,29 @@ private func note(_ message: String) {
     FileHandle.standardError.write(Data("libtmux-mcp: \(message)\n".utf8))
 }
 
-let environment = ProcessInfo.processInfo.environment
-let socketName = environment["LIBTMUX_SOCKET"] ?? "default"
-let requestedExecutable = environment["LIBTMUX_TMUX_BIN"] ?? "tmux"
+let configuration = ServerConfiguration(
+    environment: ProcessInfo.processInfo.environment
+)
+for warning in configuration.warnings { note(warning) }
 
 let server: Server
 do {
-    server = try Server(socketName: socketName, tmuxExecutable: requestedExecutable)
+    server = try configuration.makeServer()
 } catch {
     note("cannot address a tmux server: \(error)")
     exit(1)
 }
-let handler = MCPRequestHandler(tools: TmuxTools(server: server))
-note("serving tmux socket \(socketName) through \(requestedExecutable)")
+
+let tools = TmuxTools(
+    server: server,
+    tier: configuration.tier,
+    waitCeiling: configuration.waitCeiling
+)
+let handler = MCPRequestHandler(tools: tools)
+note(
+    "serving \(configuration.endpointSummary) through \(configuration.tmuxExecutable) "
+        + "at the \(configuration.tier.rawValue) tier"
+)
 
 while let line = readLine(strippingNewline: true) {
     guard let response = await handler.respond(to: line) else { continue }
