@@ -46,7 +46,15 @@ public struct MCPRequestHandler: Sendable {
     /// blank line, a line that is not JSON-RPC at all, or a notification.
     /// Unparseable input is ignored rather than answered, because a reply needs
     /// an id to carry and a malformed line has none to quote back.
-    public func respond(to line: String) async -> String? {
+    ///
+    /// - Parameter emit: where a notification sent *before* the answer goes —
+    ///   progress, while a long call is still running. Writing them is the
+    ///   caller's job because they share the one stdout the answer uses, and
+    ///   two writers there would interleave.
+    public func respond(
+        to line: String,
+        emit: @escaping @Sendable (String) async -> Void = { _ in }
+    ) async -> String? {
         guard !line.isEmpty,
             let request = try? decoder.decode(MCPRequest.self, from: Data(line.utf8))
         else {
@@ -99,7 +107,13 @@ public struct MCPRequestHandler: Sendable {
                 return failure(id: id, code: -32602, message: "tools/call needs a tool name")
             }
             do {
-                let outcome = try await tools.call(call)
+                let outcome = try await tools.call(
+                    call,
+                    reporting: ProgressReporter(
+                        token: ProgressReporter.token(in: request.params),
+                        emit: emit
+                    )
+                )
                 return encode([
                     "jsonrpc": .string("2.0"),
                     "id": id,

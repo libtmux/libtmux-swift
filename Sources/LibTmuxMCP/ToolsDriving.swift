@@ -5,7 +5,10 @@ import TmuxWorkspace
 // The tools that change something.
 
 extension TmuxTools {
-    func runShell(_ arguments: Arguments) async throws -> ToolOutcome {
+    func runShell(
+        _ arguments: Arguments,
+        _ progress: ProgressReporter = .silent
+    ) async throws -> ToolOutcome {
         let pane = try await pane(try arguments.string("pane"))
         let command = try arguments.string("command")
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
@@ -38,15 +41,21 @@ extension TmuxTools {
             to: pane
         )
 
-        let finished = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { (try? await server.wait(for: channel)) != nil }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return false
+        let server = server
+        let finished = await progress.whileRunning(
+            upTo: timeout,
+            describing: "running in \(pane.id)"
+        ) {
+            await withTaskGroup(of: Bool.self) { group in
+                group.addTask { (try? await server.wait(for: channel)) != nil }
+                group.addTask {
+                    try? await Task.sleep(for: timeout)
+                    return false
+                }
+                let first = await group.next() ?? false
+                group.cancelAll()
+                return first
             }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
         }
 
         // Best effort: a command can end the pane it ran in — `exit` is the

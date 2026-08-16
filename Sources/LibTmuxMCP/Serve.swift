@@ -42,7 +42,10 @@ public struct MCPService: Sendable {
                 let identifier = MCPRequestHandler.requestID(in: line)
                 group.addTask {
                     let work = Task {
-                        await handler.respond(to: line)
+                        // Progress goes out through the same serialised writer
+                        // the answer will use, so a notification can never land
+                        // inside a response line.
+                        await handler.respond(to: line, emit: write)
                     }
                     if let identifier {
                         await registry.register(identifier, work)

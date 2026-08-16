@@ -40,7 +40,13 @@ public struct TmuxTools: Sendable {
     }
 
     /// Runs a tool and returns its result.
-    public func call(_ request: ToolCall) async throws -> ToolOutcome {
+    ///
+    /// `progress` is how a blocking tool says it is still running. It is
+    /// silent unless the client asked to be told.
+    public func call(
+        _ request: ToolCall,
+        reporting progress: ProgressReporter = .silent
+    ) async throws -> ToolOutcome {
         guard let definition = Self.byName[request.name] else {
             throw ToolError.unknownTool(request.name)
         }
@@ -62,15 +68,15 @@ public struct TmuxTools: Sendable {
         case "list_panes": return try await listPanes(arguments)
         case "snapshot": return try await readSnapshot()
         case "capture_pane": return try await capturePane(arguments)
-        case "search_panes": return try await searchPanes(arguments)
+        case "search_panes": return try await searchPanes(arguments, progress)
         case "read_format": return try await readFormat(arguments)
 
-        case "wait_for_output": return try await waitForOutput(arguments)
-        case "watch_format": return try await watchFormat(arguments)
-        case "wait_for_channel": return try await waitForChannel(arguments)
+        case "wait_for_output": return try await waitForOutput(arguments, progress)
+        case "watch_format": return try await watchFormat(arguments, progress)
+        case "wait_for_channel": return try await waitForChannel(arguments, progress)
         case "signal_channel": return try await signalChannel(arguments)
 
-        case "run_shell": return try await runShell(arguments)
+        case "run_shell": return try await runShell(arguments, progress)
         case "send_keys": return try await sendKeys(arguments)
         case "new_session": return try await newSession(arguments)
         case "new_window": return try await newWindow(arguments)

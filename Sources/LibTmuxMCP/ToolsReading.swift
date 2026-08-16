@@ -97,7 +97,10 @@ extension TmuxTools {
         )
     }
 
-    func searchPanes(_ arguments: Arguments) async throws -> ToolOutcome {
+    func searchPanes(
+        _ arguments: Arguments,
+        _ progress: ProgressReporter = .silent
+    ) async throws -> ToolOutcome {
         let pattern = try arguments.string("pattern")
         let expression = try MatchExpression(pattern)
         let history = try arguments.bool("history", or: false)
@@ -118,6 +121,13 @@ extension TmuxTools {
                 break
             }
             searched += 1
+            // Per pane rather than on a timer: this one really does have a
+            // denominator, so a client can show how far through it is.
+            await progress.report(
+                Double(searched),
+                of: Double(panes.count),
+                "searched \(searched) of \(panes.count) panes"
+            )
             let rows = (try? await server.capture(pane, includingHistory: history)) ?? []
             for (offset, line) in rows.enumerated() where expression.matches(line) {
                 guard matches.count < limit else {
