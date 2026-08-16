@@ -341,8 +341,25 @@ extension Server {
         _ pane: Pane,
         includingHistory: Bool = false
     ) async throws(TmuxError) -> [String] {
+        try await capture(pane, startingAt: includingHistory ? .start : nil)
+    }
+
+    /// The pane's contents from `start` rows above the visible region.
+    ///
+    /// A reader that only takes the visible rows loses anything that scrolled
+    /// past between two reads, which for a pane producing output quickly is
+    /// most of it. A bounded lookback keeps that from depending on how fast the
+    /// reader happened to be, without paying for a whole scrollback each time.
+    func capture(
+        _ pane: Pane,
+        startingAt start: CaptureStart?
+    ) async throws(TmuxError) -> [String] {
         var arguments = ["-p", "-t", pane.id]
-        if includingHistory { arguments += ["-S", "-"] }
+        switch start {
+        case .none: break
+        case .start: arguments += ["-S", "-"]
+        case let .rowsAbove(rows): arguments += ["-S", "-\(rows)"]
+        }
         let reply = try await run(TmuxCommand("capture-pane", arguments))
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
@@ -351,6 +368,16 @@ extension Server {
         // tmux terminates the last row; that newline is not an extra row.
         if text.hasSuffix("\n") { text.removeLast() }
         return text.isEmpty ? [] : text.components(separatedBy: "\n")
+    }
+
+    // MARK: Reading a pane
+
+    /// Where a capture begins, relative to the visible region.
+    enum CaptureStart: Sendable, Hashable {
+        /// The start of the pane's retained history.
+        case start
+        /// A bounded number of rows above the visible region.
+        case rowsAbove(Int)
     }
 
     // MARK: Reading one object back
