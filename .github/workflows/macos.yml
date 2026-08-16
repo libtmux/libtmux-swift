@@ -81,6 +81,15 @@ jobs:
           make -j"$(sysctl -n hw.ncpu)"
           make install
 
+      # Resolving fetches five repositories on every run, and a clone that
+      # times out fails a lane that has nothing wrong with it.
+      - name: Restore the SwiftPM cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-macos-${{ hashFiles('Package.resolved', 'Examples/Package.resolved') }}
+          restore-keys: swiftpm-macos-
+
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable

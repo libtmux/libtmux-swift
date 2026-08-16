@@ -85,6 +85,15 @@ jobs:
           make -j"$(getconf _NPROCESSORS_ONLN)"
           make install
 
+      # Resolving fetches five repositories on every run, and a clone that
+      # times out fails a lane that has nothing wrong with it.
+      - name: Restore the SwiftPM cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/org.swift.swiftpm
+          key: swiftpm-linux-${{ hashFiles('Package.resolved', 'Examples/Package.resolved') }}
+          restore-keys: swiftpm-linux-
+
       - name: Set up Swift
         uses: swift-actions/setup-swift@v2
         with:
