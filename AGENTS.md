@@ -176,3 +176,22 @@ Never edit the table between its markers.
 and pending. Record a divergence in the table it belongs to rather than leaving
 it to read as an omission, and keep the module-wide rules off format fields —
 counting those as covered restates a curated subset as parity.
+
+## Comments earn their maintenance cost
+
+Keep an implementation comment only when losing it would force a future
+maintainer to rediscover a consequential, non-obvious fact that the code,
+types, assertions, and tests do not already communicate. It states a durable
+truth about the shipped system rather than the author's reasoning, and it does
+not restate a value or a fact that can change without it — a comment that
+duplicates either goes stale silently. Write it as tersely as a mature,
+long-lived library would.
+
+Delete comments that narrate, restate, speculate, excuse, or preserve
+development history, and prefer deletion in the borderline case. What survives
+is what a reader could not recover from the code.
+
+DocC comments on the public surface — summaries, parameter descriptions, and
+the documented examples — are judged on the other axis: what they are worth to
+a caller, not whether they are non-obvious. They stay precise, succinct, and
+maintainable.
