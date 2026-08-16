@@ -1,0 +1,100 @@
+name: macos
+
+# Separate from `ci.yml` because the toolchain is the whole difference. Darwin
+# builds against Xcode's own Swift, not a swift.org install: swift-subprocess
+# reaches `Span.bytes`, and the accessor back-deploys only from Swift 6.3, so
+# the 6.2 toolchain the Linux lanes pin fails inside the dependency at any
+# deployment target below macOS 26.
+#
+# Two releases rather than eight. What differs on Darwin is this package's own
+# handling — the `TMPDIR` a socket path cannot afford, keg-only libevent and
+# ncurses, `F_SETNOSIGPIPE` — and none of it varies by tmux release. Which tmux
+# behaves how is what the Linux lanes answer.
+
+permissions:
+  contents: read
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: macos-latest / tmux ${{ matrix.tmux }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tmux: ["3.2a", "3.7b"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore tmux ${{ matrix.tmux }}
+        id: tmux-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/tmux-${{ matrix.tmux }}
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install build dependencies
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: brew install automake bison libevent ncurses pkg-config
+
+      - name: Build tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          # Exported here rather than into the environment every later step
+          # inherits: these point at Homebrew's copies of libevent and ncurses,
+          # and nothing but tmux's configure should be reading them.
+          #
+          # Keg-only formulae, so Homebrew leaves them off PATH and out of
+          # pkg-config's search. tmux's configure finds neither without being
+          # told, and fails in a way that reads like a missing library.
+          PATH="$(brew --prefix bison)/bin:${PATH}"
+          export PATH
+          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
+          export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
+          export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+          curl --location --fail --silent --show-error \
+            "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
+            --output tmux.tar.gz
+          tar -xzf tmux.tar.gz
+          cd "tmux-${{ matrix.tmux }}"
+          # From 3.7, tmux's configure refuses to guess on Darwin: it warns that
+          # macOS renders complex codepoints poorly without utf8proc and exits
+          # unless told which way to go. Nothing here reads a pane for emoji, so
+          # the answer that keeps this closest to the Linux lanes is without it.
+          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" --disable-utf8proc
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Report the toolchain
+        run: |
+          set -euo pipefail
+          xcode-select -p
+          xcrun swift --version
+          xcrun --show-sdk-version
+
+      - name: Build with default traits
+        run: xcrun swift build
+
+      - name: Test
+        run: |
+          set -euo pipefail
+          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          "$LIBTMUX_TMUX_BIN" -V
+          export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
+          mkdir -p "$TMUX_TMPDIR"
+          xcrun swift test --package-path Examples
+          xcrun swift test --traits YAMLWorkspaces
