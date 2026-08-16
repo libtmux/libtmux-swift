@@ -164,7 +164,7 @@ jobs:
       # that drifted — and that the number of them actually run has not slid.
       - name: Check documented examples are compiled
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
-        run: python3 Scripts/check_examples.py --min-executed 27
+        run: python3 Scripts/check_examples.py --min-executed 29
 
       # AGENTS.md states the socket-namespace rule in prose; this is what makes
       # it fail rather than be remembered. `/tmp` is shared with every other
@@ -172,6 +172,12 @@ jobs:
       - name: Check every socket names this port
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_socket_namespace.py
+
+      # Ruff reports EXE001 on the runner but not locally, so the mode a file
+      # was committed with is checked here too, where it can be reproduced.
+      - name: Check shebanged files are executable
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_script_modes.py
 
       - name: Build documentation
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'

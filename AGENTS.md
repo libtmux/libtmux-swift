@@ -33,12 +33,13 @@ Two rules follow:
 
 `Scripts/check_socket_namespace.py` is what makes this fail rather than be
 remembered — `libtmux-ts` gates the same invariant the same way. It reads every
-`Server(socketPath:)` and `Server(socketName:)` given a literal, which is where
-a stray root gets written down. What it cannot see is whether a server was
-*started*: nothing reaches the filesystem until a command runs against it. A
-handful of cases legitimately name a path outside the roots and never create
-one, and they are listed in the script rather than detected, so the next one is
-a decision somebody made.
+`Server(socketPath:)` given a literal, which is where a stray root gets written
+down. It does not read `Server(socketName:)`: tmux resolves a name inside
+`TMUX_TMPDIR`, so the literal says nothing about where the socket lands, and
+`namedSocketsAvailable` is what gates that instead. Nor can it see whether a
+server was *started* — nothing reaches the filesystem until a command runs
+against it — so the couple of cases that name a path outside the roots and never
+create one are listed in the script rather than detected.
 
 `Server` has no default endpoint, so this is a convention about *callers* rather
 than a setting: a socket path is chosen at every call site that creates one.
@@ -100,11 +101,15 @@ DocC warnings fail the job, so a broken symbol link is an error rather than a
 note.
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 27
+$ python3 Scripts/check_examples.py --min-executed 29
 ```
 
 ```console
 $ python3 Scripts/check_socket_namespace.py
+```
+
+```console
+$ python3 Scripts/check_script_modes.py
 ```
 
 ```console
@@ -138,10 +143,10 @@ run is a fact rather than a claim, and `--min-executed` keeps it from sliding:
 $ swift test --package-path Examples
 ```
 
-Five examples are compiled and never run, each for a reason worth knowing: the
-quick start is top-level code addressing a socket the reader owns, `SIGPIPE` is
-a process-global disposition the runner has already chosen, and
-`TmuxContext.current()` is only non-nil inside a pane.
+Three examples are compiled and never run: `SIGPIPE` is a process-global
+disposition the runner has already chosen, and `TmuxContext.current()` is only
+non-nil inside a pane. The quick start is top-level code, so no test can call
+it — it is run instead, by spawning the executable it builds.
 
 Two rules govern porting an example, and both fail quietly. A trait defines its
 compilation condition only inside the package that declares it, so `#if
