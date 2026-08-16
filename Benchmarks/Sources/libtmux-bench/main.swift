@@ -375,6 +375,20 @@ if asMarkdown {
     print(
         "| round trips spent | \(noticing.polled.roundTrips) "
             + "| \(noticing.streamed.roundTrips) |")
+    print("")
+
+    // Two seconds of quiet: a daemon does not come up the instant it is
+    // started, and that gap is the whole difference between the two.
+    let waiting = try await measureWaiting(quietFor: .seconds(2))
+    print("<!-- section: waiting -->")
+    print("| Waiting two seconds for a line you did not print | Polling | waitForOutput |")
+    print("| --- | --- | --- |")
+    print(
+        "| tmux processes spent | \(waiting.polled.processes) "
+            + "| \(waiting.awaited.processes) |")
+    print(
+        "| pane captures taken | \(waiting.polled.output) "
+            + "| \(waiting.awaited.output) |")
     exit(0)
 }
 
@@ -492,6 +506,73 @@ func measureNoticing() async throws -> (polled: Measurement, streamed: Measureme
     }
 
     return (polled, streamed)
+}
+
+/// What a wait *for output somebody else produced* costs, which is the case
+/// `waitForOutput` exists for and the one the noticing table above does not
+/// cover: there the line is already on screen when the first capture runs, so
+/// polling never has to tick.
+func measureWaiting(quietFor delay: Duration) async throws
+    -> (polled: Measurement, awaited: Measurement)
+{
+    let marker = "listening-marker"
+    let clock = ContinuousClock()
+
+    /// Prints the marker after `delay`, the way a daemon coming up does.
+    @Sendable func announce(_ server: Server, _ pane: Pane) -> Task<Void, Never> {
+        Task {
+            try? await Task.sleep(for: delay)
+            try? await server.run("echo \(marker)", in: pane)
+        }
+    }
+
+    let polled = try await withBenchServer { server, counting in
+        guard let pane = try await server.panes().first else { throw BenchError.noPane }
+        try counting.reset()
+        var ticks = 0
+        let announcing = announce(server, pane)
+        let elapsed = try await clock.measure {
+            while true {
+                ticks += 1
+                if try await server.capture(pane).contains(where: {
+                    $0.contains(marker)
+                }) {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        announcing.cancel()
+        return Measurement(
+            elapsed: elapsed,
+            processes: counting.processes,
+            roundTrips: counting.roundTrips,
+            output: counted(ticks, "capture", "captures")
+        )
+    }
+
+    let awaited = try await withBenchServer { server, counting in
+        guard let pane = try await server.panes().first else { throw BenchError.noPane }
+        try counting.reset()
+        let announcing = announce(server, pane)
+        let elapsed = try await clock.measure {
+            _ = try await server.waitForOutput(
+                in: pane,
+                matching: [marker],
+                requiringFreshOutput: true,
+                timeout: .seconds(30)
+            )
+        }
+        announcing.cancel()
+        return Measurement(
+            elapsed: elapsed,
+            processes: counting.processes,
+            roundTrips: counting.roundTrips,
+            output: counted(1, "capture", "captures")
+        )
+    }
+
+    return (polled, awaited)
 }
 
 enum BenchError: Error { case noPane }

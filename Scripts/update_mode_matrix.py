@@ -43,6 +43,7 @@ TARGETS = {
     DOCC / "Modes.md": ("mode-matrix", ("modes", "noticing")),
     ROOT / "README.md": ("mode-matrix", ("modes", "noticing")),
     DOCC / "Streaming.md": ("noticing-matrix", ("noticing",)),
+    DOCC / "Waiting.md": ("waiting-matrix", ("waiting",)),
 }
 
 
