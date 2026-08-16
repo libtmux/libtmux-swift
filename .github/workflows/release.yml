@@ -8,6 +8,10 @@ name: release
 # The tag is pushed by hand. This refuses one that disagrees with
 # `LibTmuxVersion.current` or that the changelog does not describe, so a
 # mistyped tag fails here rather than becoming a version somebody depends on.
+#
+# Runnable by hand as a dry run, which checks the version and the notes without
+# publishing anything. A release path that has never been executed is one whose
+# first execution is the release.
 
 permissions:
   contents: read
@@ -15,6 +19,12 @@ permissions:
 on:
   push:
     tags: ["*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check the version and notes without creating a release
+        type: boolean
+        default: true
 
 jobs:
   release:
@@ -26,27 +36,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the tag against the version the package declares
+      # A dry run has no tag to read, so it checks the version the package
+      # declares — which is the one a tag would have to match anyway.
+      - name: Resolve the version under release
+        id: version
         env:
-          TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           declared=$(sed -n 's/.*static let current = "\([^"]*\)".*/\1/p' \
             Sources/LibTmux/LibTmuxVersion.swift)
-          if [ "$TAG" != "$declared" ]; then
-            echo "::error::tag $TAG but LibTmuxVersion.current is $declared"
+          if [ -z "$declared" ]; then
+            echo '::error::no `static let current` in LibTmuxVersion.swift'
             exit 1
           fi
-          echo "tag and package agree on $declared"
+          if [ "$REF_TYPE" = "tag" ]; then
+            if [ "$REF_NAME" != "$declared" ]; then
+              echo "::error::tag $REF_NAME but LibTmuxVersion.current is $declared"
+              exit 1
+            fi
+            echo "tag and package agree on $declared"
+          else
+            echo "dry run against the declared version $declared"
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
 
       - name: Take the notes from the changelog
         env:
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           # From this version's heading to the next one, so the notes are the
           # section a reader of the changelog already has.
-          awk -v tag="$TAG" '
+          awk -v tag="$VERSION" '
             $0 ~ "^## \\[" tag "\\]" { collecting = 1; next }
             collecting && /^## \[/ { exit }
             collecting { print }
@@ -54,28 +77,33 @@ jobs:
           # Non-blank rather than non-empty: a heading with nothing under it
           # extracts as a single newline, which has a size but says nothing.
           if ! grep -q '[^[:space:]]' notes.md; then
-            echo "::error::CHANGELOG.md has no section for $TAG, or it is empty"
+            echo "::error::CHANGELOG.md has no section for $VERSION, or it is empty"
             exit 1
           fi
           echo "notes:"
           cat notes.md
 
       - name: Create the release
+        if: github.ref_type == 'tag'
         env:
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # Anything carrying a prerelease suffix is marked as one, which is
           # what keeps it out of "latest" for a reader arriving at the
           # repository. Semver spells that with a hyphen.
-          case "$TAG" in
+          case "$VERSION" in
             *-*) prerelease="--prerelease" ;;
             *) prerelease="" ;;
           esac
           # shellcheck disable=SC2086 — empty or one flag.
-          gh release create "$TAG" \
-            --title "$TAG" \
+          gh release create "$VERSION" \
+            --title "$VERSION" \
             --notes-file notes.md \
             --verify-tag \
             $prerelease
+
+      - name: Say what a dry run skipped
+        if: github.ref_type != 'tag'
+        run: echo "Dry run - the version and notes check out; nothing published."
