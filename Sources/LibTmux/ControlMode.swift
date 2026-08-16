@@ -55,23 +55,24 @@ public actor ControlSession {
     /// reply that cannot arrive. Remembering the reason lets a late send fail
     /// with it instead.
     private var closure: (any Error)?
-    private let notificationSink: AsyncStream<ControlNotification>.Continuation
+    private nonisolated let broadcast = NotificationBroadcast()
 
     /// Everything the server volunteered: `%output`, `%window-add`, and the
-    /// rest. Buffered, so a consumer that starts late still sees what it
-    /// missed.
-    public nonisolated let notifications: AsyncStream<ControlNotification>
+    /// rest.
+    ///
+    /// Each access is an observer of its own, and every observer sees every
+    /// notification. Two iterators of one `AsyncStream` would divide them
+    /// instead — which is the shape a waiter and a watcher on the same
+    /// connection have, so it cannot be left to the caller to avoid.
+    ///
+    /// Anything that arrived before the first observer is replayed to it, so
+    /// acting and then observing is not a race.
+    public nonisolated var notifications: AsyncStream<ControlNotification> {
+        broadcast.subscribe()
+    }
 
     init(writer: StandardInputWriter) {
         self.writer = writer
-        var sink: AsyncStream<ControlNotification>.Continuation!
-        // Unbounded, because `%output` carries pane bytes rather than state:
-        // dropping one loses terminal output with nothing to indicate it went
-        // missing, and a consumer watching for a particular line would wait
-        // for something that was silently discarded. A caller that opens a
-        // connection is expected to drain this or keep the scope short.
-        self.notifications = AsyncStream(bufferingPolicy: .unbounded) { sink = $0 }
-        self.notificationSink = sink
     }
 
     /// Sends a command and waits for the block tmux brackets its reply with.
@@ -166,7 +167,7 @@ public actor ControlSession {
             let answered = pending.removeFirst()
             answered.continuation.resume(returning: answered.reply)
         case let .notification(notification):
-            notificationSink.yield(notification)
+            broadcast.yield(notification)
         case .exited:
             finish(throwing: TmuxError.connectionClosed)
         }
@@ -192,7 +193,7 @@ public actor ControlSession {
         for waiter in attaching {
             waiter.resume(throwing: reason)
         }
-        notificationSink.finish()
+        broadcast.finish()
     }
 }
 

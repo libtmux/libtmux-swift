@@ -57,6 +57,35 @@ struct ControlModeTests {
         }
     }
 
+    @Test("two observers each see every notification, rather than half each")
+    func observersDoNotDivideNotifications() async throws {
+        try await withTmuxServer { server in
+            let counts = try await server.withControlMode(attachingTo: "bootstrap") {
+                control in
+                async let first = Self.namesUntilWindow(control.notifications)
+                async let second = Self.namesUntilWindow(control.notifications)
+                _ = try await control.send(
+                    TmuxCommand("new-window", ["-d", "-t", "bootstrap"])
+                )
+                return await [first, second]
+            }
+            // Iterating one AsyncStream twice hands each iterator a share of
+            // the elements, so the notification only one of them needed can
+            // reach the other instead.
+            #expect(counts.allSatisfy { $0 })
+        }
+    }
+
+    private static func namesUntilWindow(
+        _ notifications: AsyncStream<ControlNotification>
+    ) async -> Bool {
+        for await notification in notifications
+        where notification.name.hasPrefix("window") {
+            return true
+        }
+        return false
+    }
+
     @Test("pane output arrives as it happens, not by polling")
     func paneOutputArrivesAsItHappens() async throws {
         try await withTmuxServer { server in
