@@ -16,6 +16,15 @@ let package = Package(
         .library(name: "TmuxWorkspace", targets: ["TmuxWorkspace"]),
         .library(name: "LibTmuxMCP", targets: ["LibTmuxMCP"]),
         .executable(name: "libtmux-mcp", targets: ["libtmux-mcp"]),
+        // Provisioning and reaping, for anyone whose own tests drive tmux.
+        //
+        // The other ports of libtmux all vend theirs: Go exports
+        // `tmux/tmuxtest`, and Python ships `libtmux.pytest_plugin` behind a
+        // `pytest11` entry point so installing the library is enough to get the
+        // fixtures. A consumer writing tests against tmux otherwise reinvents
+        // the parts that are easy to get wrong — a socket outside the shared
+        // root, or a server left running when the process is killed outright.
+        .library(name: "TmuxTestSupport", targets: ["TmuxFixture"]),
     ],
     // Reading tmuxp files is the one thing here that needs a YAML parser, and
     // a trait is what keeps that from being everyone's problem: with it off,
@@ -83,9 +92,12 @@ let package = Package(
             exclude: ["README.md"]
         ),
         // Shared by every suite that talks to a real tmux, so that all of them
-        // provision and reap servers the same way. `Benchmarks/` symlinks this
-        // directory rather than being handed a product, so the benchmark
-        // provisions servers the same way without widening what ships.
+        // provision and reap servers the same way. It stays under `Tests/`
+        // because that is where it is read from most: SwiftPM is happy to vend
+        // a product whose target lives there, so `TmuxTestSupport` reaches it
+        // without the file moving. Everything outside this package — the
+        // examples, the benchmark — takes the product, because two targets of
+        // this name in one package graph is an error rather than a duplicate.
         .target(
             name: "TmuxFixture",
             dependencies: ["LibTmux"],

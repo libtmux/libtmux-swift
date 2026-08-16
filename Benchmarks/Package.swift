@@ -11,10 +11,11 @@ import PackageDescription
 // identified by its last path component, so `package:` below would otherwise
 // only resolve in a checkout called `libtmux-swift`.
 //
-// `TmuxFixture` is a symlink to the one the suites use, because a target path
-// cannot leave its package root and the fixture is not worth vending as a
-// product to reach it. Provisioning and reaping stay identical to the suites'
-// by construction: it is the same file.
+// The fixture arrives as `TmuxTestSupport`, the product the library vends for
+// exactly this. It used to be a symlink, which a target path cannot avoid being
+// when it needs a file outside its own package root; a product reaches it
+// without the copy, and two targets of the same name in one package graph is an
+// error rather than a duplicate.
 let package = Package(
     name: "Benchmarks",
     // macOS 13 is what this library needs. It cannot currently be built for
@@ -26,17 +27,13 @@ let package = Package(
     platforms: [.macOS(.v13)],
     dependencies: [.package(name: "libtmux", path: "..")],
     targets: [
-        .target(
-            name: "TmuxFixture",
-            dependencies: [.product(name: "LibTmux", package: "libtmux")]
-        ),
         .executableTarget(
             name: "libtmux-bench",
             dependencies: [
                 .product(name: "LibTmux", package: "libtmux"),
-                "TmuxFixture",
+                .product(name: "TmuxTestSupport", package: "libtmux"),
             ]
-        ),
+        )
     ],
     swiftLanguageModes: [.v6]
 )
