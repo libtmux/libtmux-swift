@@ -21,8 +21,12 @@ public struct MCPService: Sendable {
     /// in hand: a client that sent a batch and closed its end is still owed the
     /// replies, and cancelling them would drop answers that were already
     /// computed.
+    /// `AsyncStream` concretely, rather than any non-throwing `AsyncSequence`:
+    /// naming the failure type is what makes a sequence non-throwing, and that
+    /// spelling needs macOS 15 where this package supports 13. Both callers
+    /// have a stream in hand anyway — one reading a pipe, one a test.
     public func serve(
-        _ lines: some AsyncSequence<String, Never> & Sendable,
+        _ lines: AsyncStream<String>,
         write: @escaping @Sendable (String) async -> Void
     ) async {
         let registry = RequestRegistry()

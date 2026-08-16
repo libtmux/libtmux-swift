@@ -87,6 +87,12 @@ builds is its own check:
 $ swift build
 ```
 
+None of these catch a symbol that exists only on a newer macOS than the
+package supports — `Package.swift` says 13, and a Linux compiler has no
+availability to check against. The macOS lane is the only thing that fails,
+after a push. Naming a generic's failure type (`AsyncSequence<T, Never>`) is
+the one that has bitten: it needs macOS 15.
+
 Run the trait-on command last: a default-trait resolve drops the Yams pin from
 `Package.resolved`, and SwiftPM will not put it back into a file that is
 missing it. Committing that deletion is the mistake to avoid. `swift build` and
