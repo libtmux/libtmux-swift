@@ -20,9 +20,14 @@ struct FilteringTests {
 
             // The positive control: agreement between two empty answers proves
             // nothing on its own, so this shows the same machinery selecting
-            // what is actually there.
-            let shells = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["sh"]))
-            #expect(try await server.panes().filter(shells).count == 1)
+            // what is actually there. Which command a fresh pane reports is the
+            // platform's business, so it is read rather than named.
+            let pane = try #require(try await server.panes().first)
+            let running = try FilterExpr<Pane>.where(
+                \.currentCommand, .isIn([pane.currentCommand])
+            )
+            let selected = try await server.panes().filter(running)
+            #expect(selected.contains { $0.id == pane.id })
         }
     }
 }

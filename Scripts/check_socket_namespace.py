@@ -45,7 +45,11 @@ ALLOWED = {
     ("Tests/LibTmuxTests/ServerTests.swift", "/tmp/libtmux-value"),
 }
 
-CREATION = re.compile(r'Server\(\s*socketPath:\s*"([^"]*)"')
+PATH_LITERAL = re.compile(r'Server\(\s*socketPath:\s*"([^"]*)"')
+NAME_LITERAL = re.compile(r'Server\(\s*socketName:\s*"([^"]*)"')
+
+# Every socket name this repository creates says which port owns it.
+NAME_PREFIX = "libtmux-swift"
 
 
 def tracked_swift_files() -> list[str]:
@@ -75,12 +79,18 @@ def main() -> int:
         checked += 1
         path = ROOT / relative
         for number, line in enumerate(path.read_text().splitlines(), start=1):
-            for literal in CREATION.findall(line):
+            for literal in PATH_LITERAL.findall(line):
                 if literal.startswith(SANCTIONED):
                     continue
                 if (relative, literal) in ALLOWED:
                     continue
-                failures.append(f"{relative}:{number}: {literal}")
+                failures.append(f"{relative}:{number}: path {literal}")
+            for literal in NAME_LITERAL.findall(line):
+                if literal.startswith(NAME_PREFIX):
+                    continue
+                if (relative, literal) in ALLOWED:
+                    continue
+                failures.append(f"{relative}:{number}: name {literal}")
 
     if failures:
         print(
@@ -90,9 +100,10 @@ def main() -> int:
         for failure in failures:
             print(f"  {failure}", file=sys.stderr)
         print(
-            "\nEvery socket belongs under /tmp/libtmux-swift-test/ (suites) or"
-            "\n/tmp/libtmux-swift-dev/ (by hand). If this one is addressed but"
-            "\nnever started, add it to ALLOWED with the reason. See AGENTS.md.",
+            "\nEvery socket path belongs under /tmp/libtmux-swift-test/ (suites)"
+            f"\nor /tmp/libtmux-swift-dev/ (by hand), and every socket name starts"
+            f"\nwith {NAME_PREFIX}. If this one is addressed but never started, add"
+            "\nit to ALLOWED with the reason. See AGENTS.md.",
             file=sys.stderr,
         )
         return 1

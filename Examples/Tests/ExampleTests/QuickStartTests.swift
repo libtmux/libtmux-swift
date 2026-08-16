@@ -4,8 +4,22 @@ import Testing
 import TmuxFixture
 
 /// The quick start is top-level code, so no test can call it; it is spawned.
-private func quickStartBinary() -> URL {
-    Bundle.main.bundleURL.appendingPathComponent("QuickStart")
+///
+/// Found from this file rather than from `Bundle.main`, whose `bundleURL` is
+/// the package's build directory on Linux but the xctest harness inside Xcode
+/// on Darwin.
+/// Named on its own, because `check_examples.py` reads it to decide that the
+/// example this builds is one the suite runs.
+private let quickStartExecutable = "QuickStart"
+
+private func quickStartBinary(configuration: String = "debug") -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // ExampleTests
+        .deletingLastPathComponent()  // Tests
+        .deletingLastPathComponent()  // Examples
+        .appendingPathComponent(".build")
+        .appendingPathComponent(configuration)
+        .appendingPathComponent(quickStartExecutable)
 }
 
 @Suite(
@@ -23,11 +37,11 @@ struct QuickStartTests {
         )
 
         let root = try #require(namedSocketRoot)
-        let server = try Server(socketName: "work", tmuxExecutable: tmuxExecutablePath())
+        let server = try Server(socketName: "libtmux-swift", tmuxExecutable: tmuxExecutablePath())
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
             TmuxCommand("new-session", ["-d", "-s", "quickstart"]),
-            reaperCommand(root: root.appendingPathComponent("tmux-\(getuid())/work")),
+            reaperCommand(root: root.appendingPathComponent("tmux-\(getuid())/libtmux-swift")),
         ])
         defer { Task { _ = try? await server.run(TmuxCommand("kill-server")) } }
 

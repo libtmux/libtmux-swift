@@ -146,7 +146,7 @@ public func withNamedTmuxServer<Result>(
         withIntermediateDirectories: true,
         attributes: [.posixPermissions: 0o700]
     )
-    let name = "s\(UUID().uuidString.prefix(8))"
+    let name = "libtmux-swift-\(UUID().uuidString.prefix(8))"
     // tmux does not put the socket in `TMUX_TMPDIR` itself: it creates a
     // `tmux-<uid>` directory inside it and puts the socket there, so that one
     // directory can be shared between users without their sockets colliding.

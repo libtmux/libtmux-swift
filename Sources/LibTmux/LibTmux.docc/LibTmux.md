@@ -15,7 +15,7 @@ get back is a value — a `Session` you hold is what the server looked like when
 you asked, not a live handle that changes under you. Ask again for a newer view.
 
 ```swift
-let server = try Server(socketName: "work")
+let server = try Server(socketName: "libtmux-swift")
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
