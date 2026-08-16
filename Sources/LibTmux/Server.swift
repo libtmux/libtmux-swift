@@ -54,11 +54,12 @@ public struct Server: Sendable, Hashable {
         tmuxExecutable: String = "tmux",
         transport: any ProcessTransport = SubprocessTransport()
     ) {
+        let resolved = resolvedExecutable(tmuxExecutable)
         self.endpoint = endpoint
-        self.tmuxExecutablePath = tmuxExecutable
+        self.tmuxExecutablePath = resolved
         self.runtime = ServerRuntime(
             endpoint: endpoint,
-            tmuxExecutable: tmuxExecutable,
+            tmuxExecutable: resolved,
             transport: transport
         )
         self.connection = nil
