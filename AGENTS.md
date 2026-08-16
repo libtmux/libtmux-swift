@@ -339,6 +339,10 @@ git history and nothing is uploaded anywhere. The workflow adds the
 GitHub Release every established Swift package carries, marking it a
 prerelease whenever the version has a suffix.
 
+Rehearse it first — `gh workflow run release --ref master -f
+dry_run=true` runs every check and stops before publishing, so the
+release path is not being executed for the first time on the release.
+
 For multi-line commits, use heredoc to preserve formatting:
 ```bash
 git commit -m "$(cat <<'EOF'
