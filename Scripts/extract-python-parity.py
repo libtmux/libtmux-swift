@@ -3005,9 +3005,8 @@ def _write_documents(
     parity_root.mkdir(parents=True, exist_ok=True)
     for filename, document in documents.items():
         (parity_root / filename).write_text(render_json(document), encoding="utf-8")
-    # The input fingerprint belongs beside the manifests it backs. It used to
-    # sit in the Python repository's docs tree, which only worked while the two
-    # were one checkout.
+    # The input fingerprint belongs beside the manifests it backs, which are
+    # read without the Python checkout being present.
     (parity_root / SOURCE_INPUTS).write_text(
         render_json(fingerprint_authority_inputs(python_root)),
         encoding="utf-8",

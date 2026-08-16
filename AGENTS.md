@@ -143,8 +143,8 @@ run is a fact rather than a claim, and `--min-executed` keeps it from sliding:
 $ swift test --package-path Examples
 ```
 
-Three examples are compiled and never run: `SIGPIPE` is a process-global
-disposition the runner has already chosen, and `TmuxContext.current()` is only
+`SIGPIPE` and `TmuxContext.current()` are compiled and never run: the first is
+a process-global disposition the runner has already chosen, the second is only
 non-nil inside a pane. The quick start is top-level code, so no test can call
 it — it is run instead, by spawning the executable it builds.
 

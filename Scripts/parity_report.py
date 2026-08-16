@@ -191,7 +191,7 @@ ANSWERED_DIFFERENTLY = {
 
 # Whole Python modules this port answers with one thing. Recorded by module
 # because listing an exception hierarchy member by member would say the same
-# sentence twenty-seven times.
+# sentence for every one of them.
 #
 # Behaviour only. `libtmux.neo.Obj` also carries every tmux format field, and
 # counting those as covered because the module they live in is answered would

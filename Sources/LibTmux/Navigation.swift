@@ -98,9 +98,9 @@ extension Server {
         guard var window = try await windows().first(where: { $0.id == id }) else {
             throw .serverRestarted
         }
-        // tmux 3.7 does not apply `-n` here — the window comes back named after
-        // whatever is running in it. Checking the result rather than the
-        // version means this corrects itself wherever the behaviour differs.
+        // Some releases ignore `-n` here and name the window after whatever is
+        // running in it. Comparing the result rather than the version means
+        // this corrects itself wherever the behaviour differs.
         if let name, window.name != name {
             try await rename(window, to: name)
             guard let renamed = try await windows().first(where: { $0.id == id })

@@ -4,12 +4,10 @@ import PackageDescription
 
 let package = Package(
     name: "libtmux",
-    // macOS 13 is what this library needs. It cannot currently be built for
-    // any macOS at all: swift-subprocess 1.0.0 — its only release — has a
-    // `run` overload taking a `borrowing Span` and calling `.bytes` on it,
-    // both macOS 26 API with no availability guard, and SwiftPM compiles a
-    // dependency at that dependency's own declared minimum rather than the
-    // root's. Raising this number does not help; only a release upstream does.
+    // macOS 13 is what this library needs, and no macOS can build it:
+    // swift-subprocess 1.0.0 calls macOS 26 API with no availability guard, and
+    // SwiftPM compiles a dependency at that dependency's own declared minimum.
+    // Raising this number does not help; only a release upstream does.
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "LibTmux", targets: ["LibTmux"]),
@@ -55,9 +53,8 @@ let package = Package(
             dependencies: [
                 .product(name: "Subprocess", package: "swift-subprocess")
             ],
-            // Beside the sources it documents, and named here because
-            // SwiftPM treats an undeclared file in a target directory as a
-            // resource somebody forgot.
+            // SwiftPM treats an undeclared file in a target directory as an
+            // unhandled resource.
             exclude: ["README.md"]
         ),
         .target(
@@ -70,25 +67,16 @@ let package = Package(
                     condition: .when(traits: ["YAMLWorkspaces"])
                 ),
             ],
-            // Beside the sources it documents, and named here because
-            // SwiftPM treats an undeclared file in a target directory as a
-            // resource somebody forgot.
             exclude: ["README.md"]
         ),
         .target(
             name: "LibTmuxMCP",
             dependencies: ["LibTmux"],
-            // Beside the sources it documents, and named here because
-            // SwiftPM treats an undeclared file in a target directory as a
-            // resource somebody forgot.
             exclude: ["README.md"]
         ),
         .executableTarget(
             name: "libtmux-mcp",
             dependencies: ["LibTmux", "LibTmuxMCP"],
-            // Beside the sources it documents, and named here because
-            // SwiftPM treats an undeclared file in a target directory as a
-            // resource somebody forgot.
             exclude: ["README.md"]
         ),
         // Shared by every suite that talks to a real tmux, so that all of them

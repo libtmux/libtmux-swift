@@ -242,10 +242,8 @@ public struct Server: Sendable, Hashable {
 
 /// The mutable half of a server.
 ///
-/// Only the transport reference and the immutable addressing live here today;
-/// it is an actor because everything that will need serialising — a control
-/// mode connection, a capability snapshot, a batching queue — belongs behind
-/// this same boundary rather than beside it.
+/// An actor, so that copies of one ``Server`` coordinate rather than race: the
+/// value is free to be copied because everything mutable lives behind here.
 actor ServerRuntime {
     private let endpoint: Endpoint
     private let tmuxExecutable: String

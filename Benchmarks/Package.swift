@@ -11,19 +11,14 @@ import PackageDescription
 // identified by its last path component, so `package:` below would otherwise
 // only resolve in a checkout called `libtmux-swift`.
 //
-// The fixture arrives as `TmuxTestSupport`, the product the library vends for
-// exactly this. It used to be a symlink, which a target path cannot avoid being
-// when it needs a file outside its own package root; a product reaches it
-// without the copy, and two targets of the same name in one package graph is an
-// error rather than a duplicate.
+// The fixture arrives as `TmuxTestSupport` rather than by path: two targets of
+// the same name in one package graph is an error, not a duplicate.
 let package = Package(
     name: "Benchmarks",
-    // macOS 13 is what this library needs. It cannot currently be built for
-    // any macOS at all: swift-subprocess 1.0.0 — its only release — has a
-    // `run` overload taking a `borrowing Span` and calling `.bytes` on it,
-    // both macOS 26 API with no availability guard, and SwiftPM compiles a
-    // dependency at that dependency's own declared minimum rather than the
-    // root's. Raising this number does not help; only a release upstream does.
+    // macOS 13 is what this library needs, and no macOS can build it:
+    // swift-subprocess 1.0.0 calls macOS 26 API with no availability guard, and
+    // SwiftPM compiles a dependency at that dependency's own declared minimum.
+    // Raising this number does not help; only a release upstream does.
     platforms: [.macOS(.v13)],
     dependencies: [.package(name: "libtmux", path: "..")],
     targets: [

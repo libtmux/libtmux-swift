@@ -6,11 +6,6 @@ import Subprocess
     import SystemPackage
 #endif
 
-/// A live control-mode connection.
-///
-/// Commands go in and numbered replies come back, so output belongs to the
-/// command that produced it — the attribution a `;` list cannot give. Anything
-/// the server volunteers meanwhile arrives on ``notifications``.
 /// One submitted line, and the blocks tmux has answered it with so far.
 ///
 /// A line is not always one block: tmux answers a `;` list with one per
@@ -40,6 +35,11 @@ private struct SubmittedLine {
     }
 }
 
+/// A live control-mode connection.
+///
+/// Commands go in and numbered replies come back, so output belongs to the
+/// command that produced it — the attribution a `;` list cannot give. Anything
+/// the server volunteers meanwhile arrives on ``notifications``.
 public actor ControlSession {
     private let writer: StandardInputWriter
     private var parser = ControlProtocolParser()

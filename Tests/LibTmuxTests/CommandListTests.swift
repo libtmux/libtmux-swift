@@ -127,9 +127,8 @@ struct CommandListTests {
                 }
                 _ = try await server.run(list)
 
-                // Nineteen unclaimed replies would be waiting here, and the
-                // first of them would answer this call instead of tmux's own
-                // reply to it.
+                // An unclaimed reply left over from the list would answer
+                // this call instead of tmux's own reply to it.
                 let sessions = try await server.sessions()
                 #expect(
                     sessions.contains { $0.name == "bootstrap" },

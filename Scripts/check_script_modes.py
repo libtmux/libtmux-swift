@@ -2,13 +2,11 @@
 """Require every tracked file with a shebang to be executable in git.
 
 A shebang on a file nothing can run is a script that only works when someone
-remembers to say `python3` in front of it. Ruff has a rule for this — EXE001 —
-and CI reports it, but a local `ruff check Scripts/` does not: the rule does not
-fire here even isolated and explicitly selected, on ext4, on a file the kernel
-agrees is not executable. A gate that only exists on the runner is one that
-catches you after the push.
+remembers to say `python3` in front of it. Ruff reports this as EXE001 on the
+runner but not reliably on a developer machine, so this gate exists rather than
+deferring to it.
 
-This reads the mode git *recorded*, which is what a checkout produces and
+It reads the mode git *recorded*, which is what a checkout produces and
 therefore what CI lints, rather than the mode this working tree happens to have.
 The two differ whenever `core.fileMode` is off or a file arrives through a
 patch.

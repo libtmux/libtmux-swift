@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Require every documented Swift example to compile, and say how many run.
 
-A README snippet is prose until something builds it. This session shipped one
-that named a package identity SwiftPM does not use, and two more that compiled
-with a warning — none of which a reader could tell from the page.
+A README snippet is prose until something builds it. An example can name a
+package identity SwiftPM does not use, or compile with a warning, and a reader
+cannot tell either from the page.
 
 `Examples/` is a package of its own that depends on this one, so everything in
 it is compiled by `swift build --package-path Examples` and compiled the way a
@@ -18,7 +18,7 @@ that function by name — which is a fact about the tree rather than a claim in 
 comment.
 
     python3 Scripts/check_examples.py
-    python3 Scripts/check_examples.py --min-executed 18
+    python3 Scripts/check_examples.py --min-executed <count>
 
 Matching is by line sequence after removing each block's own indentation, so an
 example may be shown on its own and kept inside a function.

@@ -28,10 +28,10 @@ struct QueryingTests {
     @Test("asking before acting reaches the server on both branches")
     func askingBeforeActingReachesTheServer() async throws {
         try await withTmuxServer { server in
-            // No `work` session yet: the guard takes the early return.
+            // Called either side of the session existing, so the guard is
+            // exercised both ways; neither call is redundant.
             try await askBeforeActing(server)
             _ = try await server.newSession(named: "work")
-            // Now it exists, so the guard falls through to the other branch.
             try await askBeforeActing(server)
         }
     }

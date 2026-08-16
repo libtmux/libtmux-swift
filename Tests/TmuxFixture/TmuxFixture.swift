@@ -11,8 +11,8 @@ import LibTmux
 ///
 /// Writing to a control connection whose tmux has already gone raises SIGPIPE,
 /// whose default action is to terminate — so the run dies mid-suite with no
-/// failing case to point at, roughly once in ten full runs on a loaded machine.
-/// A pipe has no portable per-descriptor way to suppress it (`MSG_NOSIGNAL` is
+/// failing case to point at. A pipe has no portable per-descriptor way to
+/// suppress it (`MSG_NOSIGNAL` is
 /// for sockets, `F_SETNOSIGPIPE` is Darwin's alone), so the disposition is the
 /// process's to choose and the library does not choose it for anybody. Here the
 /// process is the test runner, which has no pipeline behaviour to preserve, so
@@ -24,10 +24,10 @@ private let sigpipeIgnoredOnce: Void = {
 
 /// Where every socket this suite creates lives.
 ///
-/// `/tmp` rather than `TMPDIR`, deliberately: a socket path has about a hundred
-/// bytes total, and Darwin's per-user `TMPDIR` is a ~49-byte `/var/folders/…`
-/// path that would spend half the budget before the fixture names anything.
-/// `/tmp` is four bytes and exists on both systems.
+/// `/tmp` rather than `TMPDIR`: a socket path is bounded by `sun_path`, and
+/// Darwin's per-user `TMPDIR` is a long `/var/folders/…` path that spends much
+/// of that budget before the fixture names anything. `/tmp` exists on both
+/// systems. ``Endpoint`` enforces the limit.
 ///
 /// The language is in the name because `/tmp` is shared and several ports of
 /// libtmux are worked on side by side. A Python suite and this one both reaching

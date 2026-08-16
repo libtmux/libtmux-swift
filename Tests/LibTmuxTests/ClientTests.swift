@@ -58,8 +58,7 @@ struct ClientTests {
                 try await server.withControlMode(attachingTo: "bootstrap") { control in
                     _ = try? await control.send(TmuxCommand("kill-server"))
                     // Waiting until the server is provably gone leaves the
-                    // send only one way to fail: in the write, which is the
-                    // path that used to report `Broken pipe`.
+                    // send only one way to fail: in the write.
                     _ = try await waitUntil { try await !server.isRunning() }
                     _ = try await control.send(
                         TmuxCommand("display-message", ["-p", "unreachable"])
