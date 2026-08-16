@@ -31,6 +31,15 @@ Two rules follow:
 - Never remove anything under `/tmp/libtmux-*` that is not one of these two
   roots. Those belong to other ports, and a running server may be behind them.
 
+`Scripts/check_socket_namespace.py` is what makes this fail rather than be
+remembered — `libtmux-ts` gates the same invariant the same way. It reads every
+`Server(socketPath:)` and `Server(socketName:)` given a literal, which is where
+a stray root gets written down. What it cannot see is whether a server was
+*started*: nothing reaches the filesystem until a command runs against it. A
+handful of cases legitimately name a path outside the roots and never create
+one, and they are listed in the script rather than detected, so the next one is
+a decision somebody made.
+
 `Server` has no default endpoint, so this is a convention about *callers* rather
 than a setting: a socket path is chosen at every call site that creates one.
 
@@ -91,7 +100,11 @@ DocC warnings fail the job, so a broken symbol link is an error rather than a
 note.
 
 ```console
-$ python3 Scripts/check_examples.py
+$ python3 Scripts/check_examples.py --min-executed 27
+```
+
+```console
+$ python3 Scripts/check_socket_namespace.py
 ```
 
 ```console

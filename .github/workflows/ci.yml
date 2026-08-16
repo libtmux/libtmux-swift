@@ -106,7 +106,7 @@ jobs:
           swift-version: "6.2"
 
       - name: Check formatting
-        run: swift format lint --recursive --strict Sources Tests Snippets Benchmarks Package.swift
+        run: swift format lint --recursive --strict Sources Tests Examples Benchmarks Package.swift
 
       # The checks below are about the repository rather than the platform, so
       # one lane runs them. A missing DocC link is not a per-runner fact.
@@ -158,12 +158,20 @@ jobs:
           python3 Scripts/extract-python-parity.py --check \
             --python-repo "${LIBTMUX_PYTHON_REPO}"
 
-      # `swift build` compiles Snippets, so a documented example that no longer
-      # compiles fails the job. This checks the other half: that the examples on
-      # the page are the ones in the snippets, rather than copies that drifted.
+      # The examples package compiles every documented example, so one that no
+      # longer builds fails the job below. This checks the other half: that the
+      # examples on the page are the ones in the package, rather than copies
+      # that drifted — and that the number of them actually run has not slid.
       - name: Check documented examples are compiled
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
-        run: python3 Scripts/check_examples.py
+        run: python3 Scripts/check_examples.py --min-executed 27
+
+      # AGENTS.md states the socket-namespace rule in prose; this is what makes
+      # it fail rather than be remembered. `/tmp` is shared with every other
+      # libtmux port on the machine.
+      - name: Check every socket names this port
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_socket_namespace.py
 
       - name: Build documentation
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
@@ -205,6 +213,11 @@ jobs:
           # which other cases are concurrently reading.
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
+          # The examples are their own package, so the root invocation does not
+          # reach them. It runs first because it resolves this package with the
+          # trait on and leaves the root `Package.resolved` alone, where a
+          # default-trait resolve afterwards would drop the Yams pin.
+          swift test --package-path Examples
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
           swift test --traits YAMLWorkspaces
