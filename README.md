@@ -1,5 +1,8 @@
 # libtmux for Swift
 
+[![ci](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml)
+[![macos](https://github.com/libtmux/libtmux-swift/actions/workflows/macos.yml/badge.svg)](https://github.com/libtmux/libtmux-swift/actions/workflows/macos.yml)
+
 Drive tmux from Swift. A port of [libtmux][] for Python, in the same family of
 ports and holding to what that library established about tmux.
 
