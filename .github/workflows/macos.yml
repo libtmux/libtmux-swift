@@ -42,9 +42,15 @@ jobs:
           path: ~/tmux-${{ matrix.tmux }}
           key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
 
+      # Unconditional, because a cached tmux still loads these at run time: it
+      # links against Homebrew's copies, and a run that restored the binary
+      # without installing them aborts in dyld before printing its version.
+      - name: Install the libraries tmux links against
+        run: brew install libevent ncurses
+
       - name: Install build dependencies
         if: steps.tmux-cache.outputs.cache-hit != 'true'
-        run: brew install automake bison libevent ncurses pkg-config
+        run: brew install automake bison pkg-config
 
       - name: Build tmux ${{ matrix.tmux }}
         if: steps.tmux-cache.outputs.cache-hit != 'true'
