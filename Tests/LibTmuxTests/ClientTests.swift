@@ -51,6 +51,24 @@ struct ClientTests {
         }
     }
 
+    @Test("a send after the server is provably gone still says connectionClosed")
+    func writeToADeadConnectionReportsClosure() async throws {
+        try await withTmuxServer { server in
+            _ = await #expect(throws: TmuxError.connectionClosed) {
+                try await server.withControlMode(attachingTo: "bootstrap") { control in
+                    _ = try? await control.send(TmuxCommand("kill-server"))
+                    // Waiting until the server is provably gone leaves the
+                    // send only one way to fail: in the write, which is the
+                    // path that used to report `Broken pipe`.
+                    _ = try await waitUntil { try await !server.isRunning() }
+                    _ = try await control.send(
+                        TmuxCommand("display-message", ["-p", "unreachable"])
+                    )
+                }
+            }
+        }
+    }
+
     @Test("a command still waiting when the connection closes says so")
     func closedConnectionReportsItself() async throws {
         try await withTmuxServer { server in

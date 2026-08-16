@@ -118,7 +118,11 @@ public actor ControlSession {
                 do {
                     _ = try await writer.write(Array("\(line)\n".utf8))
                 } catch {
-                    self.failOldestWaiter(error)
+                    // A failed write means the connection is gone, and the
+                    // transport's word for it — `Broken pipe` — is not one this
+                    // library promises. Otherwise the error a caller sees
+                    // depends on whether the write or the read noticed first.
+                    self.failOldestWaiter(TmuxError.connectionClosed)
                 }
             }
         }
