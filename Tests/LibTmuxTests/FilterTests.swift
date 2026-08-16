@@ -150,4 +150,25 @@ struct FilterExprTests {
             try FilterExpr<Pane>.where(\.width, .equals(80))
         }
     }
+
+    @Test("case-insensitive containment reaches what containment alone does not")
+    func caseInsensitiveContainmentIgnoresCase() throws {
+        let insensitive = try FilterExpr<Pane>.where(
+            \.currentCommand, .caseInsensitiveContains("vim")
+        )
+        #expect(try panes.filter(insensitive).map(\.id) == ["%0", "%2", "%3"])
+
+        let sensitive = try FilterExpr<Pane>.where(\.currentCommand, .contains("vim"))
+        #expect(try panes.filter(sensitive).map(\.id) == ["%0", "%2"])
+    }
+
+    @Test("case-insensitive containment round-trips as its own operator")
+    func caseInsensitiveContainmentRoundTrips() throws {
+        let expression = try FilterExpr<Pane>.where(
+            \.currentCommand, .caseInsensitiveContains("VIM")
+        )
+        let data = try JSONEncoder().encode(expression)
+        let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
+        #expect(try panes.filter(decoded).map(\.id) == ["%0", "%2", "%3"])
+    }
 }

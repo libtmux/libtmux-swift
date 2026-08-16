@@ -177,6 +177,119 @@ struct NavigationTests {
             #expect(panes.contains { $0.id == pane.id })
         }
     }
+
+    @Test("a pasted buffer reaches the pane it was addressed to")
+    func pasteReachesThePane() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let marker = "libtmux-paste-marker"
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("libtmux-swift-paste-\(UUID().uuidString.prefix(8))")
+            try Data("echo \(marker)\n".utf8).write(to: file)
+            defer { try? FileManager.default.removeItem(at: file) }
+
+            try await server.loadBuffer(from: file.path, named: "probe")
+            try await server.paste(buffer: "probe", into: pane)
+
+            // The trailing newline in the buffer is what makes the pane's shell
+            // run what was pasted rather than leave it on the prompt.
+            let arrived = try await waitUntil {
+                try await server.capture(pane).contains { $0.contains(marker) }
+            }
+            #expect(arrived, "the buffer never reached the pane")
+        }
+    }
+
+    @Test("linking puts one window in two sessions, and unlinking takes it out of one")
+    func linkAndUnlinkMoveOneWindowBetweenSessions() async throws {
+        try await withTmuxServer { server in
+            let source = try await server.newSession(named: "source", windowName: "shared")
+            let target = try await server.newSession(named: "target")
+            let shared = try #require(
+                try await server.windows().first {
+                    $0.sessionID == source.id && $0.name == "shared"
+                }
+            )
+
+            try await server.link(shared, into: target)
+
+            // Naming which session gained the window is what tells a `-s`/`-t`
+            // swap apart from the correct call.
+            let linked = try await server.windows().filter { $0.id == shared.id }
+            #expect(linked.count == 2)
+            #expect(Set(linked.map(\.sessionID)) == [source.id, target.id])
+
+            let inTarget = try #require(linked.first { $0.sessionID == target.id })
+            try await server.unlink(inTarget)
+
+            let remaining = try await server.windows().filter { $0.id == shared.id }
+            #expect(remaining.map(\.sessionID) == [source.id])
+        }
+    }
+
+    @Test("a pane title is set on the pane it names")
+    func setTitleNamesItsPane() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let second = try await server.splitWindow(window, direction: .right)
+            let first = try #require(
+                try await server.panes().first { $0.windowID == window.id && $0.id != second.id }
+            )
+
+            try await server.setTitle("probe-title", of: second)
+
+            #expect(try await server.format("#{pane_title}", for: second) == "probe-title")
+            #expect(try await server.format("#{pane_title}", for: first) != "probe-title")
+        }
+    }
+
+    @Test("sourcing a file runs the commands in it")
+    func sourceFileRunsWhatIsInIt() async throws {
+        try await withTmuxServer { server in
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("libtmux-swift-source-\(UUID().uuidString.prefix(8)).conf")
+            try Data("new-session -d -s from-a-file\n".utf8).write(to: file)
+            defer { try? FileManager.default.removeItem(at: file) }
+
+            try await server.sourceFile(file.path)
+
+            let exists = try await server.hasSession("from-a-file")
+            #expect(exists)
+        }
+    }
+
+    @Test("starting an already-running server is a no-op rather than an error")
+    func startServerIsIdempotent() async throws {
+        try await withTmuxServer { server in
+            let before = try await server.sessions().map(\.id)
+            try await server.startServer()
+            let after = try await server.sessions().map(\.id)
+            #expect(before == after)
+        }
+    }
+
+    @Test("next and previous layout move between layouts and back")
+    func layoutsCycleBothWays() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            _ = try await server.splitWindow(window, direction: .right)
+
+            // From a named preset, not from whatever the split produced: tmux
+            // cycles a fixed list of layouts, and a custom arrangement is not
+            // on it — so next-then-previous from one lands on the last preset
+            // rather than back where it started.
+            try await server.selectLayout(window, "even-horizontal")
+            let start = try await server.format("#{window_layout}", for: window)
+
+            try await server.nextLayout(window)
+            let moved = try await server.format("#{window_layout}", for: window)
+            #expect(moved != start, "next-layout left the layout where it was")
+
+            try await server.previousLayout(window)
+            let back = try await server.format("#{window_layout}", for: window)
+            #expect(back == start, "previous-layout did not undo next-layout")
+        }
+    }
 }
 
 @Suite("pane geometry and replacement", .timeLimit(.minutes(1)))
