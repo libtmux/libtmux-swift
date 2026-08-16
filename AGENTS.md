@@ -113,6 +113,10 @@ $ python3 Scripts/check_script_modes.py
 ```
 
 ```console
+$ python3 Scripts/check_version.py
+```
+
+```console
 $ python3 Scripts/update_mode_matrix.py --check
 ```
 
@@ -308,11 +312,32 @@ what:
 ### Release commits
 
 Never create tags. Never push tags. The user handles tagging and tag
-pushes (tags trigger the CI publish workflow).
+pushes.
 
-Release commit subjects are plain and short: `Tag v<version>`. Put
-the detailed why/what in the commit body. Don't use the
+Release commit subjects are plain and short: `Tag <version>`. Put the
+detailed why/what in the commit body. Don't use the
 `Scope(type[detail]):` format for releases — don't bury the lede.
+
+A version is bare semver with no `v`, because that is what every
+established Swift package tags: swift-nio, swift-log, swift-collections,
+swift-argument-parser, Alamofire, Yams and swift-subprocess all resolve
+from `1.2.3` rather than `v1.2.3`.
+
+The release commit does two things, and `.github/workflows/release.yml`
+refuses the tag if either is missing:
+
+- Set `LibTmuxVersion.current` to the version being tagged. Every
+  `exact:` pin in the documentation names it, and
+  `Scripts/check_version.py` fails when one does not.
+- Rename `## [Unreleased]` in `CHANGELOG.md` to `## [<version>] - <date>`
+  and open a fresh `## [Unreleased]` above it. Those lines become the
+  release notes, so an empty section fails the release rather than
+  publishing one.
+
+Pushing the tag is what publishes: SwiftPM resolves a package from its
+git history and nothing is uploaded anywhere. The workflow adds the
+GitHub Release every established Swift package carries, marking it a
+prerelease whenever the version has a suffix.
 
 For multi-line commits, use heredoc to preserve formatting:
 ```bash

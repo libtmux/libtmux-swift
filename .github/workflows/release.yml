@@ -1,0 +1,81 @@
+name: release
+
+# A tag is the release: SwiftPM resolves a package from its git history, and
+# nothing is uploaded anywhere. What this adds is the part every established
+# Swift package has and a tag alone does not — a GitHub Release carrying the
+# notes for that version, marked prerelease while the version says it is one.
+#
+# The tag is pushed by hand. This refuses one that disagrees with
+# `LibTmuxVersion.current` or that the changelog does not describe, so a
+# mistyped tag fails here rather than becoming a version somebody depends on.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags: ["*"]
+
+jobs:
+  release:
+    name: Release ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against the version the package declares
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          declared=$(sed -n 's/.*static let current = "\([^"]*\)".*/\1/p' \
+            Sources/LibTmux/LibTmuxVersion.swift)
+          if [ "$TAG" != "$declared" ]; then
+            echo "::error::tag $TAG but LibTmuxVersion.current is $declared"
+            exit 1
+          fi
+          echo "tag and package agree on $declared"
+
+      - name: Take the notes from the changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # From this version's heading to the next one, so the notes are the
+          # section a reader of the changelog already has.
+          awk -v tag="$TAG" '
+            $0 ~ "^## \\[" tag "\\]" { collecting = 1; next }
+            collecting && /^## \[/ { exit }
+            collecting { print }
+          ' CHANGELOG.md > notes.md
+          # Non-blank rather than non-empty: a heading with nothing under it
+          # extracts as a single newline, which has a size but says nothing.
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for $TAG, or it is empty"
+            exit 1
+          fi
+          echo "notes:"
+          cat notes.md
+
+      - name: Create the release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Anything carrying a prerelease suffix is marked as one, which is
+          # what keeps it out of "latest" for a reader arriving at the
+          # repository. Semver spells that with a hyphen.
+          case "$TAG" in
+            *-*) prerelease="--prerelease" ;;
+            *) prerelease="" ;;
+          esac
+          # shellcheck disable=SC2086 — empty or one flag.
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            --verify-tag \
+            $prerelease
