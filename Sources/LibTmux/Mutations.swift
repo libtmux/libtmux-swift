@@ -332,6 +332,32 @@ extension Server {
         try await sendKeys([commandLine, "Enter"], to: pane)
     }
 
+    /// How a command running *inside* a pane spells a tmux that reaches this
+    /// server.
+    ///
+    /// A bare `tmux` there is whichever one is on the pane's `PATH`, which is
+    /// not necessarily this one — and a client whose protocol version differs
+    /// from the server's is refused with `server exited unexpectedly` rather
+    /// than anything that names the cause. Composing a command with this
+    /// instead removes both the `PATH` lookup and the guess about which server
+    /// `$TMUX` refers to:
+    ///
+    /// ```swift
+    /// try await server.run(
+    ///     "make; \(server.shellInvocation) wait-for -S built",
+    ///     in: pane
+    /// )
+    /// try await server.wait(for: "built")
+    /// ```
+    ///
+    /// Quoted for a POSIX shell, so a path containing spaces survives being
+    /// typed into one.
+    public var shellInvocation: String {
+        ([tmuxExecutablePath] + endpoint.addressArguments)
+            .map(shellQuoted)
+            .joined(separator: " ")
+    }
+
     /// The pane's visible contents, one line per row.
     ///
     /// - Parameters:

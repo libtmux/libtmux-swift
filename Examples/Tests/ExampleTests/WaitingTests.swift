@@ -49,6 +49,18 @@ struct WaitingTests {
             let pane = try #require(
                 try await server.snapshot().panes(of: session).first
             )
+            // The example signals through a bare `tmux`, which for a reader is
+            // the one on their PATH and the one running their server. A run
+            // pointed at a particular build by LIBTMUX_TMUX_BIN has neither, so
+            // the precondition the example documents is established here — a
+            // client of a different protocol version is refused outright.
+            let binary = URL(fileURLWithPath: tmuxExecutablePath())
+            if binary.path.contains("/") {
+                try await server.run(
+                    "PATH=\(binary.deletingLastPathComponent().path):$PATH; export PATH",
+                    in: pane
+                )
+            }
             // No assertion beyond returning: the wait either releases or the
             // suite's limit ends it, and a channel nobody signals never
             // releases.

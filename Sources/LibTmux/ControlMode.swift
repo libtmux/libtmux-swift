@@ -400,6 +400,19 @@ func requireSingleLine(_ arguments: [String]) throws(TmuxError) {
 /// sent: `#` opens a comment, and whitespace and quotes separate or group.
 /// A format like `#{session_name}` therefore has to be quoted or it vanishes
 /// mid-command.
+/// Quotes one argument for a POSIX shell.
+///
+/// Separate from ``tmuxQuoted`` despite the identical shape today: the two
+/// answer to different parsers, and a change made for one of them would
+/// otherwise silently apply to the other.
+func shellQuoted(_ argument: String) -> String {
+    let safe = argument.allSatisfy { character in
+        character.isLetter || character.isNumber || "_-./=:@%+,".contains(character)
+    }
+    if safe, !argument.isEmpty { return argument }
+    return "'" + argument.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+}
+
 func tmuxQuoted(_ argument: String) -> String {
     let safe = argument.allSatisfy { character in
         character.isLetter || character.isNumber

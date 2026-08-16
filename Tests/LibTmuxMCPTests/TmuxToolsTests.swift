@@ -559,6 +559,34 @@ struct TmuxToolsTests {
         }
     }
 
+    @Test("run_shell does not depend on a tmux being on the pane's PATH")
+    func runShellDoesNotNeedTmuxOnPath() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            // A bare `tmux` here would be whichever one the pane can find, and
+            // a client of a different protocol version is refused with `server
+            // exited unexpectedly` — reaching the caller as a command that
+            // simply never finished. Emptying PATH is the same fault, made
+            // deterministic.
+            try await server.run("PATH=/nonexistent; export PATH", in: pane)
+            try await Task.sleep(for: .milliseconds(200))
+
+            let outcome = try await TmuxTools(server: server).call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id),
+                        "command": .string("/bin/echo path-independent"),
+                        "timeout": .number(20),
+                    ])
+                )
+            )
+            let result = try outcome.decode(RunShellResult.self)
+            #expect(!result.timedOut)
+            #expect(result.exitStatus == 0)
+        }
+    }
+
     @Test("run_shell carries a failing command's status back")
     func runShellCarriesFailure() async throws {
         try await withTmuxServer { server in

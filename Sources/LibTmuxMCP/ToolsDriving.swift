@@ -22,10 +22,17 @@ extension TmuxTools {
         // read back exactly, and the pane the user is looking at gains no line
         // of bookkeeping. The `;` separators fire whether the command passed or
         // failed, so a failing command cannot leave the wait deadlocked.
+        //
+        // Spelled through `shellInvocation` rather than as a bare `tmux`: that
+        // would be whichever tmux is on the pane's PATH, and a client of a
+        // different protocol version is refused with `server exited
+        // unexpectedly` — which reaches the caller as a command that never
+        // finished.
+        let tmux = server.shellInvocation
         try await server.sendKeys(
             [
-                "\(command); tmux set-option -p \(statusOption) $?; "
-                    + "tmux wait-for -S \(channel)",
+                "\(command); \(tmux) set-option -p \(statusOption) $?; "
+                    + "\(tmux) wait-for -S \(channel)",
                 "Enter",
             ],
             to: pane
