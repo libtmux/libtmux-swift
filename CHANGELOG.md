@@ -11,6 +11,68 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- Waiting that is driven by tmux rather than by a timer.
+  `Server.waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)`
+  blocks on a pane's `%output` and matches against the rendered grid, so a
+  quiet pane costs nothing while it waits. The condition is checked before it
+  is blocked on — a pattern already showing returns at once with
+  `matchedAtEntry` set, because "wait until it is listening" is answered by
+  something already listening; `requiringFreshOutput` is the opposite reading,
+  for re-running a command whose output looks identical. Each read takes a
+  bounded lookback above the visible rows, so output that scrolls past between
+  two reads is still found. `FormatSubscription` and
+  `ControlSession.watch(_:)` register a `refresh-client -B` subscription, which
+  reports a format's value changing without reading any scrollback at all —
+  `#{pane_current_command}` answers "is my command done?" exactly.
+  A new `Waiting` article in the DocC catalogue covers which to reach for.
+- `LibTmuxMCP` grew from six tools to twenty-five, and gained the surfaces an
+  MCP client expects: `tmux://` resources, workflow prompts, server
+  instructions, per-tool JSON Schema with behaviour annotations,
+  `structuredContent`, and protocol-revision negotiation from `2024-11-05`
+  through `2025-11-25`.
+- Safety tiers on the MCP server. `LIBTMUX_SAFETY` selects `readonly`,
+  `mutating` or `destructive`, and anything above the tier is hidden from
+  `tools/list` as well as refused.
+- The MCP server recognises the pane it is running in. `list_panes` marks it,
+  `describe_server` names it, and the kill tools refuse it unless
+  `confirm_self` is passed. Identity is the tmux server's process id rather
+  than its socket path, so a pane id repeated on another tmux is not mistaken
+  for the caller's.
+- `apply_workspace`, `snapshot`, `run_shell`, `run_commands`, `search_panes`,
+  `capture_pane` and `describe_server` as MCP tools.
+
+### Changed
+
+- `ControlSession.notifications` hands every observer its own stream. It was a
+  single `AsyncStream`, and two iterators of one of those divide the elements
+  rather than each receiving all of them — so a waiter and a watcher on the
+  same connection each silently missed about half of what they asked for.
+  Anything that arrived before the first observer is replayed to it.
+- The MCP server serves requests concurrently, and honours
+  `notifications/cancelled`. It read one line, answered it, and only then read
+  the next, so a single blocking call stopped everything — including the
+  `ping` that would have shown it was alive.
+- Every MCP wait is clamped to a ceiling
+  (`LIBTMUX_MCP_WAIT_MAX_SECONDS`, itself capped at 300 seconds) and reports
+  the value actually enforced.
+- MCP tools reject an argument they do not declare, naming the ones they
+  accept. Silently ignoring a misspelt `pattern` made a wait look like a quiet
+  pane.
+- `run_command` refuses the tmux commands that cannot return without a
+  terminal — `wait-for`, `attach-session`, `command-prompt`, `choose-*` — and
+  names the tool that does the same job safely.
+
+### Fixed
+
+- `read_format` could not be called over MCP. The protocol layer built its
+  request by naming the arguments it carried and did not carry `template` or
+  `target`, so every call failed as though the client had sent nothing. Tool
+  arguments now travel as one object and are read through the same declaration
+  that generates the schema, which is what makes the two impossible to
+  disagree.
+
 ## [0.1.0-alpha.1] - 2026-08-16
 
 The first alpha. Everything below is new, so this says what the package is

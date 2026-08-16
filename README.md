@@ -423,7 +423,7 @@ is environment, so a client config is where you say so:
       "command": "/path/to/.build/debug/libtmux-mcp",
       "env": {
         "LIBTMUX_SOCKET": "default",
-        "LIBTMUX_TMUX_BIN": "tmux"
+        "LIBTMUX_SAFETY": "mutating"
       }
     }
   }
@@ -433,29 +433,60 @@ is environment, so a client config is where you say so:
 | Variable | Default | What it selects |
 | --- | --- | --- |
 | `LIBTMUX_SOCKET` | `default` | The socket *name*, in tmux's own socket directory |
+| `LIBTMUX_SOCKET_PATH` | — | A socket *path*, when a name will not do |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
+| `LIBTMUX_SAFETY` | `mutating` | The highest tier of tool served: `readonly`, `mutating`, `destructive` |
+| `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The ceiling every wait is clamped to, itself capped at 300 |
 
-Both are optional; with neither set it serves the `default` socket through the
-first `tmux` on `PATH`. Anything the server wants to tell a human goes to
-stderr, because stdout is the protocol and a stray line there corrupts it.
+All are optional. Anything the server wants to tell a human goes to stderr,
+because stdout is the protocol and a stray line there corrupts it.
 
 `LIBTMUX_SOCKET` is a name rather than a path, and tmux resolves a name inside
 `TMUX_TMPDIR`. Set that in the same `env` block when your tmux keeps its sockets
 somewhere other than the default, and the name will mean the same server to this
 package that it means to you.
 
-| Tool | What it does |
-| --- | --- |
-| `list_sessions` | Every session, optionally selected by what its panes run |
-| `list_windows` | Every window on the server |
-| `list_panes` | Every pane, optionally filtered |
-| `describe_filters` | The filterable fields, their types, and their aliases |
-| `read_format` | Evaluates a tmux format, reaching fields the listings do not carry |
-| `run_command` | Runs one tmux command and returns what tmux said |
+### The tools
 
-`describe_filters` is what makes the rest usable: a client that does not speak
-Swift learns the filterable vocabulary from it, instead of hard coding field
-names that a rename would break.
+| Tool | What it answers |
+| --- | --- |
+| `describe_server` | Which tmux, which features, which pane is the caller's own |
+| `describe_filters` | The filterable fields, their types, and their aliases |
+| `list_sessions` `list_windows` `list_panes` | Listings, filtered, projected to the fields you asked for |
+| `snapshot` | Every level at once, proven to have existed together |
+| `capture_pane` `search_panes` | What a pane is showing, and which pane mentions something |
+| `read_format` | Any tmux format, reaching fields the listings do not carry |
+| `run_shell` | Runs a command, waits for it, reports its exit status |
+| `wait_for_output` `watch_format` `wait_for_channel` `signal_channel` | The four waits, all bounded and cancellable |
+| `send_keys` | Raw input, for keystrokes a program is meant to interpret |
+| `new_session` `new_window` `split_pane` `set_option` | Building and configuring |
+| `apply_workspace` | A whole session from one declarative plan |
+| `kill_pane` `kill_window` `kill_session` | Ending things, at the destructive tier only |
+| `run_command` `run_commands` | One tmux command, or a batch that says which step failed |
+
+Alongside them, `tmux://` resources for a client that would rather browse than
+call, and four prompts packaging the sequences that are easy to get wrong.
+
+### Three things it does that a wrapper does not
+
+**It will not get stuck.** Every wait is clamped to a ceiling and reports what
+was actually enforced. Requests are served concurrently, so a thirty-second
+wait does not hold up the `ping` beside it, and `notifications/cancelled` stops
+one that the client has stopped caring about. The tmux commands that block
+forever without a terminal — `wait-for`, `attach-session`, `command-prompt`,
+`choose-*` — are refused by name, each pointing at the tool that does the same
+job safely.
+
+**It will not spend context you did not ask it to.** Listings take a `fields`
+argument, so one field can be one field rather than every record in full.
+`capture_pane` caps its lines and says how many it dropped. `run_shell` returns
+only what that command printed, not the whole screen.
+
+**It will not end the conversation.** When the server runs inside tmux it knows
+which pane is its own: `list_panes` marks that row, `describe_server` names it,
+and the kill tools refuse it unless `confirm_self` is passed. The guard
+compares the server's process id rather than its socket path, so a pane id that
+merely repeats on another tmux is not mistaken for the caller's.
 
 ### What it feels like
 
@@ -471,10 +502,9 @@ The agent asked `describe_filters` what a pane can be filtered on, then
 ### When it earns its keep
 
 For a single `tmux send-keys`, it does not — run tmux. It earns its keep when
-something has to be *asked* rather than done: which pane is running the failing
-test, what a long process last printed, whether the session you are about to
-create already exists. The filter vocabulary travels to the client, so those
-questions are answered in one call instead of a listing plus a regex.
+something has to be *asked* rather than done, or *waited for* rather than
+polled: which pane is running the failing test, whether the dev server came up,
+whether the session you are about to create already exists.
 
 `LibTmuxMCP` is the same tools as a library, if you would rather embed them in a
 server of your own than run this one.
