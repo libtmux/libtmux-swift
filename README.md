@@ -287,11 +287,12 @@ A connection can do one thing a process cannot, which is report what changed
 without being asked:
 
 ```swift
-try await server.connected(attachingTo: "work") { server, events in
+let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
     for await notification in events.notifications
     where notification.name == "output" {
-        print(notification.arguments)
+        return notification.arguments
     }
+    return nil
 }
 ```
 

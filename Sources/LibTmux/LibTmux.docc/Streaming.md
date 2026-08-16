@@ -9,16 +9,22 @@ server, because reporting what changed without being asked is the one thing a
 connection can do and a process cannot:
 
 ```swift
-try await server.connected(attachingTo: "work") { server, events in
+let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
     for await notification in events.notifications
     where notification.name == "output" {
-        print(notification.arguments)
+        return notification.arguments
     }
+    return nil
 }
 ```
 
 There is no way to write this against a server that has no connection — the
 value carrying the stream exists only inside the scope that opened one.
+
+The loop leaves on the notification it was waiting for, and the stream ends by
+itself when the connection closes, which is what the `nil` answers. A loop with
+no way out is the easy thing to write here and the hard thing to stop: it holds
+the connection open for as long as the server lives.
 
 ## What it saves
 
