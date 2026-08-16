@@ -6,7 +6,7 @@ ports and holding to what that library established about tmux.
 ```swift
 import LibTmux
 
-let server = try Server(socketPath: "/tmp/work.sock")
+let server = try Server(socketName: "work")
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }

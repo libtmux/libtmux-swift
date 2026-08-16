@@ -9,14 +9,17 @@ enforces the same invariant with a script, and this is the Swift half of it.
 
     python3 Scripts/check_socket_namespace.py
 
-What it can and cannot see. It matches `Server(socketPath:)` and
-`Server(socketName:)` given a *literal*, which is where a stray socket root gets
-written down. It cannot tell a server that was addressed from one that was
-started: nothing reaches the filesystem until a command runs against it, and
-that is a runtime fact. So a handful of cases legitimately name a path outside
-the roots and never create it — they are listed below rather than detected, the
-way `check_examples.py` lists its manifest excerpts, so the next one has to be a
-decision somebody made rather than a pattern somebody's file happened to match.
+What it can and cannot see. It matches `Server(socketPath:)` given a *literal*,
+which is where a stray socket root gets written down. It does not look at
+`Server(socketName:)`: tmux resolves a name inside `TMUX_TMPDIR`, so the literal
+says nothing about where the socket lands, and the suite gates that separately
+through `namedSocketsAvailable`. Nor can it tell a server that was addressed
+from one that was started — nothing reaches the filesystem until a command runs
+against it, and that is a runtime fact. So a couple of cases legitimately name a
+path outside the roots and never create it; they are listed below rather than
+detected, the way `check_examples.py` lists its manifest excerpts, so the next
+one has to be a decision somebody made rather than a pattern somebody's file
+happened to match.
 
 `dev/Spikes/` is excluded: it is scratch work that CI does not build.
 """
@@ -36,15 +39,13 @@ SANCTIONED = ("/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev")
 # Addressed but never started, or a path the reader owns rather than one this
 # repository creates. Each is a decision, not a heuristic.
 ALLOWED = {
-    # The documented quick start shows a reader the socket *they* would use.
-    ("Examples/Sources/QuickStart/main.swift", "/tmp/work.sock"),
     # "an empty list is a no-op that never invokes tmux" — nothing is spawned.
     ("Tests/LibTmuxTests/CommandListTests.swift", "/tmp/lt-empty"),
     # Identity and equality over endpoints; no server is ever started.
     ("Tests/LibTmuxTests/ServerTests.swift", "/tmp/libtmux-value"),
 }
 
-CREATION = re.compile(r'Server\(\s*socket(?:Path|Name):\s*"([^"]*)"')
+CREATION = re.compile(r'Server\(\s*socketPath:\s*"([^"]*)"')
 
 
 def tracked_swift_files() -> list[str]:

@@ -80,14 +80,13 @@ def contains(snippet: list[str], block: list[str]) -> bool:
 def units() -> dict[str, list[str]]:
     """Map each example's name to the lines it is written on.
 
-    A unit is one function, because that is what a test can call. Anything above
-    the first function — imports, comments, a file of top-level code like the
-    quick start — belongs to a unit named for the file, which no test can call
-    and which is therefore never counted as executed.
+    A unit is one function, because that is what a test can call. Top-level code
+    has no function to name, so `main.swift` takes the name of the executable it
+    builds — which a test runs rather than calls.
     """
     found: dict[str, list[str]] = {}
     for path in sorted(EXAMPLES.rglob("*.swift")):
-        current = path.stem
+        current = path.parent.name if path.name == "main.swift" else path.stem
         found.setdefault(current, [])
         for line in path.read_text().splitlines():
             match = FUNCTION.match(line)
@@ -99,9 +98,14 @@ def units() -> dict[str, list[str]]:
 
 
 def called() -> set[str]:
-    """Every identifier a test names, which is what makes an example executed."""
+    """Every name a test reaches for, by call or by string.
+
+    A function is executed when a test calls it; an executable is executed when
+    a test spawns it, and a spawned binary is named by a string rather than by
+    an identifier.
+    """
     text = "\n".join(p.read_text() for p in TESTS.rglob("*.swift"))
-    return set(re.findall(r"\b(\w+)\s*\(", text))
+    return set(re.findall(r"\b(\w+)\s*\(", text)) | set(re.findall(r'"(\w+)"', text))
 
 
 def main() -> int:
