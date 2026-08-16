@@ -75,10 +75,12 @@ struct WaitingTests {
             let pane = try #require(
                 try await server.snapshot().panes(of: session).first
             )
-            // tmux sends a subscription's current value once when it is made,
-            // so a pane already running `sh` answers immediately — which is
-            // the property the example depends on and worth exercising.
-            try await watchingAFormat(server, pane: pane)
+            // Asserted on being reported at all rather than on what it says:
+            // what a pane's shell is called is the platform's business, and an
+            // example that waits for one particular name waits forever on the
+            // platform that spells it differently.
+            let running = try await watchingAFormat(server, pane: pane)
+            #expect(running?.isEmpty == false)
         }
     }
 

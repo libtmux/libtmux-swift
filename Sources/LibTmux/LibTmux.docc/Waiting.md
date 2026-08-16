@@ -43,15 +43,17 @@ try await server.connected(attachingTo: "work") { server, control in
             format: "#{pane_current_command}"
         )
     )
-    for await change in control.changes(named: "cmd") where change.value == "sh" {
-        return
+    for await change in control.changes(named: "cmd") {
+        return change.value
     }
+    return nil
 }
 ```
 
 tmux evaluates a subscribed format about once a second and sends the current
-value once when the subscription is made, so a watcher learns where it is
-starting from without asking.
+value once when the subscription is made — which is why the loop above leaves
+on its first report: a watcher learns where it is starting from without asking
+for it, and every report after that is a change.
 
 **You did not write the command: wait on its output.**
 ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)`` is for a

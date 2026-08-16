@@ -7,7 +7,7 @@ public func waitingOnAChannel(_ server: Server, pane: Pane) async throws {
     try await server.wait(for: "built")
 }
 
-public func watchingAFormat(_ server: Server, pane: Pane) async throws {
+public func watchingAFormat(_ server: Server, pane: Pane) async throws -> String? {
     try await server.connected(attachingTo: "work") { server, control in
         try await control.watch(
             FormatSubscription(
@@ -16,9 +16,10 @@ public func watchingAFormat(_ server: Server, pane: Pane) async throws {
                 format: "#{pane_current_command}"
             )
         )
-        for await change in control.changes(named: "cmd") where change.value == "sh" {
-            return
+        for await change in control.changes(named: "cmd") {
+            return change.value
         }
+        return nil
     }
 }
 
