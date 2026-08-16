@@ -45,6 +45,14 @@ version number says only which alpha you have. Pin an exact one.
 
 ### Changed
 
+- MCP tools declare an `outputSchema` wherever the answer's shape is
+  guaranteed, and listings answer under a name — `{"panes": [...]}` rather
+  than a bare array. MCP types `structuredContent` as an object, so an array
+  was not a result a validating client had to accept. The schemas are checked
+  against what the tools really return rather than against each other.
+- Long MCP calls report progress when the client asks for it with a
+  `_meta.progressToken`, which the Codex CLI sends on every call.
+
 - `ControlSession.notifications` hands every observer its own stream. It was a
   single `AsyncStream`, and two iterators of one of those divide the elements
   rather than each receiving all of them — so a waiter and a watcher on the

@@ -148,6 +148,15 @@ public struct ToolOutcome: Sendable {
         self.text = Self.render(structured)
     }
 
+    /// A listing, under the name its schema promises.
+    ///
+    /// MCP types `structuredContent` as an object, so a bare array is not a
+    /// result a validating client has to accept — and the name makes the
+    /// answer say what it is without the tool's schema in hand.
+    static func listing(_ name: String, _ rows: JSONValue) -> ToolOutcome {
+        ToolOutcome(structured: .object([name: rows]))
+    }
+
     private static func render(_ value: JSONValue) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

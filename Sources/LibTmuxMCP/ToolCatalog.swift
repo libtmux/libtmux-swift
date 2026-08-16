@@ -116,6 +116,10 @@ public struct ToolDefinition: Sendable, Hashable {
     /// calling once. Reaches clients as `idempotentHint`.
     public let isIdempotent: Bool
     public let arguments: [ToolArgument]
+    /// What the tool answers with, when that shape is guaranteed. Declared
+    /// only where it is: MCP requires `structuredContent` to conform to this,
+    /// so a schema the server may break is worse than none at all.
+    public let outputSchema: JSONValue?
 
     public init(
         name: String,
@@ -124,7 +128,8 @@ public struct ToolDefinition: Sendable, Hashable {
         detail: String = "",
         tier: SafetyTier,
         isIdempotent: Bool = false,
-        arguments: [ToolArgument] = []
+        arguments: [ToolArgument] = [],
+        outputSchema: JSONValue? = nil
     ) {
         self.name = name
         self.title = title
@@ -133,6 +138,7 @@ public struct ToolDefinition: Sendable, Hashable {
         self.tier = tier
         self.isIdempotent = isIdempotent
         self.arguments = arguments
+        self.outputSchema = outputSchema
     }
 
     var description: String {
@@ -169,13 +175,15 @@ public struct ToolDefinition: Sendable, Hashable {
     }
 
     var listing: JSONValue {
-        .object([
+        var members: [String: JSONValue] = [
             "name": .string(name),
             "title": .string(title),
             "description": .string(description),
             "inputSchema": inputSchema,
             "annotations": annotations,
-        ])
+        ]
+        if let outputSchema { members["outputSchema"] = outputSchema }
+        return .object(members)
     }
 }
 

@@ -40,23 +40,23 @@ extension TmuxTools {
     func listSessions(_ arguments: Arguments) async throws -> ToolOutcome {
         let fields = try arguments.strings("fields")
         guard let relation = try arguments.document("pane_relation") else {
-            return .init(structured: project(try await server.sessions(), keeping: fields))
+            return .listing("sessions", project(try await server.sessions(), keeping: fields))
         }
         // A relation filter needs the related objects in hand, so this is the
         // one listing that reads a whole snapshot.
         let query = try JSONDecoder().decode(RelationQuery<Pane>.self, from: relation)
         let sessions = try await server.snapshot().sessions(ofPanes: query)
-        return .init(structured: project(sessions, keeping: fields))
+        return .listing("sessions", project(sessions, keeping: fields))
     }
 
     func listWindows(_ arguments: Arguments) async throws -> ToolOutcome {
         let fields = try arguments.strings("fields")
         let windows = try await server.windows()
         guard let filter = try arguments.document("filter") else {
-            return .init(structured: project(windows, keeping: fields))
+            return .listing("windows", project(windows, keeping: fields))
         }
         let expression = try JSONDecoder().decode(FilterExpr<Window>.self, from: filter)
-        return .init(structured: project(windows.filter(expression), keeping: fields))
+        return .listing("windows", project(windows.filter(expression), keeping: fields))
     }
 
     func listPanes(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -72,7 +72,7 @@ extension TmuxTools {
         // Which row is the caller's own pane, so "which pane am I in?" needs no
         // second call and killing the wrong one needs no second thought.
         let own = await guardForCaller().ownPane
-        return .init(structured: project(selected, keeping: fields, markingCaller: own))
+        return .listing("panes", project(selected, keeping: fields, markingCaller: own))
     }
 
     func readSnapshot() async throws -> ToolOutcome {

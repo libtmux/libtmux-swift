@@ -58,7 +58,23 @@ extension TmuxTools {
                 and the ceiling every wait is clamped to.
                 """,
             tier: .readonly,
-            isIdempotent: true
+            isIdempotent: true,
+            outputSchema: Schema.object(
+                [
+                    "endpoint": Schema.string, "tmuxVersion": Schema.nullableString,
+                    "isSupported": .object(["type": .array([.string("boolean"), .string("null")])]),
+                    "serverProcessID": Schema.nullableInteger, "sessionCount": Schema.integer,
+                    "safetyTier": Schema.string, "waitCeilingSeconds": Schema.number,
+                    "callerPane": Schema.nullableString, "callerSession": Schema.nullableString,
+                    "capabilities": Schema.object(
+                        [
+                            "formatSubscriptions": Schema.boolean, "pushOutput": Schema.boolean,
+                            "controlModeBatching": Schema.boolean,
+                        ], required: ["formatSubscriptions", "pushOutput", "controlModeBatching"]),
+                ],
+                required: [
+                    "endpoint", "sessionCount", "safetyTier", "waitCeilingSeconds", "capabilities",
+                ])
         ),
         ToolDefinition(
             name: "describe_filters",
@@ -91,7 +107,8 @@ extension TmuxTools {
                     kind: .object
                 ),
                 fields,
-            ]
+            ],
+            outputSchema: Schema.listing("sessions")
         ),
         ToolDefinition(
             name: "list_windows",
@@ -106,7 +123,8 @@ extension TmuxTools {
                     kind: .object
                 ),
                 fields,
-            ]
+            ],
+            outputSchema: Schema.listing("windows")
         ),
         ToolDefinition(
             name: "list_panes",
@@ -126,7 +144,8 @@ extension TmuxTools {
                     kind: .object
                 ),
                 fields,
-            ]
+            ],
+            outputSchema: Schema.listing("panes")
         ),
         ToolDefinition(
             name: "snapshot",
@@ -171,7 +190,12 @@ extension TmuxTools {
                     kind: .integer,
                     defaultValue: .number(200)
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "pane": Schema.string, "lines": Schema.array(of: Schema.string),
+                    "droppedLines": Schema.integer,
+                ], required: ["pane", "lines", "droppedLines"])
         ),
         ToolDefinition(
             name: "search_panes",
@@ -209,7 +233,15 @@ extension TmuxTools {
                     kind: .integer,
                     defaultValue: .number(50)
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "matches": Schema.array(
+                        of: Schema.object(
+                            ["pane": Schema.string, "line": Schema.integer, "text": Schema.string],
+                            required: ["pane", "line", "text"])), "panesSearched": Schema.integer,
+                    "panesAvailable": Schema.integer, "truncated": Schema.boolean,
+                ], required: ["matches", "panesSearched", "panesAvailable", "truncated"])
         ),
         ToolDefinition(
             name: "read_format",
@@ -234,7 +266,8 @@ extension TmuxTools {
                     "A tmux id — $0, @1, %2 — or omitted to ask about the server itself.",
                     required: false
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(["value": Schema.nullableString])
         ),
 
         // MARK: Waiting
@@ -305,7 +338,18 @@ extension TmuxTools {
                     kind: .number,
                     defaultValue: .number(30)
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "outcome": Schema.string, "matched": Schema.nullableString,
+                    "matchedIndex": Schema.nullableInteger, "sawNewOutput": Schema.boolean,
+                    "matchedAtEntry": Schema.boolean, "tail": Schema.array(of: Schema.string),
+                    "seconds": Schema.number, "effectiveTimeout": Schema.number,
+                ],
+                required: [
+                    "outcome", "sawNewOutput", "matchedAtEntry", "tail", "seconds",
+                    "effectiveTimeout",
+                ])
         ),
         ToolDefinition(
             name: "watch_format",
@@ -344,7 +388,12 @@ extension TmuxTools {
                     kind: .number,
                     defaultValue: .number(30)
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "outcome": Schema.string, "value": Schema.nullableString,
+                    "seconds": Schema.number, "effectiveTimeout": Schema.number,
+                ], required: ["outcome", "seconds", "effectiveTimeout"])
         ),
         ToolDefinition(
             name: "wait_for_channel",
@@ -375,7 +424,12 @@ extension TmuxTools {
                     kind: .number,
                     defaultValue: .number(30)
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "channel": Schema.string, "released": Schema.boolean, "seconds": Schema.number,
+                    "effectiveTimeout": Schema.number,
+                ], required: ["channel", "released", "seconds", "effectiveTimeout"])
         ),
         ToolDefinition(
             name: "signal_channel",
@@ -388,7 +442,10 @@ extension TmuxTools {
                     summary: "The channel name to signal.",
                     isRequired: true
                 )
-            ]
+            ],
+            outputSchema: Schema.object(
+                ["channel": Schema.string, "signalled": Schema.boolean],
+                required: ["channel", "signalled"])
         ),
 
         // MARK: Driving
@@ -430,7 +487,17 @@ extension TmuxTools {
                     kind: .integer,
                     defaultValue: .number(200)
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "pane": Schema.string, "exitStatus": Schema.nullableInteger,
+                    "timedOut": Schema.boolean, "output": Schema.array(of: Schema.string),
+                    "droppedLines": Schema.integer, "seconds": Schema.number,
+                    "effectiveTimeout": Schema.number,
+                ],
+                required: [
+                    "pane", "timedOut", "output", "droppedLines", "seconds", "effectiveTimeout",
+                ])
         ),
         ToolDefinition(
             name: "send_keys",
@@ -459,7 +526,10 @@ extension TmuxTools {
                     kind: .boolean,
                     defaultValue: .bool(false)
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                ["pane": Schema.string, "keys": Schema.array(of: Schema.string)],
+                required: ["pane", "keys"])
         ),
         ToolDefinition(
             name: "new_session",
@@ -548,7 +618,12 @@ extension TmuxTools {
                     defaultValue: .string("session")
                 ),
                 target("The object to set it on, when the scope is not server.", required: false),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "exitCode": Schema.integer, "standardOutput": Schema.string,
+                    "standardError": Schema.string,
+                ], required: ["exitCode", "standardOutput", "standardError"])
         ),
 
         // MARK: Ending things
@@ -558,21 +633,27 @@ extension TmuxTools {
             title: "Kill a pane",
             summary: "Ends a pane and whatever is running in it.",
             tier: .destructive,
-            arguments: [paneTarget, confirmSelf]
+            arguments: [paneTarget, confirmSelf],
+            outputSchema: Schema.object(
+                ["kind": Schema.string, "id": Schema.string], required: ["kind", "id"])
         ),
         ToolDefinition(
             name: "kill_window",
             title: "Kill a window",
             summary: "Ends a window and every pane in it.",
             tier: .destructive,
-            arguments: [target("The window id to kill."), confirmSelf]
+            arguments: [target("The window id to kill."), confirmSelf],
+            outputSchema: Schema.object(
+                ["kind": Schema.string, "id": Schema.string], required: ["kind", "id"])
         ),
         ToolDefinition(
             name: "kill_session",
             title: "Kill a session",
             summary: "Ends a session and every window in it.",
             tier: .destructive,
-            arguments: [target("The session id or name to kill."), confirmSelf]
+            arguments: [target("The session id or name to kill."), confirmSelf],
+            outputSchema: Schema.object(
+                ["kind": Schema.string, "id": Schema.string], required: ["kind", "id"])
         ),
 
         // MARK: tmux itself
@@ -601,7 +682,12 @@ extension TmuxTools {
                     summary: "Its arguments.",
                     kind: .stringArray
                 ),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "exitCode": Schema.integer, "standardOutput": Schema.string,
+                    "standardError": Schema.string,
+                ], required: ["exitCode", "standardOutput", "standardError"])
         ),
         ToolDefinition(
             name: "run_commands",
@@ -627,7 +713,20 @@ extension TmuxTools {
                     kind: .object,
                     isRequired: true
                 )
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "steps": Schema.array(
+                        of: Schema.object(
+                            [
+                                "step": Schema.integer, "command": Schema.string,
+                                "exitCode": Schema.integer, "standardOutput": Schema.string,
+                                "standardError": Schema.string,
+                            ],
+                            required: [
+                                "step", "command", "exitCode", "standardOutput", "standardError",
+                            ])), "requested": Schema.integer, "stoppedEarly": Schema.boolean,
+                ], required: ["steps", "requested", "stoppedEarly"])
         ),
     ]
 

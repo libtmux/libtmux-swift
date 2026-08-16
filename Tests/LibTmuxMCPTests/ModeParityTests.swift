@@ -30,7 +30,8 @@ struct ModeParityTests {
             // connection changes about the server it is asking: it is itself a
             // client, so the session it attached to reads as attached.
             let strip: (Data) throws -> [[String: Any]] = { data in
-                let rows = try JSONSerialization.jsonObject(with: data) as? [Any] ?? []
+                let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let rows = body?["sessions"] as? [Any] ?? []
                 return rows.compactMap { $0 as? [String: Any] }
                     .map { row in row.filter { $0.key != "isAttached" } }
                     .sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") }

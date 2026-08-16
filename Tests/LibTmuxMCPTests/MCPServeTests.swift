@@ -32,7 +32,12 @@ struct MCPServeTests {
                 )
             )
             let text = try #require(try content(reply))
-            let sessions = try JSONDecoder().decode([Session].self, from: Data(text.utf8))
+            let body = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+            let rows = try #require(body["sessions"])
+            let sessions = try JSONDecoder().decode(
+                [Session].self,
+                from: try JSONEncoder().encode(rows)
+            )
             #expect(sessions.map(\.name) == ["bootstrap"])
         }
     }

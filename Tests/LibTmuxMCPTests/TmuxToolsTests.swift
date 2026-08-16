@@ -10,6 +10,23 @@ extension ToolOutcome {
     func decode<Value: Decodable>(_ type: Value.Type) throws -> Value {
         try JSONDecoder().decode(type, from: Data(text.utf8))
     }
+
+    /// Decodes a listing out of the object it is named inside.
+    ///
+    /// `structuredContent` is an object in MCP, so a listing answers
+    /// `{"panes": [...]}` rather than a bare array.
+    func rows<Value: Decodable>(_ name: String, _ type: Value.Type) throws -> [Value] {
+        guard let rows = structured[name] else { throw ListingMissing(name: name) }
+        return try JSONDecoder().decode(
+            [Value].self,
+            from: try JSONEncoder().encode(rows)
+        )
+    }
+}
+
+/// Thrown when a listing did not answer under the name its schema promises.
+struct ListingMissing: Error {
+    let name: String
 }
 
 @Suite("the tool catalogue", .timeLimit(.minutes(1)))
@@ -300,7 +317,7 @@ struct TmuxToolsTests {
         try await withTmuxServer { server in
             let outcome = try await TmuxTools(server: server)
                 .call(ToolCall(name: "list_sessions"))
-            #expect(try outcome.decode([Session].self).map(\.name) == ["bootstrap"])
+            #expect(try outcome.rows("sessions", Session.self).map(\.name) == ["bootstrap"])
         }
     }
 
@@ -313,7 +330,7 @@ struct TmuxToolsTests {
                     arguments: .object(["fields": .array([.string("id")])])
                 )
             )
-            let rows = try #require(outcome.structured.arrayValue)
+            let rows = try #require(outcome.structured["panes"]?.arrayValue)
             // Everything else is context the caller said it would not read.
             #expect(rows.allSatisfy { $0.objectValue?.keys.sorted() == ["id"] })
         }
@@ -358,7 +375,7 @@ struct TmuxToolsTests {
             let tools = TmuxTools(server: server)
 
             let all = try await tools.call(ToolCall(name: "list_panes"))
-            #expect(try all.decode([Pane].self).count == 2)
+            #expect(try all.rows("panes", Pane.self).count == 2)
 
             // Built here the way a Swift client would, then sent as text — the
             // round trip a closure could never make.
@@ -373,7 +390,7 @@ struct TmuxToolsTests {
                     arguments: .object(["filter": .string(encoded)])
                 )
             )
-            let filtered = try active.decode([Pane].self)
+            let filtered = try active.rows("panes", Pane.self)
             #expect(filtered.count == 1)
             #expect(filtered.first?.isActive == true)
         }
@@ -392,7 +409,7 @@ struct TmuxToolsTests {
             let outcome = try await TmuxTools(server: server).call(
                 ToolCall(name: "list_panes", arguments: .object(["filter": inlined]))
             )
-            #expect(try outcome.decode([Pane].self).count == 1)
+            #expect(try outcome.rows("panes", Pane.self).count == 1)
         }
     }
 
@@ -803,7 +820,7 @@ struct RelationQueryBoundaryTests {
             )
             // "sessions where some pane runs sleep" — quantifier and expression
             // crossed together, which two loose arguments could not guarantee.
-            #expect(try outcome.decode([Session].self).map(\.name) == ["editors"])
+            #expect(try outcome.rows("sessions", Session.self).map(\.name) == ["editors"])
         }
     }
 

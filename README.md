@@ -468,6 +468,11 @@ package that it means to you.
 Alongside them, `tmux://` resources for a client that would rather browse than
 call, and four prompts packaging the sequences that are easy to get wrong.
 
+Every tool declares a JSON Schema for its arguments *and*, where the shape is
+guaranteed, for what it answers — so a client can validate a result and a model
+can know its fields without spending a call to find out. Answers travel as
+`structuredContent` and as text, because clients read one or the other.
+
 ### Three things it does that a wrapper does not
 
 **It will not get stuck.** Every wait is clamped to a ceiling and reports what
