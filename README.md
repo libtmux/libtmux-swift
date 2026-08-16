@@ -494,7 +494,7 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 | --- | --- |
 | [`Sources/`][sources] | The four products |
 | [`Tests/`][tests] | The suite, and the fixture every suite provisions servers through |
-| [`Snippets/`][snippets] | Every documented example, compiled by `swift build` |
+| [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
 | [`Parity/`][parity] | What Python libtmux exposes, recorded, and what this port does about each of it |
 | `Scripts/` | The Python tooling CI runs |
@@ -560,7 +560,7 @@ MIT. See [LICENSE](LICENSE).
 [DocC]: https://www.swift.org/documentation/docc/
 [sources]: Sources/
 [tests]: Tests/
-[snippets]: Snippets/
+[examples]: Examples/
 [benchmarks]: Benchmarks/
 [parity]: Parity/
 [p-lib]: Sources/LibTmux/

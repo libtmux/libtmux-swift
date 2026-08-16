@@ -57,7 +57,11 @@ $ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
 Each of these gates CI, and each can fail:
 
 ```console
-$ swift format lint --recursive --strict Sources Tests Snippets Benchmarks Package.swift
+$ swift format lint --recursive --strict Sources Tests Examples Benchmarks Package.swift
+```
+
+```console
+$ swift test --package-path Examples
 ```
 
 ```console
@@ -75,7 +79,9 @@ $ swift build
 
 Run the trait-on command last: a default-trait resolve drops the Yams pin from
 `Package.resolved`, and SwiftPM will not put it back into a file that is
-missing it. Committing that deletion is the mistake to avoid.
+missing it. Committing that deletion is the mistake to avoid. `swift build` and
+the DocC command are both default-trait resolves, so both do it; the examples
+package has its own `Package.resolved` and leaves this one alone.
 
 ```console
 $ swift package generate-documentation --target LibTmux
@@ -98,15 +104,39 @@ Python under `Scripts/` is held to the ruff configuration beside it, in
 ## Documented examples are compiled, and most are run
 
 Anything inside a `swift` fenced block in `README.md` or the DocC catalogue must
-also appear in a file under `Snippets/`, which the build compiles. Add the
-example to a snippet rather than writing it twice — `Scripts/check_examples.py`
-fails when a fence appears in no snippet.
+also appear in a file under `Examples/Sources/`. Add the example there rather
+than writing it twice — `Scripts/check_examples.py` fails when a fence appears
+in no example.
 
-An example that can address a live server belongs in `ReadmeExampleTests.swift`
-instead, where the suite runs it. That counts as compiled and is worth more:
-a renamed call stops the build either way, but a call that kept its name and
-changed its answer is only caught by running it. The check reports the split, so
-the number that are executed is a fact rather than a claim.
+`Examples/` is a package of its own that depends on this one, so an example
+reaches the library the way a reader does: through the products, with no
+`@testable`. An example kept inside the suite can use internals a consumer
+cannot and still pass, which is the thing that split is there to prevent. Both
+sibling ports settled on the same shape — `libtmux-go` keeps `examples/` as its
+own module, `libtmux-ts` as a private workspace package.
+
+Every example is a function, so a test in `Examples/Tests/` calling it by name
+is what makes it *executed*. That is worth more than compiling: a renamed call
+stops the build either way, but a call that kept its name and changed its answer
+is only caught by running it. The check reports the split, so the number that
+run is a fact rather than a claim, and `--min-executed` keeps it from sliding:
+
+```console
+$ swift test --package-path Examples
+```
+
+Five examples are compiled and never run, each for a reason worth knowing: the
+quick start is top-level code addressing a socket the reader owns, `SIGPIPE` is
+a process-global disposition the runner has already chosen, and
+`TmuxContext.current()` is only non-nil inside a pane.
+
+Two rules govern porting an example, and both fail quietly. A trait defines its
+compilation condition only inside the package that declares it, so `#if
+YAMLWorkspaces` in `Examples/` is always false and deletes the example rather
+than guarding it — call the trait-gated API unguarded, because the dependency is
+resolved with the trait on. And the `return` a test asserts on goes *after* the
+documented block, never inside it, or it breaks the run of lines the fence is
+matched by.
 
 Those tests provision servers through the same fixture as everything else, which
 keeps every socket under `/tmp/libtmux-swift-test/`. `withNamedTmuxServer` is the

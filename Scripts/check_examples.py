@@ -1,38 +1,40 @@
 #!/usr/bin/env python3
-"""Require every documented Swift example to be one that compiles.
+"""Require every documented Swift example to compile, and say how many run.
 
 A README snippet is prose until something builds it. This session shipped one
 that named a package identity SwiftPM does not use, and two more that compiled
 with a warning — none of which a reader could tell from the page.
 
-`Snippets/` is built by `swift build`, so anything living there is compiled on
-every build and in CI. This checks the other half: that each ```swift block in
-the README and the DocC catalogue appears in one of those snippets, rather than
-being a copy that drifted away from it.
+`Examples/` is a package of its own that depends on this one, so everything in
+it is compiled by `swift build --package-path Examples` and compiled the way a
+reader compiles it: through the products, with no `@testable`. This checks that
+each ```swift block in the README and the DocC catalogue appears there, rather
+than being a copy that drifted away from it.
 
 Compiling is not the whole claim. A call that was renamed stops the build, but
-one that quietly began answering something else does not, so the examples that
-can be run against a real tmux are also kept in `ReadmeExampleTests.swift` and
-executed by the suite. Those count as compiled too, and the summary says how
-many of the documented examples are covered that way.
+one that quietly began answering something else does not. Every example lives in
+a function, so an example is *executed* when a test in `Examples/Tests/` calls
+that function by name — which is a fact about the tree rather than a claim in a
+comment.
 
     python3 Scripts/check_examples.py
+    python3 Scripts/check_examples.py --min-executed 18
 
 Matching is by line sequence after removing each block's own indentation, so an
-example may be shown on its own and kept in a snippet inside a function.
+example may be shown on its own and kept inside a function.
 """
 
 from __future__ import annotations
 
+import argparse
 import pathlib
 import re
 import sys
 import textwrap
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SNIPPETS = ROOT / "Snippets"
-# Homes for an example that is executed rather than only compiled.
-EXECUTED = sorted((ROOT / "Tests").rglob("ReadmeExampleTests.swift"))
+EXAMPLES = ROOT / "Examples" / "Sources"
+TESTS = ROOT / "Examples" / "Tests"
 DOCUMENTS = [ROOT / "README.md", *sorted((ROOT / "Sources").rglob("*.docc/*.md"))]
 
 # Excerpts from a consumer's `Package.swift`. They are Swift, and they are
@@ -58,6 +60,7 @@ MANIFEST_EXCERPTS = {
 }
 
 FENCE = re.compile(r"```swift\n(.*?)```", re.DOTALL)
+FUNCTION = re.compile(r"^(?:public )?func (\w+)")
 
 
 def lines_of(text: str) -> list[str]:
@@ -74,53 +77,93 @@ def contains(snippet: list[str], block: list[str]) -> bool:
     return False
 
 
+def units() -> dict[str, list[str]]:
+    """Map each example's name to the lines it is written on.
+
+    A unit is one function, because that is what a test can call. Anything above
+    the first function — imports, comments, a file of top-level code like the
+    quick start — belongs to a unit named for the file, which no test can call
+    and which is therefore never counted as executed.
+    """
+    found: dict[str, list[str]] = {}
+    for path in sorted(EXAMPLES.rglob("*.swift")):
+        current = path.stem
+        found.setdefault(current, [])
+        for line in path.read_text().splitlines():
+            match = FUNCTION.match(line)
+            if match:
+                current = match.group(1)
+                found.setdefault(current, [])
+            found[current].append(line.rstrip())
+    return found
+
+
+def called() -> set[str]:
+    """Every identifier a test names, which is what makes an example executed."""
+    text = "\n".join(p.read_text() for p in TESTS.rglob("*.swift"))
+    return set(re.findall(r"\b(\w+)\s*\(", text))
+
+
 def main() -> int:
-    """Report any documented example that no snippet compiles."""
-    snippets = {
-        path: lines_of(path.read_text()) for path in sorted(SNIPPETS.glob("*.swift"))
-    }
-    if not snippets:
-        print(f"no snippets in {SNIPPETS}", file=sys.stderr)
+    """Report any documented example the package does not compile."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--min-executed",
+        type=int,
+        default=0,
+        help="fail unless at least this many documented examples are executed",
+    )
+    arguments = parser.parse_args()
+
+    written = units()
+    if not written:
+        print(f"no examples in {EXAMPLES}", file=sys.stderr)
         return 1
+    invoked = called()
 
-    executed = {path: lines_of(path.read_text()) for path in EXECUTED}
-
-    orphans: list[tuple[pathlib.Path, str]] = []
-    checked = 0
-    run_against_tmux = 0
+    missing: dict[pathlib.Path, list[list[str]]] = {}
+    total = executed = 0
     for document in DOCUMENTS:
-        for block in FENCE.findall(document.read_text()):
-            if block.strip() in MANIFEST_EXCERPTS:
+        for match in FENCE.finditer(document.read_text()):
+            block = textwrap.dedent(match.group(1)).strip()
+            if block in MANIFEST_EXCERPTS:
                 continue
-            checked += 1
+            total += 1
             wanted = lines_of(block)
-            if any(contains(body, wanted) for body in executed.values()):
-                run_against_tmux += 1
-                continue
-            if not any(contains(body, wanted) for body in snippets.values()):
-                orphans.append((document, block.strip()))
+            homes = [name for name, body in written.items() if contains(body, wanted)]
+            if not homes:
+                missing.setdefault(document, []).append(wanted)
+            elif any(name in invoked for name in homes):
+                executed += 1
 
-    if orphans:
+    if missing:
         print(
-            f"{len(orphans)} documented example(s) are in no snippet, so nothing "
-            f"compiles them:",
+            f"{sum(len(b) for b in missing.values())} documented example(s) that "
+            f"no file in {EXAMPLES.relative_to(ROOT)} compiles:",
             file=sys.stderr,
         )
-        for document, block in orphans:
+        for document, blocks in missing.items():
             print(f"\n  {document.relative_to(ROOT)}:", file=sys.stderr)
-            for line in block.split("\n"):
-                print(f"    {line}", file=sys.stderr)
+            for block in blocks:
+                for line in block:
+                    print(f"    {line}", file=sys.stderr)
         print(
-            f"\nAdd each to a file in {SNIPPETS.relative_to(ROOT)}, or fix the "
-            f"copy that drifted.",
+            "\nAdd each to a file under Examples/Sources/ rather than writing it "
+            "twice.",
             file=sys.stderr,
         )
         return 1
 
     print(
-        f"{checked} documented examples, each compiled; "
-        f"{run_against_tmux} of them run against a real tmux"
+        f"{total} documented examples, each compiled; "
+        f"{executed} of them run against a real tmux"
     )
+    if executed < arguments.min_executed:
+        print(
+            f"expected at least {arguments.min_executed} executed, found {executed}",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
