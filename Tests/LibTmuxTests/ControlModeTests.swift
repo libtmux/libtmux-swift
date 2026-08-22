@@ -62,8 +62,12 @@ struct ControlModeTests {
         try await withTmuxServer { server in
             let counts = try await server.withControlMode(attachingTo: "bootstrap") {
                 control in
-                async let first = Self.namesUntilWindow(control.notifications)
-                async let second = Self.namesUntilWindow(control.notifications)
+                // Subscribed before the send, and out here because an
+                // `async let` evaluates its initializer in the child task.
+                let toFirst = control.notifications
+                let toSecond = control.notifications
+                async let first = Self.namesUntilWindow(toFirst)
+                async let second = Self.namesUntilWindow(toSecond)
                 _ = try await control.send(
                     TmuxCommand("new-window", ["-d", "-t", "bootstrap"])
                 )
