@@ -572,16 +572,18 @@ CI builds it and fails the job on any warning.
 Every Swift example in this file is also code the build compiles, and most of
 it is code the suite *runs*. Compiling catches a call that was renamed; only
 running catches one that quietly began answering something else — so the
-examples that can address a live server are kept in `ReadmeExampleTests.swift`
-and executed against real tmux, on sockets under this suite's own namespace.
+examples that can address a live server live in [`Examples/`][examples] and are
+executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
 39 documented examples, each compiled; 36 of them run against a real tmux
 ```
 
-That check fails if a fence here appears in neither place, so what you read
+That check fails if a fence here has no example behind it, so what you read
 above is what the compiler accepted and, mostly, what tmux actually did.
+[`Examples/README.md`](Examples/) says how a fence is matched, and what the
+check cannot see.
 
 ## Tests
 

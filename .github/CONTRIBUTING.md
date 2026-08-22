@@ -177,17 +177,17 @@ bitten: it needs macOS 15.
 
 ## Documented examples
 
-Anything inside a `swift` fenced block in `README.md` or the DocC catalogue must
-also appear in a file under `Examples/Sources/`. Add the example there rather
-than writing it twice — `Scripts/check_examples.py` fails when a fence appears
-in no example.
+Anything inside a `swift` fenced block in the top-level `README.md` or the DocC
+catalogue must also appear in a file under `Examples/Sources/`. Add the example
+there rather than writing it twice — `Scripts/check_examples.py` fails when a
+fence appears in no example. Those two documents are the whole of what the
+check scans: a `swift` fence added to a product README under `Sources/` is
+compiled by nothing.
 
 `Examples/` is a package of its own that depends on this one, so an example
 reaches the library the way a reader does: through the products, with no
 `@testable`. An example kept inside the suite can use internals a consumer
-cannot and still pass, which is the thing that split is there to prevent. The
-sibling ports settled on the same shape — `libtmux-go` keeps `examples/` as its
-own module, `libtmux-ts` as a private workspace package.
+cannot and still pass, which is the thing that split is there to prevent.
 
 Every example is a function, so a test in `Examples/Tests/` calling it by name
 is what makes it *executed*. That is worth more than compiling: a renamed call
@@ -195,21 +195,15 @@ stops the build either way, but a call that kept its name and changed its answer
 is only caught by running it. The check reports the split, so the number that
 run is a fact rather than a claim, and `--min-executed` keeps it from sliding.
 
-`SIGPIPE` and `TmuxContext.current()` are compiled and never run: the first is
-a process-global disposition the runner has already chosen, the second is only
-non-nil inside a pane. The quick start is top-level code, so no test can call
-it — it is run instead, by spawning the executable it builds.
+Edit the example, never the block on the page, then run the check:
 
-Two rules govern porting an example, and both fail quietly. A trait defines its
-compilation condition only inside the package that declares it, so `#if
-YAMLWorkspaces` in `Examples/` is always false and deletes the example rather
-than guarding it — call the trait-gated API unguarded, because the dependency is
-resolved with the trait on. And the `return` a test asserts on goes *after* the
-documented block, never inside it, or it breaks the run of lines the fence is
-matched by.
+```console
+$ python3 Scripts/check_examples.py
+```
 
-Those tests provision servers through the same fixture as everything else,
-which keeps every socket under `/tmp/libtmux-swift-test/`.
+[`Examples/README.md`](../Examples/README.md) is the reference for the rest —
+how a fence is matched to an example, what the check cannot see, and the three
+ways an example fails quietly. Read it before adding or moving one.
 
 ## Measured claims are generated
 
