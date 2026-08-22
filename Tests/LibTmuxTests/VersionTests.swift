@@ -69,11 +69,12 @@ struct VersionTests {
             let version = try await server.version()
             #expect(version.major >= 3)
             // The lane the suite was told to run, when it was told one. CI
-            // installs each release into `tmux-<tag>/`, and AGENTS.md spells
-            // the variable the same way, so the directory carries a prefix the
-            // tag does not: `tmux-3.7b` parses as 3.7b-tmux and matches
-            // nothing. A directory that is not a lane — `/usr/local/bin/tmux`
-            // gives `local` — still parses to nothing, and skips the check.
+            // installs each release into `tmux-<tag>/`, and CONTRIBUTING.md
+            // spells the variable the same way, so the directory carries a
+            // prefix the tag does not: `tmux-3.7b` parses as 3.7b-tmux and
+            // matches nothing. A directory that is not a lane —
+            // `/usr/local/bin/tmux` gives `local` — still parses to nothing,
+            // and skips the check.
             let lane = tmuxExecutablePath()
             if let directory = lane.split(separator: "/").dropLast(2).last,
                 let expected = TmuxVersion(
