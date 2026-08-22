@@ -107,9 +107,9 @@ public func withTmuxServer<Result>(
 /// that is a data race whether or not it has bitten yet. Cases that address a
 /// socket by path do not care either way, `-S` being absolute.
 ///
-/// `AGENTS.md` and CI name the directory; ``namedSocketsAvailable`` is what the
-/// suite checks so a run without one skips those cases rather than scattering
-/// sockets.
+/// `CONTRIBUTING.md` and CI name the directory; ``namedSocketsAvailable`` is
+/// what the suite checks so a run without one skips those cases rather than
+/// scattering sockets.
 public let namedSocketRoot: URL? = ProcessInfo.processInfo.environment["TMUX_TMPDIR"]
     .map { URL(fileURLWithPath: $0) }
 

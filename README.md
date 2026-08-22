@@ -20,8 +20,10 @@ comes back is a value — a `Session` you hold is what the server looked like wh
 you asked, not a live handle that changes under you. Ask again for a newer view.
 
 > [!WARNING]
-> **Alpha.** The API can change in any release, with no deprecation first.
-> Pin an exact version. See [Project status](#project-status).
+> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
+> settled, and any release may change or remove exported identifiers without a
+> deprecation period. Pin an exact version. Not recommended for production.
+> See [Project status](#project-status).
 
 **Contents** — [Is this for you?](#is-this-for-you) ·
 [Products](#products) · [Install](#install) · [Asking](#ask-what-is-there) ·
@@ -42,8 +44,8 @@ tmux's own vocabulary rather than a wrapper around shelling out.
 the package builds under Swift 6 language mode with complete strict concurrency
 and no unsafe flags.
 
-**Not yet, if** you need a stable API. Nothing is tagged and names are still
-moving — see [Project status](#project-status).
+**Not yet, if** you need a stable API. Every release so far is an alpha and
+names are still moving — see [Project status](#project-status).
 
 **No, if** you want to render or emulate a terminal. This talks to tmux; it does
 not draw one.
@@ -69,17 +71,7 @@ neither mentions a mode, which is how the mode switch below is kept honest.
 
 ## Install
 
-Nothing is tagged yet, so depend on the branch:
-
-```swift
-.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
-```
-
-```swift
-.product(name: "LibTmux", package: "libtmux-swift")
-```
-
-Every tag until `0.1.0` will be a prerelease, and a prerelease has to be named
+Every tag until `0.1.0` is a prerelease, and a prerelease has to be named
 exactly. `from: "0.1.0"` matches none of them — SwiftPM keeps prereleases out
 of a range whose bound has none — and `from: "0.1.0-alpha.2"` errs the other
 way, resolving forward into `0.2.0-alpha.1` and every prerelease after it.
@@ -90,6 +82,16 @@ Neither is what you want from alpha software, so name the one you tested:
     url: "https://github.com/libtmux/libtmux-swift.git",
     exact: "0.1.0-alpha.2"
 )
+```
+
+```swift
+.product(name: "LibTmux", package: "libtmux-swift")
+```
+
+To follow unreleased work instead, depend on the branch:
+
+```swift
+.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
 ```
 
 Reading a workspace from YAML needs a YAML parser, and asking for it is what
@@ -570,16 +572,18 @@ CI builds it and fails the job on any warning.
 Every Swift example in this file is also code the build compiles, and most of
 it is code the suite *runs*. Compiling catches a call that was renamed; only
 running catches one that quietly began answering something else — so the
-examples that can address a live server are kept in `ReadmeExampleTests.swift`
-and executed against real tmux, on sockets under this suite's own namespace.
+examples that can address a live server live in [`Examples/`][examples] and are
+executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-32 documented examples, each compiled; 18 of them run against a real tmux
+39 documented examples, each compiled; 36 of them run against a real tmux
 ```
 
-That check fails if a fence here appears in neither place, so what you read
+That check fails if a fence here has no example behind it, so what you read
 above is what the compiler accepted and, mostly, what tmux actually did.
+[`Examples/README.md`](Examples/) says how a fence is matched, and what the
+check cannot see.
 
 ## Tests
 
