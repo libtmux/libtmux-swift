@@ -15,15 +15,3 @@ updates:
     # Time enough for a compromised release to be reported.
     cooldown:
       default-days: 7
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    groups:
-      actions:
-        patterns: ["*"]
-    commit-message:
-      prefix: "ci(deps) "
-    cooldown:
-      default-days: 7
