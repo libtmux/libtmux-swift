@@ -96,7 +96,7 @@ a wrong value, and the commit touched nothing the case reads. Re-running the one
 case in a loop is cheaper than another round of CI:
 
 ```console
-$ swift test --filter observersDoNotDivideNotifications
+$ for _ in $(seq 20); do swift test --filter observersDoNotDivideNotifications || break; done
 ```
 
 All three can hold and it can still be a defect. A run where every cell from

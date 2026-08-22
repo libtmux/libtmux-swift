@@ -23,7 +23,7 @@ struct NotificationBroadcastTests {
         return seen
     }
 
-    @Test("two observers each see every notification, rather than half each")
+    @Test("every observer receives every notification, rather than a share")
     func observersDoNotDivideNotifications() async {
         let broadcast = NotificationBroadcast()
         let first = broadcast.subscribe()
