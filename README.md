@@ -20,8 +20,10 @@ comes back is a value — a `Session` you hold is what the server looked like wh
 you asked, not a live handle that changes under you. Ask again for a newer view.
 
 > [!WARNING]
-> **Alpha.** The API can change in any release, with no deprecation first.
-> Pin an exact version. See [Project status](#project-status).
+> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
+> settled, and any release may change or remove exported identifiers without a
+> deprecation period. Pin an exact version. Not recommended for production.
+> See [Project status](#project-status).
 
 **Contents** — [Is this for you?](#is-this-for-you) ·
 [Products](#products) · [Install](#install) · [Asking](#ask-what-is-there) ·
