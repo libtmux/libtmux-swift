@@ -34,7 +34,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A dry run has no tag to read, so it checks the version the package
       # declares — which is the one a tag would have to match anyway.

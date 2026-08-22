@@ -33,7 +33,7 @@ jobs:
         tmux: ["3.2a", "3.7b"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
