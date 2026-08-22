@@ -66,7 +66,11 @@ public actor ControlSession {
     /// connection have, so it cannot be left to the caller to avoid.
     ///
     /// Anything that arrived before the first observer is replayed to it, so
-    /// acting and then observing is not a race.
+    /// acting and then observing is not a race. That replay covers the first
+    /// observer alone, and every later one starts where it subscribed — so two
+    /// observers of one event are both taken before the command that causes it.
+    /// An `async let` is late enough to miss it: its initializer is evaluated
+    /// in the child task, not where it is written.
     public nonisolated var notifications: AsyncStream<ControlNotification> {
         broadcast.subscribe()
     }

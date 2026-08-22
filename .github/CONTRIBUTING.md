@@ -84,6 +84,34 @@ missing it. Committing that deletion is the mistake to avoid. `swift build` and
 the DocC command are both default-trait resolves, so both do it; the examples
 package has its own `Package.resolved` and leaves this one alone.
 
+## Flaky, or broken?
+
+The suite drives real tmux, and the cases that wait on an event can be delayed
+by a loaded machine. One failure is worth re-running before it is blamed on the
+change, and worth investigating rather than shrugged at.
+
+Three signs it is the machine and not the code: the failing case moves between
+runs or between matrix cells, the failure is the suite's time limit rather than
+a wrong value, and the commit touched nothing the case reads. Re-running the one
+case in a loop is cheaper than another round of CI:
+
+```console
+$ for _ in $(seq 20); do swift test --filter observersDoNotDivideNotifications || break; done
+```
+
+All three can hold and it can still be a defect. A run where every cell from
+tmux 3.6 up failed and every earlier one passed read as load, and was a client
+whose protocol version differed from the server's: the example composed
+`tmux wait-for -S` as a bare command, so the pane reached whichever tmux was on
+its `PATH` rather than the one serving it. `Server.shellInvocation` is what
+fixed it. A wait that hangs looks the same whether nothing signalled it or the
+thing meant to signal it never ran.
+
+A case that waits therefore establishes what it is waiting on before producing
+it. Task start is not an ordering: an `async let` evaluates its initializer in
+the child task, which on a loaded runner is late enough to miss the event the
+child was written to catch.
+
 ## Checks that must pass
 
 Each of these gates CI, and each can fail. Build and test run on every cell of
