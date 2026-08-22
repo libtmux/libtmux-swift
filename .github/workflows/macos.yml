@@ -37,7 +37,7 @@ jobs:
 
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/tmux-${{ matrix.tmux }}
           key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
@@ -84,7 +84,7 @@ jobs:
       # Resolving fetches five repositories on every run, and a clone that
       # times out fails a lane that has nothing wrong with it.
       - name: Restore the SwiftPM cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/Library/Caches/org.swift.swiftpm
           key: swiftpm-macos-${{ hashFiles('Package.resolved', 'Examples/Package.resolved') }}
