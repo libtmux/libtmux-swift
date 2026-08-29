@@ -100,6 +100,7 @@ struct CaptureSinceTests {
                 pane,
                 since: started.cursor,
                 sourceLinesPerChunk: 16,
+                maximumChunks: 8,
                 perStreamOutputLimit: 1_048_576
             ) { rows in
                 visited.append(contentsOf: rows)
@@ -409,6 +410,7 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
     private let underlying = SubprocessTransport()
     private(set) var captureRequests: [RecordedCaptureRequest] = []
     private var nextCaptureAction: (@Sendable () async throws(TmuxError) -> Void)?
+    private var afterCaptureAction: (@Sendable () async throws(TmuxError) -> Void)?
 
     var captureLimits: [Int] {
         captureRequests.map(\.perStreamOutputLimit)
@@ -418,6 +420,12 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
         _ action: @escaping @Sendable () async throws(TmuxError) -> Void
     ) {
         nextCaptureAction = action
+    }
+
+    func afterEveryCapture(
+        _ action: @escaping @Sendable () async throws(TmuxError) -> Void
+    ) {
+        afterCaptureAction = action
     }
 
     func run(
@@ -439,7 +447,8 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
-        if arguments.contains(where: { $0.contains("capture-pane") }) {
+        let isCapture = arguments.contains(where: { $0.contains("capture-pane") })
+        if isCapture {
             captureRequests.append(
                 RecordedCaptureRequest(
                     arguments: arguments,
@@ -451,11 +460,13 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
                 try await nextCaptureAction()
             }
         }
-        return try await underlying.run(
+        let reply = try await underlying.run(
             executable: executable,
             arguments: arguments,
             environment: environment,
             perStreamOutputLimit: perStreamOutputLimit
         )
+        if isCapture, let afterCaptureAction { try await afterCaptureAction() }
+        return reply
     }
 }

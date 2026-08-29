@@ -57,22 +57,28 @@ extension Server {
     }
 
     /// Visits unseen rows oldest-first without retaining completed chunks.
+    /// At most `maximumChunks` are read; `hasMore` tells the caller to resume.
     /// Returning `true` from `visit` stops before the remaining rows are read.
     package func scanForward(
         _ pane: Pane,
         since cursor: CaptureCursor,
         sourceLinesPerChunk: Int,
+        maximumChunks: Int,
         perStreamOutputLimit: Int,
         _ visit: ([String]) -> Bool
     ) async throws(TmuxError) -> ForwardCaptureResult {
         guard sourceLinesPerChunk > 1 else {
             throw .invocationFailed(reason: "a forward capture chunk needs at least two lines")
         }
+        guard maximumChunks > 0 else {
+            throw .invocationFailed(reason: "a forward capture needs at least one chunk")
+        }
         guard perStreamOutputLimit > 0 else {
             throw .invocationFailed(reason: "a forward capture needs a positive output limit")
         }
         var previousCursor = cursor
         var remainingAttempts = Self.incrementalCaptureAttempts
+        var completedChunks = 0
         while true {
             do {
                 let state = try await incrementalPaneState(for: pane)
@@ -90,7 +96,8 @@ extension Server {
                         cursor: reset.cursor,
                         linesMissed: reset.linesMissed,
                         restarted: reset.restarted,
-                        droppedLines: reset.droppedLines
+                        droppedLines: reset.droppedLines,
+                        hasMore: false
                     )
                 }
                 guard
@@ -111,7 +118,8 @@ extension Server {
                         cursor: reset.cursor,
                         linesMissed: true,
                         restarted: false,
-                        droppedLines: 0
+                        droppedLines: 0,
+                        hasMore: false
                     )
                 }
 
@@ -144,13 +152,19 @@ extension Server {
                 )
                 previousCursor = nextCursor
                 remainingAttempts = Self.incrementalCaptureAttempts
+                completedChunks += 1
+                let stopped = visit(rows)
+                let hasMore = end != state.absoluteCursorRow
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
                     linesMissed: false,
                     restarted: false,
-                    droppedLines: 0
+                    droppedLines: 0,
+                    hasMore: hasMore
                 )
-                if visit(rows) || end == state.absoluteCursorRow { return result }
+                if stopped || !hasMore || completedChunks == maximumChunks {
+                    return result
+                }
             } catch let error {
                 remainingAttempts -= 1
                 guard case .staleServerValue = error, remainingAttempts > 0 else {

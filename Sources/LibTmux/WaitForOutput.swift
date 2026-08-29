@@ -367,6 +367,7 @@ extension Server {
                                     group.cancelAll()
                                     return .answered(output)
                                 }
+                                if scan.hasMore { await doorbell.ring(.scan) }
                             } catch let error {
                                 guard try await owner.waitAttachment(for: pane) != nil else {
                                     return .finished(.paneClosed, newest, sawNewOutput)
@@ -464,6 +465,7 @@ extension Server {
                 pane,
                 since: cursor,
                 sourceLinesPerChunk: Self.waitCaptureLines,
+                maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
             ) { rows in
                 let arrived = rows.filter { !$0.isEmpty }
@@ -502,7 +504,8 @@ extension Server {
             cursor: scan.cursor,
             tail: tail,
             sawNewOutput: sawOutput,
-            output: output
+            output: output,
+            hasMore: scan.hasMore
         )
     }
 
@@ -545,6 +548,7 @@ extension Server {
     /// so they read a bounded lookback rather than the whole scrollback.
     private static let waitHistoryLines = 200
     private static let waitCaptureLines = 128
+    private static let waitCaptureChunksPerTurn = 4
     private static let waitCaptureOutputLimit = 1_048_576
 
     private static func elapsed(since start: ContinuousClock.Instant) -> Double {
@@ -568,6 +572,7 @@ private struct WaitCaptureScan: Sendable {
     let tail: [String]
     let sawNewOutput: Bool
     let output: OutputWait?
+    let hasMore: Bool
 }
 
 private typealias OutputWaitAnswer =

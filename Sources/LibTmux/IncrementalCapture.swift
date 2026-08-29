@@ -151,4 +151,5 @@ package struct ForwardCaptureResult: Sendable, Hashable {
     package let linesMissed: Bool
     package let restarted: Bool
     package let droppedLines: Int
+    package let hasMore: Bool
 }

@@ -175,6 +175,71 @@ struct WatchTests {
         }
     }
 
+    @Test("sustained output cannot move a wait past its deadline")
+    func sustainedOutputCannotMoveTheDeadline() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            _ = try await fixture.setOption(
+                "history-limit",
+                to: "100000",
+                scope: .globalSession
+            )
+            let ready = "moving-deadline-ready-\(UUID().uuidString)"
+            try await fixture.run(
+                "stty -echo; \(fixture.shellInvocation) wait-for -S \(ready)",
+                in: pane
+            )
+            try await fixture.wait(for: ready)
+
+            let attached = "moving-deadline-attached-\(UUID().uuidString)"
+            let hook = try await fixture.setHook(
+                "client-attached",
+                to: TmuxCommand("wait-for", ["-S", attached]).parsedString
+            )
+            #expect(hook.isSuccess, Comment(rawValue: hook.errorText))
+
+            let transport = CaptureRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let observed = try await withThrowingTaskGroup(of: OutputWait?.self) { group in
+                group.addTask {
+                    try await server.waitForOutput(
+                        in: pane,
+                        matching: [try RegexPattern("never-matches")],
+                        requiringFreshOutput: true,
+                        timeout: .seconds(2)
+                    )
+                }
+                try await fixture.wait(for: attached)
+                await transport.afterEveryCapture { () async throws(TmuxError) in
+                    let moved = "moving-deadline-burst-\(UUID().uuidString)"
+                    try await fixture.run(
+                        "i=0; while [ \"$i\" -lt 160 ]; do "
+                            + "printf 'moving-%s\\n' \"$i\"; i=$((i + 1)); done; "
+                            + "\(fixture.shellInvocation) wait-for -S \(moved)",
+                        in: pane
+                    )
+                    try await fixture.wait(for: moved)
+                }
+                try await fixture.run("printf '\\ndeadline-start\\n'", in: pane)
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(4))
+                    return nil
+                }
+                let first = try await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
+
+            let result = try #require(observed, "wait exceeded its two-second deadline")
+            #expect(result.outcome == .timedOut)
+            #expect(result.seconds < 4)
+        }
+    }
+
     @Test("a stop marker ends the wait before the deadline")
     func stopMarkerEndsTheWaitEarly() async throws {
         try await withTmuxServer { server in
