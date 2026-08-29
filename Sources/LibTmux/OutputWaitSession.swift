@@ -28,14 +28,10 @@ struct OutputWaitSession: Sendable {
                 }
             }
         }
-        let entryRead: EntryCapture
-        switch entryRace {
-        case let .completed(value): entryRead = value
-        case let .failed(error): throw error
-        case .timedOut:
-            // Nothing was read, so nothing here is a finding: reporting
-            // `timedOut` would claim the pattern was absent and the pane quiet
-            // on the strength of never having looked.
+        // Nothing was read, so nothing here is a finding: reporting `timedOut`
+        // would claim the pattern was absent and the pane quiet on the strength
+        // of never having looked.
+        guard let entryRead = try settled(entryRace) else {
             return OutputWait(
                 outcome: .expiredWhileReading,
                 sawNewOutput: false,
@@ -43,7 +39,6 @@ struct OutputWaitSession: Sendable {
                 tail: [],
                 seconds: Self.elapsed(since: started)
             )
-        case .cancelled: throw .tmux(.cancelled)
         }
         var cursor = entryRead.cursor
         let entryRows = entryRead.rows
@@ -55,18 +50,35 @@ struct OutputWaitSession: Sendable {
         )
         let wasAlreadyShowing = entryMatch != nil
 
+        // Every answer past this point shares these three fields, which the
+        // entry read has now fixed for the rest of the wait.
+        @Sendable func ending(
+            _ outcome: OutputWait.Outcome,
+            matched: String? = nil,
+            matchedIndex: Int? = nil,
+            sawNewOutput: Bool = false,
+            tail: [String] = []
+        ) -> OutputWait {
+            OutputWait(
+                outcome: outcome,
+                matched: matched,
+                matchedIndex: matchedIndex,
+                sawNewOutput: sawNewOutput,
+                matchedAtEntry: wasAlreadyShowing,
+                tail: Array(tail.suffix(keptTail)),
+                seconds: Self.elapsed(since: started)
+            )
+        }
+
         // Answered up front rather than inferred from a timeout: "already on
         // screen" and "never happened" look identical afterwards, and only one
         // of them is fixed by waiting longer.
         if let entryMatch, !requireFresh {
-            return OutputWait(
-                outcome: entryMatch.outcome,
+            return ending(
+                entryMatch.outcome,
                 matched: entryMatch.matched,
                 matchedIndex: entryMatch.matchedIndex,
-                sawNewOutput: false,
-                matchedAtEntry: true,
-                tail: Array(entryRows.suffix(keptTail)),
-                seconds: Self.elapsed(since: started)
+                tail: entryRows
             )
         }
 
@@ -77,49 +89,33 @@ struct OutputWaitSession: Sendable {
                     patterns: stops,
                     budget: matchBudget
                 ) {
-                    return OutputWait(
-                        outcome: .stopped,
+                    return ending(
+                        .stopped,
                         matched: stops[hit].source,
                         matchedIndex: hit,
                         sawNewOutput: true,
-                        matchedAtEntry: wasAlreadyShowing,
-                        tail: Array(tail.suffix(keptTail)),
-                        seconds: Self.elapsed(since: started)
+                        tail: tail
                     )
                 }
                 guard !patterns.isEmpty else {
-                    return OutputWait(
-                        outcome: .matched,
-                        sawNewOutput: true,
-                        matchedAtEntry: wasAlreadyShowing,
-                        tail: Array(tail.suffix(keptTail)),
-                        seconds: Self.elapsed(since: started)
-                    )
+                    return ending(.matched, sawNewOutput: true, tail: tail)
                 }
                 if let hit = try firstOutputPatternMatch(
                     in: line,
                     patterns: patterns,
                     budget: matchBudget
                 ) {
-                    return OutputWait(
-                        outcome: .matched,
+                    return ending(
+                        .matched,
                         matched: patterns[hit].source,
                         matchedIndex: hit,
                         sawNewOutput: true,
-                        matchedAtEntry: wasAlreadyShowing,
-                        tail: Array(tail.suffix(keptTail)),
-                        seconds: Self.elapsed(since: started)
+                        tail: tail
                     )
                 }
             }
             guard outputEvent, patterns.isEmpty else { return nil }
-            return OutputWait(
-                outcome: .matched,
-                sawNewOutput: true,
-                matchedAtEntry: wasAlreadyShowing,
-                tail: Array(tail.suffix(keptTail)),
-                seconds: Self.elapsed(since: started)
-            )
+            return ending(.matched, sawNewOutput: true, tail: tail)
         }
 
         let entryCursor = cursor
@@ -141,22 +137,11 @@ struct OutputWaitSession: Sendable {
                 )
             }
         }
-        let caughtAtEntry: WaitCaptureScan
-        switch caughtAtEntryRace {
-        case let .completed(scan): caughtAtEntry = scan
-        case let .failed(error): throw error
-        case .timedOut:
-            // The entry screen was read, so `matchedAtEntry` stands; the scan
-            // that would have seen new output was cut short, so the outcome
-            // must not present its silence as a quiet pane.
-            return OutputWait(
-                outcome: .expiredWhileReading,
-                sawNewOutput: false,
-                matchedAtEntry: wasAlreadyShowing,
-                tail: [],
-                seconds: Self.elapsed(since: started)
-            )
-        case .cancelled: throw .tmux(.cancelled)
+        // The entry screen was read, so `matchedAtEntry` stands; the scan that
+        // would have seen new output was cut short, so the outcome must not
+        // present its silence as a quiet pane.
+        guard let caughtAtEntry = try settled(caughtAtEntryRace) else {
+            return ending(.expiredWhileReading)
         }
         cursor = caughtAtEntry.cursor
         var sawNewOutput = caughtAtEntry.sawNewOutput
@@ -164,42 +149,18 @@ struct OutputWaitSession: Sendable {
         if let output = caughtAtEntry.output { return output }
 
         if caughtAtEntry.deadlineReached {
-            return OutputWait(
-                outcome: .timedOut,
-                sawNewOutput: sawNewOutput,
-                matchedAtEntry: wasAlreadyShowing,
-                tail: Array(newest.suffix(keptTail)),
-                seconds: Self.elapsed(since: started)
-            )
+            return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
         }
 
         while ContinuousClock.now < deadline {
             let attachmentRace = await raceOrdinaryWaitOperation(until: deadline) {
                 try await self.waitAttachment(using: self.server, for: pane)
             }
-            let attachment: PaneAttachment
-            switch attachmentRace {
-            case let .completed(current):
-                guard let current else {
-                    return OutputWait(
-                        outcome: .paneClosed,
-                        sawNewOutput: sawNewOutput,
-                        matchedAtEntry: wasAlreadyShowing,
-                        tail: Array(newest.suffix(keptTail)),
-                        seconds: Self.elapsed(since: started)
-                    )
-                }
-                attachment = current
-            case let .failed(error): throw error
-            case .timedOut:
-                return OutputWait(
-                    outcome: .timedOut,
-                    sawNewOutput: sawNewOutput,
-                    matchedAtEntry: wasAlreadyShowing,
-                    tail: Array(newest.suffix(keptTail)),
-                    seconds: Self.elapsed(since: started)
-                )
-            case .cancelled: throw .tmux(.cancelled)
+            guard let living = try settled(attachmentRace) else {
+                return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
+            }
+            guard let attachment = living else {
+                return ending(.paneClosed, sawNewOutput: sawNewOutput, tail: newest)
             }
             let remaining = ContinuousClock.now.duration(to: deadline)
             let cycle: OutputWaitCycle
@@ -221,41 +182,17 @@ struct OutputWaitSession: Sendable {
                 if case .tmux(.staleServerValue) = error,
                     ContinuousClock.now >= deadline
                 {
-                    return OutputWait(
-                        outcome: .timedOut,
-                        sawNewOutput: sawNewOutput,
-                        matchedAtEntry: wasAlreadyShowing,
-                        tail: Array(newest.suffix(keptTail)),
-                        seconds: Self.elapsed(since: started)
-                    )
+                    return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
                 }
                 guard ContinuousClock.now < deadline else { throw error }
                 let currentRace = await raceOrdinaryWaitOperation(until: deadline) {
                     try await self.waitAttachment(using: self.server, for: pane)
                 }
-                let current: PaneAttachment
-                switch currentRace {
-                case let .completed(value):
-                    guard let value else {
-                        return OutputWait(
-                            outcome: .paneClosed,
-                            sawNewOutput: sawNewOutput,
-                            matchedAtEntry: wasAlreadyShowing,
-                            tail: newest,
-                            seconds: Self.elapsed(since: started)
-                        )
-                    }
-                    current = value
-                case let .failed(readError): throw readError
-                case .timedOut:
-                    return OutputWait(
-                        outcome: .timedOut,
-                        sawNewOutput: sawNewOutput,
-                        matchedAtEntry: wasAlreadyShowing,
-                        tail: newest,
-                        seconds: Self.elapsed(since: started)
-                    )
-                case .cancelled: throw .tmux(.cancelled)
+                guard let stillLiving = try settled(currentRace) else {
+                    return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
+                }
+                guard let current = stillLiving else {
+                    return ending(.paneClosed, sawNewOutput: sawNewOutput, tail: newest)
                 }
                 guard current != attachment else {
                     if case .tmux(.staleServerValue) = error { continue }
@@ -270,25 +207,25 @@ struct OutputWaitSession: Sendable {
                 newest = lines
                 sawNewOutput = sawOutput
             case let .finished(outcome, lines, sawOutput):
-                return OutputWait(
-                    outcome: outcome,
-                    sawNewOutput: sawOutput,
-                    matchedAtEntry: wasAlreadyShowing,
-                    tail: Array(lines.suffix(keptTail)),
-                    seconds: Self.elapsed(since: started)
-                )
+                return ending(outcome, sawNewOutput: sawOutput, tail: lines)
             }
         }
 
-        return OutputWait(
-            outcome: .timedOut,
-            sawNewOutput: sawNewOutput,
-            matchedAtEntry: wasAlreadyShowing,
-            tail: Array(newest.suffix(keptTail)),
-            seconds: Self.elapsed(since: started)
-        )
+        return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
     }
 
+    /// The value a race produced, or `nil` when the deadline won — which every
+    /// caller answers differently, so it stays at the call site.
+    private func settled<Value: Sendable>(
+        _ race: WaitDeadlineRace<Value>
+    ) throws(OutputWaitError) -> Value? {
+        switch race {
+        case let .completed(value): return value
+        case let .failed(error): throw error
+        case .timedOut: return nil
+        case .cancelled: throw .tmux(.cancelled)
+        }
+    }
     private func waitForOutputCycle(
         pane: Pane,
         attachment: PaneAttachment,
