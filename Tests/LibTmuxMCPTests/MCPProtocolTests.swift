@@ -26,6 +26,10 @@ private func object(_ text: String) throws -> JSONValue {
     try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
 }
 
+private func encoded(_ value: JSONValue) throws -> String {
+    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+}
+
 @Suite("MCP protocol")
 struct MCPProtocolTests {
     @Test("initialize answers with the protocol version and who is serving")
@@ -148,7 +152,45 @@ struct MCPProtocolTests {
         let result = try #require(try object(reply)["result"])
 
         #expect(result["isError"]?.boolValue == true)
+        #expect(try object(reply)["id"] == .number(1))
         #expect(reply.utf8.count <= MCPRequestHandler.maximumToolResponseBytes)
+    }
+
+    @Test("oversized tool errors use a bounded failure with the original id")
+    func toolErrorsAreBoundedAfterJSONEscaping() async throws {
+        let name = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .number(2),
+                "method": .string("tools/call"),
+                "params": .object(["name": .string(name)]),
+            ])
+        )
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["id"] == .number(2))
+        #expect(body["result"]?["isError"]?.boolValue == true)
+        #expect(
+            body["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue
+                == "tool failed with an oversized error"
+        )
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumToolResponseBytes)
+    }
+
+    @Test("a tool call with an unanswerable id is not answered under another id")
+    func unanswerableToolIDIsNotReplaced() async throws {
+        let id = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .string(id),
+                "method": .string("tools/call"),
+                "params": .object(["name": .string("unknown")]),
+            ])
+        )
+        #expect(try await handler().respond(to: request) == nil)
     }
 
     @Test("a notification expects no reply, and neither does a line that is not one")

@@ -44,7 +44,8 @@ public struct MCPRequestHandler: Sendable {
     /// Answers one newline-delimited JSON-RPC request.
     ///
     /// Returns the response line, or `nil` when there is nothing to say: a
-    /// blank line, a line that is not JSON-RPC at all, or a notification.
+    /// blank line, a line that is not JSON-RPC at all, a notification, or a
+    /// tool call whose id cannot fit in a bounded response.
     /// Unparseable input is ignored rather than answered, because a reply needs
     /// an id to carry and a malformed line has none to quote back.
     ///
@@ -104,6 +105,10 @@ public struct MCPRequestHandler: Sendable {
             ])
 
         case "tools/call":
+            // Do not run a tool when no bounded response can echo its id.
+            guard toolFailure(id: id, message: Self.oversizedToolError) != nil else {
+                return nil
+            }
             guard let call = Self.toolCall(request.params) else {
                 return failure(id: id, code: -32602, message: "tools/call needs a tool name")
             }
@@ -226,6 +231,13 @@ public struct MCPRequestHandler: Sendable {
         return String(decoding: data, as: UTF8.self)
     }
 
+    private func encodeToolResponse(_ body: [String: JSONValue]) -> String? {
+        guard let data = try? encoder.encode(body),
+            data.count <= Self.maximumToolResponseBytes
+        else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     func toolResponse(id: JSONValue, outcome: ToolOutcome) -> String? {
         let body: [String: JSONValue] = [
             "jsonrpc": .string("2.0"),
@@ -243,18 +255,15 @@ public struct MCPRequestHandler: Sendable {
                 "isError": .bool(false),
             ]),
         ]
-        guard let response = encode(body) else { return nil }
-        guard response.utf8.count <= Self.maximumToolResponseBytes else {
-            return toolFailure(
+        return encodeToolResponse(body)
+            ?? toolFailure(
                 id: id,
                 message: "tool result exceeds the 1000000-byte encoded response limit"
             )
-        }
-        return response
     }
 
     private func toolFailure(id: JSONValue, message: String) -> String? {
-        encode([
+        let body: [String: JSONValue] = [
             "jsonrpc": .string("2.0"),
             "id": id,
             "result": .object([
@@ -266,8 +275,25 @@ public struct MCPRequestHandler: Sendable {
                     ])
                 ]),
             ]),
-        ])
+        ]
+        if let response = encodeToolResponse(body) { return response }
+
+        let bounded: [String: JSONValue] = [
+            "jsonrpc": .string("2.0"),
+            "id": id,
+            "result": .object([
+                "isError": .bool(true),
+                "content": .array([
+                    .object([
+                        "type": .string("text"), "text": .string(Self.oversizedToolError),
+                    ])
+                ]),
+            ]),
+        ]
+        return encodeToolResponse(bounded)
     }
+
+    private static let oversizedToolError = "tool failed with an oversized error"
 
     /// Reads a `tools/call` params object.
     ///
