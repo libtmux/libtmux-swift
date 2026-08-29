@@ -11,4 +11,12 @@ struct MCPEmbeddingTests {
             #expect(paneCount == 1)
         }
     }
+
+    @Test("an exact embedded selection exposes only its named tools")
+    func exactEmbeddedSelection() async throws {
+        try await withTmuxServer { server in
+            let tools = useExactEmbeddedTools(on: server)
+            #expect(Set(tools.visibleDefinitions.map(\.name)) == ["list_sessions", "new_window"])
+        }
+    }
 }
