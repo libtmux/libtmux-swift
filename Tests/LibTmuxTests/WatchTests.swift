@@ -144,11 +144,11 @@ struct WatchTests {
             )
 
             let transport = CaptureRecordingTransport()
-            await transport.beforeCapture(3) { () async throws(TmuxError) in
+            await transport.beforeCapture(3) { () async throws in
                 do {
                     try await Task.sleep(for: .seconds(1))
                 } catch {
-                    throw .cancelled
+                    throw TmuxError.cancelled
                 }
             }
             let server = Server(
@@ -373,7 +373,7 @@ struct WatchTests {
                     )
                 }
                 try await fixture.wait(for: attached)
-                await transport.afterEveryCapture { () async throws(TmuxError) in
+                await transport.afterEveryCapture { () async throws in
                     let moved = "moving-deadline-burst-\(UUID().uuidString)"
                     try await fixture.run(
                         "i=0; while [ \"$i\" -lt 160 ]; do "
@@ -404,7 +404,7 @@ struct WatchTests {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
             let transport = CaptureRecordingTransport()
-            await transport.afterEveryCapture { () async throws(TmuxError) in
+            await transport.afterEveryCapture { () async throws in
                 do {
                     try await Task.sleep(for: .seconds(1))
                 } catch {
@@ -504,7 +504,7 @@ struct WatchTests {
             )
             let marker = "cursor-race-\(UUID().uuidString)"
             let ready = "cursor-race-ready-\(UUID().uuidString)"
-            await transport.beforeNextCapture { () async throws(TmuxError) in
+            await transport.beforeNextCapture { () async throws in
                 try await fixture.run(
                     "printf '\(marker)\\n'; \(fixture.shellInvocation) wait-for -S \(ready)",
                     in: pane

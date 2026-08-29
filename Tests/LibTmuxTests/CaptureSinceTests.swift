@@ -89,7 +89,7 @@ struct CaptureSinceTests {
             )
             let pane = try await bootstrapPane(server)
             let ready = "incremental-race"
-            await transport.beforeNextCapture { () async throws(TmuxError) in
+            await transport.beforeNextCapture { () async throws in
                 try await fixture.run(
                     "printf 'raced\\n'; \(fixture.shellInvocation) wait-for -S \(ready)",
                     in: pane
@@ -120,7 +120,7 @@ struct CaptureSinceTests {
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
             )
-            await transport.beforeNextCapture { () async throws(TmuxError) in
+            await transport.beforeNextCapture { () async throws in
                 try await fixture.run(
                     "printf '\\nforward-raced\\n'; "
                         + "\(fixture.shellInvocation) wait-for -S forward-scan-raced",
@@ -492,33 +492,45 @@ struct RecordedCaptureRequest: Sendable {
     }
 }
 
+private func runCaptureAction(
+    _ action: @Sendable () async throws -> Void
+) async throws(TmuxError) {
+    do {
+        try await action()
+    } catch let error as TmuxError {
+        throw error
+    } catch {
+        throw .invocationFailed(reason: String(describing: error))
+    }
+}
+
 actor CaptureRecordingTransport: OutputLimitedProcessTransport {
     private let underlying = SubprocessTransport()
     private(set) var captureRequests: [RecordedCaptureRequest] = []
-    private var captureActions: [Int: @Sendable () async throws(TmuxError) -> Void] = [:]
-    private var nextCaptureAction: (@Sendable () async throws(TmuxError) -> Void)?
-    private var afterCaptureAction: (@Sendable () async throws(TmuxError) -> Void)?
+    private var captureActions: [Int: @Sendable () async throws -> Void] = [:]
+    private var nextCaptureAction: (@Sendable () async throws -> Void)?
+    private var afterCaptureAction: (@Sendable () async throws -> Void)?
 
     var captureLimits: [Int] {
         captureRequests.map(\.perStreamOutputLimit)
     }
 
     func beforeNextCapture(
-        _ action: @escaping @Sendable () async throws(TmuxError) -> Void
+        _ action: @escaping @Sendable () async throws -> Void
     ) {
         nextCaptureAction = action
     }
 
     func beforeCapture(
         _ ordinal: Int,
-        _ action: @escaping @Sendable () async throws(TmuxError) -> Void
+        _ action: @escaping @Sendable () async throws -> Void
     ) {
         precondition(ordinal > 0)
         captureActions[ordinal] = action
     }
 
     func afterEveryCapture(
-        _ action: @escaping @Sendable () async throws(TmuxError) -> Void
+        _ action: @escaping @Sendable () async throws -> Void
     ) {
         afterCaptureAction = action
     }
@@ -551,11 +563,11 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
                 )
             )
             if let action = captureActions[captureRequests.count] {
-                try await action()
+                try await runCaptureAction(action)
             }
             if let nextCaptureAction {
                 self.nextCaptureAction = nil
-                try await nextCaptureAction()
+                try await runCaptureAction(nextCaptureAction)
             }
         }
         let reply = try await underlying.run(
@@ -564,7 +576,9 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
             environment: environment,
             perStreamOutputLimit: perStreamOutputLimit
         )
-        if isCapture, let afterCaptureAction { try await afterCaptureAction() }
+        if isCapture, let afterCaptureAction {
+            try await runCaptureAction(afterCaptureAction)
+        }
         return reply
     }
 }

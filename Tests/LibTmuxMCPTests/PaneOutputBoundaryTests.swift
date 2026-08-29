@@ -228,7 +228,7 @@ struct PaneOutputBoundaryTests {
             try await fixture.clearHistory(pane)
             let tools = TmuxTools(server: server)
             let raced = "libtmux-test-capture-raced-\(UUID().uuidString)"
-            @Sendable func race() async throws(TmuxError) {
+            @Sendable func race() async throws {
                 try await fixture.run(
                     "printf 'RACE\\n'; \(fixture.shellInvocation) wait-for -S \(raced)",
                     in: pane
@@ -308,14 +308,14 @@ actor CaptureLimitRecordingTransport: OutputLimitedProcessTransport {
     private let transport = SubprocessTransport()
     private(set) var lastCapture: Invocation?
     private var nextCaptureFailure: TmuxError?
-    private var nextCaptureAction: (@Sendable () async throws(TmuxError) -> Void)?
+    private var nextCaptureAction: (@Sendable () async throws -> Void)?
 
     func failNextCapture(with error: TmuxError) {
         nextCaptureFailure = error
     }
 
     func beforeNextCapture(
-        _ action: @escaping @Sendable () async throws(TmuxError) -> Void
+        _ action: @escaping @Sendable () async throws -> Void
     ) {
         nextCaptureAction = action
     }
@@ -346,7 +346,13 @@ actor CaptureLimitRecordingTransport: OutputLimitedProcessTransport {
             )
             if let nextCaptureAction {
                 self.nextCaptureAction = nil
-                try await nextCaptureAction()
+                do {
+                    try await nextCaptureAction()
+                } catch let error as TmuxError {
+                    throw error
+                } catch {
+                    throw .invocationFailed(reason: String(describing: error))
+                }
             }
             if let nextCaptureFailure {
                 self.nextCaptureFailure = nil
