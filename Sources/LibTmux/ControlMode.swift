@@ -81,6 +81,10 @@ extension Server {
     /// exists only here, and so does the value carrying it — there is no way to
     /// write a `%output` reader against a server that has no connection.
     ///
+    /// The handed-out values do not keep the connection alive. Do not return
+    /// or store them; calls made after `body` ends fail because the process has
+    /// already been reaped.
+    ///
     /// - Parameters:
     ///   - session: the session to attach to, which must already exist.
     ///   - body: the work to run, given this server and the connection
@@ -123,6 +127,8 @@ extension Server {
     /// Modes nest, and the innermost wins: `using(.direct)` inside a connected
     /// scope gives back a server that spawns processes, which is the supported
     /// way to keep one call off a connection.
+    /// A server handed to a connected `body` does not keep that connection
+    /// alive when returned or stored.
     public func using<Result: Sendable>(
         _ mode: TmuxMode,
         _ body: @escaping @Sendable (Server) async throws -> Result
@@ -144,10 +150,10 @@ extension Server {
     /// connection *and* a server that speaks over it. This is the layer beneath,
     /// for talking the control protocol directly.
     ///
-    /// Scoped rather than handed out: the connection is a live process, and a
-    /// value that outlives its process is a value that lies. When `body`
-    /// returns, the session is closed and the child is reaped before this call
-    /// does.
+    /// The process is scoped even though Swift can retain the actor handed to
+    /// `body`. Returning or storing it does not extend the process lifetime;
+    /// later calls fail. When `body` returns, the session is closed and the
+    /// child is reaped before this call does.
     ///
     /// Connection loss cancels `body`; teardown still waits for code that
     /// ignores cancellation.
