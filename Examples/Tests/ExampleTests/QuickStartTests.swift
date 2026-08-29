@@ -37,12 +37,12 @@ struct QuickStartTests {
         )
 
         let root = try #require(namedSocketRoot)
-        let server = try Server(socketName: "libtmux-swift", tmuxExecutable: tmuxExecutablePath())
+        let server = try Server(socketName: "default", tmuxExecutable: tmuxExecutablePath())
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
             TmuxCommand("new-session", ["-d", "-s", "quickstart"]),
             try reaperCommand(
-                root: root.appendingPathComponent("tmux-\(getuid())/libtmux-swift")
+                root: root.appendingPathComponent("tmux-\(getuid())/default")
             ),
         ])
         defer { Task { _ = try? await server.run(TmuxCommand("kill-server")) } }

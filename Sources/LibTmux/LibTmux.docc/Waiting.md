@@ -23,13 +23,17 @@ block on it. tmux blocks server-side and returns on the signal itself, so
 nothing is inferred from what the screen looks like:
 
 ```swift
-try await server.run("make && tmux wait-for -S built", in: pane)
+try await server.run(
+    "make; \(server.shellInvocation) wait-for -S built",
+    in: pane
+)
 try await server.wait(for: "built")
 ```
 
-Use `;` rather than `&&` when the wait must survive a failing command — the
-signal has to fire either way or the wait deadlocks on the failure it exists
-to report.
+The `;` matters: the signal has to fire after failure too, or the wait
+deadlocks on the failure it exists to report. ``Server/shellInvocation`` names
+the same tmux binary and endpoint as `server` rather than whichever `tmux`
+happens to be on the pane's `PATH`.
 
 **The question is about state: subscribe to a format.** "Has the command
 finished", "has the pane died", "has that window rung its bell" are all

@@ -3,7 +3,10 @@
 import LibTmux
 
 public func waitingOnAChannel(_ server: Server, pane: Pane) async throws {
-    try await server.run("make && tmux wait-for -S built", in: pane)
+    try await server.run(
+        "make; \(server.shellInvocation) wait-for -S built",
+        in: pane
+    )
     try await server.wait(for: "built")
 }
 

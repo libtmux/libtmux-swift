@@ -161,13 +161,12 @@ two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 $ python3 Scripts/check_socket_namespace.py
 ```
 
-That script reads every `Server(socketPath:)` given a literal, which is where a
-stray root gets written down. It does not read `Server(socketName:)`: tmux
-resolves a name inside `TMUX_TMPDIR`, so the literal says nothing about where
-the socket lands, and `namedSocketsAvailable` is what gates that instead. Nor
-can it see whether a server was *started* — nothing reaches the filesystem
-until a command runs against it — so the few cases that name a path outside the
-roots and never create one are listed in the script rather than detected.
+That script reads literal `Server(socketPath:)` and `Server(socketName:)` calls.
+A path records its root; a name must identify this port, while
+`namedSocketsAvailable` separately proves the suite placed it under the test
+root. The script cannot see whether a server was *started* — nothing reaches
+the filesystem until a command runs against it — so deliberate exceptions are
+listed beside their reason.
 
 Every tracked file with a shebang is executable in git, so a script that CI
 invokes directly does not fail only there:

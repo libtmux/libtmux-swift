@@ -145,17 +145,17 @@ extension TmuxTools {
             name: "wait_for_channel",
             title: "Wait on a tmux channel",
             summary:
-                "Blocks until something runs `tmux wait-for -S <channel>`. The only "
+                "Blocks until this tmux server's channel is signalled. The only "
                 + "wait that infers nothing.",
             detail: """
                 Deterministic where every other wait is a heuristic: tmux blocks \
-                server-side and returns on the signal itself. Compose it into a \
-                command you send — `send_keys('make; tmux wait-for -S built')` then \
-                wait here. The `;` fires the signal whether the command passed or \
-                failed, so the wait cannot deadlock on failure.
+                server-side and returns on the signal itself. Use this only when \
+                another process is already arranged to signal a channel on this \
+                exact server.
 
-                run_shell does this for you and adds the exit status. Reach for this \
-                directly when the shell composition has to be your own.
+                When you start the command, use run_shell instead. It addresses the \
+                right server, signals after success or failure, and reports the exit \
+                status without a second call.
                 """,
             tier: .readonly,
             arguments: [

@@ -6,10 +6,12 @@
 Drive tmux from Swift. A port of [libtmux][] for Python, in the same family of
 ports and holding to what that library established about tmux.
 
+With tmux already running on its default socket:
+
 ```swift
 import LibTmux
 
-let server = try Server(socketName: "libtmux-swift")
+let server = try Server(socketName: "default")
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
@@ -323,7 +325,10 @@ and returns on the signal itself, so nothing is inferred from what the screen
 looks like.
 
 ```swift
-try await server.run("make && tmux wait-for -S built", in: pane)
+try await server.run(
+    "make; \(server.shellInvocation) wait-for -S built",
+    in: pane
+)
 try await server.wait(for: "built")
 ```
 
