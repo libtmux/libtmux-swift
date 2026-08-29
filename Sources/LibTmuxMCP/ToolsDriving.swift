@@ -170,8 +170,18 @@ extension TmuxTools {
         // history they will page through later.
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         try await server.setBuffer(text, named: buffer)
-        defer { Task { try? await server.deleteBuffer(named: buffer) } }
-        try await server.paste(buffer: buffer, into: pane)
+        let paste: Result<Void, TmuxError>
+        do {
+            try await server.paste(buffer: buffer, into: pane)
+            paste = .success(())
+        } catch {
+            paste = .failure(error)
+        }
+        let cleanup = Task {
+            try await server.deleteBuffer(named: buffer)
+        }
+        try await cleanup.value
+        try paste.get()
         return .init(
             Pasted(
                 paneRef: WireReferenceCodec.processLocal.reference(to: pane),
