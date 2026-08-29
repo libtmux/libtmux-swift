@@ -1,8 +1,7 @@
 # `LibTmuxMCP`
 
-tmux as [Model Context Protocol][MCP] tools, as a library. The tool definitions
-and their handlers, with no server and no transport — embed them in a server of
-your own.
+tmux as [Model Context Protocol][MCP] tools you can embed: `TmuxTools`,
+`MCPRequestHandler`, and `MCPService`, without the stdio executable.
 
 To *run* one rather than embed it, use [`libtmux-mcp`](../libtmux-mcp), which is
 these tools served over stdio.
@@ -35,14 +34,8 @@ act as the tmux user.
 
 ## The tools
 
-| Tool | What it does |
-| --- | --- |
-| `list_sessions` | Every session, optionally selected by what its panes run |
-| `list_windows` | Every exact `$session:index` occurrence of each matching window |
-| `list_panes` | Every pane, optionally filtered |
-| `describe_filters` | The filterable fields, their types, and their aliases |
-| `read_format` | Evaluates a tmux format, reaching fields the listings do not carry |
-| `run_command` `run_commands` | Confirmed destructive-tier raw escape hatches with daemon, time, and output bounds |
+The [root tool catalogue](../../README.md#the-tools) groups every tool by
+safety tier and names the limits each one enforces.
 
 `describe_filters` is what makes the rest usable. A client that does not speak
 Swift learns the filterable vocabulary from it at runtime, instead of hard
