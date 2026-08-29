@@ -7,6 +7,92 @@ import TmuxFixture
 
 @Suite("pane output boundaries", .timeLimit(.minutes(1)))
 struct PaneOutputBoundaryTests {
+    @Test("incremental capture ends at the cursor rather than screen padding")
+    func incrementalCaptureEndsAtTheCursor() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let ready = "libtmux-test-shallow-ready-\(UUID().uuidString)"
+            try await fixture.run(
+                "stty -echo; printf '\\033c'; "
+                    + "\(fixture.shellInvocation) wait-for -S \(ready)",
+                in: pane
+            )
+            try await fixture.wait(for: ready)
+            try await fixture.clearHistory(pane)
+
+            let transport = CaptureLimitRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let current = try #require(try await server.panes().first { $0.id == pane.id })
+            let tools = TmuxTools(server: server)
+            let cursor = try await tools.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object(["pane": .string(wireRef(current))])
+                )
+            ).decode(CaptureSinceResult.self).cursor
+
+            let done = "libtmux-test-shallow-done-\(UUID().uuidString)"
+            let release = "libtmux-test-shallow-release-\(UUID().uuidString)"
+            try await fixture.run(
+                "printf 'SHALLOW1\\nSHALLOW2\\n'; "
+                    + "\(fixture.shellInvocation) wait-for -S \(done); "
+                    + "\(fixture.shellInvocation) wait-for \(release)",
+                in: pane
+            )
+            try await fixture.wait(for: done)
+            let result = try await tools.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object([
+                        "pane": .string(wireRef(current)),
+                        "cursor": .string(cursor),
+                        "max_lines": .number(2),
+                    ])
+                )
+            ).decode(CaptureSinceResult.self)
+
+            #expect(result.lines.count == 2)
+            #expect(result.lines.first?.hasSuffix("SHALLOW1") == true)
+            #expect(result.lines.last == "SHALLOW2")
+            let invocation = try #require(await transport.lastCapture)
+            let command = invocation.arguments.joined(separator: " ")
+            #expect(command.contains(" -E "))
+            #expect(!command.contains(" -E - "))
+            try await fixture.signal(release)
+        }
+    }
+
+    @Test("numeric capture ends outside tmux's row range are refused")
+    func numericCaptureEndIsValidated() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let bounds = PaneCaptureBounds(
+                historySize: 0,
+                historyBytes: 0,
+                paneHeight: 40_001,
+                cursorRow: 0
+            )
+            await #expect(
+                throws: TmuxError.invocationFailed(
+                    reason: "pane capture bounds exceed tmux's row range"
+                )
+            ) {
+                try await server.captureTail(
+                    pane,
+                    startingAt: .line(0),
+                    endingAt: 40_000,
+                    bounds: bounds,
+                    maximumLines: 40_000,
+                    perStreamOutputLimit: 262_144
+                )
+            }
+        }
+    }
+
     @Test("pane tools bound history before collecting it")
     func paneToolsBoundHistoryAtTheSource() async throws {
         try await withTmuxServer { fixture in

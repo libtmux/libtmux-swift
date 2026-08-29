@@ -191,7 +191,10 @@ extension Server {
             throw .invocationFailed(reason: "pane capture size overflowed")
         }
         let start = max(earliest, boundedStart)
-        guard start >= Int(Int32.min), start <= Int(Int16.max) else {
+        let acceptedRows = Int(Int32.min)...Int(Int16.max)
+        guard acceptedRows.contains(start),
+            requestedEnd.map(acceptedRows.contains) ?? true
+        else {
             throw .invocationFailed(reason: "pane capture bounds exceed tmux's row range")
         }
 
