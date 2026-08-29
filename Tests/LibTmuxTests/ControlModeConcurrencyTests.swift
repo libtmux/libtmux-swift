@@ -20,11 +20,17 @@ private actor ControlWriteLog {
 }
 
 private actor FailingSecondControlWriter {
-    private(set) var lines: [String] = []
+    private let witness: AsyncStream<[UInt8]>.Continuation
+    private var count = 0
+
+    init(witness: AsyncStream<[UInt8]>.Continuation) {
+        self.witness = witness
+    }
 
     func write(_ bytes: [UInt8]) throws {
-        lines.append(String(decoding: bytes, as: UTF8.self))
-        if lines.count == 2 {
+        count += 1
+        witness.yield(bytes)
+        if count == 2 {
             throw TmuxError.connectionClosed
         }
     }
@@ -214,67 +220,80 @@ struct ControlModeConcurrencyTests {
 
     @Test("a later write failure cannot shift an earlier reply")
     func laterWriteFailureDoesNotShiftEarlierReply() async throws {
-        let writer = FailingSecondControlWriter()
+        let (writes, writeWitness) = AsyncStream.makeStream(of: [UInt8].self)
+        var writeIterator = writes.makeAsyncIterator()
+        let writer = FailingSecondControlWriter(witness: writeWitness)
         let control = ControlSession(write: { try await writer.write($0) })
         await control.consume("%begin 1 1 0")
         await control.consume("%end 1 1 0")
 
-        let firstResult = ControlSendResult()
+        let (firstResults, firstResultWitness) = AsyncStream.makeStream(
+            of: Result<ControlReply, TmuxError>.self
+        )
+        var firstResultIterator = firstResults.makeAsyncIterator()
         let first = Task {
+            defer { firstResultWitness.finish() }
             do {
                 let reply = try await control.send(
                     TmuxCommand("display-message", ["-p", "first-command"])
                 )
-                await firstResult.record(.success(reply))
+                firstResultWitness.yield(.success(reply))
             } catch let error as TmuxError {
-                await firstResult.record(.failure(error))
+                firstResultWitness.yield(.failure(error))
             } catch {
                 Issue.record("unexpected first send error: \(error)")
             }
         }
-        let wroteFirst = try await waitUntil(within: .seconds(1)) {
-            await writer.lines.count == 1
-        }
-        #expect(wroteFirst)
+        let firstWrite = await writeIterator.next() ?? []
+        #expect(
+            String(decoding: firstWrite, as: UTF8.self)
+                == "display-message -p first-command\n"
+        )
 
-        let secondResult = ControlSendResult()
+        let (secondResults, secondResultWitness) = AsyncStream.makeStream(
+            of: Result<ControlReply, TmuxError>.self
+        )
+        var secondResultIterator = secondResults.makeAsyncIterator()
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            writeWitness.yield([])
+        }
         let second = Task {
+            defer { secondResultWitness.finish() }
             do {
                 let reply = try await control.send(
                     TmuxCommand("display-message", ["-p", "second-command"])
                 )
-                await secondResult.record(.success(reply))
+                secondResultWitness.yield(.success(reply))
             } catch let error as TmuxError {
-                await secondResult.record(.failure(error))
+                secondResultWitness.yield(.failure(error))
             } catch {
                 Issue.record("unexpected second send error: \(error)")
             }
         }
-        let attemptedSecond = try await waitUntil(within: .seconds(1)) {
-            await writer.lines.count == 2
-        }
-        #expect(attemptedSecond)
+        let secondWrite = await writeIterator.next() ?? []
+        watchdog.cancel()
+        await watchdog.value
         #expect(
-            await writer.lines == [
-                "display-message -p first-command\n",
-                "display-message -p second-command\n",
-            ]
+            String(decoding: secondWrite, as: UTF8.self)
+                == "display-message -p second-command\n"
         )
-        let failedFirst = try await waitUntil(within: .seconds(1)) {
-            await firstResult.value != nil
-        }
-        #expect(failedFirst)
+        let firstResult = await firstResultIterator.next()
 
         await control.consume("%begin 1 2 1")
         await control.consume("first-reply")
         await control.consume("%end 1 2 1")
 
-        let answeredSecond = try await waitUntil(within: .seconds(1)) {
-            await secondResult.value != nil
-        }
-        #expect(answeredSecond)
-        #expect(await firstResult.value == .failure(.connectionClosed))
-        #expect(await secondResult.value == .failure(.connectionClosed))
+        let secondResult = await secondResultIterator.next()
+        #expect(firstResult == .failure(.connectionClosed))
+        #expect(secondResult == .failure(.connectionClosed))
+
+        first.cancel()
+        second.cancel()
+        writeWitness.finish()
+        firstResultWitness.finish()
+        secondResultWitness.finish()
         await first.value
         await second.value
     }
