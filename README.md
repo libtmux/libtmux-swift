@@ -458,6 +458,10 @@ and change tmux state:
 | `LIBTMUX_SAFETY` | `readonly` | The highest tier of tool served: `readonly`, `mutating`, `destructive` |
 | `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The ceiling every wait is clamped to, itself capped at 300 |
 
+The tiers classify tool intent; they do not sandbox the host. `mutating`
+exposes `run_shell` and `send_keys`, which can execute commands through a pane.
+Grant it only to clients trusted to act as the tmux user.
+
 All are optional. Anything the server wants to tell a human goes to stderr,
 because stdout is the protocol and a stray line there corrupts it.
 

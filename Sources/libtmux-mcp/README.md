@@ -37,6 +37,10 @@ is environment, so a client config is where you say so:
 | `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The wait ceiling in seconds, clamped from 1 through 300 |
 | `TMUX_TMPDIR` | tmux's own default | Where a socket name is looked up |
 
+The tiers classify tool intent; they do not sandbox the host. `mutating`
+exposes `run_shell` and `send_keys`, which can execute commands through a pane.
+Grant it only to clients trusted to act as the tmux user.
+
 All six are optional; with none set it serves readonly tools for the `default`
 socket through the first `tmux` on `PATH`, with a 120-second wait ceiling.
 

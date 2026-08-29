@@ -29,6 +29,9 @@ public func useEmbeddedTools(on server: Server) async throws -> Int {
 
 `TmuxTools(server:)` permits readonly tools. Pass `tier: .mutating` or
 `tier: .destructive` explicitly when the embedding should expose writes.
+Those tiers classify tool intent; they do not sandbox the host. `.mutating`
+includes `run_shell` and `send_keys`, so expose it only to callers trusted to
+act as the tmux user.
 
 ## The tools
 
