@@ -136,6 +136,12 @@ struct FilterLookupTests {
         #expect(throws: FilterLookupError.unknownOperator("sounds_like")) {
             try parse("command__sounds_like=vim")
         }
+        #expect(throws: FilterLookupError.operatorNotSupported("contains")) {
+            try parse("index__contains=3")
+        }
+        #expect(throws: FilterLookupError.invalidRegularExpression("[")) {
+            try parse("command__regex=[")
+        }
     }
 
     @Test("a lookup can name a field the way tmux does")

@@ -21,19 +21,27 @@ public protocol Filterable: Sendable {
     /// Reads the field an id names, or `nil` if this model has no such field.
     static func filterValue(_ id: String, of root: Self) -> FilterValue?
 
-    /// Whether an id is part of this model's current wire vocabulary.
-    static func isFilterFieldID(_ id: String) -> Bool
+    /// The value kind an id names, or `nil` when this model does not know it.
+    static func filterFieldType(_ id: String) -> FilterSchema.ValueType?
 }
 
 /// Why a filter could not be built.
 public enum QueryConstructionError: Error, Sendable, Hashable {
     /// The key path does not name a filterable field of this model.
     case unknownField
+    /// The field and operator could not form a safe expression.
+    case invalidOperation(FilterValidationError)
 }
 
 /// Why a decoded filter cannot be evaluated safely.
 public enum FilterValidationError: Error, Sendable, Hashable {
     case unknownField(String)
+    case incompatibleOperation(
+        field: String,
+        type: FilterSchema.ValueType,
+        operation: FilterOperation
+    )
+    case invalidRegularExpression(field: String, pattern: String)
 }
 
 /// How a filter compares one field.
@@ -171,6 +179,12 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
         guard let fieldID = Root.filterFieldID(for: keyPath) else {
             throw .unknownField
         }
+        guard let type = Root.filterFieldType(fieldID) else { throw .unknownField }
+        do {
+            try operation.operation.validate(field: fieldID, type: type)
+        } catch {
+            throw .invalidOperation(error)
+        }
         return .comparison(field: fieldID, operation: operation.operation)
     }
 
@@ -197,10 +211,11 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
     /// Rejects field ids this build does not understand anywhere in the tree.
     public func validate() throws(FilterValidationError) {
         switch self {
-        case let .comparison(fieldID, _):
-            guard Root.isFilterFieldID(fieldID) else {
+        case let .comparison(fieldID, operation):
+            guard let type = Root.filterFieldType(fieldID) else {
                 throw .unknownField(fieldID)
             }
+            try operation.validate(field: fieldID, type: type)
         case let .and(children), let .or(children):
             for child in children { try child.validate() }
         case let .not(child):
@@ -210,6 +225,39 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
 }
 
 extension FilterOperation {
+    func validate(
+        field: String,
+        type: FilterSchema.ValueType
+    ) throws(FilterValidationError) {
+        switch self {
+        case let .equals(value):
+            guard value.schemaType == type else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+        case let .isIn(values):
+            guard values.allSatisfy({ $0.schemaType == type }) else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+        case .caseInsensitiveEquals, .contains, .caseInsensitiveContains, .hasPrefix,
+            .hasSuffix:
+            guard type == .text else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+        case let .matches(pattern, caseInsensitive):
+            guard type == .text else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+            do {
+                _ = try NSRegularExpression(
+                    pattern: pattern,
+                    options: caseInsensitive ? [.caseInsensitive] : []
+                )
+            } catch {
+                throw .invalidRegularExpression(field: field, pattern: pattern)
+            }
+        }
+    }
+
     func matches(_ value: FilterValue) -> Bool {
         switch self {
         case let .equals(expected):
@@ -239,6 +287,16 @@ extension FilterOperation {
                     ? [.regularExpression, .caseInsensitive]
                     : [.regularExpression]
             ) != nil
+        }
+    }
+}
+
+extension FilterValue {
+    fileprivate var schemaType: FilterSchema.ValueType {
+        switch self {
+        case .text: .text
+        case .integer: .integer
+        case .flag: .flag
         }
     }
 }

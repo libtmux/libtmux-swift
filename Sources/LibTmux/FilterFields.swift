@@ -10,8 +10,8 @@
 /// `-f` predicate — so renaming a property must not renumber a wire schema.
 
 extension Session: Filterable {
-    public static func isFilterFieldID(_ id: String) -> Bool {
-        filterSchemaFields.contains { $0.id == id }
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
     }
 
     public static func filterFieldID(for keyPath: PartialKeyPath<Session>) -> String? {
@@ -36,8 +36,8 @@ extension Session: Filterable {
 }
 
 extension Window: Filterable {
-    public static func isFilterFieldID(_ id: String) -> Bool {
-        filterSchemaFields.contains { $0.id == id }
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
     }
 
     public static func filterFieldID(for keyPath: PartialKeyPath<Window>) -> String? {
@@ -60,8 +60,8 @@ extension Window: Filterable {
 }
 
 extension Pane: Filterable {
-    public static func isFilterFieldID(_ id: String) -> Bool {
-        filterSchemaFields.contains { $0.id == id }
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
     }
 
     public static func filterFieldID(for keyPath: PartialKeyPath<Pane>) -> String? {
@@ -90,8 +90,8 @@ extension Pane: Filterable {
 }
 
 extension Client: Filterable {
-    public static func isFilterFieldID(_ id: String) -> Bool {
-        filterSchemaFields.contains { $0.id == id }
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
     }
 
     public static func filterFieldID(for keyPath: PartialKeyPath<Client>) -> String? {

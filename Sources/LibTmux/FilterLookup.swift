@@ -29,10 +29,17 @@ public enum FilterLookup {
         guard let field = FilterSchema.current.field(named: name, in: model) else {
             throw .unknownField(name)
         }
-        return .comparison(
-            field: field.id,
-            operation: try operation(suffix: suffix, value: value, type: field.type)
-        )
+        let operation = try operation(suffix: suffix, value: value, type: field.type)
+        do {
+            try operation.validate(field: field.id, type: field.type)
+        } catch .incompatibleOperation {
+            throw .operatorNotSupported(suffix ?? "exact")
+        } catch .invalidRegularExpression {
+            throw .invalidRegularExpression(value)
+        } catch {
+            throw .unknownField(name)
+        }
+        return .comparison(field: field.id, operation: operation)
     }
 
     private static func operation(
@@ -96,6 +103,8 @@ public enum FilterLookupError: Error, Sendable, Hashable {
     case missingValue
     case unknownField(String)
     case unknownOperator(String)
+    case operatorNotSupported(String)
+    case invalidRegularExpression(String)
     case valueNotOfFieldType(String)
 }
 

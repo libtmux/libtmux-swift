@@ -142,6 +142,24 @@ struct FilterExprTests {
         #expect(panes.filter(decoded).map(\.id) == ["%2"])
     }
 
+    @Test("validation rejects dynamically impossible comparisons")
+    func validationRejectsImpossibleComparisons() throws {
+        let expressions: [FilterExpr<Pane>] = [
+            .comparison(field: "pane.index", operation: .contains("3")),
+            .comparison(field: "pane.active", operation: .equals(.text("true"))),
+            .comparison(
+                field: "pane.command",
+                operation: .matches(pattern: "[", caseInsensitive: false)
+            ),
+        ]
+
+        for expression in expressions {
+            let data = try JSONEncoder().encode(expression)
+            let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
+            #expect(throws: FilterValidationError.self) { try decoded.validate() }
+        }
+    }
+
     @Test("exactlyOne tells absence apart from ambiguity")
     func exactlyOneDistinguishesItsFailures() throws {
         let one = try panes.exactlyOne(FilterExpr.where(\.currentCommand, .equals("zsh")))

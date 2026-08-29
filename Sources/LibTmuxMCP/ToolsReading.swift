@@ -298,6 +298,16 @@ private func validateFilter<Root: Filterable>(
             argument,
             expected: "a filter using known field ids; \(field) is unknown"
         )
+    } catch FilterValidationError.incompatibleOperation(let field, let type, _) {
+        throw ToolError.wrongArgumentType(
+            argument,
+            expected: "a filter whose operator and values match \(field)'s \(type.rawValue) type"
+        )
+    } catch FilterValidationError.invalidRegularExpression(let field, _) {
+        throw ToolError.wrongArgumentType(
+            argument,
+            expected: "a filter with a usable regular expression for \(field)"
+        )
     }
 }
 

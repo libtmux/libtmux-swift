@@ -210,8 +210,8 @@ struct TmuxToolsTests {
         }
     }
 
-    @Test("unknown nested filter fields are refused")
-    func unknownNestedFilterFieldsAreRefused() async throws {
+    @Test("invalid nested filters are refused")
+    func invalidNestedFiltersAreRefused() async throws {
         try await withTmuxServer { server in
             let expression = FilterExpr<Pane>.not(
                 .and([
@@ -264,6 +264,25 @@ struct TmuxToolsTests {
                 ) {
                     try await TmuxTools(server: server).call(call)
                 }
+            }
+
+            let incompatible = FilterExpr<Pane>.comparison(
+                field: "pane.index", operation: .contains("3")
+            )
+            let encoded = try JSONDecoder().decode(
+                JSONValue.self,
+                from: try JSONEncoder().encode(incompatible)
+            )
+            await #expect(
+                throws: ToolError.wrongArgumentType(
+                    "filter",
+                    expected:
+                        "a filter whose operator and values match pane.index's integer type"
+                )
+            ) {
+                try await TmuxTools(server: server).call(
+                    ToolCall(name: "list_panes", arguments: .object(["filter": encoded]))
+                )
             }
         }
     }
