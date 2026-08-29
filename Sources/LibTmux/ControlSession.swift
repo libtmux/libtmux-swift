@@ -104,11 +104,12 @@ public actor ControlSession {
     private var isAttached = false
     /// Why the connection ended, once it has.
     ///
-    /// ``finish(throwing:)`` can only fail the waiters that exist when it runs.
-    /// A command sent after that point would queue a continuation nothing is
-    /// left to answer — the reader that resumes them is gone — so it waits for a
-    /// reply that cannot arrive. Remembering the reason lets a late send fail
-    /// with it instead.
+    /// ``finish(throwing:)`` can only fail the waiters that exist when it runs,
+    /// so a command sent afterwards would wait on a reply nothing is left to
+    /// deliver. This is what fails it instead — as
+    /// ``TmuxError/requestNotSubmitted`` rather than as this reason, because a
+    /// command that never reached tmux is safe to retry. ``waitUntilAttached()``
+    /// reports the reason itself, where the distinction does not arise.
     private var closure: TmuxError?
     private nonisolated let broadcast: NotificationBroadcast
 
