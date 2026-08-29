@@ -168,4 +168,22 @@ struct FormatTests {
             )
         }
     }
+
+    @Test("a condition nests its operands and escapes them")
+    func conditionNestsAndEscapes() {
+        #expect(FormatCondition.equals("pane_id", 3).text == "#{==:#{pane_id},3}")
+        // `#`, `,` and `}` end a comparison operand unless tmux is told they do
+        // not, so a socket path carrying one still compares as itself.
+        #expect(
+            FormatCondition.equals("socket_path", "a,b}c#d").text
+                == "#{==:#{socket_path},a#,b#}c##d}"
+        )
+        #expect(
+            FormatCondition.all(
+                .equals("a", 1),
+                .equals("b", 2),
+                .equals("c", 3)
+            ).text == "#{&&:#{==:#{a},1},#{&&:#{==:#{b},2},#{==:#{c},3}}}"
+        )
+    }
 }

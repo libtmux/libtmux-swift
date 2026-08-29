@@ -77,6 +77,35 @@ struct FormatProjection: Sendable, Hashable {
     }
 }
 
+/// A tmux format that expands to `1` or `0`.
+///
+/// tmux nests a conditional by wrapping rather than by joining, so writing one
+/// by hand means counting closing braces at the end of the string. Building
+/// them here counts once, and escapes every operand.
+struct FormatCondition: Sendable, Hashable {
+    let text: String
+
+    static func equals(_ field: String, _ value: String) -> Self {
+        Self(text: "#{==:#{\(field)},\(tmuxFormatComparisonOperand(value))}")
+    }
+
+    static func equals(_ field: String, _ value: Int) -> Self {
+        Self(text: "#{==:#{\(field)},\(value)}")
+    }
+
+    /// Every condition at once.
+    ///
+    /// tmux finds a conditional's comma by skipping balanced `#{}`, so an
+    /// operand that is itself a condition needs no further quoting.
+    static func all(_ first: Self, _ rest: Self...) -> Self {
+        guard let innermost = rest.last else { return first }
+        return ([first] + rest.dropLast()).reversed().reduce(innermost) {
+            combined, condition in
+            Self(text: "#{&&:\(condition.text),\(combined.text)}")
+        }
+    }
+}
+
 /// Escapes text used as a direct tmux format comparison operand.
 func tmuxFormatComparisonOperand(_ value: String) -> String {
     var escaped = ""

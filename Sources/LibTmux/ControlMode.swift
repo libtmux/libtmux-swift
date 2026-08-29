@@ -42,7 +42,7 @@ extension Server {
                     targets: [
                         GuardedTarget(
                             target: sessionID.rawValue,
-                            condition: "#{==:#{session_id},\(sessionID.rawValue)}"
+                            condition: .equals("session_id", sessionID.rawValue)
                         )
                     ]
                 )

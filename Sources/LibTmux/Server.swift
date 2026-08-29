@@ -152,18 +152,19 @@ public struct Server: Sendable, Hashable {
         matching bounds: PaneCaptureBounds,
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
-        let boundsCondition =
-            "#{&&:#{==:#{history_size},\(bounds.historySize)},"
-            + "#{&&:#{==:#{history_bytes},\(bounds.historyBytes)},"
-            + "#{&&:#{==:#{pane_height},\(bounds.paneHeight)},"
-            + "#{==:#{cursor_y},\(bounds.cursorRow)}}}}"
+        let boundsGuard = GuardedTarget(
+            target: pane.id.rawValue,
+            condition: .all(
+                .equals("history_size", bounds.historySize),
+                .equals("history_bytes", bounds.historyBytes),
+                .equals("pane_height", bounds.paneHeight),
+                .equals("cursor_y", bounds.cursorRow)
+            )
+        )
         let request = GuardedRequest(
             command: command,
             incarnation: try expectedIncarnation([pane.incarnation]),
-            targets: [
-                GuardedValue.pane(pane).targetGuard,
-                GuardedTarget(target: pane.id.rawValue, condition: boundsCondition),
-            ].compactMap { $0 }
+            targets: [GuardedValue.pane(pane).targetGuard, boundsGuard].compactMap { $0 }
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,

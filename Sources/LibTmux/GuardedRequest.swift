@@ -59,17 +59,17 @@ enum GuardedValue: Sendable {
         case let .session(value):
             GuardedTarget(
                 target: value.id.rawValue,
-                condition: "#{==:#{session_id},\(value.id.rawValue)}"
+                condition: .equals("session_id", value.id.rawValue)
             )
         case let .window(value):
             GuardedTarget(
                 target: value.id.rawValue,
-                condition: "#{==:#{window_id},\(value.id.rawValue)}"
+                condition: .equals("window_id", value.id.rawValue)
             )
         case let .pane(value):
             GuardedTarget(
                 target: value.id.rawValue,
-                condition: "#{==:#{pane_id},\(value.id.rawValue)}"
+                condition: .equals("pane_id", value.id.rawValue)
             )
         case .client:
             // `if-shell` has a pane target but no client target. The daemon
@@ -79,7 +79,7 @@ enum GuardedValue: Sendable {
         case let .windowLink(value):
             GuardedTarget(
                 target: value.target,
-                condition: "#{==:#{window_id},\(value.windowID.rawValue)}"
+                condition: .equals("window_id", value.windowID.rawValue)
             )
         }
     }
@@ -87,7 +87,7 @@ enum GuardedValue: Sendable {
 
 struct GuardedTarget: Sendable {
     let target: String
-    let condition: String
+    let condition: FormatCondition
 }
 
 struct GuardedRequest: Sendable {
@@ -185,7 +185,7 @@ struct GuardedRequest: Sendable {
     }
 
     private static func commandGuard(
-        condition: String,
+        condition: FormatCondition,
         target: String?,
         success: TmuxCommand,
         failureMarker: String
@@ -193,24 +193,24 @@ struct GuardedRequest: Sendable {
         var arguments = ["-F"]
         if let target { arguments += ["-t", target] }
         arguments += [
-            condition,
+            condition.text,
             success.parsedString,
             markerCommand(failureMarker).parsedString,
         ]
         return TmuxCommand("if-shell", arguments)
     }
 
-    private static func incarnationCondition(_ incarnation: ServerIncarnation) -> String {
-        let processCondition =
-            "#{&&:#{==:#{pid},\(incarnation.processID)},"
-            + "#{==:#{start_time},\(incarnation.startedAt)}}"
-        guard !incarnation.socketPath.contains("\n") else {
-            return processCondition
-        }
-        return
-            "#{&&:\(processCondition),"
-            + "#{==:#{socket_path},"
-            + "\(tmuxFormatComparisonOperand(incarnation.socketPath))}}"
+    private static func incarnationCondition(
+        _ incarnation: ServerIncarnation
+    ) -> FormatCondition {
+        let identity = FormatCondition.all(
+            .equals("pid", incarnation.processID),
+            .equals("start_time", incarnation.startedAt)
+        )
+        // A newline ends the `if-shell` line this condition travels on, and
+        // `requireSingleLine` explains why no encoding carries it.
+        guard !incarnation.socketPath.contains("\n") else { return identity }
+        return .all(identity, .equals("socket_path", incarnation.socketPath))
     }
 
     private static func randomNonce() -> String {
