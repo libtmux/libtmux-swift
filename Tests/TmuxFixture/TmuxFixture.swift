@@ -82,9 +82,25 @@ public func withTmuxServer<Result>(
             // starts promptly, reads what it is given, and is on both supported
             // systems.
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+            // `default-shell` alone is still run as a *login* shell — tmux
+            // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
+            // so it reads `/etc/profile` and the runner's own profile: exactly
+            // the dotfiles the line above exists to keep out, and enough startup
+            // to delay the first prompt past the keys a case sends. Naming the
+            // command drops the login pass. `ENV` is the remaining rc hook, and
+            // `sh` on macOS is bash, whose prompt differs, so both are set in the
+            // server environment rather than as assignments in front of the
+            // command — a prefixed assignment would become the window's name.
+            TmuxCommand("set-environment", ["-g", "ENV", ""]),
+            TmuxCommand("set-environment", ["-g", "PS1", "\(shellPrompt) "]),
+            // `exec` so the pane holds one process: without it tmux keeps the
+            // `-c` wrapper alive, and a case that `exec`s its own command still
+            // reports the wrapper as the pane's command.
+            TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
             TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
             try reaperCommand(root: root),
         ])
+        try await waitForShellPrompt(on: server)
         do {
             let result = try await body(server)
             _ = try await server.run(TmuxCommand("kill-server"))
@@ -94,6 +110,39 @@ public func withTmuxServer<Result>(
             throw error
         }
     }
+}
+
+/// What the fixture's pinned shell prints when it is ready for a command.
+///
+/// A captured row keeps no trailing space, so this is the whole row.
+public let shellPrompt = "$"
+
+/// Waits until a pane's shell has drawn its first prompt.
+///
+/// Keys sent before that are echoed with no prompt in front of them, which
+/// leaves the prompt to land on the row the command's own output wants. A case
+/// looking for a row equal to what it printed is then waiting for something
+/// that cannot arrive, and reports it as a timeout naming nothing. One capture
+/// settles it for every case that follows.
+///
+/// This reads the pane directly rather than through the wait machinery: a
+/// fixture that bootstrapped itself with the code under test would make every
+/// unrelated case depend on it.
+public func waitForShellPrompt(
+    on server: Server,
+    within timeout: Duration = .seconds(20)
+) async throws {
+    guard let pane = try await server.panes().first else {
+        throw TmuxFixtureError.shellNeverPrompted
+    }
+    let ready = try await waitUntil(within: timeout) {
+        try await server.capture(pane).contains(shellPrompt)
+    }
+    guard ready else { throw TmuxFixtureError.shellNeverPrompted }
+}
+
+enum TmuxFixtureError: Error {
+    case shellNeverPrompted
 }
 
 /// The directory a socket *name* resolves inside, when the run provides one.
@@ -180,9 +229,25 @@ public func withNamedTmuxServer<Result>(
         )
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+            // `default-shell` alone is still run as a *login* shell — tmux
+            // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
+            // so it reads `/etc/profile` and the runner's own profile: exactly
+            // the dotfiles the line above exists to keep out, and enough startup
+            // to delay the first prompt past the keys a case sends. Naming the
+            // command drops the login pass. `ENV` is the remaining rc hook, and
+            // `sh` on macOS is bash, whose prompt differs, so both are set in the
+            // server environment rather than as assignments in front of the
+            // command — a prefixed assignment would become the window's name.
+            TmuxCommand("set-environment", ["-g", "ENV", ""]),
+            TmuxCommand("set-environment", ["-g", "PS1", "\(shellPrompt) "]),
+            // `exec` so the pane holds one process: without it tmux keeps the
+            // `-c` wrapper alive, and a case that `exec`s its own command still
+            // reports the wrapper as the pane's command.
+            TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
             TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
             try reaperCommand(root: socket),
         ])
+        try await waitForShellPrompt(on: server)
         do {
             let result = try await body(server)
             _ = try await server.run(TmuxCommand("kill-server"))

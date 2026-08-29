@@ -129,10 +129,10 @@ struct FormatTests {
             let link = try #require(
                 try await server.windowLinks().first { $0.windowID == pane.windowID }
             )
-            // Nothing started this pane by name, so tmux has an answer and it
-            // is the empty string. That is a value, not an absence.
+            // No search has run in this pane, so tmux has an answer and it is
+            // the empty string. That is a value, not an absence.
             #expect(
-                try await server.format("#{pane_start_command}", for: pane, through: link) == ""
+                try await server.format("#{pane_search_string}", for: pane, through: link) == ""
             )
         }
     }
