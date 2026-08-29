@@ -103,10 +103,41 @@ extension Server {
                     return ForwardCaptureResult(
                         cursor: reset.cursor,
                         linesMissed: reset.linesMissed,
-                        restarted: reset.restarted,
+                        reanchored: reset.restarted,
                         droppedLines: reset.droppedLines,
                         hasMore: false,
                         alternateScreen: state.alternateScreen
+                    )
+                }
+                // Nothing is appended to history while a full-screen program
+                // owns the pane, so there is no forward progress to make and
+                // none is lost by not looking. Holding the cursor is what lets
+                // the scan after the program exits carry on from the same row.
+                if state.alternateScreen {
+                    return ForwardCaptureResult(
+                        cursor: previousCursor,
+                        linesMissed: false,
+                        reanchored: false,
+                        droppedLines: 0,
+                        hasMore: false,
+                        alternateScreen: true
+                    )
+                }
+                // A cursor taken while that program held the pane addresses its
+                // grid rather than this one, so re-anchor instead of realigning.
+                if previousCursor.alternateScreen {
+                    let reset = try await markIncremental(
+                        pane,
+                        state: state,
+                        perStreamOutputLimit: perStreamOutputLimit
+                    )
+                    return ForwardCaptureResult(
+                        cursor: reset.cursor,
+                        linesMissed: false,
+                        reanchored: true,
+                        droppedLines: reset.droppedLines,
+                        hasMore: false,
+                        alternateScreen: false
                     )
                 }
                 guard
@@ -126,7 +157,7 @@ extension Server {
                     return ForwardCaptureResult(
                         cursor: reset.cursor,
                         linesMissed: true,
-                        restarted: false,
+                        reanchored: false,
                         droppedLines: 0,
                         hasMore: false,
                         alternateScreen: state.alternateScreen
@@ -173,7 +204,7 @@ extension Server {
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
                     linesMissed: false,
-                    restarted: false,
+                    reanchored: false,
                     droppedLines: 0,
                     hasMore: hasMore,
                     alternateScreen: state.alternateScreen

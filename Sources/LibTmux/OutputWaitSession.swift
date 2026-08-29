@@ -591,7 +591,7 @@ struct OutputWaitSession: Sendable {
         case .timedOut: return timedOut()
         case .pending: break
         }
-        if scan.restarted, !scan.alternateScreen {
+        if scan.reanchored, !scan.alternateScreen {
             let arrived: [String]
             do {
                 arrived = try await waitLookbackRows(using: server, in: pane).filter { !$0.isEmpty }

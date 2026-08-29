@@ -149,7 +149,10 @@ public struct IncrementalCapture: Sendable, Hashable, Codable {
 package struct ForwardCaptureResult: Sendable, Hashable {
     package let cursor: CaptureCursor
     package let linesMissed: Bool
-    package let restarted: Bool
+    /// The cursor was established with no usable predecessor — the pane was
+    /// respawned, or a full-screen program handed the grid back — so what is on
+    /// screen has not been offered to the caller yet.
+    package let reanchored: Bool
     package let droppedLines: Int
     package let hasMore: Bool
     /// The rows came from the grid a full-screen program paints, which tmux

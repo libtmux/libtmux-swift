@@ -653,6 +653,38 @@ struct WatchTests {
         }
     }
 
+    @Test("a full-screen program starting and ending inside one wait")
+    func alternateScreenTransitionsWithinOneWait() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            try await server.run("printf 'settled\\n'", in: pane)
+            try await Task.sleep(for: .milliseconds(400))
+
+            // Entering mid-wait used to end the wait with `outputContinuityLost`:
+            // the flip moved the addressing, which read as a gap in output.
+            async let entering = server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("^never-appears$")],
+                timeout: .seconds(3)
+            )
+            try await Task.sleep(for: .milliseconds(500))
+            try await server.sendKeys(
+                [#"printf '\033[?1049h'; printf 'paint\n'"#, "Enter"], to: pane)
+            #expect(try await entering.outcome == .alternateScreen)
+
+            // Leaving mid-wait resumes on the grid the cursor came from.
+            async let leaving = server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("^back-again$")],
+                timeout: .seconds(8)
+            )
+            try await Task.sleep(for: .milliseconds(500))
+            try await server.sendKeys(
+                [#"printf '\033[?1049l'; printf 'back-again\n'"#, "Enter"], to: pane)
+            #expect(try await leaving.outcome == .matched)
+        }
+    }
+
     @Test("text already on screen answers at once, or is waited past on request")
     func staleTextDoesNotMatch() async throws {
         try await withTmuxServer { server in
