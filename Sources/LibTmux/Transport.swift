@@ -91,6 +91,13 @@ struct SubprocessTransport: OutputLimitedProcessTransport {
         }
         var platformOptions = PlatformOptions()
         platformOptions.createSession = true
+        platformOptions.teardownSequence = [
+            .send(
+                signal: .kill,
+                toProcessGroup: true,
+                allowedDurationToNextStep: .zero
+            )
+        ]
 
         var resolved: [Subprocess.Environment.Key: String] = [:]
         for (key, value) in environment {
