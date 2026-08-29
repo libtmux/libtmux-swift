@@ -23,7 +23,7 @@ private struct SubmittedLine {
     var collected: [ControlReply] = []
     var completionError: TmuxError?
     var answered = false
-    let continuation: CheckedContinuation<ControlReply, any Error>
+    let continuation: CheckedContinuation<Result<ControlReply, TmuxError>, Never>
 
     mutating func consume(_ reply: ControlReply) {
         switch completion {
@@ -70,7 +70,7 @@ public actor ControlSession {
     private let write: @Sendable ([UInt8]) async throws -> Void
     private var parser = ControlProtocolParser()
     private var pending: [SubmittedLine] = []
-    private var attachWaiters: [CheckedContinuation<Void, any Error>] = []
+    private var attachWaiters: [CheckedContinuation<Result<Void, TmuxError>, Never>] = []
     private var lastWrite: Task<Void, Never>?
     private var isAttached = false
     /// Why the connection ended, once it has.
@@ -80,7 +80,7 @@ public actor ControlSession {
     /// left to answer — the reader that resumes them is gone — so it waits for a
     /// reply that cannot arrive. Remembering the reason lets a late send fail
     /// with it instead.
-    private var closure: (any Error)?
+    private var closure: TmuxError?
     private nonisolated let broadcast: NotificationBroadcast
 
     /// Everything the server volunteered: `%output`, `%window-add`, and the
@@ -128,7 +128,7 @@ public actor ControlSession {
     /// Concurrent sends are safe. tmux answers in the order it receives
     /// commands, so replies are matched to waiters in that order — which holds
     /// because writes are chained, not merely because they are usually fast.
-    public func send(_ command: TmuxCommand) async throws -> ControlReply {
+    public func send(_ command: TmuxCommand) async throws(TmuxError) -> ControlReply {
         try requireSingleLine(command.argumentVector)
         return try await send(
             line: command.argumentVector.map(tmuxQuoted).joined(separator: " ")
@@ -139,17 +139,17 @@ public actor ControlSession {
     ///   - line: the command line to send, already quoted.
     ///   - commands: how many commands that line carries, which is how many
     ///     blocks tmux may answer it with.
-    func send(line: String, commands: Int = 1) async throws -> ControlReply {
+    func send(line: String, commands: Int = 1) async throws(TmuxError) -> ControlReply {
         try await requireReadyForSubmission()
         return try await enqueue(line: line, completion: .counted(commands: commands))
     }
 
-    func sendFenced(line: String, marker: String) async throws -> ControlReply {
+    func sendFenced(line: String, marker: String) async throws(TmuxError) -> ControlReply {
         try await requireReadyForSubmission()
         return try await enqueue(line: line, completion: .fenced(marker: marker))
     }
 
-    private func requireReadyForSubmission() async throws {
+    private func requireReadyForSubmission() async throws(TmuxError) {
         guard closure == nil else { throw TmuxError.requestNotSubmitted }
         do {
             try await waitUntilAttached()
@@ -165,8 +165,9 @@ public actor ControlSession {
     private func enqueue(
         line: String,
         completion: SubmittedLine.Completion
-    ) async throws -> ControlReply {
-        return try await withCheckedThrowingContinuation { continuation in
+    ) async throws(TmuxError) -> ControlReply {
+        let result: Result<ControlReply, TmuxError> = await withCheckedContinuation {
+            continuation in
             // Registered before the write, because the reply can arrive while
             // the write is still suspended and a reply with nobody waiting is
             // discarded.
@@ -191,21 +192,23 @@ public actor ControlSession {
                 }
             }
         }
+        return try result.get()
     }
 
     /// tmux answers the attach itself with a block, before any command is sent.
     /// Sending before it arrives would hand a command that block instead of its
     /// own reply, shifting every later answer by one.
-    private func waitUntilAttached() async throws {
+    private func waitUntilAttached() async throws(TmuxError) {
         guard !isAttached else { return }
-        try await withCheckedThrowingContinuation { continuation in
+        let result: Result<Void, TmuxError> = await withCheckedContinuation { continuation in
             attachWaiters.append(continuation)
         }
+        return try result.get()
     }
 
-    private func failOldestWaiter(_ error: any Error) {
+    private func failOldestWaiter(_ error: TmuxError) {
         guard !pending.isEmpty else { return }
-        pending.removeFirst().continuation.resume(throwing: error)
+        pending.removeFirst().continuation.resume(returning: .failure(error))
     }
 
     /// Consumes one line of the server's output.
@@ -222,7 +225,7 @@ public actor ControlSession {
                 isAttached = true
                 let waiters = attachWaiters
                 attachWaiters = []
-                for waiter in waiters { waiter.resume() }
+                for waiter in waiters { waiter.resume(returning: .success(())) }
                 return
             }
             guard !pending.isEmpty else { return }
@@ -230,9 +233,9 @@ public actor ControlSession {
             guard pending[0].answered else { return }
             let answered = pending.removeFirst()
             if let error = answered.completionError {
-                answered.continuation.resume(throwing: error)
+                answered.continuation.resume(returning: .failure(error))
             } else {
-                answered.continuation.resume(returning: answered.reply)
+                answered.continuation.resume(returning: .success(answered.reply))
             }
         case let .notification(notification):
             broadcast.yield(notification)
@@ -254,19 +257,19 @@ public actor ControlSession {
     /// ending: tmux said `%exit`, its output stream ran out, or the scope
     /// that owned it returned. A caller told its command was cancelled would
     /// reasonably retry; one told the connection closed knows to reopen it.
-    func finish(throwing error: (any Error)? = nil) {
+    func finish(throwing error: TmuxError? = nil) {
         guard closure == nil else { return }
         let reason = error ?? TmuxError.connectionClosed
         closure = reason
         let waiters = pending
         pending = []
         for waiter in waiters {
-            waiter.continuation.resume(throwing: reason)
+            waiter.continuation.resume(returning: .failure(reason))
         }
         let attaching = attachWaiters
         attachWaiters = []
         for waiter in attaching {
-            waiter.resume(throwing: reason)
+            waiter.resume(returning: .failure(reason))
         }
         broadcast.finish()
     }
@@ -276,35 +279,37 @@ extension Server {
     func connected<Result: Sendable>(
         attachingTo sessionID: SessionID,
         expecting incarnation: ServerIncarnation,
-        _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result
-    ) async throws -> Result {
+        _ body: @escaping @Sendable (Server, ControlSession) async throws(TmuxError) -> Result
+    ) async throws(TmuxError) -> Result {
         let expected = try expectedIncarnation([incarnation])
         guard try await self.incarnation() == expected else {
             throw TmuxError.serverRestarted
         }
-        do {
-            return try await connected(attachingTo: sessionID.rawValue) { server, control in
-                let request = GuardedRequest(
-                    command: TmuxCommand(
-                        "display-message",
-                        ["-p", "-t", sessionID.rawValue, "#{session_id}"]
-                    ),
-                    incarnation: expected,
-                    targets: [
-                        GuardedTarget(
-                            target: sessionID.rawValue,
-                            condition: "#{==:#{session_id},\(sessionID.rawValue)}"
-                        )
-                    ]
-                )
-                _ = try request.validate(await control.reply(to: request))
-                return try await body(server, control)
+        return try await withTmuxErrorMapping {
+            do {
+                return try await connected(attachingTo: sessionID.rawValue) { server, control in
+                    let request = GuardedRequest(
+                        command: TmuxCommand(
+                            "display-message",
+                            ["-p", "-t", sessionID.rawValue, "#{session_id}"]
+                        ),
+                        incarnation: expected,
+                        targets: [
+                            GuardedTarget(
+                                target: sessionID.rawValue,
+                                condition: "#{==:#{session_id},\(sessionID.rawValue)}"
+                            )
+                        ]
+                    )
+                    _ = try request.validate(await control.reply(to: request))
+                    return try await body(server, control)
+                }
+            } catch TmuxError.connectionClosed {
+                guard try await self.incarnation() == expected else {
+                    throw TmuxError.serverRestarted
+                }
+                throw TmuxError.connectionClosed
             }
-        } catch TmuxError.connectionClosed {
-            guard try await self.incarnation() == expected else {
-                throw TmuxError.serverRestarted
-            }
-            throw TmuxError.connectionClosed
         }
     }
 
@@ -557,15 +562,8 @@ extension ControlSession {
             .map { $0.map(tmuxQuoted).joined(separator: " ") }
             .joined(separator: " \(TmuxCommandList.separator) ")
 
-        let reply: ControlReply
-        do {
-            // How many commands went out is how many blocks may come back.
-            reply = try await send(line: line, commands: commands.count)
-        } catch let error as TmuxError {
-            throw error
-        } catch {
-            throw TmuxError.invocationFailed(reason: String(describing: error))
-        }
+        // How many commands went out is how many blocks may come back.
+        let reply = try await send(line: line, commands: commands.count)
 
         // A process ends its output with a newline; the connection reports
         // lines. Restore it, so both spellings decode to the same rows.
@@ -582,17 +580,10 @@ extension ControlSession {
 
     func reply(to request: GuardedRequest) async throws(TmuxError) -> TmuxReply {
         try requireSingleLine([request.controlLine])
-        let reply: ControlReply
-        do {
-            reply = try await sendFenced(
-                line: request.controlLine,
-                marker: request.fenceMarker
-            )
-        } catch let error as TmuxError {
-            throw error
-        } catch {
-            throw TmuxError.invocationFailed(reason: String(describing: error))
-        }
+        let reply = try await sendFenced(
+            line: request.controlLine,
+            marker: request.fenceMarker
+        )
 
         let bytes =
             reply.lines.isEmpty

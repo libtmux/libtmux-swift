@@ -150,3 +150,26 @@ private func exitCode(of status: TerminationStatus) -> Int32 {
     case let .signaled(signal): -Int32(signal)
     }
 }
+
+func normalizedTmuxError(_ error: any Error) -> TmuxError {
+    if let error = error as? TmuxError { return error }
+    if let error = error as? SubprocessError,
+        error.code == .spawnFailed
+            || error.code == .executableNotFound
+            || error.code == .failedToChangeWorkingDirectory
+    {
+        return .processLaunchFailed(reason: String(describing: error))
+    }
+    if error is CancellationError || Task.isCancelled { return .cancelled }
+    return .invocationFailed(reason: String(describing: error))
+}
+
+func withTmuxErrorMapping<Result>(
+    _ operation: () async throws -> Result
+) async throws(TmuxError) -> Result {
+    do {
+        return try await operation()
+    } catch {
+        throw normalizedTmuxError(error)
+    }
+}

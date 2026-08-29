@@ -97,7 +97,7 @@ extension Server {
         requiringFreshOutput requireFresh: Bool = false,
         timeout: Duration = .seconds(30),
         tailLimit: Int = 20
-    ) async throws -> OutputWait {
+    ) async throws(TmuxError) -> OutputWait {
         let matchers = try patterns.map(RegularExpression.init(pattern:))
         let stoppers = try stops.map(RegularExpression.init(pattern:))
         let started = ContinuousClock.now
@@ -197,7 +197,7 @@ extension Server {
                     remaining: remaining,
                     answer: answer
                 )
-            } catch let error as TmuxError {
+            } catch let error {
                 guard ContinuousClock.now < deadline else { throw error }
                 guard let current = try await waitAttachment(for: pane) else {
                     return OutputWait(
@@ -247,99 +247,105 @@ extension Server {
         tailLimit: Int,
         remaining: Duration,
         answer: @escaping @Sendable ([String], [String]) -> OutputWait?
-    ) async throws -> OutputWaitCycle {
+    ) async throws(TmuxError) -> OutputWaitCycle {
         let owner = self
         return try await connected(
             attachingTo: attachment.sessionID,
             expecting: pane.incarnation
-        ) {
-            server, control in
+        ) { (server: Server, control: ControlSession) async throws(TmuxError) -> OutputWaitCycle in
             let doorbell = WaitDoorbell(primed: true)
             let notifications = control.notifications
-            return try await withThrowingTaskGroup(of: Void.self) { group in
-                defer { group.cancelAll() }
-                group.addTask {
-                    await Self.pumpWaitNotifications(
-                        notifications,
-                        for: pane.id,
-                        into: doorbell
-                    )
-                }
-                group.addTask {
-                    try? await Task.sleep(for: remaining)
-                    guard !Task.isCancelled else { return }
-                    await doorbell.ring(.timedOut)
-                }
-                group.addTask {
-                    while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(1))
+            return try await withTmuxErrorMapping {
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    defer { group.cancelAll() }
+                    group.addTask {
+                        await Self.pumpWaitNotifications(
+                            notifications,
+                            for: pane.id,
+                            into: doorbell
+                        )
+                    }
+                    group.addTask {
+                        try? await Task.sleep(for: remaining)
                         guard !Task.isCancelled else { return }
-                        do {
-                            guard let current = try await server.waitAttachment(for: pane) else {
-                                await doorbell.ring(.paneClosed)
+                        await doorbell.ring(.timedOut)
+                    }
+                    group.addTask {
+                        while !Task.isCancelled {
+                            try? await Task.sleep(for: .seconds(1))
+                            guard !Task.isCancelled else { return }
+                            do {
+                                guard let current = try await server.waitAttachment(for: pane)
+                                else {
+                                    await doorbell.ring(.paneClosed)
+                                    return
+                                }
+                                if current != attachment {
+                                    await doorbell.ring(.reattach)
+                                    return
+                                }
+                            } catch {
+                                await doorbell.ring(.failed(normalizedTmuxError(error)))
                                 return
                             }
-                            if current != attachment {
-                                await doorbell.ring(.reattach)
-                                return
-                            }
-                        } catch let error as TmuxError {
-                            await doorbell.ring(.failed(error))
-                            return
                         }
                     }
-                }
 
-                var cursor = cursor
-                var newest = newest
-                var sawNewOutput = sawNewOutput
-                while true {
-                    let wake = await doorbell.wait()
-                    if wake == .output { try await Task.sleep(for: .milliseconds(25)) }
+                    var cursor = cursor
+                    var newest = newest
+                    var sawNewOutput = sawNewOutput
+                    while true {
+                        let wake = await doorbell.wait()
+                        if wake == .output { try await Task.sleep(for: .milliseconds(25)) }
 
-                    if wake == .output || wake == .inspect || wake == .reattach {
-                        do {
-                            let delta = try await server.capture(pane, since: cursor, limit: .max)
-                            cursor = delta.cursor
-                            let arrived = try await server.outputRows(after: delta, in: pane)
-                            sawNewOutput = sawNewOutput || !arrived.isEmpty
-                            newest = Array((newest + arrived).suffix(tailLimit))
-                            if let output = answer(arrived, newest) {
-                                group.cancelAll()
-                                return .answered(output)
+                        if wake == .output || wake == .inspect || wake == .reattach {
+                            do {
+                                let delta = try await server.capture(
+                                    pane,
+                                    since: cursor,
+                                    limit: .max
+                                )
+                                cursor = delta.cursor
+                                let arrived = try await server.outputRows(after: delta, in: pane)
+                                sawNewOutput = sawNewOutput || !arrived.isEmpty
+                                newest = Array((newest + arrived).suffix(tailLimit))
+                                if let output = answer(arrived, newest) {
+                                    group.cancelAll()
+                                    return .answered(output)
+                                }
+                            } catch let error {
+                                guard try await owner.waitAttachment(for: pane) != nil else {
+                                    return .finished(.paneClosed, newest, sawNewOutput)
+                                }
+                                throw error
                             }
-                        } catch let error as TmuxError {
+                        }
+
+                        switch wake {
+                        case .output: continue
+                        case .inspect:
+                            guard let current = try await owner.waitAttachment(for: pane) else {
+                                return .finished(.paneClosed, newest, sawNewOutput)
+                            }
+                            guard current == attachment else {
+                                return .reattach(cursor, newest, sawNewOutput)
+                            }
+                        case .reattach, .connectionClosed:
                             guard try await owner.waitAttachment(for: pane) != nil else {
                                 return .finished(.paneClosed, newest, sawNewOutput)
                             }
-                            throw error
-                        }
-                    }
-
-                    switch wake {
-                    case .output: continue
-                    case .inspect:
-                        guard let current = try await owner.waitAttachment(for: pane) else {
-                            return .finished(.paneClosed, newest, sawNewOutput)
-                        }
-                        guard current == attachment else {
                             return .reattach(cursor, newest, sawNewOutput)
-                        }
-                    case .reattach, .connectionClosed:
-                        guard try await owner.waitAttachment(for: pane) != nil else {
+                        case .paneClosed:
                             return .finished(.paneClosed, newest, sawNewOutput)
+                        case .timedOut:
+                            let closed = try await owner.waitAttachment(for: pane) == nil
+                            return .finished(
+                                closed ? .paneClosed : .timedOut,
+                                newest,
+                                sawNewOutput
+                            )
+                        case let .failed(error): throw error
                         }
-                        return .reattach(cursor, newest, sawNewOutput)
-                    case .paneClosed:
-                        return .finished(.paneClosed, newest, sawNewOutput)
-                    case .timedOut:
-                        let closed = try await owner.waitAttachment(for: pane) == nil
-                        return .finished(
-                            closed ? .paneClosed : .timedOut,
-                            newest,
-                            sawNewOutput
-                        )
-                    case let .failed(error): throw error
                     }
                 }
             }
@@ -401,12 +407,8 @@ extension Server {
                 }
             }
             await doorbell.ring(.connectionClosed)
-        } catch let error as TmuxError {
-            await doorbell.ring(.failed(error))
         } catch {
-            await doorbell.ring(
-                .failed(.invocationFailed(reason: String(describing: error)))
-            )
+            await doorbell.ring(.failed(normalizedTmuxError(error)))
         }
     }
 
@@ -481,7 +483,7 @@ actor WaitDoorbell {
 struct RegularExpression: Sendable {
     private let expression: NSRegularExpression
 
-    init(pattern: String) throws {
+    init(pattern: String) throws(TmuxError) {
         do {
             expression = try NSRegularExpression(pattern: pattern)
         } catch {

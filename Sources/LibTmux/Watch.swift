@@ -134,7 +134,7 @@ public typealias SubscriptionChangeStream = AsyncCompactMapSequence<
 
 extension ControlSession {
     /// Registers a format subscription on this connection.
-    public func watch(_ subscription: FormatSubscription) async throws {
+    public func watch(_ subscription: FormatSubscription) async throws(TmuxError) {
         let reply = try await send(
             TmuxCommand("refresh-client", ["-B", subscription.argument])
         )
@@ -147,7 +147,7 @@ extension ControlSession {
     ///
     /// tmux reads a `-B` argument with no scope and no format as a removal, so
     /// this is the same command with the rest left off.
-    public func stopWatching(_ name: String) async throws {
+    public func stopWatching(_ name: String) async throws(TmuxError) {
         _ = try await send(TmuxCommand("refresh-client", ["-B", name]))
     }
 
