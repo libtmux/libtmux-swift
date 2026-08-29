@@ -74,7 +74,7 @@ extension TmuxTools {
                         // than a change — it is only reported when nothing was
                         // asked for.
                         var isFirst = true
-                        for await change in changes {
+                        for try await change in changes {
                             guard change.sessionID == link.sessionID,
                                 change.windowID == link.windowID,
                                 change.windowIndex == link.index,

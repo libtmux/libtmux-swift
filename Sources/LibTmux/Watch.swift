@@ -127,6 +127,11 @@ public struct SubscriptionChange: Sendable, Hashable, Codable {
     }
 }
 
+/// A lazy view of subscription changes from one bounded notification observer.
+public typealias SubscriptionChangeStream = AsyncCompactMapSequence<
+    ControlNotificationStream, SubscriptionChange
+>
+
 extension ControlSession {
     /// Registers a format subscription on this connection.
     public func watch(_ subscription: FormatSubscription) async throws {
@@ -151,20 +156,11 @@ extension ControlSession {
     ///
     /// An observer of its own, like ``notifications``, so watching does not
     /// take notifications away from anything else reading the connection.
-    public nonisolated func changes(named name: String? = nil) -> AsyncStream<
-        SubscriptionChange
-    > {
-        let notifications = self.notifications
-        return AsyncStream(bufferingPolicy: .unbounded) { continuation in
-            let pump = Task {
-                for await notification in notifications {
-                    guard let change = SubscriptionChange(notification) else { continue }
-                    guard name == nil || change.name == name else { continue }
-                    continuation.yield(change)
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in pump.cancel() }
+    public nonisolated func changes(named name: String? = nil) -> SubscriptionChangeStream {
+        notifications.compactMap { notification in
+            guard let change = SubscriptionChange(notification) else { return nil }
+            guard name == nil || change.name == name else { return nil }
+            return change
         }
     }
 }

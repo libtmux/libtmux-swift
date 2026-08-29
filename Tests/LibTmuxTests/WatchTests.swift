@@ -49,6 +49,23 @@ struct WatchTests {
         }
     }
 
+    @Test("a notification failure wakes an output wait")
+    func notificationFailureWakesWait() async {
+        let failure = TmuxError.notificationBufferOverflow(limit: 1)
+        let notifications = ControlNotificationStream { continuation in
+            continuation.yield(
+                ControlNotification(name: "output", arguments: "%0 ready")
+            )
+            continuation.finish(throwing: failure)
+        }
+        let doorbell = WaitDoorbell()
+
+        await Server.pumpWaitNotifications(notifications, for: "%0", into: doorbell)
+
+        #expect(await doorbell.wait() == .output)
+        #expect(await doorbell.wait() == .failed(failure))
+    }
+
     @Test("a wait ends on the line the command prints")
     func waitEndsOnAPrintedLine() async throws {
         try await withTmuxServer { server in
@@ -300,7 +317,7 @@ struct WatchTests {
                 let changes = control.changes(named: "cmd")
                 try await server.run("sleep 3", in: pane)
                 var seen: [String] = []
-                for await change in changes {
+                for try await change in changes {
                     seen.append(change.value)
                     if seen.contains("sleep") { break }
                 }

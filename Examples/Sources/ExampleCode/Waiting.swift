@@ -16,7 +16,7 @@ public func watchingAFormat(_ server: Server, pane: Pane) async throws -> String
                 format: "#{pane_current_command}"
             )
         )
-        for await change in control.changes(named: "cmd") {
+        for try await change in control.changes(named: "cmd") {
             return change.value
         }
         return nil

@@ -298,7 +298,7 @@ without being asked:
 
 ```swift
 let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-    for await notification in events.notifications
+    for try await notification in events.notifications
     where notification.name == "output" {
         return notification.arguments
     }
@@ -335,7 +335,7 @@ try await server.connected(attachingTo: "work") { server, control in
             format: "#{pane_current_command}"
         )
     )
-    for await change in control.changes(named: "cmd") {
+    for try await change in control.changes(named: "cmd") {
         return change.value
     }
     return nil

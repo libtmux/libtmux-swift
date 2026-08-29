@@ -255,19 +255,15 @@ extension Server {
         ) {
             server, control in
             let doorbell = WaitDoorbell(primed: true)
+            let notifications = control.notifications
             return try await withThrowingTaskGroup(of: Void.self) { group in
                 defer { group.cancelAll() }
                 group.addTask {
-                    for await notification in control.notifications {
-                        if notification.name == "output",
-                            notification.arguments.hasPrefix("\(pane.id.rawValue) ")
-                        {
-                            await doorbell.ring(.output)
-                        } else if Self.topologyNotifications.contains(notification.name) {
-                            await doorbell.ring(.inspect)
-                        }
-                    }
-                    await doorbell.ring(.connectionClosed)
+                    await Self.pumpWaitNotifications(
+                        notifications,
+                        for: pane.id,
+                        into: doorbell
+                    )
                 }
                 group.addTask {
                     try? await Task.sleep(for: remaining)
@@ -389,6 +385,31 @@ extension Server {
         "unlinked-window-close", "window-add", "window-close", "window-pane-changed",
     ]
 
+    static func pumpWaitNotifications(
+        _ notifications: ControlNotificationStream,
+        for paneID: PaneID,
+        into doorbell: WaitDoorbell
+    ) async {
+        do {
+            for try await notification in notifications {
+                if notification.name == "output",
+                    notification.arguments.hasPrefix("\(paneID.rawValue) ")
+                {
+                    await doorbell.ring(.output)
+                } else if topologyNotifications.contains(notification.name) {
+                    await doorbell.ring(.inspect)
+                }
+            }
+            await doorbell.ring(.connectionClosed)
+        } catch let error as TmuxError {
+            await doorbell.ring(.failed(error))
+        } catch {
+            await doorbell.ring(
+                .failed(.invocationFailed(reason: String(describing: error)))
+            )
+        }
+    }
+
     /// How far above the visible region a wait reads.
     ///
     /// A pane producing output quickly scrolls it past the visible rows between
@@ -417,7 +438,7 @@ private enum OutputWaitCycle: Sendable {
     case finished(OutputWait.Outcome, [String], Bool)
 }
 
-private enum WaitWake: Sendable, Hashable {
+enum WaitWake: Sendable, Hashable {
     case output
     case inspect
     case reattach
@@ -428,7 +449,7 @@ private enum WaitWake: Sendable, Hashable {
 }
 
 /// Coalesces bursts without discarding terminal or topology events behind them.
-private actor WaitDoorbell {
+actor WaitDoorbell {
     private var pending: [WaitWake]
     private var waiter: CheckedContinuation<WaitWake, Never>?
 

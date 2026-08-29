@@ -71,7 +71,7 @@ struct ControlModeTests {
                 _ = try await control.send(
                     TmuxCommand("new-window", ["-d", "-t", "bootstrap"])
                 )
-                return await [first, second]
+                return try await [first, second]
             }
             // Iterating one AsyncStream twice hands each iterator a share of
             // the elements, so the notification only one of them needed can
@@ -81,9 +81,9 @@ struct ControlModeTests {
     }
 
     private static func namesUntilWindow(
-        _ notifications: AsyncStream<ControlNotification>
-    ) async -> Bool {
-        for await notification in notifications
+        _ notifications: ControlNotificationStream
+    ) async throws -> Bool {
+        for try await notification in notifications
         where notification.name.hasPrefix("window") {
             return true
         }
@@ -105,7 +105,7 @@ struct ControlModeTests {
                         ["-t", "bootstrap", "echo \(marker)", "Enter"]
                     )
                 )
-                for await notification in control.notifications
+                for try await notification in control.notifications
                 where notification.name == "output" {
                     if notification.arguments.contains(marker) { return true }
                 }
@@ -124,7 +124,7 @@ struct ControlModeTests {
                     TmuxCommand("new-window", ["-d", "-t", "bootstrap"])
                 )
                 var seen: [String] = []
-                for await notification in control.notifications {
+                for try await notification in control.notifications {
                     seen.append(notification.name)
                     if seen.contains(where: { $0.hasPrefix("window") }) { break }
                 }

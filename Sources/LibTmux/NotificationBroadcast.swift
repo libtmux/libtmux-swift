@@ -1,5 +1,8 @@
 import Foundation
 
+/// One observer's control notifications with finite pending storage.
+public typealias ControlNotificationStream = AsyncThrowingStream<ControlNotification, any Error>
+
 /// Hands every observer its own copy of a connection's notifications.
 ///
 /// `AsyncStream` has one logical consumer: two iterators over the same stream
@@ -7,8 +10,10 @@ import Foundation
 /// watcher on one connection are exactly that shape, and the division is
 /// silent — each simply misses roughly half of what it asked for.
 final class NotificationBroadcast: Sendable {
+    static let defaultLimit = 256
+
     private struct State {
-        var observers: [Int: AsyncStream<ControlNotification>.Continuation] = [:]
+        var observers: [Int: ControlNotificationStream.Continuation] = [:]
         var nextObserver = 0
         /// Replayed to the first observer, then discarded. Sending a command
         /// and *then* watching for what it caused is the ordinary way to write
@@ -17,29 +22,45 @@ final class NotificationBroadcast: Sendable {
         /// observer exists, because from then on there is nothing to catch up
         /// on.
         var backlog: [ControlNotification]? = []
+        var backlogOverflowed = false
         var isFinished = false
     }
 
+    private let limit: Int
     private let lock = NSLock()
     private nonisolated(unsafe) var state = State()
 
+    init(limit: Int = defaultLimit) {
+        precondition(limit > 0)
+        self.limit = limit
+    }
+
     /// A stream carrying every notification from here on, preceded by the
     /// backlog if this is the first observer.
-    func subscribe() -> AsyncStream<ControlNotification> {
-        AsyncStream(bufferingPolicy: .unbounded) { continuation in
+    func subscribe() -> ControlNotificationStream {
+        AsyncThrowingStream(bufferingPolicy: .bufferingOldest(limit)) { continuation in
+            var overflowed = false
             let registration: Int? = withLock {
                 if let backlog = state.backlog {
                     for notification in backlog { continuation.yield(notification) }
+                    overflowed = state.backlogOverflowed
                     state.backlog = nil
+                    state.backlogOverflowed = false
                 }
-                guard !state.isFinished else { return nil }
+                guard !overflowed, !state.isFinished else { return nil }
                 let observer = state.nextObserver
                 state.nextObserver += 1
                 state.observers[observer] = continuation
                 return observer
             }
             guard let registration else {
-                continuation.finish()
+                if overflowed {
+                    continuation.finish(
+                        throwing: TmuxError.notificationBufferOverflow(limit: limit)
+                    )
+                } else {
+                    continuation.finish()
+                }
                 return
             }
             continuation.onTermination = { [self] _ in
@@ -49,20 +70,27 @@ final class NotificationBroadcast: Sendable {
     }
 
     func yield(_ notification: ControlNotification) {
-        // Buffering is unbounded because `%output` carries pane bytes rather
-        // than state: dropping one loses terminal output with nothing to say
-        // it went missing, and an observer watching for a particular line
-        // would wait for something silently discarded. A caller that opens a
-        // connection is expected to drain it or keep the scope short.
-        let observers = withLock { () -> [AsyncStream<ControlNotification>.Continuation] in
-            if state.backlog != nil { state.backlog?.append(notification) }
-            return Array(state.observers.values)
+        let overflowed = withLock { () -> [ControlNotificationStream.Continuation] in
+            if state.backlog != nil {
+                if state.backlog?.count ?? 0 < limit {
+                    state.backlog?.append(notification)
+                } else {
+                    state.backlogOverflowed = true
+                }
+            }
+            var dropped: [Int] = []
+            for (id, observer) in state.observers {
+                if case .dropped = observer.yield(notification) { dropped.append(id) }
+            }
+            return dropped.compactMap { state.observers.removeValue(forKey: $0) }
         }
-        for observer in observers { observer.yield(notification) }
+        for observer in overflowed {
+            observer.finish(throwing: TmuxError.notificationBufferOverflow(limit: limit))
+        }
     }
 
     func finish() {
-        let observers = withLock { () -> [AsyncStream<ControlNotification>.Continuation] in
+        let observers = withLock { () -> [ControlNotificationStream.Continuation] in
             state.isFinished = true
             let existing = Array(state.observers.values)
             state.observers = [:]

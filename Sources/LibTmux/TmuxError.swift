@@ -48,6 +48,10 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// replacement daemon having appeared.
     case connectionClosed
 
+    /// An observer did not drain control notifications before its finite
+    /// buffer filled. Earlier buffered notifications remain readable.
+    case notificationBufferOverflow(limit: Int)
+
     public enum InvalidEndpoint: Sendable, Hashable {
         case empty
         case socketPathTooLong(actualBytes: Int, maximumBytes: Int)

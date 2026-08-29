@@ -45,7 +45,7 @@ try await server.connected(attachingTo: "work") { server, control in
             format: "#{pane_current_command}"
         )
     )
-    for await change in control.changes(named: "cmd") {
+    for try await change in control.changes(named: "cmd") {
         return change.value
     }
     return nil

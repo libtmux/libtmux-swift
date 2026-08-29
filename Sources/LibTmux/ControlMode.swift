@@ -81,7 +81,7 @@ public actor ControlSession {
     /// reply that cannot arrive. Remembering the reason lets a late send fail
     /// with it instead.
     private var closure: (any Error)?
-    private nonisolated let broadcast = NotificationBroadcast()
+    private nonisolated let broadcast: NotificationBroadcast
 
     /// Everything the server volunteered: `%output`, `%window-add`, and the
     /// rest.
@@ -97,7 +97,9 @@ public actor ControlSession {
     /// observers of one event are both taken before the command that causes it.
     /// An `async let` is late enough to miss it: its initializer is evaluated
     /// in the child task, not where it is written.
-    public nonisolated var notifications: AsyncStream<ControlNotification> {
+    /// A slow observer fails with ``TmuxError/notificationBufferOverflow(limit:)``
+    /// rather than retaining connection output without bound.
+    public nonisolated var notifications: ControlNotificationStream {
         broadcast.subscribe()
     }
 
@@ -105,10 +107,15 @@ public actor ControlSession {
         self.write = { bytes in
             _ = try await writer.write(bytes)
         }
+        self.broadcast = NotificationBroadcast()
     }
 
-    init(write: @escaping @Sendable ([UInt8]) async throws -> Void) {
+    init(
+        write: @escaping @Sendable ([UInt8]) async throws -> Void,
+        notificationLimit: Int = NotificationBroadcast.defaultLimit
+    ) {
         self.write = write
+        self.broadcast = NotificationBroadcast(limit: notificationLimit)
     }
 
     /// Sends a command and waits for the block tmux brackets its reply with.

@@ -4,7 +4,7 @@ import LibTmux
 
 public func beingToldRatherThanAsking(_ server: Server) async throws -> String? {
     let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-        for await notification in events.notifications
+        for try await notification in events.notifications
         where notification.name == "output" {
             return notification.arguments
         }
