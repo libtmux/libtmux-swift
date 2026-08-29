@@ -150,7 +150,10 @@ extension TmuxToolsTests {
                 let outcome = try await tools.call(
                     ToolCall(
                         name: "search_panes",
-                        arguments: .object(["pattern": .string("needle-in-a-pane")])
+                        arguments: .object([
+                            "pattern": .string("NEEDLE-IN-A-PANE"),
+                            "case_insensitive": .bool(true),
+                        ])
                     )
                 )
                 found = try outcome.decode(SearchResult.self)
@@ -158,6 +161,20 @@ extension TmuxToolsTests {
                 try await Task.sleep(for: .milliseconds(100))
             }
             #expect(found?.matches.first?.pane == pane.id.rawValue)
+        }
+    }
+
+    @Test("search refuses patterns outside the bounded dialect")
+    func searchRefusesUnsupportedPatterns() async throws {
+        let server = try Server(socketPath: "/tmp/libtmux-swift-test/search-pattern")
+
+        await #expect(throws: ToolError.self) {
+            try await TmuxTools(server: server).call(
+                ToolCall(
+                    name: "search_panes",
+                    arguments: .object(["pattern": .string("(?=unbounded)")])
+                )
+            )
         }
     }
 

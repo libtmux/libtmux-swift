@@ -138,7 +138,12 @@ extension TmuxTools {
         _ progress: ProgressReporter = .silent
     ) async throws -> ToolOutcome {
         let pattern = try arguments.string("pattern")
-        let expression = try MatchExpression(pattern)
+        let caseInsensitive = try arguments.bool("case_insensitive", or: false)
+        let expression = try ToolPattern.compile(
+            pattern,
+            argument: "pattern",
+            caseInsensitive: caseInsensitive
+        )
         let history = try arguments.bool("history", or: false)
         let lineLimit = try arguments.integer(
             "max_lines_per_pane",
@@ -181,7 +186,10 @@ extension TmuxTools {
                 afterDropping: capture.droppedLines
             )
             if bounded.droppedLines > 0 { truncated = true }
-            for (offset, line) in bounded.lines.enumerated() where expression.matches(line) {
+            for (offset, line) in bounded.lines.enumerated() {
+                guard try ToolPattern.matches(expression, in: line, argument: "pattern") else {
+                    continue
+                }
                 guard matches.count < limit else {
                     truncated = true
                     break paneLoop
@@ -340,28 +348,6 @@ private func validateFilter<Root: Filterable>(
             argument,
             expected: "a filter whose operator and values match \(field)'s \(type.rawValue) type"
         )
-    }
-}
-
-/// A compiled search pattern, so an unusable one is reported when it is given
-/// rather than quietly matching nothing on every line.
-struct MatchExpression {
-    private let expression: NSRegularExpression
-
-    init(_ pattern: String) throws {
-        do {
-            expression = try NSRegularExpression(pattern: pattern)
-        } catch {
-            throw ToolError.wrongArgumentType(
-                "pattern",
-                expected: "a usable regular expression"
-            )
-        }
-    }
-
-    func matches(_ line: String) -> Bool {
-        expression.firstMatch(in: line, range: NSRange(line.startIndex..., in: line))
-            != nil
     }
 }
 

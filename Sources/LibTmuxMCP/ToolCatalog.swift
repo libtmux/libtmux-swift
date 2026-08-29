@@ -68,6 +68,8 @@ public struct ToolArgument: Sendable, Hashable {
     /// Inclusive numeric bounds, enforced by the reader and published in the schema.
     public let minimum: Double?
     public let maximum: Double?
+    /// The most entries accepted in an array argument.
+    public let maximumItems: Int?
 
     public init(
         name: String,
@@ -77,7 +79,8 @@ public struct ToolArgument: Sendable, Hashable {
         allowed: [String] = [],
         defaultValue: JSONValue? = nil,
         minimum: Double? = nil,
-        maximum: Double? = nil
+        maximum: Double? = nil,
+        maximumItems: Int? = nil
     ) {
         self.name = name
         self.summary = summary
@@ -87,6 +90,7 @@ public struct ToolArgument: Sendable, Hashable {
         self.defaultValue = defaultValue
         self.minimum = minimum
         self.maximum = maximum
+        self.maximumItems = maximumItems
     }
 
     var schema: JSONValue {
@@ -119,6 +123,7 @@ public struct ToolArgument: Sendable, Hashable {
         }
         if let minimum { members["minimum"] = .number(minimum) }
         if let maximum { members["maximum"] = .number(maximum) }
+        if let maximumItems { members["maxItems"] = .number(Double(maximumItems)) }
         return .object(members)
     }
 }
@@ -288,6 +293,14 @@ struct Arguments {
         guard let value = values[name], !value.isNull else { return [] }
         guard let entries = value.arrayValue else {
             throw ToolError.wrongArgumentType(name, expected: "an array of strings")
+        }
+        if let maximum = tool.arguments.first(where: { $0.name == name })?.maximumItems,
+            entries.count > maximum
+        {
+            throw ToolError.wrongArgumentType(
+                name,
+                expected: "an array of at most \(maximum) strings"
+            )
         }
         return try entries.map { entry in
             guard let text = entry.stringValue else {

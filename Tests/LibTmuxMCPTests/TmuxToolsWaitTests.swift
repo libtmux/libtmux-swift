@@ -155,7 +155,8 @@ extension TmuxToolsTests {
                     name: "wait_for_output",
                     arguments: .object([
                         "pane": .string(wireRef(pane)),
-                        "patterns": .array([.string("already-listening")]),
+                        "patterns": .array([.string("ALREADY-LISTENING")]),
+                        "case_insensitive": .bool(true),
                         "timeout": .number(30),
                     ])
                 )
@@ -215,7 +216,8 @@ extension TmuxToolsTests {
                     arguments: .object([
                         "pane": .string(wireRef(pane)),
                         "format": .string("#{pane_current_command}"),
-                        "matching": .string("^sleep$"),
+                        "matching": .string("^SLEEP$"),
+                        "case_insensitive": .bool(true),
                         "timeout": .number(20),
                     ])
                 )

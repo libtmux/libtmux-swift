@@ -113,6 +113,28 @@ struct ToolCatalogTests {
         }
     }
 
+    @Test("pattern list limits agree between schemas and argument readers")
+    func patternListLimitsAreEnforced() throws {
+        let definition = try #require(TmuxTools.byName["wait_for_output"])
+        let schema = definition.inputSchema["properties"]?["patterns"]
+        #expect(
+            schema?["maxItems"]?.intValue == ToolPattern.maximumListCount
+        )
+        let values = Array(
+            repeating: JSONValue.string("ready"),
+            count: ToolPattern.maximumListCount + 1
+        )
+        let arguments = try Arguments(
+            ToolCall(
+                name: "wait_for_output",
+                arguments: .object(["pane": .string("pane-ref"), "patterns": .array(values)])
+            ),
+            for: definition
+        )
+
+        #expect(throws: ToolError.self) { try arguments.strings("patterns") }
+    }
+
     @Test("integer arguments reject fractions and values outside Int")
     func integerArgumentsMustFitExactly() throws {
         let definition = try #require(TmuxTools.byName["capture_pane"])

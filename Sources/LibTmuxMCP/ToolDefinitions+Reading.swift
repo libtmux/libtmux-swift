@@ -192,8 +192,14 @@ extension TmuxTools {
             arguments: [
                 ToolArgument(
                     name: "pattern",
-                    summary: "A regular expression to look for.",
+                    summary: "A regular expression in LibTmux's bounded dialect.",
                     isRequired: true
+                ),
+                ToolArgument(
+                    name: "case_insensitive",
+                    summary: "Match the pattern without case distinctions.",
+                    kind: .boolean,
+                    defaultValue: .bool(false)
                 ),
                 ToolArgument(
                     name: "filter",

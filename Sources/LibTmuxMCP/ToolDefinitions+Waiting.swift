@@ -38,16 +38,24 @@ extension TmuxTools {
                 ToolArgument(
                     name: "patterns",
                     summary:
-                        "Regular expressions, any of which ends the wait. Omit for "
+                        "Bounded regular expressions, any of which ends the wait. Omit for "
                         + "any new output at all.",
-                    kind: .stringArray
+                    kind: .stringArray,
+                    maximumItems: ToolPattern.maximumListCount
                 ),
                 ToolArgument(
                     name: "stops",
                     summary:
-                        "Regular expressions that end the wait as a failure. Put error "
+                        "Bounded regular expressions that end the wait as a failure. Put error "
                         + "markers here.",
-                    kind: .stringArray
+                    kind: .stringArray,
+                    maximumItems: ToolPattern.maximumListCount
+                ),
+                ToolArgument(
+                    name: "case_insensitive",
+                    summary: "Match every success and stop pattern without case distinctions.",
+                    kind: .boolean,
+                    defaultValue: .bool(false)
                 ),
                 ToolArgument(
                     name: "require_fresh",
@@ -109,8 +117,14 @@ extension TmuxTools {
                 ToolArgument(
                     name: "matching",
                     summary:
-                        "A regular expression the value must match to end the wait. "
+                        "A bounded regular expression the value must match to end the wait. "
                         + "Omit to return on the first change of any kind.",
+                ),
+                ToolArgument(
+                    name: "case_insensitive",
+                    summary: "Match the value without case distinctions.",
+                    kind: .boolean,
+                    defaultValue: .bool(false)
                 ),
                 ToolArgument(
                     name: "timeout",

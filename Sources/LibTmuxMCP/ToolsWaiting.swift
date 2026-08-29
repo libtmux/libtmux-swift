@@ -17,21 +17,39 @@ extension TmuxTools {
             refreshWith: "list_panes"
         )
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
-        let patterns = try arguments.optionalStrings("patterns") ?? []
-        let stops = try arguments.strings("stops")
+        let caseInsensitive = try arguments.bool("case_insensitive", or: false)
+        let patterns = try ToolPattern.compile(
+            arguments.optionalStrings("patterns") ?? [],
+            argument: "patterns",
+            caseInsensitive: caseInsensitive
+        )
+        let stops = try ToolPattern.compile(
+            arguments.strings("stops"),
+            argument: "stops",
+            caseInsensitive: caseInsensitive
+        )
         let fresh = try arguments.bool("require_fresh", or: false)
         let server = server
-        let result = try await progress.whileRunning(
-            upTo: timeout,
-            describing: "waiting on \(pane.id.rawValue)"
-        ) {
-            try await server.waitForOutput(
-                in: pane,
-                matching: patterns,
-                stoppingAt: stops,
-                requiringFreshOutput: fresh,
-                timeout: timeout
-            )
+        let result: OutputWait
+        do {
+            result = try await progress.whileRunning(
+                upTo: timeout,
+                describing: "waiting on \(pane.id.rawValue)"
+            ) {
+                try await server.waitForOutput(
+                    in: pane,
+                    matching: patterns,
+                    stoppingAt: stops,
+                    requiringFreshOutput: fresh,
+                    timeout: timeout
+                )
+            }
+        } catch let error as OutputWaitError {
+            switch error {
+            case let .tmux(error): throw error
+            case let .matching(error):
+                throw ToolPattern.matchingFailure(error, argument: "patterns or stops")
+            }
         }
         return .init(OutputWaitResult(result, pane: pane, effectiveTimeout: enforced))
     }
@@ -50,7 +68,14 @@ extension TmuxTools {
         let link = try await windowLink(
             for: pane, matching: try arguments.optionalString("window_link"))
         let format = try arguments.string("format")
-        let matching = try arguments.optionalString("matching").map(MatchExpression.init)
+        let caseInsensitive = try arguments.bool("case_insensitive", or: false)
+        let matching = try arguments.optionalString("matching").map {
+            try ToolPattern.compile(
+                $0,
+                argument: "matching",
+                caseInsensitive: caseInsensitive
+            )
+        }
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
 
         let started = ContinuousClock.now
@@ -88,7 +113,13 @@ extension TmuxTools {
                                 return (change.value, true)
                             }
                             isFirst = false
-                            if matching.matches(change.value) { return (change.value, true) }
+                            if try ToolPattern.matches(
+                                matching,
+                                in: change.value,
+                                argument: "matching"
+                            ) {
+                                return (change.value, true)
+                            }
                         }
                         return nil
                     }
