@@ -146,6 +146,24 @@ public struct Server: Sendable, Hashable {
         return try request.validate(reply)
     }
 
+    package func runTerminatingIsolated(
+        _ command: TmuxCommand,
+        expecting incarnation: ServerIncarnation,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let expected = try expectedIncarnation([incarnation])
+        let request = GuardedRequest(
+            command: command,
+            incarnation: expected,
+            targets: []
+        )
+        let reply = try await runtime.run(
+            rawArguments: request.commands.argumentVector,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        return try request.validateTerminating(reply)
+    }
+
     /// Every session on this server, in tmux's own order.
     ///
     /// Returns an empty array when the server is not running — the same answer

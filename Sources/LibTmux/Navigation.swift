@@ -235,6 +235,19 @@ extension Server {
         try await expectSuccess(TmuxCommand("kill-server"))
     }
 
+    package func killServer(
+        expecting incarnation: ServerIncarnation
+    ) async throws(TmuxError) {
+        let reply = try await runTerminatingIsolated(
+            TmuxCommand("kill-server"),
+            expecting: incarnation,
+            perStreamOutputLimit: 4_096
+        )
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
+        }
+    }
+
     /// Loads a tmux configuration file into the running server.
     public func sourceFile(_ path: String) async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("source-file", [path]))

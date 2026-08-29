@@ -94,6 +94,22 @@ struct TransportLimitTests {
             #expect(!option.isSuccess)
         }
     }
+
+    @Test("a stale server termination cannot kill a replacement daemon")
+    func staleTerminationCannotKillReplacement() async throws {
+        try await withTmuxServer { server in
+            let stale = try #require(try await server.incarnation())
+            _ = try await server.run(TmuxCommand("kill-server"))
+            _ = try await server.run(
+                TmuxCommand("new-session", ["-d", "-s", "replacement"])
+            )
+
+            await #expect(throws: TmuxError.serverRestarted) {
+                try await server.killServer(expecting: stale)
+            }
+            #expect(try await server.isRunning())
+        }
+    }
 }
 
 private struct FixedReplyTransport: ProcessTransport {

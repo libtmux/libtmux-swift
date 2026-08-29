@@ -162,6 +162,15 @@ struct GuardedRequest: Sendable {
         throw .invocationFailed(reason: "guarded request returned an invalid outcome")
     }
 
+    func validateTerminating(_ reply: TmuxReply) throws(TmuxError) -> TmuxReply {
+        let expected = [trueMarker, staleMarker, restartedMarker, fenceMarker]
+        let markers =
+            Self.markers(in: reply.standardOutput, matching: expected)
+            + Self.markers(in: reply.standardError, matching: expected)
+        if markers.isEmpty, reply.isSuccess { return reply }
+        return try validate(reply)
+    }
+
     private static func guardedAction(
         _ command: TmuxCommand,
         trueMarker: String
