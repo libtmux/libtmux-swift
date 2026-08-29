@@ -256,6 +256,48 @@ struct RunShellLifetimeTests {
         }
     }
 
+    @Test("a completed run is captured before the next prompt")
+    func completedRunIsCapturedBeforePrompt() async throws {
+        try await withTmuxServer { fixture in
+            let transport = DelayedRunShellWaitTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try #require(try await server.panes().first)
+            let ready = "libtmux-test-run-shell-prompt-\(UUID().uuidString)"
+            let promptEnd = "run-shell-prompt-end"
+            let prompt = String(repeating: "p", count: 1_024) + promptEnd
+            try await server.run(
+                "stty -echo; PS1='\(prompt)'; export PS1; "
+                    + "\(server.shellInvocation) wait-for -S \(ready)",
+                in: pane
+            )
+            try await fixture.wait(for: ready)
+            #expect(
+                try await waitUntil {
+                    try await server.capture(pane).contains { $0.contains(promptEnd) }
+                }
+            )
+
+            let result = try await TmuxTools(server: server, tier: .mutating).call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(WireReferenceCodec.processLocal.reference(to: pane)),
+                        "command": .string("printf 'prompt-safe\\n'"),
+                        "max_lines": .number(1),
+                        "timeout": .number(5),
+                    ])
+                )
+            ).decode(RunShellResult.self)
+
+            #expect(result.output == ["prompt-safe"])
+            #expect(!result.linesMissed)
+        }
+    }
+
     @Test("prepare and timeout cleanup bound every pane capture")
     func prepareAndTimeoutCleanupBoundPaneCaptures() async throws {
         try await withTmuxServer { fixture in
@@ -552,6 +594,32 @@ private actor FailingRunShellWaitTransport: ProcessTransport {
             arguments: arguments,
             environment: environment
         )
+    }
+}
+
+private actor DelayedRunShellWaitTransport: ProcessTransport {
+    private let underlying = SubprocessTransport()
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String]
+    ) async throws(TmuxError) -> TmuxReply {
+        let reply = try await underlying.run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment
+        )
+        if arguments.contains("wait-for"),
+            arguments.contains(where: { $0.contains("libtmux-mcp-done-") })
+        {
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+            } catch {
+                throw .cancelled
+            }
+        }
+        return reply
     }
 }
 

@@ -60,6 +60,7 @@ extension TmuxTools {
                 cleanup,
                 in: pane,
                 finished: finished,
+                deadline: deadline,
                 enforcedTimeout: enforced,
                 maxLines: maxLines,
                 started: started
@@ -93,6 +94,7 @@ extension TmuxTools {
         let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         let markerNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let channel = "libtmux-mcp-done-\(nonce)"
+        let releaseChannel = "libtmux-mcp-release-\(nonce)"
         let optionPrefix = "@libtmux_mcp_\(nonce)"
         let (cursor, paneWidth) = try await server.using(.direct) { server in
             let before = try await server.captureBounded(
@@ -113,6 +115,7 @@ extension TmuxTools {
 
         return RunShellCleanup(
             channel: channel,
+            releaseChannel: releaseChannel,
             statusOption: "\(optionPrefix)_status",
             cursor: cursor,
             startMarker: Self.markerRows("S\(markerNonce)", width: markerWidth),
@@ -137,7 +140,8 @@ extension TmuxTools {
                         + "\(tmux) set-option -p -t \(target) "
                         + "\(cleanup.statusOption) $?; "
                         + "printf '\\r\\n'; \(endMarker); "
-                        + "\(tmux) wait-for -S \(cleanup.channel)",
+                        + "\(tmux) wait-for -S \(cleanup.channel); "
+                        + "\(tmux) wait-for \(cleanup.releaseChannel)",
                     "Enter",
                 ],
                 to: pane
@@ -183,23 +187,47 @@ extension TmuxTools {
         _ cleanup: RunShellCleanup,
         in pane: Pane,
         finished: Bool,
+        deadline: ContinuousClock.Instant,
         enforcedTimeout: Double,
         maxLines: Int,
         started: ContinuousClock.Instant
     ) async throws -> ToolOutcome {
         try await server.using(.direct) { server in
-            let capture = try await server.captureTailThroughCursor(
-                pane,
-                maximumLines: try cleanup.captureLineLimit(for: maxLines),
-                perStreamOutputLimit: PaneOutputBudget.sourceBytes
-            )
-            let output = try Self.runShellOutput(
-                capture.lines,
-                startMarker: cleanup.startMarker,
-                endMarker: cleanup.endMarker,
-                finished: finished,
-                maximumLines: maxLines
-            )
+            let captureLimit = try cleanup.captureLineLimit(for: maxLines)
+            let output: RunShellOutput
+            while true {
+                do {
+                    let capture = try await server.captureTailThroughCursor(
+                        pane,
+                        maximumLines: captureLimit,
+                        perStreamOutputLimit: PaneOutputBudget.sourceBytes
+                    )
+                    if let parsed = try Self.runShellOutput(
+                        capture.lines,
+                        startMarker: cleanup.startMarker,
+                        endMarker: cleanup.endMarker,
+                        finished: finished,
+                        maximumLines: maxLines
+                    ) {
+                        output = parsed
+                        break
+                    }
+                } catch let error as TmuxError {
+                    guard error == .staleServerValue, ContinuousClock.now < deadline else {
+                        throw error
+                    }
+                }
+                guard ContinuousClock.now < deadline else {
+                    throw TmuxError.invocationFailed(
+                        reason: "run_shell completed without an output end"
+                    )
+                }
+                do {
+                    try await Task.sleep(for: .milliseconds(10))
+                } catch {
+                    throw TmuxError.cancelled
+                }
+            }
             let status =
                 finished
                 ? try await server.option(cleanup.statusOption, scope: .pane(pane)).flatMap(
@@ -212,6 +240,7 @@ extension TmuxTools {
                     )
                 }
             }
+            try await server.signal(cleanup.releaseChannel)
             await Self.clearRunShellOptions(cleanup, pane: pane, server: server)
 
             return .init(
@@ -244,12 +273,13 @@ extension TmuxTools {
                 }
                 await paneRuns.release(pane)
             } else {
-                // The command has completed, so option cleanup cannot justify
-                // holding the pane lease through another fallible tmux call.
-                await paneRuns.release(pane)
+                // The pane remains held at the release channel until cleanup
+                // lets its shell print the next prompt.
                 try? await server.using(.direct) { server in
+                    try await server.signal(cleanup.releaseChannel)
                     await Self.clearRunShellOptions(cleanup, pane: pane, server: server)
                 }
+                await paneRuns.release(pane)
             }
         }
     }
@@ -300,43 +330,46 @@ extension TmuxTools {
         pane: Pane,
         server: Server
     ) async {
-        await withTaskGroup(of: Void.self) { group in
+        let completed = await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 while !Task.isCancelled {
                     do {
                         try await server.wait(for: cleanup.channel)
-                        return
+                        return true
                     } catch {
                         // A failed wait client says nothing about the pane command.
-                        guard !Task.isCancelled else { return }
+                        guard !Task.isCancelled else { return false }
                         do {
                             try await Task.sleep(for: .milliseconds(100))
                         } catch {
-                            return
+                            return false
                         }
                     }
                 }
+                return false
             }
             group.addTask {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(500))
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled else { return false }
                     do {
-                        guard try await server.incarnation() == pane.incarnation else { return }
+                        guard try await server.incarnation() == pane.incarnation else {
+                            return false
+                        }
                         guard
                             try await server.formatGlobal("#{pane_dead}", for: pane) != "1"
-                        else { return }
+                        else { return false }
                         let capture = try await server.captureBounded(
                             pane,
                             since: cleanup.cursor,
                             maximumLines: 1,
                             perStreamOutputLimit: PaneOutputBudget.sourceBytes
                         )
-                        if capture.restarted { return }
+                        if capture.restarted { return false }
                     } catch let error as TmuxError {
                         switch error {
                         case .foreignServerValue, .serverRestarted:
-                            return
+                            return false
                         default:
                             continue
                         }
@@ -344,10 +377,13 @@ extension TmuxTools {
                         continue
                     }
                 }
+                return false
             }
-            _ = await group.next()
+            let completed = await group.next() ?? false
             group.cancelAll()
+            return completed
         }
+        if completed { try? await server.signal(cleanup.releaseChannel) }
         await clearRunShellOptions(cleanup, pane: pane, server: server)
     }
 
@@ -368,6 +404,7 @@ extension TmuxTools {
 
     private struct RunShellCleanup: Sendable {
         let channel: String
+        let releaseChannel: String
         let statusOption: String
         let cursor: CaptureCursor
         let startMarker: [String]
@@ -414,13 +451,9 @@ extension TmuxTools {
         endMarker: [String],
         finished: Bool,
         maximumLines: Int
-    ) throws -> RunShellOutput {
+    ) throws -> RunShellOutput? {
         let end = firstRange(of: endMarker, in: captured)
-        if finished, end == nil {
-            throw TmuxError.invocationFailed(
-                reason: "run_shell completed without an output end"
-            )
-        }
+        if finished, end == nil { return nil }
         let outputEnd = end?.lowerBound ?? captured.endIndex
         let start = firstRange(of: startMarker, in: captured, before: outputEnd)
         var candidates = Array(captured[(start?.upperBound ?? captured.startIndex)..<outputEnd])
