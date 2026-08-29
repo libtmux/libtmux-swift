@@ -93,6 +93,8 @@ extension Server {
                     incarnation: incarnation
                 )
             }
+            // Another client can take the index between the listing and the
+            // command. tmux says so in these words, unchanged since 3.2a.
             guard
                 reply.errorText == "index in use: \(index)"
                     || reply.errorText == "same index: \(index)"
