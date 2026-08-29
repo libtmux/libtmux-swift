@@ -184,6 +184,7 @@ extension Server {
                 sawNewOutput: false,
                 tailLimit: keptTail,
                 outputEvent: false,
+                deadline: deadline,
                 answer: answer
             )
         }
@@ -203,6 +204,15 @@ extension Server {
                 sawNewOutput: false,
                 matchedAtEntry: true,
                 tail: Array(entryRows.suffix(keptTail)),
+                seconds: Self.elapsed(since: started)
+            )
+        }
+        if caughtAtEntry.deadlineReached {
+            return OutputWait(
+                outcome: .timedOut,
+                sawNewOutput: sawNewOutput,
+                matchedAtEntry: wasAlreadyShowing,
+                tail: Array(newest.suffix(keptTail)),
                 seconds: Self.elapsed(since: started)
             )
         }
@@ -232,6 +242,7 @@ extension Server {
                     sawNewOutput: sawNewOutput,
                     tailLimit: keptTail,
                     remaining: remaining,
+                    deadline: deadline,
                     answer: answer
                 )
             } catch let error {
@@ -295,6 +306,7 @@ extension Server {
         sawNewOutput: Bool,
         tailLimit: Int,
         remaining: Duration,
+        deadline: ContinuousClock.Instant,
         answer: @escaping OutputWaitAnswer
     ) async throws(OutputWaitError) -> OutputWaitCycle {
         let owner = self
@@ -344,8 +356,9 @@ extension Server {
                     var newest = newest
                     var sawNewOutput = sawNewOutput
                     while true {
-                        let wake = await doorbell.wait()
+                        var wake = await doorbell.wait()
                         if wake == .output { try await Task.sleep(for: .milliseconds(25)) }
+                        if ContinuousClock.now >= deadline { wake = .timedOut }
 
                         if wake == .output || wake == .scan || wake == .inspect
                             || wake == .reattach
@@ -358,11 +371,15 @@ extension Server {
                                     sawNewOutput: sawNewOutput,
                                     tailLimit: tailLimit,
                                     outputEvent: wake == .output,
+                                    deadline: deadline,
                                     answer: answer
                                 )
                                 cursor = scan.cursor
                                 sawNewOutput = scan.sawNewOutput
                                 newest = scan.tail
+                                if scan.deadlineReached {
+                                    return .finished(.timedOut, newest, sawNewOutput)
+                                }
                                 if let output = scan.output {
                                     group.cancelAll()
                                     return .answered(output)
@@ -393,12 +410,7 @@ extension Server {
                         case .paneClosed:
                             return .finished(.paneClosed, newest, sawNewOutput)
                         case .timedOut:
-                            let closed = try await owner.waitAttachment(for: pane) == nil
-                            return .finished(
-                                closed ? .paneClosed : .timedOut,
-                                newest,
-                                sawNewOutput
-                            )
+                            return .finished(.timedOut, newest, sawNewOutput)
                         case let .failed(error): throw error
                         }
                     }
@@ -453,12 +465,14 @@ extension Server {
         sawNewOutput: Bool,
         tailLimit: Int,
         outputEvent: Bool,
+        deadline: ContinuousClock.Instant,
         answer: OutputWaitAnswer
     ) async throws(OutputWaitError) -> WaitCaptureScan {
         var tail = newest
         var sawOutput = sawNewOutput
         var output: OutputWait?
         var answerError: OutputWaitError?
+        var deadlineReached = false
         let scan: ForwardCaptureResult
         do {
             scan = try await scanForward(
@@ -468,6 +482,10 @@ extension Server {
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
             ) { rows in
+                guard ContinuousClock.now < deadline else {
+                    deadlineReached = true
+                    return true
+                }
                 let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
@@ -483,6 +501,19 @@ extension Server {
         } catch {
             throw .tmux(normalizedTmuxError(error))
         }
+        func timedOut() -> WaitCaptureScan {
+            WaitCaptureScan(
+                cursor: scan.cursor,
+                tail: tail,
+                sawNewOutput: sawOutput,
+                output: nil,
+                hasMore: false,
+                deadlineReached: true
+            )
+        }
+        if deadlineReached || ContinuousClock.now >= deadline {
+            return timedOut()
+        }
         if let answerError { throw answerError }
         if scan.linesMissed { throw .tmux(.outputContinuityLost) }
         if scan.restarted {
@@ -492,6 +523,7 @@ extension Server {
             } catch {
                 throw .tmux(error)
             }
+            guard ContinuousClock.now < deadline else { return timedOut() }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
             output = try answer(arrived, tail, false)
@@ -505,7 +537,8 @@ extension Server {
             tail: tail,
             sawNewOutput: sawOutput,
             output: output,
-            hasMore: scan.hasMore
+            hasMore: scan.hasMore,
+            deadlineReached: false
         )
     }
 
@@ -573,6 +606,7 @@ private struct WaitCaptureScan: Sendable {
     let sawNewOutput: Bool
     let output: OutputWait?
     let hasMore: Bool
+    let deadlineReached: Bool
 }
 
 private typealias OutputWaitAnswer =
@@ -608,6 +642,9 @@ actor WaitDoorbell {
     }
 
     func wait() async -> WaitWake {
+        if let deadline = pending.firstIndex(of: .timedOut) {
+            return pending.remove(at: deadline)
+        }
         if !pending.isEmpty {
             return pending.removeFirst()
         }

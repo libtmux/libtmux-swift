@@ -66,6 +66,16 @@ struct WatchTests {
         #expect(await doorbell.wait() == .failed(failure))
     }
 
+    @Test("a deadline overtakes queued scan work")
+    func deadlineOvertakesQueuedScan() async {
+        let doorbell = WaitDoorbell()
+        await doorbell.ring(.scan)
+        await doorbell.ring(.timedOut)
+
+        #expect(await doorbell.wait() == .timedOut)
+        #expect(await doorbell.wait() == .scan)
+    }
+
     @Test("a wait ends on the line the command prints")
     func waitEndsOnAPrintedLine() async throws {
         try await withTmuxServer { server in
@@ -236,7 +246,7 @@ struct WatchTests {
 
             let result = try #require(observed, "wait exceeded its two-second deadline")
             #expect(result.outcome == .timedOut)
-            #expect(result.seconds < 4)
+            #expect(result.seconds < 2.2)
         }
     }
 
