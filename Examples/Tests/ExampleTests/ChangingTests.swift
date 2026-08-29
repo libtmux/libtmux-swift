@@ -14,6 +14,9 @@ struct ChangingTests {
             #expect(snapshot.sessions.contains { $0.name == "work" })
 
             let work = try #require(snapshot.sessions.first { $0.name == "work" })
+            #expect(
+                try await server.option("@purpose", scope: .session(work)) == "development"
+            )
             let windows = snapshot.windows(of: work)
             #expect(windows.map(\.name).sorted() == ["editor", "logs"])
 

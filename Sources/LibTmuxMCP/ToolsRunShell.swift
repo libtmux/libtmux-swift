@@ -202,7 +202,8 @@ extension TmuxTools {
             )
             let status =
                 finished
-                ? try await server.paneOption(cleanup.statusOption, of: pane).flatMap(Int.init)
+                ? try await server.option(cleanup.statusOption, scope: .pane(pane)).flatMap(
+                    Int.init)
                 : nil
             if finished {
                 guard status != nil else {
@@ -354,7 +355,7 @@ extension TmuxTools {
         pane: Pane,
         server: Server
     ) async {
-        try? await server.unsetPaneOption(cleanup.statusOption, of: pane)
+        _ = try? await server.unsetOption(cleanup.statusOption, scope: .pane(pane))
     }
 
     private enum RunShellLifetime {

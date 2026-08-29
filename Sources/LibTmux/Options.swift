@@ -1,37 +1,35 @@
-/// Which table an option or hook lives in.
+/// The exact tmux table that owns an option.
 ///
-/// tmux keeps four, and the same name can mean different things in different
-/// ones, so a scope is part of an option's identity rather than a detail of how
-/// it was read.
+/// Session and window options have global and object-local tables. A local
+/// scope carries its target so direct and connected dispatch reach the same
+/// object, and the target's daemon identity is checked before the command runs.
 public enum OptionScope: Sendable, Hashable, Codable {
     case server
-    case session
-    case window
-    case pane
+    case globalSession
+    case globalWindow
+    case session(Session)
+    case window(Window)
+    case pane(Pane)
 
-    /// The flag that selects this table. `show-options` and `set-option` agree
-    /// on these, which is why one value serves both directions.
-    var flag: String {
+    /// The arguments that select this table.
+    var selectorArguments: [String] {
         switch self {
-        case .server: "-s"
-        case .session: ""
-        case .window: "-w"
-        case .pane: "-p"
+        case .server: ["-s"]
+        case .globalSession: ["-g"]
+        case .globalWindow: ["-w", "-g"]
+        case let .session(session): ["-t", session.id.rawValue]
+        case let .window(window): ["-w", "-t", window.id.rawValue]
+        case let .pane(pane): ["-p", "-t", pane.id.rawValue]
         }
     }
 
-    /// The flags that select this table.
-    ///
-    /// Session and window tables each have a global tier and a per-object one,
-    /// and they are genuinely different storage: a hook set globally is not
-    /// visible in the local table. Server and pane tables have no such split,
-    /// so `global` does not apply to them.
-    func selectorArguments(global: Bool) -> [String] {
-        var arguments = flag.isEmpty ? [] : [flag]
-        if global, self == .session || self == .window {
-            arguments.append("-g")
+    var guardedValue: GuardedValue? {
+        switch self {
+        case .server, .globalSession, .globalWindow: nil
+        case let .session(session): .session(session)
+        case let .window(window): .window(window)
+        case let .pane(pane): .pane(pane)
         }
-        return arguments
     }
 }
 
@@ -43,9 +41,7 @@ public struct TmuxOption: Sendable, Hashable, Codable {
     /// and unquoting is lossy without knowing the option's type, so the raw
     /// text is what the library keeps.
     public let value: String
-    /// Which of tmux's four tables this was read from. The same name can mean
-    /// different things in different ones, so it is part of the identity
-    /// rather than a note about how it was fetched.
+    /// The exact table this was read from.
     public let scope: OptionScope
 
     public init(name: String, value: String, scope: OptionScope) {
@@ -65,7 +61,7 @@ public struct TmuxOption: Sendable, Hashable, Codable {
 /// takes `-w` and `-p` and reports success for both, but the hook lands in the
 /// session's table either way, and `show-hooks` has no server flag at all — so
 /// a window or pane scope here would only ever read back empty. This asks for
-/// neither, unlike ``OptionScope``, whose four tables are all real.
+/// neither, unlike ``OptionScope``, whose table addresses are all real.
 public enum HookScope: Sendable, Hashable, Codable {
     case global
     /// One session's own hooks, addressed by name or id.
@@ -104,16 +100,16 @@ public struct TmuxHook: Sendable, Hashable, Codable {
 }
 
 extension Server {
-    /// Every option set in one table.
+    /// Every option set in one exact table.
     ///
     /// Reports what tmux has actually been told, not the built-in defaults —
     /// a fresh server's session table is legitimately empty.
     public func options(
-        _ scope: OptionScope,
-        global: Bool = false
+        _ scope: OptionScope
     ) async throws(TmuxError) -> [TmuxOption] {
-        let reply = try await run(
-            TmuxCommand("show-options", scope.selectorArguments(global: global))
+        let reply = try await runOptionCommand(
+            TmuxCommand("show-options", scope.selectorArguments),
+            in: scope
         )
         guard reply.isSuccess else { return [] }
         return reply.text.split(separator: "\n").map { line in
@@ -132,17 +128,17 @@ extension Server {
     /// deliberately set to "".
     public func option(
         _ name: String,
-        scope: OptionScope = .server,
-        global: Bool = false
+        scope: OptionScope = .server
     ) async throws(TmuxError) -> String? {
-        let listed = try await options(scope, global: global)
+        let listed = try await options(scope)
         guard listed.contains(where: { $0.name == name }) else { return nil }
 
-        let reply = try await run(
+        let reply = try await runOptionCommand(
             TmuxCommand(
                 "show-options",
-                scope.selectorArguments(global: global) + ["-v", name]
-            )
+                scope.selectorArguments + ["-v", name]
+            ),
+            in: scope
         )
         guard reply.isSuccess else { return nil }
         var value = reply.text
@@ -155,14 +151,14 @@ extension Server {
     public func setOption(
         _ name: String,
         to value: String,
-        scope: OptionScope = .server,
-        global: Bool = false
+        scope: OptionScope = .server
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(
+        try await runOptionCommand(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments(global: global) + [name, value]
-            )
+                scope.selectorArguments + [name, value]
+            ),
+            in: scope
         )
     }
 
@@ -177,14 +173,14 @@ extension Server {
     @discardableResult
     public func unsetOption(
         _ name: String,
-        scope: OptionScope = .server,
-        global: Bool = false
+        scope: OptionScope = .server
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(
+        try await runOptionCommand(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments(global: global) + ["-u", name]
-            )
+                scope.selectorArguments + ["-u", name]
+            ),
+            in: scope
         )
     }
 
@@ -261,63 +257,14 @@ extension Server {
         try await run(TmuxCommand("set-hook", scope.arguments + ["-R", name]))
     }
 
-    // MARK: Options on one object
-
-    /// Sets an option on one window, rather than on the window table as a
-    /// whole.
-    public func setOption(
-        _ name: String,
-        to value: String,
-        of window: Window
-    ) async throws(TmuxError) {
-        try await expectSuccess(
-            TmuxCommand("set-option", ["-w", "-t", window.id.rawValue, name, value]),
-            guardedBy: [.window(window)]
-        )
-    }
-
-    /// Reads an option from one window.
-    public func option(
-        _ name: String,
-        of window: Window
-    ) async throws(TmuxError) -> String? {
-        let reply = try await runGuarded(
-            TmuxCommand("show-options", ["-w", "-t", window.id.rawValue, "-v", name]),
-            by: [.window(window)],
-            checkingTargets: false
-        )
-        guard reply.isSuccess else { return nil }
-        var value = reply.text
-        if value.hasSuffix("\n") { value.removeLast() }
-        return value.isEmpty ? nil : value
-    }
-
-    package func paneOption(
-        _ name: String,
-        of pane: Pane
-    ) async throws(TmuxError) -> String? {
-        let reply = try await runGuarded(
-            TmuxCommand(
-                "show-options", ["-p", "-t", pane.id.rawValue, "-v", name]
-            ),
-            by: [.pane(pane)]
-        )
-        guard reply.isSuccess else { return nil }
-        var value = reply.text
-        if value.hasSuffix("\n") { value.removeLast() }
-        return value.isEmpty ? nil : value
-    }
-
-    package func unsetPaneOption(
-        _ name: String,
-        of pane: Pane
-    ) async throws(TmuxError) {
-        try await expectSuccess(
-            TmuxCommand(
-                "set-option", ["-p", "-t", pane.id.rawValue, "-u", name]
-            ),
-            guardedBy: [.pane(pane)]
-        )
+    private func runOptionCommand(
+        _ command: TmuxCommand,
+        in scope: OptionScope
+    ) async throws(TmuxError) -> TmuxReply {
+        guard let guardedValue = scope.guardedValue else {
+            return try await run(command)
+        }
+        return try await runGuarded(command, by: [guardedValue])
     }
 }
 

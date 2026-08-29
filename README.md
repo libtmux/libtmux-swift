@@ -167,6 +167,7 @@ transaction.
 
 ```swift
 let session = try await server.newSession(named: "work", windowName: "editor")
+_ = try await server.setOption("@purpose", to: "development", scope: .session(session))
 let logs = try await server.newWindow(in: session, named: "logs").window
 let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)

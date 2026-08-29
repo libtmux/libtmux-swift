@@ -57,6 +57,53 @@ struct ModeProbeTests {
         }
     }
 
+    @Test("a local option reaches the same session over either mode")
+    func localOptionTargetsCarryOverTheConnection() async throws {
+        try await withTmuxServer { server in
+            // Distinct activity times make a missing `-t` fail deterministically.
+            try await Task.sleep(for: .milliseconds(10))
+            let target = try await server.newSession(named: "option-target")
+
+            let direct = try await server.setOption(
+                "@mode-target",
+                to: "direct",
+                scope: .session(target)
+            )
+            #expect(direct.isSuccess, Comment(rawValue: direct.errorText))
+            let directValue = try await server.run(
+                TmuxCommand(
+                    "show-options",
+                    ["-t", target.id.rawValue, "-v", "@mode-target"]
+                )
+            )
+            #expect(directValue.text == "direct\n")
+
+            _ = try await server.run(
+                TmuxCommand(
+                    "set-option",
+                    ["-t", target.id.rawValue, "-u", "@mode-target"]
+                )
+            )
+            let connected = try await server.connected(attachingTo: "bootstrap") {
+                server,
+                _ in
+                try await server.setOption(
+                    "@mode-target",
+                    to: "connected",
+                    scope: .session(target)
+                )
+            }
+            #expect(connected.isSuccess, Comment(rawValue: connected.errorText))
+            let connectedValue = try await server.run(
+                TmuxCommand(
+                    "show-options",
+                    ["-t", target.id.rawValue, "-v", "@mode-target"]
+                )
+            )
+            #expect(connectedValue.text == "connected\n")
+        }
+    }
+
     @Test("a rejected command is still a reply, not a thrown error")
     func rejectionKeepsItsShape() async throws {
         try await withTmuxServer { server in

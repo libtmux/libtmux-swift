@@ -44,11 +44,23 @@ struct OptionsTests {
         }
     }
 
+    @Test("a deliberately empty window option is present")
+    func emptyWindowOptionIsPresent() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            _ = try await server.setOption("@empty", to: "", scope: .window(window))
+
+            #expect(try await server.option("@empty", scope: .window(window)) == "")
+            #expect(try await server.option("@absent", scope: .window(window)) == nil)
+        }
+    }
+
     @Test("session options are a different table from server options")
     func sessionOptionsAreADifferentTable() async throws {
         try await withTmuxServer { server in
-            _ = try await server.setOption("@scoped", to: "session", scope: .session)
-            let session = try await server.option("@scoped", scope: .session)
+            let target = try #require(try await server.sessions().first)
+            _ = try await server.setOption("@scoped", to: "session", scope: .session(target))
+            let session = try await server.option("@scoped", scope: .session(target))
             let server_ = try await server.option("@scoped", scope: .server)
             #expect(session == "session")
             #expect(server_ == nil)

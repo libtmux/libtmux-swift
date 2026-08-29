@@ -154,7 +154,8 @@ struct ModelOperation: Sendable, CustomStringConvertible {
             _ = try await s.link(v.window, into: v.session)
         },
         mutation("setWindowOption") { s, v in
-            try await s.setOption("automatic-rename", to: "off", of: v.window)
+            _ = try await s.setOption(
+                "automatic-rename", to: "off", scope: .window(v.window))
         },
         read("formatSession") { s, v in
             _ = try await s.format("#{session_name}", for: v.session)
@@ -166,7 +167,7 @@ struct ModelOperation: Sendable, CustomStringConvertible {
             _ = try await s.format("#{pane_id}", for: v.pane, through: v.windowLink)
         },
         read("readWindowOption") { s, v in
-            _ = try await s.option("automatic-rename", of: v.window)
+            _ = try await s.option("automatic-rename", scope: .window(v.window))
         },
         read("capturePane") { s, v in _ = try await s.capture(v.pane) },
         read("capturePaneIncrementally") { s, v in

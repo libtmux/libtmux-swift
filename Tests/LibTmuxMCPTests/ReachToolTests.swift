@@ -35,6 +35,68 @@ struct ReachToolTests {
         }
     }
 
+    @Test("show_options reads one explicitly targeted session")
+    func showOptionsTargetsOneSession() async throws {
+        try await withTmuxServer { server in
+            let bootstrap = try #require(try await server.sessions().first)
+            let other = try await server.newSession(named: "option-other")
+            for (session, value) in [(bootstrap, "bootstrap"), (other, "other")] {
+                let reply = try await server.run(
+                    TmuxCommand(
+                        "set-option",
+                        ["-t", session.id.rawValue, "@targeted", value]
+                    )
+                )
+                #expect(reply.isSuccess, Comment(rawValue: reply.errorText))
+            }
+
+            let outcome = try await TmuxTools(server: server).call(
+                ToolCall(
+                    name: "show_options",
+                    arguments: .object([
+                        "name": .string("@targeted"),
+                        "scope": .string("session"),
+                        "target": .string(wireRef(bootstrap)),
+                    ])
+                )
+            )
+            let options = try #require(outcome.structured["options"]?.arrayValue)
+            #expect(options.map { $0["value"]?.stringValue } == ["bootstrap"])
+        }
+    }
+
+    @Test("show_options requires a target for a local table")
+    func localShowOptionsRequiresTarget() async throws {
+        _ = try await withTmuxServer { server in
+            await #expect(throws: ToolError.missingArgument("target")) {
+                try await TmuxTools(server: server).call(
+                    ToolCall(
+                        name: "show_options",
+                        arguments: .object(["scope": .string("session")])
+                    )
+                )
+            }
+        }
+    }
+
+    @Test("show_options rejects a target for a global table")
+    func globalShowOptionsRejectsTarget() async throws {
+        try await withTmuxServer { server in
+            let session = try #require(try await server.sessions().first)
+            await #expect(throws: ToolError.self) {
+                try await TmuxTools(server: server).call(
+                    ToolCall(
+                        name: "show_options",
+                        arguments: .object([
+                            "scope": .string("global_session"),
+                            "target": .string(wireRef(session)),
+                        ])
+                    )
+                )
+            }
+        }
+    }
+
     @Test("set_environment does not report a rejected write as success")
     func rejectedEnvironmentWriteIsAnError() async throws {
         try await withTmuxServer { server in

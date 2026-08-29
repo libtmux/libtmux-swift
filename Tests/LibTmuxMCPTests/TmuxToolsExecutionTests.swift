@@ -466,7 +466,8 @@ extension TmuxToolsTests {
             let window = try #require(
                 try await server.windows().first { $0.id == pane.windowID }
             )
-            try await server.setOption("remain-on-exit", to: "on", of: window)
+            _ = try await server.setOption(
+                "remain-on-exit", to: "on", scope: .window(window))
             let tools = TmuxTools(server: server)
             let first = try await tools.call(
                 ToolCall(

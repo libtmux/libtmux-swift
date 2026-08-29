@@ -284,9 +284,9 @@ extension TmuxTools {
             summary: "What a tmux option is set to, or every option in a table.",
             detail: """
                 Reports what tmux has been *told*, not its built-in defaults, so \
-                a fresh server's session table is legitimately empty. The \
-                counterpart to set_option: reading configuration and changing it \
-                should not need two different mental models.
+                a fresh local table is legitimately empty. Local session, window, \
+                and pane tables require an opaque target ref so dispatch mode \
+                cannot change which object answers.
                 """,
             tier: .readonly,
             isIdempotent: true,
@@ -297,15 +297,17 @@ extension TmuxTools {
                 ),
                 ToolArgument(
                     name: "scope",
-                    summary: "Which level to read.",
-                    allowed: ["server", "session", "window", "pane"],
+                    summary: "The exact table to read.",
+                    allowed: [
+                        "server", "global_session", "global_window", "session", "window",
+                        "pane",
+                    ],
                     defaultValue: .string("server")
                 ),
-                ToolArgument(
-                    name: "global",
-                    summary: "Read the global table rather than the object's own.",
-                    kind: .boolean,
-                    defaultValue: .bool(false)
+                target(
+                    "A session ref, windowRef, or pane ref. Required for a local scope; "
+                        + "omit for server and global scopes.",
+                    required: false
                 ),
             ],
             outputSchema: Schema.object(

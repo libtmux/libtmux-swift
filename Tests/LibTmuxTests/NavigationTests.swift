@@ -429,9 +429,9 @@ struct PaneGeometryTests {
             )
             let second = try await server.newWindow(in: session).window
 
-            try await server.setOption("@marked", to: "yes", of: first)
-            let onFirst = try await server.option("@marked", of: first)
-            let onSecond = try await server.option("@marked", of: second)
+            _ = try await server.setOption("@marked", to: "yes", scope: .window(first))
+            let onFirst = try await server.option("@marked", scope: .window(first))
+            let onSecond = try await server.option("@marked", scope: .window(second))
             #expect(onFirst == "yes")
             #expect(onSecond == nil)
         }

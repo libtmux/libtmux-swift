@@ -70,6 +70,20 @@ struct ToolCatalogTests {
         #expect(throws: ToolError.self) { try arguments.string("direction", or: "below") }
     }
 
+    @Test("show_options advertises exact option addresses")
+    func showOptionsAdvertisesExactAddresses() throws {
+        let definition = try #require(TmuxTools.byName["show_options"])
+        let scope = try #require(definition.arguments.first { $0.name == "scope" })
+
+        #expect(
+            scope.allowed == [
+                "server", "global_session", "global_window", "session", "window", "pane",
+            ]
+        )
+        #expect(definition.arguments.contains { $0.name == "target" })
+        #expect(!definition.arguments.contains { $0.name == "global" })
+    }
+
     @Test("every schema declares its type and refuses extra properties")
     func schemasAreWellFormed() {
         for definition in TmuxTools.definitions {
