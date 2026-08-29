@@ -42,6 +42,32 @@ struct CaptureSinceTests {
         }
     }
 
+    @Test("output racing an incremental capture is retried")
+    func outputRaceIsRetried() async throws {
+        try await withTmuxServer { fixture in
+            let transport = CaptureRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try await bootstrapPane(server)
+            let ready = "incremental-race"
+            await transport.beforeNextCapture { () async throws(TmuxError) in
+                try await fixture.run(
+                    "printf 'raced\\n'; \(fixture.shellInvocation) wait-for -S \(ready)",
+                    in: pane
+                )
+                try await fixture.wait(for: ready)
+            }
+
+            let started = try await server.capture(pane, since: nil)
+
+            #expect(started.lines.isEmpty)
+            #expect(await transport.captureLimits.count == 2)
+        }
+    }
+
     @Test("the first read marks the place rather than dumping the backlog")
     func firstReadStartsWatching() async throws {
         try await withTmuxServer { server in

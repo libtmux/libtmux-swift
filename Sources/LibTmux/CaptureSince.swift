@@ -267,6 +267,32 @@ extension Server {
         limit: Int,
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> IncrementalCapture {
+        var remainingAttempts = Self.incrementalCaptureAttempts
+        while true {
+            do {
+                return try await captureIncrementalAttempt(
+                    pane,
+                    since: cursor,
+                    limit: limit,
+                    perStreamOutputLimit: perStreamOutputLimit
+                )
+            } catch let error {
+                remainingAttempts -= 1
+                guard case .staleServerValue = error, remainingAttempts > 0 else {
+                    throw error
+                }
+                guard !Task.isCancelled else { throw .cancelled }
+                await Task.yield()
+            }
+        }
+    }
+
+    private func captureIncrementalAttempt(
+        _ pane: Pane,
+        since cursor: CaptureCursor?,
+        limit: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> IncrementalCapture {
         guard limit >= 0 else {
             throw .invocationFailed(reason: "an incremental capture limit cannot be negative")
         }
@@ -396,5 +422,6 @@ extension Server {
         )
     }
 
+    private static let incrementalCaptureAttempts = 3
     private static let incrementalCaptureOutputLimit = 1_048_576
 }

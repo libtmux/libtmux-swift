@@ -273,6 +273,7 @@ struct WatchTests {
     func quietPaneReportsNoOutput() async throws {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)
+            try await server.respawn(pane, running: ["sleep", "30"])
             let result = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("nothing-will-print-this")],
