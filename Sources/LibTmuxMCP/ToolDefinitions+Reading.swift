@@ -113,7 +113,9 @@ extension TmuxTools {
                         "Keep at most this many lines, dropping the oldest. The end of "
                         + "a pane is almost always the part that matters.",
                     kind: .integer,
-                    defaultValue: .number(200)
+                    defaultValue: .number(200),
+                    minimum: 1,
+                    maximum: Double(PaneOutputBudget.maximumLines)
                 ),
             ],
             outputSchema: Schema.object(
@@ -138,7 +140,8 @@ extension TmuxTools {
                 `linesMissed` says the pane scrolled further than its history \
                 keeps, so some output is gone for good. `restarted` says the pane \
                 was respawned, so the cursor described a program that is no longer \
-                running.
+                running. `droppedLines` counts candidate rows omitted by the requested \
+                line or raw-text byte limit.
 
                 Use wait_for_output instead when you want to block until something \
                 appears rather than to check what has appeared.
@@ -156,7 +159,9 @@ extension TmuxTools {
                     name: "max_lines",
                     summary: "Keep at most this many new lines, dropping the oldest.",
                     kind: .integer,
-                    defaultValue: .number(200)
+                    defaultValue: .number(200),
+                    minimum: 1,
+                    maximum: Double(PaneOutputBudget.maximumLines)
                 ),
             ],
             outputSchema: Schema.object(
@@ -165,10 +170,11 @@ extension TmuxTools {
                     "lines": Schema.array(of: Schema.string),
                     "cursor": Schema.string,
                     "linesMissed": Schema.boolean,
-                    "restarted": Schema.boolean,
+                    "restarted": Schema.boolean, "droppedLines": Schema.integer,
                 ],
                 required: [
                     "paneRef", "pane", "lines", "cursor", "linesMissed", "restarted",
+                    "droppedLines",
                 ]
             )
         ),
@@ -203,10 +209,20 @@ extension TmuxTools {
                     defaultValue: .bool(false)
                 ),
                 ToolArgument(
+                    name: "max_lines_per_pane",
+                    summary: "Search at most this many newest rows in each pane.",
+                    kind: .integer,
+                    defaultValue: .number(Double(PaneOutputBudget.defaultSearchLines)),
+                    minimum: 1,
+                    maximum: Double(PaneOutputBudget.maximumLines)
+                ),
+                ToolArgument(
                     name: "max_matches",
                     summary: "Stop after this many matches.",
                     kind: .integer,
-                    defaultValue: .number(50)
+                    defaultValue: .number(50),
+                    minimum: 1,
+                    maximum: Double(PaneOutputBudget.maximumMatches)
                 ),
             ],
             outputSchema: Schema.object(

@@ -65,6 +65,9 @@ public struct ToolArgument: Sendable, Hashable {
     /// What the tool does when the argument is omitted, stated in the schema so
     /// a caller need not send it to find out.
     public let defaultValue: JSONValue?
+    /// Inclusive numeric bounds, enforced by the reader and published in the schema.
+    public let minimum: Double?
+    public let maximum: Double?
 
     public init(
         name: String,
@@ -72,7 +75,9 @@ public struct ToolArgument: Sendable, Hashable {
         kind: Kind = .string,
         isRequired: Bool = false,
         allowed: [String] = [],
-        defaultValue: JSONValue? = nil
+        defaultValue: JSONValue? = nil,
+        minimum: Double? = nil,
+        maximum: Double? = nil
     ) {
         self.name = name
         self.summary = summary
@@ -80,6 +85,8 @@ public struct ToolArgument: Sendable, Hashable {
         self.isRequired = isRequired
         self.allowed = allowed
         self.defaultValue = defaultValue
+        self.minimum = minimum
+        self.maximum = maximum
     }
 
     var schema: JSONValue {
@@ -110,6 +117,8 @@ public struct ToolArgument: Sendable, Hashable {
         if let defaultValue {
             members["default"] = defaultValue
         }
+        if let minimum { members["minimum"] = .number(minimum) }
+        if let maximum { members["maximum"] = .number(maximum) }
         return .object(members)
     }
 }
@@ -304,6 +313,7 @@ struct Arguments {
         guard let number = value.intValue else {
             throw ToolError.wrongArgumentType(name, expected: "a whole number")
         }
+        try checkNumericBounds(name, Double(number))
         return number
     }
 
@@ -321,6 +331,10 @@ struct Arguments {
         guard let number = value.doubleValue ?? value.intValue.map(Double.init) else {
             throw ToolError.wrongArgumentType(name, expected: "a number of seconds")
         }
+        guard number.isFinite else {
+            throw ToolError.wrongArgumentType(name, expected: "a finite number of seconds")
+        }
+        try checkNumericBounds(name, number)
         return number
     }
 
@@ -340,6 +354,20 @@ struct Arguments {
             !argument.allowed.contains(value)
         else { return }
         throw ToolError.notAllowed(name, value: value, allowed: argument.allowed)
+    }
+
+    private func checkNumericBounds(_ name: String, _ value: Double) throws {
+        guard let argument = tool.arguments.first(where: { $0.name == name }) else { return }
+        guard argument.minimum.map({ value >= $0 }) ?? true,
+            argument.maximum.map({ value <= $0 }) ?? true
+        else {
+            let lower = argument.minimum.map { String($0) } ?? "-infinity"
+            let upper = argument.maximum.map { String($0) } ?? "infinity"
+            throw ToolError.wrongArgumentType(
+                name,
+                expected: "a number from \(lower) through \(upper)"
+            )
+        }
     }
 }
 

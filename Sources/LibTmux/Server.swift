@@ -146,6 +146,32 @@ public struct Server: Sendable, Hashable {
         return try request.validate(reply)
     }
 
+    func runIsolated(
+        _ command: TmuxCommand,
+        guarding pane: Pane,
+        matching bounds: PaneCaptureBounds,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let boundsCondition =
+            "#{&&:#{==:#{history_size},\(bounds.historySize)},"
+            + "#{&&:#{==:#{history_bytes},\(bounds.historyBytes)},"
+            + "#{&&:#{==:#{pane_height},\(bounds.paneHeight)},"
+            + "#{==:#{cursor_y},\(bounds.cursorRow)}}}}"
+        let request = GuardedRequest(
+            command: command,
+            incarnation: try expectedIncarnation([pane.incarnation]),
+            targets: [
+                GuardedValue.pane(pane).targetGuard,
+                GuardedTarget(target: pane.id.rawValue, condition: boundsCondition),
+            ].compactMap { $0 }
+        )
+        let reply = try await runtime.run(
+            rawArguments: request.commands.argumentVector,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        return try request.validate(reply)
+    }
+
     package func runTerminatingIsolated(
         _ command: TmuxCommand,
         expecting incarnation: ServerIncarnation,

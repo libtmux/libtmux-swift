@@ -210,7 +210,7 @@ public struct CaptureResult: Sendable, Hashable, Codable {
 public struct PaneMatch: Sendable, Hashable, Codable {
     public let paneRef: String
     public let pane: String
-    /// One-based, counting from the top of what was searched.
+    /// One-based, counting from the top of the pane contents requested.
     public let line: Int
     public let text: String
 }
@@ -219,7 +219,7 @@ public struct SearchResult: Sendable, Hashable, Codable {
     public let matches: [PaneMatch]
     public let panesSearched: Int
     public let panesAvailable: Int
-    /// Whether the limit stopped the search before it ran out of panes.
+    /// Whether a line, byte, or match limit left pane contents unsearched.
     public let truncated: Bool
 }
 
@@ -362,6 +362,8 @@ public struct CaptureSinceResult: Sendable, Hashable, Codable {
     public let linesMissed: Bool
     /// The pane was respawned, so the cursor described a different program.
     public let restarted: Bool
+    /// Candidate rows omitted by the requested line or raw-text byte limit.
+    public let droppedLines: Int
 }
 
 public struct Renamed: Sendable, Hashable, Codable {

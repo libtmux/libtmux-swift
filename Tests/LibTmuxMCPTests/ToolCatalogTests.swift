@@ -96,6 +96,23 @@ struct ToolCatalogTests {
         }
     }
 
+    @Test("numeric limits agree between schemas and argument readers")
+    func numericLimitsAreEnforced() throws {
+        let definition = try #require(TmuxTools.byName["capture_pane"])
+        let schema = definition.inputSchema["properties"]?["max_lines"]
+        #expect(schema?["minimum"]?.doubleValue == 1)
+        #expect(schema?["maximum"]?.doubleValue == 2_000)
+
+        let call = ToolCall(
+            name: "capture_pane",
+            arguments: .object(["pane": .string("pane-ref"), "max_lines": .number(2_001)])
+        )
+        let arguments = try Arguments(call, for: definition)
+        #expect(throws: ToolError.self) {
+            try arguments.integer("max_lines", or: 200)
+        }
+    }
+
     @Test("behaviour hints match the tier each tool is filed under")
     func annotationsMatchTiers() {
         for definition in TmuxTools.definitions {

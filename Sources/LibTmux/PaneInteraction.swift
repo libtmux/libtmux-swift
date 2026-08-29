@@ -1,5 +1,17 @@
 import Foundation
 
+package struct BoundedPaneCapture: Sendable, Hashable {
+    package let lines: [String]
+    package let droppedLines: Int
+}
+
+struct PaneCaptureBounds: Sendable, Hashable {
+    let historySize: Int
+    let historyBytes: Int
+    let paneHeight: Int
+    let cursorRow: Int
+}
+
 extension Server {
     // MARK: Talking to a pane
 
@@ -68,6 +80,177 @@ extension Server {
         includingHistory: Bool = false
     ) async throws(TmuxError) -> [String] {
         try await capture(pane, startingAt: includingHistory ? .start : nil)
+    }
+
+    /// Reads the newest slice without collecting the rows it will discard.
+    package func captureTail(
+        _ pane: Pane,
+        includingHistory: Bool,
+        maximumLines: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> BoundedPaneCapture {
+        let bounds = try await captureBounds(for: pane)
+        return try await captureTail(
+            pane,
+            startingAt: includingHistory ? .start : nil,
+            endingAt: nil,
+            bounds: bounds,
+            maximumLines: maximumLines,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+    }
+
+    package func captureTail(
+        _ pane: Pane,
+        fromAbsoluteRow firstRow: Int,
+        throughAbsoluteRow lastRow: Int?,
+        maximumLines: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> BoundedPaneCapture {
+        guard firstRow >= 0 else {
+            throw .invocationFailed(reason: "pane output start is invalid")
+        }
+        let bounds = try await captureBounds(for: pane)
+        let (currentRow, currentRowOverflowed) = bounds.historySize.addingReportingOverflow(
+            bounds.cursorRow
+        )
+        guard !currentRowOverflowed else {
+            throw .invocationFailed(reason: "pane reported an invalid cursor")
+        }
+        let end = lastRow ?? currentRow
+        guard end >= firstRow else {
+            throw .invocationFailed(reason: "pane output range is invalid")
+        }
+        let (relativeStart, startOverflowed) = firstRow.subtractingReportingOverflow(
+            bounds.historySize
+        )
+        let (relativeEnd, endOverflowed) = end.subtractingReportingOverflow(
+            bounds.historySize
+        )
+        guard !startOverflowed, !endOverflowed, relativeEnd >= -bounds.historySize else {
+            throw .invocationFailed(reason: "pane output is no longer in scrollback")
+        }
+        let (sourceLimit, limitOverflowed) = maximumLines.addingReportingOverflow(1)
+        guard maximumLines > 0, !limitOverflowed else {
+            throw .invocationFailed(reason: "pane capture size overflowed")
+        }
+        let capture = try await captureTail(
+            pane,
+            startingAt: .line(relativeStart),
+            endingAt: relativeEnd,
+            bounds: bounds,
+            maximumLines: sourceLimit,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        var rows = capture.lines
+        while rows.last?.isEmpty == true { rows.removeLast() }
+        let kept = rows.suffix(maximumLines)
+        let evicted = max(0, -bounds.historySize - relativeStart)
+        let afterCapture = rows.count - kept.count
+        let (sourceDropped, sourceOverflowed) = capture.droppedLines.addingReportingOverflow(
+            evicted
+        )
+        let (droppedLines, droppedOverflowed) = sourceDropped.addingReportingOverflow(
+            afterCapture
+        )
+        guard !sourceOverflowed, !droppedOverflowed else {
+            throw .invocationFailed(reason: "pane capture size overflowed")
+        }
+        return BoundedPaneCapture(lines: Array(kept), droppedLines: droppedLines)
+    }
+
+    func captureTail(
+        _ pane: Pane,
+        startingAt requestedStart: CaptureStart?,
+        endingAt requestedEnd: Int?,
+        bounds: PaneCaptureBounds,
+        maximumLines: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> BoundedPaneCapture {
+        guard maximumLines > 0 else {
+            throw .invocationFailed(reason: "a bounded capture needs at least one line")
+        }
+        guard perStreamOutputLimit > 0 else {
+            throw .invocationFailed(reason: "a bounded capture needs a positive output limit")
+        }
+        let oldestAvailable = -bounds.historySize
+        let earliest =
+            switch requestedStart {
+            case .none: 0
+            case .start: oldestAvailable
+            case let .line(row): max(row, oldestAvailable)
+            }
+        let end = requestedEnd ?? bounds.paneHeight - 1
+        guard end >= earliest, end < bounds.paneHeight else {
+            throw .invocationFailed(reason: "pane capture end is outside its contents")
+        }
+        let (boundedStart, startOverflowed) = end.subtractingReportingOverflow(
+            maximumLines - 1
+        )
+        guard !startOverflowed else {
+            throw .invocationFailed(reason: "pane capture size overflowed")
+        }
+        let start = max(earliest, boundedStart)
+        guard start >= Int(Int32.min), start <= Int(Int16.max) else {
+            throw .invocationFailed(reason: "pane capture bounds exceed tmux's row range")
+        }
+
+        let reply = try await runIsolated(
+            TmuxCommand(
+                "capture-pane",
+                [
+                    "-p", "-t", pane.id.rawValue, "-S", String(start), "-E",
+                    requestedEnd.map(String.init) ?? "-",
+                ]
+            ),
+            guarding: pane,
+            matching: bounds,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
+        }
+        var text = reply.text
+        if text.hasSuffix("\n") { text.removeLast() }
+        let rows = text.isEmpty ? [] : text.components(separatedBy: "\n")
+        let kept = rows.suffix(maximumLines)
+        let omittedAtSource = start - earliest
+        let omittedAfterResize = rows.count - kept.count
+        let (droppedLines, overflowed) = omittedAtSource.addingReportingOverflow(
+            omittedAfterResize
+        )
+        guard !overflowed else {
+            throw .invocationFailed(reason: "pane capture size overflowed")
+        }
+        return BoundedPaneCapture(lines: Array(kept), droppedLines: droppedLines)
+    }
+
+    func captureBounds(for pane: Pane) async throws(TmuxError) -> PaneCaptureBounds {
+        let separator = String(FormatProjection.separator)
+        guard
+            let value = try await formatGlobal(
+                "#{history_size}\(separator)#{history_bytes}"
+                    + "\(separator)#{pane_height}\(separator)#{cursor_y}",
+                for: pane
+            )
+        else {
+            throw .staleServerValue
+        }
+        let fields = value.components(separatedBy: separator)
+        guard fields.count == 4,
+            let historySize = Int(fields[0]), historySize >= 0,
+            let historyBytes = Int(fields[1]), historyBytes >= 0,
+            let paneHeight = Int(fields[2]), paneHeight > 0,
+            let cursorRow = Int(fields[3]), cursorRow >= 0, cursorRow < paneHeight
+        else {
+            throw .invocationFailed(reason: "tmux returned invalid pane capture bounds")
+        }
+        return PaneCaptureBounds(
+            historySize: historySize,
+            historyBytes: historyBytes,
+            paneHeight: paneHeight,
+            cursorRow: cursorRow
+        )
     }
 
     /// The pane's contents from `start` rows above the visible region.

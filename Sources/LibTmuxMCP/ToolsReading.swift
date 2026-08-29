@@ -108,16 +108,24 @@ extension TmuxTools {
         )
         let history = try arguments.bool("history", or: false)
         let maxLines = try arguments.integer("max_lines", or: 200)
-        let rows = try await server.capture(pane, includingHistory: history)
-        let kept = rows.suffix(max(1, maxLines))
+        let capture = try await server.captureTail(
+            pane,
+            includingHistory: history,
+            maximumLines: maxLines,
+            perStreamOutputLimit: PaneOutputBudget.sourceBytes
+        )
+        let kept = try PaneOutputBudget.tail(
+            capture.lines,
+            afterDropping: capture.droppedLines
+        )
         return .init(
             CaptureResult(
                 paneRef: WireReferenceCodec.processLocal.reference(to: pane),
                 pane: pane.id.rawValue,
-                lines: Array(kept),
+                lines: kept.lines,
                 // The end of a pane is almost always the part that matters, so
                 // a cap drops the oldest rather than refusing to answer.
-                droppedLines: rows.count - kept.count
+                droppedLines: kept.droppedLines
             )
         )
     }
@@ -129,7 +137,11 @@ extension TmuxTools {
         let pattern = try arguments.string("pattern")
         let expression = try MatchExpression(pattern)
         let history = try arguments.bool("history", or: false)
-        let limit = max(1, try arguments.integer("max_matches", or: 50))
+        let lineLimit = try arguments.integer(
+            "max_lines_per_pane",
+            or: PaneOutputBudget.defaultSearchLines
+        )
+        let limit = try arguments.integer("max_matches", or: 50)
 
         var panes = try await server.panes()
         if let filter = try arguments.document("filter") {
@@ -141,7 +153,8 @@ extension TmuxTools {
         var matches: [PaneMatch] = []
         var searched = 0
         var truncated = false
-        for pane in panes {
+        var matchedBytes = 0
+        paneLoop: for pane in panes {
             guard matches.count < limit else {
                 truncated = true
                 break
@@ -154,17 +167,38 @@ extension TmuxTools {
                 of: Double(panes.count),
                 "searched \(searched) of \(panes.count) panes"
             )
-            let rows = (try? await server.capture(pane, includingHistory: history)) ?? []
-            for (offset, line) in rows.enumerated() where expression.matches(line) {
+            let capture = try await server.captureTail(
+                pane,
+                includingHistory: history,
+                maximumLines: lineLimit,
+                perStreamOutputLimit: PaneOutputBudget.sourceBytes
+            )
+            let bounded = try PaneOutputBudget.tail(
+                capture.lines,
+                afterDropping: capture.droppedLines
+            )
+            if bounded.droppedLines > 0 { truncated = true }
+            for (offset, line) in bounded.lines.enumerated() where expression.matches(line) {
                 guard matches.count < limit else {
                     truncated = true
-                    break
+                    break paneLoop
                 }
+                let bytes = line.utf8.count
+                guard bytes <= PaneOutputBudget.returnedBytes else {
+                    throw ToolError.refusedForSafety(
+                        "one matching pane row exceeds the 128000-byte raw text limit"
+                    )
+                }
+                guard matchedBytes <= PaneOutputBudget.returnedBytes - bytes else {
+                    truncated = true
+                    break paneLoop
+                }
+                matchedBytes += bytes
                 matches.append(
                     PaneMatch(
                         paneRef: WireReferenceCodec.processLocal.reference(to: pane),
                         pane: pane.id.rawValue,
-                        line: offset + 1,
+                        line: bounded.droppedLines + offset + 1,
                         text: line
                     )
                 )
@@ -341,7 +375,7 @@ extension TmuxTools {
             argument: "pane",
             refreshWith: "list_panes"
         )
-        let limit = max(1, try arguments.integer("max_lines", or: 200))
+        let limit = try arguments.integer("max_lines", or: 200)
         var cursor: CaptureCursor?
         if let text = try arguments.optionalString("cursor") {
             // A cursor the caller mangled is not worth guessing at: starting
@@ -355,7 +389,16 @@ extension TmuxTools {
                 )
             }
         }
-        let read = try await server.capture(pane, since: cursor, limit: limit)
+        let read = try await server.captureBounded(
+            pane,
+            since: cursor,
+            maximumLines: limit,
+            perStreamOutputLimit: PaneOutputBudget.sourceBytes
+        )
+        let bounded = try PaneOutputBudget.tail(
+            read.lines,
+            afterDropping: read.droppedLines
+        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let encoded = String(
@@ -366,10 +409,11 @@ extension TmuxTools {
             CaptureSinceResult(
                 paneRef: WireReferenceCodec.processLocal.reference(to: pane),
                 pane: pane.id.rawValue,
-                lines: read.lines,
+                lines: bounded.lines,
                 cursor: encoded,
                 linesMissed: read.linesMissed,
-                restarted: read.restarted
+                restarted: read.restarted,
+                droppedLines: bounded.droppedLines
             )
         )
     }

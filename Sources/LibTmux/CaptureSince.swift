@@ -82,17 +82,21 @@ public struct IncrementalCapture: Sendable, Hashable, Codable {
     /// The pane was respawned, so the cursor described a program that is no
     /// longer running and everything here is from the new one.
     public let restarted: Bool
+    /// The number of older rows omitted to keep ``lines`` within `limit`.
+    public let droppedLines: Int
 
     public init(
         lines: [String],
         cursor: CaptureCursor,
         linesMissed: Bool = false,
-        restarted: Bool = false
+        restarted: Bool = false,
+        droppedLines: Int = 0
     ) {
         self.lines = lines
         self.cursor = cursor
         self.linesMissed = linesMissed
         self.restarted = restarted
+        self.droppedLines = droppedLines
     }
 }
 
@@ -116,22 +120,67 @@ extension Server {
         since cursor: CaptureCursor?,
         limit: Int = 500
     ) async throws(TmuxError) -> IncrementalCapture {
+        try await captureIncremental(
+            pane,
+            since: cursor,
+            limit: limit,
+            perStreamOutputLimit: nil
+        )
+    }
+
+    package func captureBounded(
+        _ pane: Pane,
+        since cursor: CaptureCursor?,
+        maximumLines: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> IncrementalCapture {
+        guard maximumLines > 0 else {
+            throw .invocationFailed(reason: "a bounded capture needs at least one line")
+        }
+        return try await captureIncremental(
+            pane,
+            since: cursor,
+            limit: maximumLines,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+    }
+
+    private func captureIncremental(
+        _ pane: Pane,
+        since cursor: CaptureCursor?,
+        limit: Int,
+        perStreamOutputLimit: Int?
+    ) async throws(TmuxError) -> IncrementalCapture {
         // The same printable separator the projections use: tmux strips the
         // actual control characters out of a format's output, so a real record
         // separator would arrive having silently joined the fields together.
         let separator = String(FormatProjection.separator)
         let state = try await formatGlobal(
-            "#{history_size}\(separator)#{cursor_y}\(separator)#{pane_pid}",
+            "#{history_size}\(separator)#{cursor_y}\(separator)#{pane_pid}"
+                + "\(separator)#{pane_height}\(separator)#{history_bytes}",
             for: pane
         )
-        guard let fields = state?.components(separatedBy: separator), fields.count >= 3,
-            let history = Int(fields[0]), let cursorRow = Int(fields[1])
+        guard let fields = state?.components(separatedBy: separator), fields.count >= 5,
+            let history = Int(fields[0]), history >= 0,
+            let cursorRow = Int(fields[1]), cursorRow >= 0,
+            let paneHeight = Int(fields[3]), paneHeight > 0,
+            let historyBytes = Int(fields[4]), historyBytes >= 0,
+            cursorRow < paneHeight
         else {
             throw TmuxError.invocationFailed(reason: "pane \(pane.id.rawValue) has gone")
         }
         let processID = fields[2]
         // The row the cursor is on, counted from the start of history.
-        let now = history + cursorRow
+        let (now, nowOverflowed) = history.addingReportingOverflow(cursorRow)
+        guard !nowOverflowed else {
+            throw TmuxError.invocationFailed(reason: "pane reported an invalid cursor")
+        }
+        let bounds = PaneCaptureBounds(
+            historySize: history,
+            historyBytes: historyBytes,
+            paneHeight: paneHeight,
+            cursorRow: cursorRow
+        )
 
         guard let cursor, cursor.pane == pane.id.rawValue,
             cursor.incarnation == pane.incarnation, cursor.processID == processID
@@ -139,13 +188,26 @@ extension Server {
             // Nothing to compare against, so this establishes the mark rather
             // than answering with a backlog nobody asked for.
             let restarted = cursor != nil
+            let tail: String?
+            if let perStreamOutputLimit {
+                tail = try await captureTail(
+                    pane,
+                    startingAt: .line(cursorRow),
+                    endingAt: cursorRow,
+                    bounds: bounds,
+                    maximumLines: 1,
+                    perStreamOutputLimit: perStreamOutputLimit
+                ).lines.first
+            } else {
+                tail = try await row(cursorRow, of: pane)
+            }
             return IncrementalCapture(
                 lines: [],
                 cursor: CaptureCursor(
                     pane: pane.id.rawValue,
                     incarnation: pane.incarnation,
                     anchor: now,
-                    tail: try await lastRow(of: pane),
+                    tail: tail,
                     processID: processID
                 ),
                 restarted: restarted
@@ -162,15 +224,42 @@ extension Server {
         }
         let oldest = -history
         let linesMissed = start < oldest
-        var rows = try await capture(pane, startingAt: .line(max(start, oldest)))
+        let earliest = max(start, oldest)
+        var sourceDropped = 0
+        var rows: [String]
+        if let perStreamOutputLimit {
+            let (sourceLimit, limitOverflowed) = limit.addingReportingOverflow(1)
+            guard !limitOverflowed else {
+                throw TmuxError.invocationFailed(reason: "pane capture size overflowed")
+            }
+            let bounded = try await captureTail(
+                pane,
+                startingAt: .line(earliest),
+                endingAt: cursorRow,
+                bounds: bounds,
+                maximumLines: sourceLimit,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+            rows = bounded.lines
+            sourceDropped = bounded.droppedLines
+        } else {
+            rows = try await capture(pane, startingAt: .line(earliest))
+        }
         if let tail = cursor.tail, rows.first == tail { rows.removeFirst() }
         // tmux pads the visible region with blank rows below the cursor; they
         // are not output and reporting them would be reporting the shape of the
         // terminal rather than what ran in it.
         while let last = rows.last, last.isEmpty { rows.removeLast() }
 
+        let kept = rows.suffix(max(0, limit))
+        let (droppedLines, droppedOverflowed) = sourceDropped.addingReportingOverflow(
+            rows.count - kept.count
+        )
+        guard !droppedOverflowed else {
+            throw TmuxError.invocationFailed(reason: "pane capture size overflowed")
+        }
         return IncrementalCapture(
-            lines: Array(rows.suffix(max(0, limit))),
+            lines: Array(kept),
             cursor: CaptureCursor(
                 pane: pane.id.rawValue,
                 incarnation: pane.incarnation,
@@ -178,13 +267,12 @@ extension Server {
                 tail: rows.last ?? cursor.tail,
                 processID: processID
             ),
-            linesMissed: linesMissed
+            linesMissed: linesMissed,
+            droppedLines: droppedLines
         )
     }
 
-    private func lastRow(of pane: Pane) async throws(TmuxError) -> String? {
-        var rows = try await capture(pane, startingAt: nil)
-        while let last = rows.last, last.isEmpty { rows.removeLast() }
-        return rows.last
+    private func row(_ row: Int, of pane: Pane) async throws(TmuxError) -> String? {
+        try await capture(pane, startingAt: .line(row)).first
     }
 }
