@@ -44,11 +44,10 @@ extension TmuxTools {
             let cleanup = try await prepareRunShell(in: pane)
             try Task.checkCancellation()
             lifetime = .submitting(cleanup)
-            try await dispatchRunShell(command, with: cleanup, in: pane)
+            try await dispatchRunShell(command, with: cleanup)
             lifetime = .started(cleanup)
             let finished = try await waitForRunShell(
                 cleanup,
-                in: pane,
                 timeout: ContinuousClock.now.duration(to: deadline),
                 progress: progress
             )
@@ -58,7 +57,6 @@ extension TmuxTools {
             try Task.checkCancellation()
             let outcome = try await finishRunShell(
                 cleanup,
-                in: pane,
                 finished: finished,
                 enforcedTimeout: enforced,
                 maxLines: maxLines,
@@ -69,7 +67,6 @@ extension TmuxTools {
             } else {
                 schedulePaneRunCleanup(
                     cleanup,
-                    in: pane,
                     waitForCompletion: true,
                     releaseWhenReady: false
                 )
@@ -83,12 +80,12 @@ extension TmuxTools {
                 if Self.definitelyDidNotDispatch(error) {
                     await Self.paneRuns.release(pane)
                 } else {
-                    await abandonRunShell(cleanup, in: pane, waitForCompletion: true)
+                    await abandonRunShell(cleanup, waitForCompletion: true)
                 }
             case .started(let cleanup):
-                await abandonRunShell(cleanup, in: pane, waitForCompletion: true)
+                await abandonRunShell(cleanup, waitForCompletion: true)
             case .finishing(let cleanup):
-                await abandonRunShell(cleanup, in: pane, waitForCompletion: false)
+                await abandonRunShell(cleanup, waitForCompletion: false)
             }
             throw error
         }
@@ -118,6 +115,7 @@ extension TmuxTools {
         let markerWidth = max(1, min(paneWidth - 1, markerNonce.count + 1))
 
         return RunShellCleanup(
+            pane: pane,
             channel: channel,
             releaseChannel: releaseChannel,
             statusOption: "\(optionPrefix)_status",
@@ -129,12 +127,11 @@ extension TmuxTools {
 
     private func dispatchRunShell(
         _ command: String,
-        with cleanup: RunShellCleanup,
-        in pane: Pane
+        with cleanup: RunShellCleanup
     ) async throws {
         // Concealed cells survive capture; shellInvocation keeps bookkeeping on this server.
         let tmux = server.shellInvocation
-        let target = shellQuoted(pane.id.rawValue)
+        let target = shellQuoted(cleanup.pane.id.rawValue)
         let startMarker = Self.markerCommand(cleanup.startMarker)
         let endMarker = Self.markerCommand(cleanup.endMarker)
         try await server.using(.direct) { server in
@@ -149,14 +146,13 @@ extension TmuxTools {
                         + "\(tmux) set-option -pu -t \(target) \(cleanup.statusOption)",
                     "Enter",
                 ],
-                to: pane
+                to: cleanup.pane
             )
         }
     }
 
     private func waitForRunShell(
         _ cleanup: RunShellCleanup,
-        in pane: Pane,
         timeout: Duration,
         progress: ProgressReporter
     ) async throws -> Bool {
@@ -164,7 +160,7 @@ extension TmuxTools {
         do {
             return try await progress.whileRunning(
                 upTo: timeout,
-                describing: "running in \(pane.id.rawValue)"
+                describing: "running in \(cleanup.pane.id.rawValue)"
             ) {
                 try await withThrowingTaskGroup(of: Bool.self) { group in
                     group.addTask {
@@ -190,7 +186,6 @@ extension TmuxTools {
 
     private func finishRunShell(
         _ cleanup: RunShellCleanup,
-        in pane: Pane,
         finished: Bool,
         enforcedTimeout: Double,
         maxLines: Int,
@@ -205,7 +200,7 @@ extension TmuxTools {
             while true {
                 do {
                     let capture = try await server.captureTailThroughCursor(
-                        pane,
+                        cleanup.pane,
                         maximumLines: captureLimit,
                         perStreamOutputLimit: PaneOutputBudget.sourceBytes
                     )
@@ -246,7 +241,7 @@ extension TmuxTools {
             }
             let status =
                 finished
-                ? try await server.option(cleanup.statusOption, scope: .pane(pane)).flatMap(
+                ? try await server.option(cleanup.statusOption, scope: .pane(cleanup.pane)).flatMap(
                     Int.init)
                 : nil
             if finished {
@@ -257,12 +252,12 @@ extension TmuxTools {
                 }
             }
             try await server.signal(cleanup.releaseChannel)
-            await Self.clearRunShellOptions(cleanup, pane: pane, server: server)
+            await Self.clearRunShellOptions(cleanup, server: server)
 
             return .init(
                 RunShellResult(
-                    paneRef: WireReferenceCodec.processLocal.reference(to: pane),
-                    pane: pane.id.rawValue,
+                    paneRef: WireReferenceCodec.processLocal.reference(to: cleanup.pane),
+                    pane: cleanup.pane.id.rawValue,
                     exitStatus: status,
                     timedOut: !finished,
                     output: output.lines,
@@ -277,7 +272,6 @@ extension TmuxTools {
 
     private func schedulePaneRunCleanup(
         _ cleanup: RunShellCleanup,
-        in pane: Pane,
         waitForCompletion: Bool,
         releaseWhenReady: Bool
     ) {
@@ -287,31 +281,28 @@ extension TmuxTools {
                 try? await server.using(.direct) { server in
                     await Self.finishTimedOutRun(
                         cleanup,
-                        pane: pane,
                         server: server,
                         releaseWhenComplete: releaseWhenReady
                     )
                 }
-                await Self.paneRuns.release(pane)
+                await Self.paneRuns.release(cleanup.pane)
             } else {
                 try? await server.using(.direct) { server in
                     if releaseWhenReady { try await server.signal(cleanup.releaseChannel) }
-                    await Self.clearRunShellOptions(cleanup, pane: pane, server: server)
+                    await Self.clearRunShellOptions(cleanup, server: server)
                 }
-                await Self.paneRuns.release(pane)
+                await Self.paneRuns.release(cleanup.pane)
             }
         }
     }
 
     private func abandonRunShell(
         _ cleanup: RunShellCleanup,
-        in pane: Pane,
         waitForCompletion: Bool
     ) async {
         let released = await releaseRunShellGate(cleanup)
         schedulePaneRunCleanup(
             cleanup,
-            in: pane,
             waitForCompletion: waitForCompletion,
             releaseWhenReady: !released
         )
@@ -374,7 +365,6 @@ extension TmuxTools {
 
     private static func finishTimedOutRun(
         _ cleanup: RunShellCleanup,
-        pane: Pane,
         server: Server,
         releaseWhenComplete: Bool
     ) async {
@@ -401,14 +391,14 @@ extension TmuxTools {
                     try? await Task.sleep(for: .milliseconds(500))
                     guard !Task.isCancelled else { return false }
                     do {
-                        guard try await server.incarnation() == pane.incarnation else {
+                        guard try await server.incarnation() == cleanup.pane.incarnation else {
                             return false
                         }
                         guard
-                            try await server.formatGlobal("#{pane_dead}", for: pane) == "0"
+                            try await server.formatGlobal("#{pane_dead}", for: cleanup.pane) == "0"
                         else { return false }
                         let capture = try await server.captureBounded(
-                            pane,
+                            cleanup.pane,
                             since: cleanup.cursor,
                             maximumLines: 1,
                             perStreamOutputLimit: PaneOutputBudget.sourceBytes
@@ -434,15 +424,14 @@ extension TmuxTools {
         if completed, releaseWhenComplete {
             try? await server.signal(cleanup.releaseChannel)
         }
-        await clearRunShellOptions(cleanup, pane: pane, server: server)
+        await clearRunShellOptions(cleanup, server: server)
     }
 
     private static func clearRunShellOptions(
         _ cleanup: RunShellCleanup,
-        pane: Pane,
         server: Server
     ) async {
-        _ = try? await server.unsetOption(cleanup.statusOption, scope: .pane(pane))
+        _ = try? await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
     }
 
     private enum RunShellLifetime {
@@ -453,6 +442,7 @@ extension TmuxTools {
     }
 
     private struct RunShellCleanup: Sendable {
+        let pane: Pane
         let channel: String
         let releaseChannel: String
         let statusOption: String
