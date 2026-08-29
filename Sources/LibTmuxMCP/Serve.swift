@@ -40,16 +40,17 @@ public struct MCPService: Sendable {
                     continue
                 }
                 let identifier = MCPRequestHandler.requestID(in: line)
+                let work = Task {
+                    // Progress goes out through the same serialised writer the
+                    // answer will use, so the two cannot interleave.
+                    await handler.respond(to: line, emit: write)
+                }
+                if let identifier {
+                    // Register before reading another line, which may be the
+                    // notification that cancels this request.
+                    await registry.register(identifier, work)
+                }
                 group.addTask {
-                    let work = Task {
-                        // Progress goes out through the same serialised writer
-                        // the answer will use, so a notification can never land
-                        // inside a response line.
-                        await handler.respond(to: line, emit: write)
-                    }
-                    if let identifier {
-                        await registry.register(identifier, work)
-                    }
                     let answer = await work.value
                     if let identifier { await registry.finish(identifier) }
                     guard let answer else { return }

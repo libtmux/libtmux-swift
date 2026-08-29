@@ -182,26 +182,23 @@ struct MCPServeTests {
                     #"""
                     {"jsonrpc":"2.0","id":"wait","method":"tools/call","params":
                     {"name":"wait_for_output","arguments":{"pane":"\#(paneRef)",
-                    "patterns":["never-arrives"],"timeout":60}}}
+                    "patterns":["never-arrives"],"timeout":4}}}
                     """#.replacingOccurrences(of: "\n", with: "")
                 )
-                Task {
-                    try? await Task.sleep(for: .milliseconds(400))
-                    continuation.yield(
-                        #"""
-                        {"jsonrpc":"2.0","method":"notifications/cancelled",
-                        "params":{"requestId":"wait"}}
-                        """#.replacingOccurrences(of: "\n", with: "")
-                    )
-                    continuation.finish()
-                }
+                continuation.yield(
+                    #"""
+                    {"jsonrpc":"2.0","method":"notifications/cancelled",
+                    "params":{"requestId":"wait"}}
+                    """#.replacingOccurrences(of: "\n", with: "")
+                )
+                continuation.finish()
             }
             await service.serve(lines) { await answers.record($0) }
 
             let elapsed = ContinuousClock.now - started
-            // A minute-long wait the client stopped caring about must not keep
-            // a tmux process alive for the rest of it.
-            #expect(elapsed < .seconds(20))
+            // A wait the client stopped caring about must not run to its
+            // deadline, even when cancellation is the very next input line.
+            #expect(elapsed < .seconds(2))
         }
     }
 
