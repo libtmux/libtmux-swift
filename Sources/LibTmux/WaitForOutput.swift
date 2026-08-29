@@ -374,17 +374,18 @@ extension Server {
                         if wake == .output || wake == .scan || wake == .inspect
                             || wake == .reattach
                         {
-                            do {
-                                let scan = try await server.scanWaitOutput(
-                                    in: pane,
-                                    since: cursor,
-                                    newest: newest,
-                                    sawNewOutput: sawNewOutput,
-                                    tailLimit: tailLimit,
-                                    outputEvent: wake == .output,
-                                    deadline: deadline,
-                                    answer: answer
-                                )
+                            let scanRace = await server.raceWaitScan(
+                                in: pane,
+                                since: cursor,
+                                newest: newest,
+                                sawNewOutput: sawNewOutput,
+                                tailLimit: tailLimit,
+                                outputEvent: wake == .output,
+                                until: deadline,
+                                answer: answer
+                            )
+                            switch scanRace {
+                            case let .scanned(scan):
                                 cursor = scan.cursor
                                 sawNewOutput = scan.sawNewOutput
                                 newest = scan.tail
@@ -396,11 +397,15 @@ extension Server {
                                     return .answered(output)
                                 }
                                 if scan.hasMore { await doorbell.ring(.scan) }
-                            } catch let error {
+                            case let .failed(error):
                                 guard try await owner.waitAttachment(for: pane) != nil else {
                                     return .finished(.paneClosed, newest, sawNewOutput)
                                 }
                                 throw error
+                            case .timedOut:
+                                return .finished(.timedOut, newest, sawNewOutput)
+                            case .cancelled:
+                                throw OutputWaitError.tmux(.cancelled)
                             }
                         }
 
@@ -467,6 +472,51 @@ extension Server {
             throw .invocationFailed(reason: "tmux returned an invalid pane attachment")
         }
         return PaneAttachment(sessionID: sessionID, windowID: windowID)
+    }
+
+    private func raceWaitScan(
+        in pane: Pane,
+        since cursor: CaptureCursor,
+        newest: [String],
+        sawNewOutput: Bool,
+        tailLimit: Int,
+        outputEvent: Bool,
+        until deadline: ContinuousClock.Instant,
+        answer: @escaping OutputWaitAnswer
+    ) async -> WaitScanRace {
+        if Task.isCancelled { return .cancelled }
+        let now = ContinuousClock.now
+        guard now < deadline else { return .timedOut }
+        let remaining = now.duration(to: deadline)
+        return await withTaskGroup(of: WaitScanRace.self) { group in
+            group.addTask {
+                do {
+                    return .scanned(
+                        try await self.scanWaitOutput(
+                            in: pane,
+                            since: cursor,
+                            newest: newest,
+                            sawNewOutput: sawNewOutput,
+                            tailLimit: tailLimit,
+                            outputEvent: outputEvent,
+                            deadline: deadline,
+                            answer: answer
+                        )
+                    )
+                } catch let error as OutputWaitError {
+                    return .failed(error)
+                } catch {
+                    return .failed(.tmux(normalizedTmuxError(error)))
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: remaining)
+                return Task.isCancelled ? .cancelled : .timedOut
+            }
+            let first = await group.next() ?? .cancelled
+            group.cancelAll()
+            return first
+        }
     }
 
     private func scanWaitOutput(
@@ -609,6 +659,13 @@ private enum OutputWaitCycle: Sendable {
     case answered(OutputWait)
     case reattach(CaptureCursor, [String], Bool)
     case finished(OutputWait.Outcome, [String], Bool)
+}
+
+private enum WaitScanRace: Sendable {
+    case scanned(WaitCaptureScan)
+    case failed(OutputWaitError)
+    case timedOut
+    case cancelled
 }
 
 private struct WaitCaptureScan: Sendable {
