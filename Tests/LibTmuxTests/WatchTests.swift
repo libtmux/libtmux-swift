@@ -144,7 +144,10 @@ struct WatchTests {
             )
 
             // The entry read is one capture, so the next one is the catch-up
-            // scan this must not reach.
+            // scan this must not reach. The capture count is what proves that;
+            // the timeout only has to outlast one tmux round-trip, because a
+            // budget near it fails on a loaded machine for reading too slowly
+            // rather than for reaching catch-up.
             let transport = CaptureRecordingTransport()
             await transport.beforeCapture(2) { () async throws in
                 do {
@@ -161,7 +164,7 @@ struct WatchTests {
             let result = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("^\(marker)$")],
-                timeout: .milliseconds(100)
+                timeout: .seconds(2)
             )
 
             #expect(result.outcome == .matched)
