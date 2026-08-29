@@ -103,17 +103,6 @@ private func standardInputLines() -> AsyncStream<String> {
     }
 }
 
-/// Serialises writes to standard output.
-///
-/// Answers are produced concurrently and a response is one line; two tasks
-/// writing at once would interleave halves of two messages and desynchronise
-/// the stream for good.
-private actor OutputWriter {
-    func write(_ line: String) {
-        FileHandle.standardOutput.write(Data("\(line)\n".utf8))
-    }
-}
-
 let configuration = ServerConfiguration(
     environment: ProcessInfo.processInfo.environment
 )
@@ -137,8 +126,25 @@ note(
         + "at the \(configuration.tier.rawValue) tier"
 )
 
-private let writer = OutputWriter()
-await MCPService(handler: MCPRequestHandler(tools: tools)).serve(
+private let writer: NonblockingLineWriter
+do {
+    writer = try NonblockingLineWriter(fileDescriptor: STDOUT_FILENO)
+} catch {
+    note("cannot configure standard output: \(error)")
+    exit(1)
+}
+
+await MCPService(handler: MCPRequestHandler(tools: tools)).serveUntilWriteFails(
     standardInputLines(),
-    write: { await writer.write($0) }
+    write: { line in
+        switch await writer.write(line) {
+        case .written:
+            return true
+        case .closed, .cancelled:
+            return false
+        case let .failed(code):
+            note("cannot write standard output: \(String(cString: strerror(code)))")
+            return false
+        }
+    }
 )
