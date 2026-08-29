@@ -37,7 +37,7 @@ struct RunShellLifetimeTests {
     @Test("a wait transport failure is not reported as a timeout")
     func waitFailureIsPropagated() async throws {
         try await withTmuxServer { fixture in
-            let transport = FailingFirstRunShellWaitTransport()
+            let transport = FailingRunShellWaitTransport()
             let server = Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
@@ -58,6 +58,69 @@ struct RunShellLifetimeTests {
                     )
                 )
             }
+            #expect(
+                try await waitUntil {
+                    !(await tools.paneRuns.isHeld(pane))
+                }
+            )
+        }
+    }
+
+    @Test("cleanup wait failures cannot release a pane that is still running")
+    func cleanupWaitFailuresKeepPaneLease() async throws {
+        try await withTmuxServer { fixture in
+            let transport = FailingRunShellWaitTransport(failures: 3)
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
+            let tools = TmuxTools(server: server)
+            let nonce = UUID().uuidString
+            let started = "libtmux-test-run-shell-started-\(nonce)"
+            let release = "libtmux-test-run-shell-release-\(nonce)"
+            let first = Task {
+                try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(paneRef),
+                            "command": .string(
+                                "\(server.shellInvocation) wait-for -S \(started); "
+                                    + "\(server.shellInvocation) wait-for \(release)"
+                            ),
+                            "timeout": .number(20),
+                        ])
+                    )
+                )
+            }
+
+            try await fixture.wait(for: started)
+            await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
+                _ = try await first.value
+            }
+            #expect(
+                try await waitUntil(within: .seconds(1)) {
+                    await transport.waitFailureCount >= 2
+                }
+            )
+            #expect(await tools.paneRuns.isHeld(pane))
+            await #expect(throws: ToolError.self) {
+                try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(paneRef),
+                            "command": .string("printf 'must-not-overlap\\n'"),
+                            "timeout": .number(0.1),
+                        ])
+                    )
+                )
+            }
+
+            try await fixture.signal(release)
             #expect(
                 try await waitUntil {
                     !(await tools.paneRuns.isHeld(pane))
@@ -347,19 +410,24 @@ private actor RunShellCaptureTransport: OutputLimitedProcessTransport {
     }
 }
 
-private actor FailingFirstRunShellWaitTransport: ProcessTransport {
+private actor FailingRunShellWaitTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
-    private var failed = false
+    private let failureLimit: Int
+    private(set) var waitFailureCount = 0
+
+    init(failures: Int = 1) {
+        self.failureLimit = failures
+    }
 
     func run(
         executable: String,
         arguments: [String],
         environment: [String: String]
     ) async throws(TmuxError) -> TmuxReply {
-        if !failed, arguments.contains("wait-for"),
+        if waitFailureCount < failureLimit, arguments.contains("wait-for"),
             arguments.contains(where: { $0.contains("libtmux-mcp-done-") })
         {
-            failed = true
+            waitFailureCount += 1
             throw .invocationFailed(reason: "wait failed")
         }
         return try await underlying.run(

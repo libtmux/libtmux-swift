@@ -300,7 +300,22 @@ extension TmuxTools {
         server: Server
     ) async {
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { try? await server.wait(for: cleanup.channel) }
+            group.addTask {
+                while !Task.isCancelled {
+                    do {
+                        try await server.wait(for: cleanup.channel)
+                        return
+                    } catch {
+                        // A failed wait client says nothing about the pane command.
+                        guard !Task.isCancelled else { return }
+                        do {
+                            try await Task.sleep(for: .milliseconds(100))
+                        } catch {
+                            return
+                        }
+                    }
+                }
+            }
             group.addTask {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(500))
