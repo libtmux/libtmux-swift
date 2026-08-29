@@ -45,9 +45,10 @@ enum ToolPattern {
         _ pattern: RegexPattern,
         in text: String,
         argument: String,
-        budget: RegexMatchBudget
+        budget: RegexMatchBudget? = nil
     ) throws -> Bool {
         do {
+            guard let budget else { return try pattern.containsMatch(in: text) }
             return try pattern.containsMatch(in: text, budget: budget)
         } catch {
             throw matchingFailure(error, argument: argument)

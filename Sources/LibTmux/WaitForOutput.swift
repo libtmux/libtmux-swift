@@ -134,8 +134,7 @@ extension Server {
             requireFresh: requireFresh,
             started: started,
             deadline: started.advanced(by: timeout),
-            tailLimit: max(0, tailLimit),
-            matchBudget: RegexMatchBudget()
+            tailLimit: max(0, tailLimit)
         ).run()
     }
 }

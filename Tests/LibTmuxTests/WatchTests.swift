@@ -109,24 +109,36 @@ struct WatchTests {
     @Test("a matcher refusal remains distinct from a timeout")
     func matcherRefusalPropagates() throws {
         let pattern = try RegexPattern("z$")
-        let budget = try RegexMatchBudget(maximum: 20)
         #expect(
             try firstOutputPatternMatch(
                 in: "aaaa",
                 patterns: [pattern],
-                budget: budget
+                maximumWork: 40
             ) == nil
         )
 
         #expect(
             throws: OutputWaitError.matching(
-                .workLimitExceeded(maximum: 20)
+                .workLimitExceeded(maximum: 1)
             )
         ) {
             try firstOutputPatternMatch(
                 in: "aaaa",
                 patterns: [pattern],
-                budget: budget
+                maximumWork: 1
+            )
+        }
+
+        // A wait runs for as long as it is told to, so its matching allowance
+        // is per line. Shared, a long enough wait would refuse on its own
+        // length and report a work limit where it owed a timeout.
+        for _ in 0..<64 {
+            #expect(
+                try firstOutputPatternMatch(
+                    in: "aaaa",
+                    patterns: [pattern],
+                    maximumWork: 40
+                ) == nil
             )
         }
     }

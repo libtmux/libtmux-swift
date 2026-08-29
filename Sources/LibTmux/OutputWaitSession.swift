@@ -9,7 +9,6 @@ struct OutputWaitSession: Sendable {
     let started: ContinuousClock.Instant
     let deadline: ContinuousClock.Instant
     let tailLimit: Int
-    let matchBudget: RegexMatchBudget
 
     func run() async throws(OutputWaitError) -> OutputWait {
         let keptTail = tailLimit
@@ -53,8 +52,7 @@ struct OutputWaitSession: Sendable {
             : try firstEntryOutputMatch(
                 in: entryRows,
                 patterns: patterns,
-                stops: stops,
-                budget: matchBudget
+                stops: stops
             )
         let wasAlreadyShowing = entryMatch != nil
 
@@ -101,8 +99,7 @@ struct OutputWaitSession: Sendable {
             for line in arrived {
                 if let hit = try firstOutputPatternMatch(
                     in: line,
-                    patterns: stops,
-                    budget: matchBudget
+                    patterns: stops
                 ) {
                     return ending(
                         .stopped,
@@ -117,8 +114,7 @@ struct OutputWaitSession: Sendable {
                 }
                 if let hit = try firstOutputPatternMatch(
                     in: line,
-                    patterns: patterns,
-                    budget: matchBudget
+                    patterns: patterns
                 ) {
                     return ending(
                         .matched,
@@ -844,11 +840,11 @@ private func waitTmuxError(_ error: OutputWaitError) -> TmuxError {
 func firstOutputPatternMatch(
     in text: String,
     patterns: [RegexPattern],
-    budget: RegexMatchBudget
+    maximumWork: Int = RegexPattern.defaultMaximumWork
 ) throws(OutputWaitError) -> Int? {
     for (index, pattern) in patterns.enumerated() {
         do {
-            if try pattern.containsMatch(in: text, budget: budget) { return index }
+            if try pattern.containsMatch(in: text, maximumWork: maximumWork) { return index }
         } catch let error {
             throw .matching(error)
         }
@@ -860,17 +856,21 @@ private func firstEntryOutputMatch(
     in rows: [String],
     patterns: [RegexPattern],
     stops: [RegexPattern],
-    budget: RegexMatchBudget
+    maximumWork: Int = RegexPattern.defaultMaximumWork
 ) throws(OutputWaitError) -> EntryOutputMatch? {
     for row in rows {
-        if let index = try firstOutputPatternMatch(in: row, patterns: stops, budget: budget) {
+        if let index = try firstOutputPatternMatch(
+            in: row, patterns: stops, maximumWork: maximumWork)
+        {
             return EntryOutputMatch(
                 outcome: .stopped,
                 matched: stops[index].source,
                 matchedIndex: index
             )
         }
-        if let index = try firstOutputPatternMatch(in: row, patterns: patterns, budget: budget) {
+        if let index = try firstOutputPatternMatch(
+            in: row, patterns: patterns, maximumWork: maximumWork)
+        {
             return EntryOutputMatch(
                 outcome: .matched,
                 matched: patterns[index].source,

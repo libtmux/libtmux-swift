@@ -120,6 +120,15 @@ struct RegexWorkMeter {
     }
 }
 
+/// A matching allowance shared by every match in one bounded operation.
+///
+/// One match is already bounded on its own, so
+/// ``RegexPattern/containsMatch(in:maximumWork:)`` gives each call a fresh
+/// allowance. Share one only where the work that matters is the whole
+/// operation's and that operation ends — filtering a listing, searching the
+/// panes of a server. An open-ended run must not share one: the allowance is
+/// spent, never refilled, so a long enough run fails on its own length rather
+/// than on anything about its patterns.
 package final class RegexMatchBudget: @unchecked Sendable {
     private let lock = NSLock()
     private var meter: RegexWorkMeter
