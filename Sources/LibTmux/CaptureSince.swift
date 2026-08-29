@@ -100,6 +100,19 @@ public struct IncrementalCapture: Sendable, Hashable, Codable {
     }
 }
 
+package struct ForwardCaptureResult: Sendable, Hashable {
+    package let cursor: CaptureCursor
+    package let linesMissed: Bool
+    package let restarted: Bool
+    package let droppedLines: Int
+}
+
+private struct IncrementalPaneState {
+    let bounds: PaneCaptureBounds
+    let processID: String
+    let absoluteCursorRow: Int
+}
+
 extension Server {
     /// Reads only what a pane has printed since `cursor`.
     ///
@@ -147,6 +160,107 @@ extension Server {
         )
     }
 
+    /// Visits unseen rows oldest-first without retaining completed chunks.
+    /// Returning `true` from `visit` stops before the remaining rows are read.
+    package func scanForward(
+        _ pane: Pane,
+        since cursor: CaptureCursor,
+        sourceLinesPerChunk: Int,
+        perStreamOutputLimit: Int,
+        _ visit: ([String]) -> Bool
+    ) async throws(TmuxError) -> ForwardCaptureResult {
+        guard sourceLinesPerChunk > 1 else {
+            throw .invocationFailed(reason: "a forward capture chunk needs at least two lines")
+        }
+        guard perStreamOutputLimit > 0 else {
+            throw .invocationFailed(reason: "a forward capture needs a positive output limit")
+        }
+        let state = try await incrementalPaneState(for: pane)
+        guard cursor.pane == pane.id.rawValue,
+            cursor.incarnation == pane.incarnation,
+            cursor.processID == state.processID
+        else {
+            let reset = try await captureIncremental(
+                pane,
+                since: cursor,
+                limit: 0,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+            return ForwardCaptureResult(
+                cursor: reset.cursor,
+                linesMissed: reset.linesMissed,
+                restarted: reset.restarted,
+                droppedLines: reset.droppedLines
+            )
+        }
+
+        let (relativeStart, startOverflowed) = cursor.anchor.subtractingReportingOverflow(
+            state.bounds.historySize
+        )
+        guard !startOverflowed else {
+            throw .invocationFailed(reason: "pane reported an invalid history size")
+        }
+        let oldest = -state.bounds.historySize
+        let linesMissed = relativeStart < oldest
+        let firstRelativeRow = max(relativeStart, oldest)
+        let (firstAbsoluteRow, firstOverflowed) = state.bounds.historySize
+            .addingReportingOverflow(firstRelativeRow)
+        guard !firstOverflowed, firstAbsoluteRow <= state.absoluteCursorRow else {
+            throw .invocationFailed(reason: "pane reported an invalid cursor")
+        }
+
+        var start = firstAbsoluteRow
+        var tail = cursor.tail
+        var droppedLines = 0
+        while true {
+            let (candidateEnd, endOverflowed) = start.addingReportingOverflow(
+                sourceLinesPerChunk - 1
+            )
+            let end =
+                endOverflowed
+                ? state.absoluteCursorRow
+                : min(
+                    candidateEnd,
+                    state.absoluteCursorRow
+                )
+            let capture = try await captureTail(
+                pane,
+                fromAbsoluteRow: start,
+                throughAbsoluteRow: end,
+                maximumLines: sourceLinesPerChunk,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+            let (nextDroppedLines, droppedOverflowed) = droppedLines.addingReportingOverflow(
+                capture.droppedLines
+            )
+            guard !droppedOverflowed else {
+                throw .invocationFailed(reason: "pane capture size overflowed")
+            }
+            droppedLines = nextDroppedLines
+
+            var rows = capture.lines
+            if let tail, rows.first == tail { rows.removeFirst() }
+            if end == state.absoluteCursorRow {
+                while rows.last?.isEmpty == true { rows.removeLast() }
+            }
+            tail = rows.last ?? tail
+            let result = ForwardCaptureResult(
+                cursor: CaptureCursor(
+                    pane: pane.id.rawValue,
+                    incarnation: pane.incarnation,
+                    anchor: end,
+                    tail: tail,
+                    processID: state.processID
+                ),
+                linesMissed: linesMissed,
+                restarted: false,
+                droppedLines: droppedLines
+            )
+            if visit(rows) || end == state.absoluteCursorRow { return result }
+            start = end
+        }
+    }
+
     private func captureIncremental(
         _ pane: Pane,
         since cursor: CaptureCursor?,
@@ -156,36 +270,12 @@ extension Server {
         guard limit >= 0 else {
             throw .invocationFailed(reason: "an incremental capture limit cannot be negative")
         }
-        // The same printable separator the projections use: tmux strips the
-        // actual control characters out of a format's output, so a real record
-        // separator would arrive having silently joined the fields together.
-        let separator = String(FormatProjection.separator)
-        let state = try await formatGlobal(
-            "#{history_size}\(separator)#{cursor_y}\(separator)#{pane_pid}"
-                + "\(separator)#{pane_height}\(separator)#{history_bytes}",
-            for: pane
-        )
-        guard let fields = state?.components(separatedBy: separator), fields.count >= 5,
-            let history = Int(fields[0]), history >= 0,
-            let cursorRow = Int(fields[1]), cursorRow >= 0,
-            let paneHeight = Int(fields[3]), paneHeight > 0,
-            let historyBytes = Int(fields[4]), historyBytes >= 0,
-            cursorRow < paneHeight
-        else {
-            throw TmuxError.invocationFailed(reason: "pane \(pane.id.rawValue) has gone")
-        }
-        let processID = fields[2]
-        // The row the cursor is on, counted from the start of history.
-        let (now, nowOverflowed) = history.addingReportingOverflow(cursorRow)
-        guard !nowOverflowed else {
-            throw TmuxError.invocationFailed(reason: "pane reported an invalid cursor")
-        }
-        let bounds = PaneCaptureBounds(
-            historySize: history,
-            historyBytes: historyBytes,
-            paneHeight: paneHeight,
-            cursorRow: cursorRow
-        )
+        let state = try await incrementalPaneState(for: pane)
+        let bounds = state.bounds
+        let history = bounds.historySize
+        let cursorRow = bounds.cursorRow
+        let processID = state.processID
+        let now = state.absoluteCursorRow
 
         guard let cursor, cursor.pane == pane.id.rawValue,
             cursor.incarnation == pane.incarnation, cursor.processID == processID
@@ -269,6 +359,40 @@ extension Server {
             ),
             linesMissed: linesMissed,
             droppedLines: droppedLines
+        )
+    }
+
+    private func incrementalPaneState(
+        for pane: Pane
+    ) async throws(TmuxError) -> IncrementalPaneState {
+        let separator = String(FormatProjection.separator)
+        let state = try await formatGlobal(
+            "#{history_size}\(separator)#{cursor_y}\(separator)#{pane_pid}"
+                + "\(separator)#{pane_height}\(separator)#{history_bytes}",
+            for: pane
+        )
+        guard let fields = state?.components(separatedBy: separator), fields.count >= 5,
+            let history = Int(fields[0]), history >= 0,
+            let cursorRow = Int(fields[1]), cursorRow >= 0,
+            let paneHeight = Int(fields[3]), paneHeight > 0,
+            let historyBytes = Int(fields[4]), historyBytes >= 0,
+            cursorRow < paneHeight
+        else {
+            throw .invocationFailed(reason: "pane \(pane.id.rawValue) has gone")
+        }
+        let (absoluteCursorRow, overflowed) = history.addingReportingOverflow(cursorRow)
+        guard !overflowed else {
+            throw .invocationFailed(reason: "pane reported an invalid cursor")
+        }
+        return IncrementalPaneState(
+            bounds: PaneCaptureBounds(
+                historySize: history,
+                historyBytes: historyBytes,
+                paneHeight: paneHeight,
+                cursorRow: cursorRow
+            ),
+            processID: fields[2],
+            absoluteCursorRow: absoluteCursorRow
         )
     }
 

@@ -28,7 +28,7 @@ struct CaptureSinceTests {
     @Test("incremental capture bounds pane output at the transport")
     func incrementalCaptureIsSourceBounded() async throws {
         try await withTmuxServer { fixture in
-            let transport = IncrementalCaptureRecordingTransport()
+            let transport = CaptureRecordingTransport()
             let server = Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
@@ -164,9 +164,32 @@ struct CaptureSinceTests {
     }
 }
 
-private actor IncrementalCaptureRecordingTransport: OutputLimitedProcessTransport {
+struct RecordedCaptureRequest: Sendable {
+    let arguments: [String]
+    let perStreamOutputLimit: Int
+
+    var rowSpan: Int? {
+        let fields = arguments.joined(separator: " ").split(separator: " ")
+        guard fields.contains(where: { $0.contains("capture-pane") }),
+            let startFlag = fields.lastIndex(of: "-S"),
+            let endFlag = fields.lastIndex(of: "-E"),
+            fields.indices.contains(startFlag + 1),
+            fields.indices.contains(endFlag + 1),
+            let start = Int(fields[startFlag + 1]),
+            let end = Int(fields[endFlag + 1]),
+            end >= start
+        else { return nil }
+        return end - start + 1
+    }
+}
+
+actor CaptureRecordingTransport: OutputLimitedProcessTransport {
     private let underlying = SubprocessTransport()
-    private(set) var captureLimits: [Int] = []
+    private(set) var captureRequests: [RecordedCaptureRequest] = []
+
+    var captureLimits: [Int] {
+        captureRequests.map(\.perStreamOutputLimit)
+    }
 
     func run(
         executable: String,
@@ -188,7 +211,12 @@ private actor IncrementalCaptureRecordingTransport: OutputLimitedProcessTranspor
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         if arguments.contains(where: { $0.contains("capture-pane") }) {
-            captureLimits.append(perStreamOutputLimit)
+            captureRequests.append(
+                RecordedCaptureRequest(
+                    arguments: arguments,
+                    perStreamOutputLimit: perStreamOutputLimit
+                )
+            )
         }
         return try await underlying.run(
             executable: executable,

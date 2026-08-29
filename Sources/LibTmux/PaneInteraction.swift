@@ -117,6 +117,31 @@ extension Server {
         )
     }
 
+    package func captureLookbackThroughCursor(
+        _ pane: Pane,
+        historyLines: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> BoundedPaneCapture {
+        guard historyLines >= 0 else {
+            throw .invocationFailed(reason: "pane capture lookback cannot be negative")
+        }
+        let bounds = try await captureBounds(for: pane)
+        let start = max(-historyLines, -bounds.historySize)
+        let (span, spanOverflowed) = bounds.cursorRow.subtractingReportingOverflow(start)
+        let (maximumLines, countOverflowed) = span.addingReportingOverflow(1)
+        guard !spanOverflowed, !countOverflowed else {
+            throw .invocationFailed(reason: "pane capture size overflowed")
+        }
+        return try await captureTail(
+            pane,
+            startingAt: .line(start),
+            endingAt: bounds.cursorRow,
+            bounds: bounds,
+            maximumLines: maximumLines,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+    }
+
     package func captureTail(
         _ pane: Pane,
         fromAbsoluteRow firstRow: Int,

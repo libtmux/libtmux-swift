@@ -91,6 +91,60 @@ struct WatchTests {
         }
     }
 
+    @Test("a bounded forward scan finds an early line in a large burst")
+    func earlyBurstMatchSurvivesBoundedCapture() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            let ready = "wait-scan-ready-\(UUID().uuidString)"
+            try await fixture.run(
+                "stty -echo; \(fixture.shellInvocation) wait-for -S \(ready)",
+                in: pane
+            )
+            try await fixture.wait(for: ready)
+
+            let marker = "forward-scan-early-\(UUID().uuidString)"
+            let burst =
+                "awk 'BEGIN { for (i = 0; i < 600; i++) "
+                + "print (i == 8 ? \"\(marker)\" : \"burst-\" i) }'"
+            let hook = try await fixture.setHook(
+                "client-attached",
+                to: TmuxCommand(
+                    "send-keys",
+                    ["-t", pane.id.rawValue, burst, "Enter"]
+                ).parsedString
+            )
+            #expect(hook.isSuccess, Comment(rawValue: hook.errorText))
+
+            let transport = CaptureRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let result = try await server.waitForOutput(
+                in: pane,
+                matching: ["^\(marker)$"],
+                requiringFreshOutput: true,
+                timeout: .seconds(3),
+                tailLimit: 5
+            )
+
+            #expect(result.outcome == .matched)
+            #expect(result.matched == "^\(marker)$")
+            #expect(!result.tail.contains(marker))
+            let requests = await transport.captureRequests
+            #expect(!requests.isEmpty)
+            #expect(
+                requests.allSatisfy {
+                    0 < $0.perStreamOutputLimit && $0.perStreamOutputLimit < .max
+                }
+            )
+            let spans = requests.compactMap(\.rowSpan)
+            #expect(spans.count == requests.count)
+            #expect(spans.allSatisfy { $0 <= 256 })
+        }
+    }
+
     @Test("a stop marker ends the wait before the deadline")
     func stopMarkerEndsTheWaitEarly() async throws {
         try await withTmuxServer { server in

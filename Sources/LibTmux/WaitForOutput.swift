@@ -108,7 +108,7 @@ extension Server {
         // second cursor read below catches anything that arrived between the
         // two, so opening the event connection cannot create a blind spot.
         var incremental = try await capture(pane, since: nil)
-        let entryRows = try await capture(pane, startingAt: Self.waitLookback)
+        let entryRows = try await waitLookbackRows(in: pane)
         let alreadyShowing = entryRows.firstIndex { row in
             matchers.contains { $0.matches(row) }
         }
@@ -150,12 +150,18 @@ extension Server {
             )
         }
 
-        let caughtAtEntry = try await capture(pane, since: incremental.cursor, limit: .max)
-        incremental = caughtAtEntry
-        let arrivedAtEntry = try await outputRows(after: caughtAtEntry, in: pane)
-        var sawNewOutput = !arrivedAtEntry.isEmpty
-        var newest = Array(arrivedAtEntry.suffix(keptTail))
-        if let answer = answer(arrivedAtEntry, newest) { return answer }
+        let caughtAtEntry = try await scanWaitOutput(
+            in: pane,
+            since: incremental.cursor,
+            newest: [],
+            sawNewOutput: false,
+            tailLimit: keptTail,
+            answer: answer
+        )
+        incremental = IncrementalCapture(lines: [], cursor: caughtAtEntry.cursor)
+        var sawNewOutput = caughtAtEntry.sawNewOutput
+        var newest = caughtAtEntry.tail
+        if let output = caughtAtEntry.output { return output }
 
         // Answered up front rather than inferred from a timeout: "already on
         // screen" and "never happened" look identical afterwards, and only one
@@ -300,16 +306,18 @@ extension Server {
 
                         if wake == .output || wake == .inspect || wake == .reattach {
                             do {
-                                let delta = try await server.capture(
-                                    pane,
+                                let scan = try await server.scanWaitOutput(
+                                    in: pane,
                                     since: cursor,
-                                    limit: .max
+                                    newest: newest,
+                                    sawNewOutput: sawNewOutput,
+                                    tailLimit: tailLimit,
+                                    answer: answer
                                 )
-                                cursor = delta.cursor
-                                let arrived = try await server.outputRows(after: delta, in: pane)
-                                sawNewOutput = sawNewOutput || !arrived.isEmpty
-                                newest = Array((newest + arrived).suffix(tailLimit))
-                                if let output = answer(arrived, newest) {
+                                cursor = scan.cursor
+                                sawNewOutput = scan.sawNewOutput
+                                newest = scan.tail
+                                if let output = scan.output {
                                     group.cancelAll()
                                     return .answered(output)
                                 }
@@ -375,15 +383,49 @@ extension Server {
         return PaneAttachment(sessionID: sessionID, windowID: windowID)
     }
 
-    private func outputRows(
-        after capture: IncrementalCapture,
-        in pane: Pane
-    ) async throws(TmuxError) -> [String] {
-        let rows =
-            capture.restarted
-            ? try await self.capture(pane, startingAt: Self.waitLookback)
-            : capture.lines
-        return rows.filter { !$0.isEmpty }
+    private func scanWaitOutput(
+        in pane: Pane,
+        since cursor: CaptureCursor,
+        newest: [String],
+        sawNewOutput: Bool,
+        tailLimit: Int,
+        answer: ([String], [String]) -> OutputWait?
+    ) async throws(TmuxError) -> WaitCaptureScan {
+        var tail = newest
+        var sawOutput = sawNewOutput
+        var output: OutputWait?
+        let scan = try await scanForward(
+            pane,
+            since: cursor,
+            sourceLinesPerChunk: Self.waitCaptureLines,
+            perStreamOutputLimit: Self.waitCaptureOutputLimit
+        ) { rows in
+            let arrived = rows.filter { !$0.isEmpty }
+            sawOutput = sawOutput || !arrived.isEmpty
+            tail = Array((tail + arrived).suffix(tailLimit))
+            output = answer(arrived, tail)
+            return output != nil
+        }
+        if scan.restarted {
+            let arrived = try await waitLookbackRows(in: pane).filter { !$0.isEmpty }
+            sawOutput = sawOutput || !arrived.isEmpty
+            tail = Array((tail + arrived).suffix(tailLimit))
+            output = answer(arrived, tail)
+        }
+        return WaitCaptureScan(
+            cursor: scan.cursor,
+            tail: tail,
+            sawNewOutput: sawOutput,
+            output: output
+        )
+    }
+
+    private func waitLookbackRows(in pane: Pane) async throws(TmuxError) -> [String] {
+        try await captureLookbackThroughCursor(
+            pane,
+            historyLines: Self.waitHistoryLines,
+            perStreamOutputLimit: Self.waitCaptureOutputLimit
+        ).lines
     }
 
     private static let topologyNotifications: Set<String> = [
@@ -412,15 +454,12 @@ extension Server {
         }
     }
 
-    /// How far above the visible region a wait reads.
-    ///
-    /// A pane producing output quickly scrolls it past the visible rows between
-    /// one capture and the next, and a reader that only took those rows would
-    /// miss whatever went by — the more output, the more it misses. Reading a
-    /// bounded lookback each time makes that independent of how fast the reader
-    /// was scheduled. Bounded rather than the whole history because this runs
-    /// once per burst, and a scrollback is as long as the user configured it.
-    static let waitLookback = CaptureStart.line(-200)
+    /// How far above the visible region entry and restart checks read.
+    /// Forward scans use their cursor; these checks have no usable old anchor,
+    /// so they read a bounded lookback rather than the whole scrollback.
+    private static let waitHistoryLines = 200
+    private static let waitCaptureLines = 128
+    private static let waitCaptureOutputLimit = 1_048_576
 
     private static func elapsed(since start: ContinuousClock.Instant) -> Double {
         (ContinuousClock.now - start).secondsValue
@@ -436,6 +475,13 @@ private enum OutputWaitCycle: Sendable {
     case answered(OutputWait)
     case reattach(CaptureCursor, [String], Bool)
     case finished(OutputWait.Outcome, [String], Bool)
+}
+
+private struct WaitCaptureScan: Sendable {
+    let cursor: CaptureCursor
+    let tail: [String]
+    let sawNewOutput: Bool
+    let output: OutputWait?
 }
 
 enum WaitWake: Sendable, Hashable {
