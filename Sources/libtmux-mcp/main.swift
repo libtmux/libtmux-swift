@@ -2,6 +2,12 @@ import Foundation
 import LibTmux
 import LibTmuxMCP
 
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
+
 /// An MCP server over stdio.
 ///
 /// Speaks JSON-RPC 2.0 on stdin and stdout, one message per line. Anything the
@@ -18,6 +24,16 @@ private func note(_ message: String) {
 
 private let inputChunkBytes = 64 * 1_024
 private let queuedRequestLines = 8
+
+private func readStandardInput(into buffer: inout [UInt8]) -> Int {
+    buffer.withUnsafeMutableBytes { bytes in
+        #if canImport(Darwin)
+            Darwin.read(STDIN_FILENO, bytes.baseAddress, bytes.count)
+        #else
+            Glibc.read(STDIN_FILENO, bytes.baseAddress, bytes.count)
+        #endif
+    }
+}
 
 private func emitInput(
     _ event: BoundedLineFramer.Event,
@@ -58,15 +74,23 @@ private func standardInputLines() -> AsyncStream<String> {
             var framer = BoundedLineFramer(
                 maximumBytes: MCPRequestHandler.maximumRequestBytes
             )
+            var buffer = [UInt8](repeating: 0, count: inputChunkBytes)
             while true {
-                let chunk = FileHandle.standardInput.readData(ofLength: inputChunkBytes)
-                if chunk.isEmpty {
+                let count = readStandardInput(into: &buffer)
+                if count == 0 {
                     for event in framer.finish() {
                         guard emitInput(event, to: continuation) else { return }
                     }
                     continuation.finish()
                     return
                 }
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    note("cannot read standard input: \(String(cString: strerror(errno)))")
+                    continuation.finish()
+                    return
+                }
+                let chunk = Data(buffer[..<count])
                 for event in framer.append(chunk) {
                     guard emitInput(event, to: continuation) else { return }
                 }
