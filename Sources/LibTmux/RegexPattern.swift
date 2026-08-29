@@ -46,6 +46,12 @@ public enum RegexMatchError: Error, Sendable, Hashable {
 /// ``Options/caseInsensitive``, each character is compared through
 /// locale-independent `lowercased()` values; full multi-character case folding
 /// is not performed, so `ss` does not match `ß`. Dot excludes line terminators.
+///
+/// Swift's own `Regex` cannot take this job. Its matcher backtracks — on Swift
+/// 6.2, `(a+)+b` against twenty `a`s takes 78 seconds — and a match is
+/// synchronous, so the deadline ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
+/// races cannot interrupt one that has started. A pattern here is bounded
+/// before it runs, which is also what makes one safe to accept from a client.
 public struct RegexPattern: Sendable, Hashable, Codable {
     /// Matching options encoded with the pattern.
     public struct Options: OptionSet, Sendable, Hashable, Codable {
