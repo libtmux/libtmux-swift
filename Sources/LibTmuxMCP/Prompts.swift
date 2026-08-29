@@ -99,8 +99,9 @@ enum Prompts {
                 full timeout and report the same failure later.
 
                 2. Read the result before changing anything:
-                   - `sawNewOutput: false` — the pane was quiet. The thing never \
-                started. Do not guess another pattern; check the command.
+                   - `outcome: "timedOut"`, `sawNewOutput: false` — the pane was \
+                quiet. The thing never started. Do not guess another pattern; check \
+                the command.
                    - `sawNewOutput: true, outcome: "timedOut"` — it printed \
                 something else. `tail` holds what it actually said; fix the pattern \
                 from that rather than from memory.

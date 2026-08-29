@@ -384,7 +384,11 @@ extension Server {
         }
         let state = try await incrementalPaneState(for: pane)
         let bounds = state.bounds
-        let start = max(-historyLines, -bounds.historySize)
+        // The cursor's checkpoint is taken from the end of these same rows, so
+        // the window never narrows below what one needs, however little
+        // lookback a caller asks for.
+        let lookback = max(historyLines, CaptureCursor.maximumCheckpointRows)
+        let start = max(-lookback, -bounds.historySize)
         let (span, spanOverflowed) = bounds.cursorRow.subtractingReportingOverflow(start)
         let (requested, countOverflowed) = span.addingReportingOverflow(1)
         guard !spanOverflowed, !countOverflowed else {

@@ -376,9 +376,11 @@ predicate works: text already on screen returns at once with
 `matchedAtEntry: true`, because "wait until it is listening" is answered by
 something already listening. Pass `requiringFreshOutput` when only a new
 occurrence counts. When a wait does end without a match, the result says which
-of the three things happened: `sawNewOutput: false` means the pane stayed quiet
-and no pattern will fix it, and otherwise `tail` holds what actually arrived so
-the pattern can be fixed from the output rather than from memory.
+thing happened: `timedOut` with `sawNewOutput: false` means the pane stayed
+quiet and no pattern will fix it, `timedOut` with output means `tail` holds what
+actually arrived so the pattern can be fixed from that rather than from memory,
+and `expiredWhileReading` means the timeout ended before the pane could be read
+at all, so nothing was established either way.
 
 The DocC catalogue's `Waiting` article covers why the output stream is a
 doorbell rather than the text being matched.
