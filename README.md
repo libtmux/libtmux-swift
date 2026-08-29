@@ -379,8 +379,11 @@ occurrence counts. When a wait does end without a match, the result says which
 thing happened: `timedOut` with `sawNewOutput: false` means the pane stayed
 quiet and no pattern will fix it, `timedOut` with output means `tail` holds what
 actually arrived so the pattern can be fixed from that rather than from memory,
-and `expiredWhileReading` means the timeout ended before the pane could be read
-at all, so nothing was established either way.
+`expiredWhileReading` means the timeout ended before the pane could be read
+at all, so nothing was established either way, and `alternateScreen` means a
+pager, editor, or other full-screen program held the pane, which tmux fills
+from a grid it keeps out of history — matching is suppressed there rather than
+run against what the program painted.
 
 The DocC catalogue's `Waiting` article covers why the output stream is a
 doorbell rather than the text being matched.
