@@ -100,6 +100,23 @@ extension Server {
         )
     }
 
+    /// Reads the newest history through the cursor, excluding screen padding below it.
+    package func captureTailThroughCursor(
+        _ pane: Pane,
+        maximumLines: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> BoundedPaneCapture {
+        let bounds = try await captureBounds(for: pane)
+        return try await captureTail(
+            pane,
+            startingAt: .start,
+            endingAt: bounds.cursorRow,
+            bounds: bounds,
+            maximumLines: maximumLines,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+    }
+
     package func captureTail(
         _ pane: Pane,
         fromAbsoluteRow firstRow: Int,

@@ -91,18 +91,32 @@ extension TmuxTools {
 
     private func prepareRunShell(in pane: Pane) async throws -> RunShellCleanup {
         let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let markerNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let channel = "libtmux-mcp-done-\(nonce)"
         let optionPrefix = "@libtmux_mcp_\(nonce)"
-        let before = try await server.using(.direct) { server in
-            try await server.capture(pane, since: nil)
+        let (cursor, paneWidth) = try await server.using(.direct) { server in
+            let before = try await server.captureBounded(
+                pane,
+                since: nil,
+                maximumLines: 1,
+                perStreamOutputLimit: PaneOutputBudget.sourceBytes
+            )
+            guard let widthValue = try await server.formatGlobal("#{pane_width}", for: pane),
+                let paneWidth = Int(widthValue), paneWidth > 0
+            else {
+                throw TmuxError.invocationFailed(reason: "pane reported an invalid width")
+            }
+            return (before.cursor, paneWidth)
         }
+        // Leave the last column unused so tmux never delays a wrap between chunks.
+        let markerWidth = max(1, min(paneWidth - 1, markerNonce.count + 1))
 
         return RunShellCleanup(
             channel: channel,
             statusOption: "\(optionPrefix)_status",
-            startOption: "\(optionPrefix)_start",
-            endOption: "\(optionPrefix)_end",
-            cursor: before.cursor
+            cursor: cursor,
+            startMarker: Self.markerRows("S\(markerNonce)", width: markerWidth),
+            endMarker: Self.markerRows("E\(markerNonce)", width: markerWidth)
         )
     }
 
@@ -111,29 +125,18 @@ extension TmuxTools {
         with cleanup: RunShellCleanup,
         in pane: Pane
     ) async throws {
-        // `eval` reads the command as quoted data, so its trailing comments or
-        // escapes cannot consume the bookkeeping suffix. The status goes into
-        // a pane option rather than onto the screen and is read back exactly.
-        //
-        // Spelled through `shellInvocation` rather than as a bare `tmux`: that
-        // would be whichever tmux is on the pane's PATH, and a client of a
-        // different protocol version is refused with `server exited
-        // unexpectedly` — which reaches the caller as a command that never
-        // finished.
+        // Concealed cells survive capture; shellInvocation keeps bookkeeping on this server.
         let tmux = server.shellInvocation
         let target = shellQuoted(pane.id.rawValue)
-        let position = shellQuoted("#{history_size}:#{cursor_y}")
+        let startMarker = Self.markerCommand(cleanup.startMarker)
+        let endMarker = Self.markerCommand(cleanup.endMarker)
         try await server.using(.direct) { server in
             try await server.sendKeys(
                 [
-                    "\(tmux) set-option -p -F -t \(target) "
-                        + "\(cleanup.startOption) \(position); "
-                        + "eval \(shellQuoted(command)); "
+                    "printf '\\r\\n'; \(startMarker); eval \(shellQuoted(command)); "
                         + "\(tmux) set-option -p -t \(target) "
                         + "\(cleanup.statusOption) $?; "
-                        + "\(tmux) set-option -p -F -t \(target) "
-                        + "\(cleanup.endOption) \(position); "
-                        + "printf '\\n'; "
+                        + "printf '\\r\\n'; \(endMarker); "
                         + "\(tmux) wait-for -S \(cleanup.channel)",
                     "Enter",
                 ],
@@ -185,27 +188,22 @@ extension TmuxTools {
         started: ContinuousClock.Instant
     ) async throws -> ToolOutcome {
         try await server.using(.direct) { server in
-            async let startValue = server.paneOption(cleanup.startOption, of: pane)
-            async let endValue = server.paneOption(cleanup.endOption, of: pane)
-            async let statusValue = server.paneOption(cleanup.statusOption, of: pane)
-            guard let start = try await RunShellPosition(startValue) else {
-                throw TmuxError.invocationFailed(
-                    reason: "run_shell completed without an output start"
-                )
-            }
-            let end = try await RunShellPosition(endValue)
-            let status = finished ? try await statusValue.flatMap(Int.init) : nil
-            let after = try await server.captureTail(
+            let capture = try await server.captureTailThroughCursor(
                 pane,
-                fromAbsoluteRow: start.absoluteRow,
-                throughAbsoluteRow: end?.absoluteRow,
-                maximumLines: maxLines,
+                maximumLines: try cleanup.captureLineLimit(for: maxLines),
                 perStreamOutputLimit: PaneOutputBudget.sourceBytes
             )
-            let kept = try PaneOutputBudget.tail(
-                after.lines,
-                afterDropping: after.droppedLines
+            let output = try Self.runShellOutput(
+                capture.lines,
+                startMarker: cleanup.startMarker,
+                endMarker: cleanup.endMarker,
+                finished: finished,
+                maximumLines: maxLines
             )
+            let status =
+                finished
+                ? try await server.paneOption(cleanup.statusOption, of: pane).flatMap(Int.init)
+                : nil
             if finished {
                 guard status != nil else {
                     throw TmuxError.invocationFailed(
@@ -221,8 +219,9 @@ extension TmuxTools {
                     pane: pane.id.rawValue,
                     exitStatus: status,
                     timedOut: !finished,
-                    output: kept.lines,
-                    droppedLines: kept.droppedLines,
+                    output: output.lines,
+                    linesMissed: output.linesMissed,
+                    droppedLines: output.droppedLines,
                     seconds: Self.elapsed(since: started),
                     effectiveTimeout: enforcedTimeout
                 ),
@@ -310,10 +309,11 @@ extension TmuxTools {
                         guard
                             try await server.formatGlobal("#{pane_dead}", for: pane) != "1"
                         else { return }
-                        let capture = try await server.capture(
+                        let capture = try await server.captureBounded(
                             pane,
                             since: cleanup.cursor,
-                            limit: 0
+                            maximumLines: 1,
+                            perStreamOutputLimit: PaneOutputBudget.sourceBytes
                         )
                         if capture.restarted { return }
                     } catch let error as TmuxError {
@@ -339,9 +339,7 @@ extension TmuxTools {
         pane: Pane,
         server: Server
     ) async {
-        for option in [cleanup.statusOption, cleanup.startOption, cleanup.endOption] {
-            try? await server.unsetPaneOption(option, of: pane)
-        }
+        try? await server.unsetPaneOption(cleanup.statusOption, of: pane)
     }
 
     private enum RunShellLifetime {
@@ -354,25 +352,91 @@ extension TmuxTools {
     private struct RunShellCleanup: Sendable {
         let channel: String
         let statusOption: String
-        let startOption: String
-        let endOption: String
         let cursor: CaptureCursor
+        let startMarker: [String]
+        let endMarker: [String]
+
+        func captureLineLimit(for maximumLines: Int) throws -> Int {
+            // Separator, cursor row, and one row that proves truncation.
+            let markerLines = startMarker.count + endMarker.count
+            let (overhead, overheadOverflowed) = markerLines.addingReportingOverflow(3)
+            let (limit, limitOverflowed) = maximumLines.addingReportingOverflow(overhead)
+            guard maximumLines > 0, !overheadOverflowed, !limitOverflowed else {
+                throw TmuxError.invocationFailed(reason: "run_shell capture size overflowed")
+            }
+            return limit
+        }
     }
 
-    private struct RunShellPosition {
-        let absoluteRow: Int
+    private struct RunShellOutput {
+        let lines: [String]
+        let linesMissed: Bool
+        let droppedLines: Int
+    }
 
-        init?(_ value: String?) {
-            guard let value else { return nil }
-            let fields = value.split(separator: ":", omittingEmptySubsequences: false)
-            guard fields.count == 2,
-                let history = Int(fields[0]), history >= 0,
-                let cursor = Int(fields[1]), cursor >= 0
-            else { return nil }
-            let (absoluteRow, overflowed) = history.addingReportingOverflow(cursor)
-            guard !overflowed else { return nil }
-            self.absoluteRow = absoluteRow
+    private static func markerRows(_ marker: String, width: Int) -> [String] {
+        let characters = Array(marker)
+        return stride(from: 0, to: characters.count, by: width).map { start in
+            String(characters[start..<min(start + width, characters.count)])
         }
+    }
+
+    private static func markerCommand(_ rows: [String]) -> String {
+        // An echoed command line must not contain the complete marker token.
+        let arguments = rows.map { row in
+            let middle = row.index(row.startIndex, offsetBy: row.count / 2)
+            return "'\(row[..<middle])''\(row[middle...])'"
+        }
+        return "printf '\\033[8m%s\\033[28m\\r\\n' "
+            + arguments.joined(separator: " ")
+    }
+
+    private static func runShellOutput(
+        _ captured: [String],
+        startMarker: [String],
+        endMarker: [String],
+        finished: Bool,
+        maximumLines: Int
+    ) throws -> RunShellOutput {
+        let end = firstRange(of: endMarker, in: captured)
+        if finished, end == nil {
+            throw TmuxError.invocationFailed(
+                reason: "run_shell completed without an output end"
+            )
+        }
+        let outputEnd = end?.lowerBound ?? captured.endIndex
+        let start = firstRange(of: startMarker, in: captured, before: outputEnd)
+        var candidates = Array(captured[(start?.upperBound ?? captured.startIndex)..<outputEnd])
+        if end != nil {
+            if candidates.last?.isEmpty == true { candidates.removeLast() }
+        } else {
+            while candidates.last?.isEmpty == true { candidates.removeLast() }
+        }
+
+        let keptByLine = Array(candidates.suffix(maximumLines))
+        let kept = try PaneOutputBudget.tail(
+            keptByLine,
+            afterDropping: candidates.count - keptByLine.count
+        )
+        return RunShellOutput(
+            lines: kept.lines,
+            linesMissed: start == nil,
+            droppedLines: kept.droppedLines
+        )
+    }
+
+    private static func firstRange(
+        of marker: [String],
+        in lines: [String],
+        before end: Int? = nil
+    ) -> Range<Int>? {
+        let upperBound = min(end ?? lines.endIndex, lines.endIndex)
+        guard !marker.isEmpty, marker.count <= upperBound else { return nil }
+        for start in 0...(upperBound - marker.count) {
+            let range = start..<(start + marker.count)
+            if Array(lines[range]) == marker { return range }
+        }
+        return nil
     }
 
 }

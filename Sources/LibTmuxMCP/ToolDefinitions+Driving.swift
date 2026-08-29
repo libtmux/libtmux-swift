@@ -8,8 +8,10 @@ extension TmuxTools {
                 + "its exit status and output.",
             detail: """
                 The tool for a command you wrote. It composes a tmux channel into the \
-                command so completion is signalled rather than guessed, which makes it \
-                both exact and cheap — no prompt regex, no polling, no scraping.
+                command so completion is signalled rather than guessed — no prompt \
+                regex or polling. `linesMissed` is true when the bounded capture cannot \
+                retain the command's start. In that case `droppedLines` counts only \
+                omissions known from the retained tail.
 
                 Use send_keys instead for keystrokes a program is meant to interpret, \
                 for anything interactive, or when the shell state has to persist \
@@ -45,12 +47,13 @@ extension TmuxTools {
                     "paneRef": Schema.string, "pane": Schema.string,
                     "exitStatus": Schema.nullableInteger,
                     "timedOut": Schema.boolean, "output": Schema.array(of: Schema.string),
-                    "droppedLines": Schema.integer, "seconds": Schema.number,
+                    "linesMissed": Schema.boolean, "droppedLines": Schema.integer,
+                    "seconds": Schema.number,
                     "effectiveTimeout": Schema.number,
                 ],
                 required: [
-                    "paneRef", "pane", "timedOut", "output", "droppedLines", "seconds",
-                    "effectiveTimeout",
+                    "paneRef", "pane", "timedOut", "output", "linesMissed",
+                    "droppedLines", "seconds", "effectiveTimeout",
                 ])
         ),
         ToolDefinition(

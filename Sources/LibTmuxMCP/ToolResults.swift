@@ -295,9 +295,14 @@ public struct RunShellResult: Sendable, Hashable, Codable {
     /// The command is still running in the pane when this is true — nothing was
     /// killed, so read the pane or call again.
     public let timedOut: Bool
-    /// Only what this command printed. Lines already on screen are not
-    /// repeated back.
+    /// The newest captured rows. When `linesMissed` is false, these contain
+    /// only what this command printed rather than lines already on screen.
     public let output: [String]
+    /// The start marker fell outside the bounded capture or tmux history, so
+    /// `output` is only the newest partial tail.
+    public let linesMissed: Bool
+    /// Rows known to have been omitted from `output`. More can be missing when
+    /// `linesMissed` is true.
     public let droppedLines: Int
     public let seconds: Double
     public let effectiveTimeout: Double

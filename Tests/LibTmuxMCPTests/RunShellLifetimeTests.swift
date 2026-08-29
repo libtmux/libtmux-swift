@@ -69,7 +69,7 @@ struct RunShellLifetimeTests {
     @Test("a completed run does not erase a capture failure")
     func finalCaptureFailureIsPropagated() async throws {
         try await withTmuxServer { fixture in
-            let transport = FailingFinalRunShellCaptureTransport()
+            let transport = RunShellCaptureTransport(failingCapture: 2)
             let server = Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
@@ -95,6 +95,50 @@ struct RunShellLifetimeTests {
                     !(await tools.paneRuns.isHeld(pane))
                 }
             )
+        }
+    }
+
+    @Test("prepare and timeout cleanup bound every pane capture")
+    func prepareAndTimeoutCleanupBoundPaneCaptures() async throws {
+        try await withTmuxServer { fixture in
+            let transport = RunShellCaptureTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let nonce = UUID().uuidString
+            let release = "libtmux-test-run-shell-release-\(nonce)"
+            let result = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(WireReferenceCodec.processLocal.reference(to: pane)),
+                        "command": .string(
+                            "\(server.shellInvocation) wait-for \(release)"
+                        ),
+                        "timeout": .number(0.1),
+                    ])
+                )
+            ).decode(RunShellResult.self)
+            #expect(result.timedOut)
+
+            let cleanupCaptured = try await waitUntil {
+                await transport.captureCount >= 3
+            }
+            let captureLimits = await transport.captureLimits
+            try await fixture.signal(release)
+            #expect(
+                try await waitUntil {
+                    !(await tools.paneRuns.isHeld(pane))
+                }
+            )
+
+            #expect(cleanupCaptured)
+            #expect(captureLimits.count >= 3)
+            #expect(captureLimits.allSatisfy { $0 == 262_144 })
         }
     }
 
@@ -258,6 +302,51 @@ private actor FailingRunShellLaunchTransport: ProcessTransport {
     }
 }
 
+private actor RunShellCaptureTransport: OutputLimitedProcessTransport {
+    private let underlying = SubprocessTransport()
+    private let failingCapture: Int?
+    private(set) var captureLimits: [Int] = []
+
+    init(failingCapture: Int? = nil) {
+        self.failingCapture = failingCapture
+    }
+
+    var captureCount: Int { captureLimits.count }
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String]
+    ) async throws(TmuxError) -> TmuxReply {
+        try await run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            perStreamOutputLimit: .max
+        )
+    }
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        if arguments.contains(where: { $0.contains("capture-pane") }) {
+            captureLimits.append(perStreamOutputLimit)
+            if let failingCapture, captureLimits.count == failingCapture {
+                throw .invocationFailed(reason: "capture failed")
+            }
+        }
+        return try await underlying.run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+    }
+}
+
 private actor FailingFirstRunShellWaitTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private var failed = false
@@ -272,29 +361,6 @@ private actor FailingFirstRunShellWaitTransport: ProcessTransport {
         {
             failed = true
             throw .invocationFailed(reason: "wait failed")
-        }
-        return try await underlying.run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment
-        )
-    }
-}
-
-private actor FailingFinalRunShellCaptureTransport: ProcessTransport {
-    private let underlying = SubprocessTransport()
-    private var captures = 0
-
-    func run(
-        executable: String,
-        arguments: [String],
-        environment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply {
-        if arguments.contains(where: { $0.contains("capture-pane") }) {
-            captures += 1
-            if captures == 2 {
-                throw .invocationFailed(reason: "capture failed")
-            }
         }
         return try await underlying.run(
             executable: executable,

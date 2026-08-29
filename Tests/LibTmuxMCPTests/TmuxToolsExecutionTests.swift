@@ -64,12 +64,17 @@ extension TmuxToolsTests {
     func runShellReportsStatusAndOutput() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            _ = try await server.run(
+                TmuxCommand("resize-window", ["-t", pane.windowID.rawValue, "-x", "12"])
+            )
+            #expect(try await server.formatGlobal("#{pane_width}", for: pane) == "12")
             let outcome = try await TmuxTools(server: server).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
                         "pane": .string(wireRef(pane)),
                         "command": .string("printf shell-marker"),
+                        "max_lines": .number(1),
                         "timeout": .number(20),
                     ])
                 )
@@ -78,6 +83,7 @@ extension TmuxToolsTests {
             #expect(result.exitStatus == 0)
             #expect(!result.timedOut)
             #expect(result.output == ["shell-marker"])
+            #expect(!result.linesMissed)
         }
     }
 
@@ -128,10 +134,66 @@ extension TmuxToolsTests {
             #expect(outcome.exitStatus == 0)
             #expect(outcome.output.count == 2)
             #expect(outcome.output.map { String($0.prefix(7)) } == ["RUN4198", "RUN4199"])
-            #expect(outcome.droppedLines == 4_198)
+            #expect(outcome.linesMissed)
+            #expect(outcome.droppedLines == 2)
             let capture = try #require(await transport.lastCapture)
             #expect(capture.outputLimit == 262_144)
             #expect(capture.arguments.joined(separator: " ").contains(" -S "))
+        }
+    }
+
+    @Test("run_shell preserves output when scrollback is full")
+    func runShellPreservesOutputAtFullHistory() async throws {
+        try await withTmuxServer { server in
+            _ = try await server.setOption("history-limit", to: "20")
+            let existing = Set(try await server.panes().map(\.id))
+            _ = try await server.newSession(named: "full-history-run-shell")
+            let pane = try #require(
+                try await server.panes().first { !existing.contains($0.id) }
+            )
+            let reset = "libtmux-test-run-shell-reset-\(UUID().uuidString)"
+            try await server.run(
+                "stty -echo; printf '\\033c'; "
+                    + "\(server.shellInvocation) wait-for -S \(reset)",
+                in: pane
+            )
+            try await server.wait(for: reset)
+            try await server.clearHistory(pane)
+
+            let ready = "libtmux-test-run-shell-full-\(UUID().uuidString)"
+            let release = "libtmux-test-run-shell-release-\(UUID().uuidString)"
+            let settled = "libtmux-test-run-shell-settled-\(UUID().uuidString)"
+            let tmux = server.shellInvocation
+            try await server.run(
+                "i=0; while [ \"$(\(tmux) display-message -p -t \(pane.id.rawValue) "
+                    + "'#{history_size}')\" != '20' ]; do "
+                    + "printf 'SEED%04d\\n' \"$i\"; i=$((i + 1)); done; "
+                    + "\(tmux) wait-for -S \(ready); \(tmux) wait-for \(release); "
+                    + "\(tmux) wait-for -S \(settled)",
+                in: pane
+            )
+            try await server.wait(for: ready)
+            #expect(
+                try await server.formatGlobal("#{history_size}", for: pane) == "20"
+            )
+            try await server.signal(release)
+            try await server.wait(for: settled)
+
+            let result = try await TmuxTools(server: server).call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(wireRef(pane)),
+                        "command": .string("printf 'ONE\\nTWO\\n'"),
+                        "timeout": .number(20),
+                    ])
+                )
+            ).decode(RunShellResult.self)
+
+            #expect(result.exitStatus == 0)
+            #expect(result.output == ["ONE", "TWO"])
+            #expect(!result.linesMissed)
+            #expect(result.droppedLines == 0)
         }
     }
 
