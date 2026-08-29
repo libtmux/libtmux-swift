@@ -301,7 +301,9 @@ extension Server {
                 + "\(separator)#{alternate_on}",
             for: pane
         )
-        guard let fields = state?.components(separatedBy: separator), fields.count >= 8,
+        guard let state else { throw .staleServerValue }
+        let fields = state.components(separatedBy: separator)
+        guard fields.count >= 8,
             let history = Int(fields[0]), history >= 0,
             let cursorRow = Int(fields[1]), cursorRow >= 0,
             let paneHeight = Int(fields[3]), paneHeight > 0,
@@ -311,7 +313,7 @@ extension Server {
             fields[7] == "0" || fields[7] == "1",
             cursorRow < paneHeight
         else {
-            throw .invocationFailed(reason: "pane \(pane.id.rawValue) has gone")
+            throw .invocationFailed(reason: "tmux returned invalid incremental pane state")
         }
         let (absoluteCursorRow, overflowed) = history.addingReportingOverflow(cursorRow)
         guard !overflowed else {
