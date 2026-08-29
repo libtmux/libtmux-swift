@@ -468,7 +468,7 @@ extension Server {
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
             ) { rows in
-                let arrived = rows.filter { !$0.isEmpty }
+                let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
                 do {

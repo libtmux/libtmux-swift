@@ -14,6 +14,7 @@ struct BlankOutputWaitTests {
         producing shellOutput: String,
         on server: Server,
         in pane: Pane,
+        matching patterns: [RegexPattern] = [],
         stoppingAt stops: [RegexPattern] = []
     ) async throws -> OutputWait {
         let ready = "blank-output-ready-\(UUID().uuidString)"
@@ -32,6 +33,7 @@ struct BlankOutputWaitTests {
 
         return try await server.waitForOutput(
             in: pane,
+            matching: patterns,
             stoppingAt: stops,
             requiringFreshOutput: true,
             timeout: .seconds(3)
@@ -50,6 +52,40 @@ struct BlankOutputWaitTests {
             #expect(result.outcome == .matched)
             #expect(result.matched == nil)
             #expect(result.sawNewOutput)
+        }
+    }
+
+    @Test("a blank-line pattern matches a new blank-only output event")
+    func blankPatternMatchesBlankOutput() async throws {
+        try await withTmuxServer { server in
+            let result = try await waitForOutput(
+                producing: "printf '\\n'",
+                on: server,
+                in: try await bootstrapPane(server),
+                matching: [try RegexPattern("^$")]
+            )
+
+            #expect(result.outcome == .matched)
+            #expect(result.matched == "^$")
+            #expect(result.matchedIndex == 0)
+            #expect(result.sawNewOutput)
+        }
+    }
+
+    @Test("a nonblank line does not add a blank match after its newline")
+    func nonblankLineDoesNotMatchBlankPattern() async throws {
+        try await withTmuxServer { server in
+            let result = try await waitForOutput(
+                producing: "printf 'VISIBLE\\n'",
+                on: server,
+                in: try await bootstrapPane(server),
+                matching: [try RegexPattern("^$")]
+            )
+
+            #expect(result.outcome == .timedOut)
+            #expect(result.matched == nil)
+            #expect(result.sawNewOutput)
+            #expect(result.tail == ["VISIBLE"])
         }
     }
 

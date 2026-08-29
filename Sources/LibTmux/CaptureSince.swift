@@ -139,9 +139,14 @@ extension Server {
                     perStreamOutputLimit: perStreamOutputLimit
                 )
                 var rows = rawRows
-                if let tail = aligned.tail, rows.first == tail { rows.removeFirst() }
-                if end == state.absoluteCursorRow {
-                    while rows.last?.isEmpty == true { rows.removeLast() }
+                let advanced = end > aligned.anchor
+                // Keep a completed blank anchor, but not the empty row the cursor lands on.
+                let completedBlankAnchor =
+                    advanced && aligned.tail == nil && rows.first?.isEmpty == true
+                if rows.first == (aligned.tail ?? "") { rows.removeFirst() }
+                if completedBlankAnchor { rows.insert("", at: 0) }
+                if advanced, end == state.absoluteCursorRow, rows.last?.isEmpty == true {
+                    rows.removeLast()
                 }
                 let nextCursor = try makeCursor(
                     for: pane,
