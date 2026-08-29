@@ -90,53 +90,11 @@ public struct TmuxTools: Sendable {
         }
         let arguments = try Arguments(request, for: definition)
 
-        switch request.name {
-        case "describe_server": return try await describeServer()
-        case "describe_filters": return .init(FilterSchema.current)
-        case "list_servers": return try await listServers(arguments)
-        case "show_options": return try await showOptions(arguments)
-        case "show_environment": return try await showEnvironment(arguments)
-        case "show_hooks": return try await showHooks(arguments)
-
-        case "list_sessions": return try await listSessions(arguments)
-        case "list_windows": return try await listWindows(arguments)
-        case "list_panes": return try await listPanes(arguments)
-        case "snapshot": return try await readSnapshot()
-        case "capture_pane": return try await capturePane(arguments)
-        case "capture_since": return try await captureSince(arguments)
-        case "search_panes": return try await searchPanes(arguments, progress)
-        case "read_format": return try await readFormat(arguments)
-
-        case "wait_for_output": return try await waitForOutput(arguments, progress)
-        case "watch_format": return try await watchFormat(arguments, progress)
-        case "wait_for_channel": return try await waitForChannel(arguments, progress)
-        case "signal_channel": return try await signalChannel(arguments)
-
-        case "run_shell": return try await runShell(arguments, progress)
-        case "send_keys": return try await sendKeys(arguments)
-        case "new_session": return try await newSession(arguments)
-        case "new_window": return try await newWindow(arguments)
-        case "split_pane": return try await splitPane(arguments)
-        case "apply_workspace": return try await applyWorkspace(arguments)
-        case "set_option": return try await setOption(arguments)
-        case "set_environment": return try await setEnvironment(arguments)
-        case "rename": return try await rename(arguments)
-        case "select": return try await select(arguments)
-        case "resize_pane": return try await resizePane(arguments)
-        case "select_layout": return try await selectLayout(arguments)
-        case "respawn_pane": return try await respawnPane(arguments)
-        case "paste_text": return try await pasteText(arguments)
-
-        case "kill_pane": return try await killPane(arguments)
-        case "kill_window": return try await killWindow(arguments)
-        case "kill_session": return try await killSession(arguments)
-        case "kill_server": return try await killServer(arguments)
-
-        case "run_command": return try await runCommand(arguments)
-        case "run_commands": return try await runCommands(arguments)
-
-        default: throw ToolError.unknownTool(request.name)
-        }
+        return try await definition.operation.execute(
+            on: self,
+            arguments: arguments,
+            reporting: progress
+        )
     }
 
     /// Clamps a requested wait to the ceiling, and says what was enforced.

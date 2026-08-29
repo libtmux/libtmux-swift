@@ -1,7 +1,7 @@
 extension TmuxTools {
     static let tmuxDefinitions: [ToolDefinition] = [
         ToolDefinition(
-            name: "run_command",
+            operation: .runCommand,
             title: "Run one tmux command",
             summary: "Runs one explicitly confirmed raw tmux command in isolation.",
             detail: """
@@ -41,7 +41,7 @@ extension TmuxTools {
                 ], required: ["serverRef", "exitCode", "standardOutput", "standardError"])
         ),
         ToolDefinition(
-            name: "run_commands",
+            operation: .runCommands,
             title: "Run several tmux commands",
             summary: "Runs up to 16 confirmed raw tmux commands and attributes each result.",
             detail: """

@@ -130,8 +130,8 @@ public struct ToolArgument: Sendable, Hashable {
     }
 }
 
-/// One tool a client can call.
 public struct ToolDefinition: Sendable, Hashable {
+    let operation: ToolOperation
     /// What the client names in a ``ToolCall``.
     public let name: String
     /// A short human label, shown by clients that render one.
@@ -155,7 +155,7 @@ public struct ToolDefinition: Sendable, Hashable {
     public let outputSchema: JSONValue?
 
     init(
-        name: String,
+        operation: ToolOperation,
         title: String,
         summary: String,
         detail: String = "",
@@ -165,7 +165,8 @@ public struct ToolDefinition: Sendable, Hashable {
         arguments: [ToolArgument] = [],
         outputSchema: JSONValue? = nil
     ) {
-        self.name = name
+        self.operation = operation
+        self.name = operation.rawValue
         self.title = title
         self.summary = summary
         self.detail = detail

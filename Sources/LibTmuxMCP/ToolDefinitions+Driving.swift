@@ -1,7 +1,7 @@
 extension TmuxTools {
     static let drivingDefinitions: [ToolDefinition] = [
         ToolDefinition(
-            name: "run_shell",
+            operation: .runShell,
             title: "Run a shell command in a pane",
             summary:
                 "Runs a command line in a pane, waits for it to finish, and reports "
@@ -57,7 +57,7 @@ extension TmuxTools {
                 ])
         ),
         ToolDefinition(
-            name: "send_keys",
+            operation: .sendKeys,
             title: "Send keys to a pane",
             summary: "Sends keys to a pane, as if typed.",
             detail: """
@@ -92,7 +92,7 @@ extension TmuxTools {
                 required: ["paneRef", "pane", "keys"])
         ),
         ToolDefinition(
-            name: "new_session",
+            operation: .newSession,
             title: "Create a session",
             summary: "Creates a detached session and returns it.",
             tier: .mutating,
@@ -120,7 +120,7 @@ extension TmuxTools {
                 ])
         ),
         ToolDefinition(
-            name: "new_window",
+            operation: .newWindow,
             title: "Create a window",
             summary: "Creates a window in a session and returns it.",
             tier: .mutating,
@@ -144,7 +144,7 @@ extension TmuxTools {
                 ])
         ),
         ToolDefinition(
-            name: "split_pane",
+            operation: .splitPane,
             title: "Split a pane",
             summary: "Splits a pane and returns the new one.",
             tier: .mutating,
@@ -175,7 +175,7 @@ extension TmuxTools {
                 ])
         ),
         ToolDefinition(
-            name: "apply_workspace",
+            operation: .applyWorkspace,
             title: "Build a session from a plan",
             summary:
                 "Builds a whole session — windows, panes, directories, commands — "
@@ -244,7 +244,7 @@ extension TmuxTools {
                 required: ["session", "windows", "panes"])
         ),
         ToolDefinition(
-            name: "rename",
+            operation: .rename,
             title: "Rename a session or window",
             summary: "Gives a session or window a new name.",
             detail: """
@@ -267,7 +267,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "select",
+            operation: .select,
             title: "Make a pane or window active",
             summary: "Changes which pane or window is the active one.",
             detail: """
@@ -288,7 +288,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "resize_pane",
+            operation: .resizePane,
             title: "Resize a pane",
             summary: "Sets a pane's width or height in cells.",
             tier: .mutating,
@@ -307,7 +307,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "select_layout",
+            operation: .selectLayout,
             title: "Apply a layout to a window",
             summary: "Rearranges a window's panes with one of tmux's own layouts.",
             detail: """
@@ -338,7 +338,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "respawn_pane",
+            operation: .respawnPane,
             title: "Restart what runs in a pane",
             summary: "Replaces the process in a pane, keeping the pane itself.",
             detail: """
@@ -364,7 +364,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "paste_text",
+            operation: .pasteText,
             title: "Paste text into a pane",
             summary:
                 "Puts text into a pane without any of it being read as a key name.",
@@ -395,7 +395,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "set_environment",
+            operation: .setEnvironment,
             title: "Set what new panes inherit",
             summary: "Sets a global variable in the environment tmux gives new processes.",
             detail: """
@@ -420,7 +420,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "set_option",
+            operation: .setOption,
             title: "Set a tmux option",
             summary: "Sets a server or global tmux option.",
             tier: .mutating,

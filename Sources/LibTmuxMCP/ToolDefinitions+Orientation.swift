@@ -3,7 +3,7 @@ import LibTmux
 extension TmuxTools {
     static let orientationDefinitions: [ToolDefinition] = [
         ToolDefinition(
-            name: "describe_server",
+            operation: .describeServer,
             title: "Describe this server",
             summary:
                 "What tmux this is, which optional features it supports, and where "
@@ -37,7 +37,7 @@ extension TmuxTools {
                 ])
         ),
         ToolDefinition(
-            name: "list_servers",
+            operation: .listServers,
             title: "Find the tmux servers that are running",
             summary:
                 "Every tmux server listening on a socket, which is the one "
@@ -85,7 +85,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "describe_filters",
+            operation: .describeFilters,
             title: "Describe the filter vocabulary",
             summary: "The filterable fields of each object, their types, and aliases.",
             detail: """

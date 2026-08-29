@@ -1,7 +1,7 @@
 extension TmuxTools {
     static let readingDefinitions: [ToolDefinition] = [
         ToolDefinition(
-            name: "list_sessions",
+            operation: .listSessions,
             title: "List sessions",
             summary: "Every session, optionally selected by what its panes are running.",
             tier: .readonly,
@@ -19,7 +19,7 @@ extension TmuxTools {
             outputSchema: Schema.listing("sessions")
         ),
         ToolDefinition(
-            name: "list_windows",
+            operation: .listWindows,
             title: "List windows",
             summary:
                 "Every session-local window occurrence, optionally filtered by its "
@@ -48,7 +48,7 @@ extension TmuxTools {
             outputSchema: Schema.listing("windows")
         ),
         ToolDefinition(
-            name: "list_panes",
+            operation: .listPanes,
             title: "List panes",
             summary: "Every pane on the server, optionally filtered.",
             detail: """
@@ -71,7 +71,7 @@ extension TmuxTools {
             outputSchema: Schema.listing("panes")
         ),
         ToolDefinition(
-            name: "snapshot",
+            operation: .snapshot,
             title: "Read the server as one value",
             summary:
                 "Sessions, global windows, exact window links, panes and clients in one value.",
@@ -88,7 +88,7 @@ extension TmuxTools {
             isIdempotent: true
         ),
         ToolDefinition(
-            name: "capture_pane",
+            operation: .capturePane,
             title: "Read a pane's contents",
             summary: "The text a pane is showing, as a person would read it.",
             detail: """
@@ -126,7 +126,7 @@ extension TmuxTools {
                 ], required: ["paneRef", "pane", "lines", "droppedLines"])
         ),
         ToolDefinition(
-            name: "capture_since",
+            operation: .captureSince,
             title: "Read what a pane has printed since last time",
             summary:
                 "Answers only what is new since a cursor, so watching a pane "
@@ -180,7 +180,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "search_panes",
+            operation: .searchPanes,
             title: "Search what panes have printed",
             summary: "Finds a regular expression in the contents of every pane.",
             detail: """
@@ -246,7 +246,7 @@ extension TmuxTools {
                 ], required: ["matches", "panesSearched", "panesAvailable", "truncated"])
         ),
         ToolDefinition(
-            name: "read_format",
+            operation: .readFormat,
             title: "Evaluate a tmux format",
             summary:
                 "Evaluates any tmux format, reaching fields the listings do not carry.",
@@ -280,7 +280,7 @@ extension TmuxTools {
         ),
 
         ToolDefinition(
-            name: "show_options",
+            operation: .showOptions,
             title: "Read tmux options",
             summary: "What a tmux option is set to, or every option in a table.",
             detail: """
@@ -324,7 +324,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "show_environment",
+            operation: .showEnvironment,
             title: "Read the environment new panes inherit",
             summary:
                 "The global variables tmux gives a process it starts, which is not this "
@@ -350,7 +350,7 @@ extension TmuxTools {
             )
         ),
         ToolDefinition(
-            name: "show_hooks",
+            operation: .showHooks,
             title: "Read the hooks that are bound",
             summary: "The global commands tmux runs when something happens.",
             detail: """

@@ -1,7 +1,7 @@
 extension TmuxTools {
     static let waitingDefinitions: [ToolDefinition] = [
         ToolDefinition(
-            name: "wait_for_output",
+            operation: .waitForOutput,
             title: "Wait for a pane to print something",
             summary:
                 "Blocks until a pane prints matching text, with tmux output events "
@@ -89,7 +89,7 @@ extension TmuxTools {
                 ])
         ),
         ToolDefinition(
-            name: "watch_format",
+            operation: .watchFormat,
             title: "Wait for a tmux format to change",
             summary:
                 "Blocks until a tmux format takes a matching value, without reading "
@@ -142,7 +142,7 @@ extension TmuxTools {
                 required: ["paneRef", "linkRef", "outcome", "seconds", "effectiveTimeout"])
         ),
         ToolDefinition(
-            name: "wait_for_channel",
+            operation: .waitForChannel,
             title: "Wait on a tmux channel",
             summary:
                 "Blocks until this tmux server's channel is signalled. The only "
@@ -178,7 +178,7 @@ extension TmuxTools {
                 ], required: ["channel", "released", "seconds", "effectiveTimeout"])
         ),
         ToolDefinition(
-            name: "signal_channel",
+            operation: .signalChannel,
             title: "Release a tmux channel",
             summary: "Releases one waiter on a channel.",
             tier: .mutating,

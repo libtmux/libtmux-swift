@@ -24,6 +24,13 @@ struct ToolCatalogTests {
         #expect(Set(names).count == names.count)
     }
 
+    @Test("every operation has one definition")
+    func everyOperationHasOneDefinition() {
+        let operations = TmuxTools.definitions.map(\.operation)
+        #expect(operations.count == ToolOperation.allCases.count)
+        #expect(Set(operations) == Set(ToolOperation.allCases))
+    }
+
     @Test("every declared argument is one the tool can actually receive")
     func declaredArgumentsAreReadable() throws {
         // The bug this replaces: the protocol layer named the arguments it

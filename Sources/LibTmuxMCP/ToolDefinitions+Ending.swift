@@ -1,7 +1,7 @@
 extension TmuxTools {
     static let endingDefinitions: [ToolDefinition] = [
         ToolDefinition(
-            name: "kill_pane",
+            operation: .killPane,
             title: "Kill a pane",
             summary: "Ends a pane and whatever is running in it.",
             tier: .destructive,
@@ -11,7 +11,7 @@ extension TmuxTools {
                 required: ["ref", "kind", "id"])
         ),
         ToolDefinition(
-            name: "kill_window",
+            operation: .killWindow,
             title: "Kill a window",
             summary: "Ends a window and every pane in it.",
             tier: .destructive,
@@ -21,7 +21,7 @@ extension TmuxTools {
                 required: ["ref", "kind", "id"])
         ),
         ToolDefinition(
-            name: "kill_session",
+            operation: .killSession,
             title: "Kill a session",
             summary: "Ends a session and every window in it.",
             tier: .destructive,
@@ -32,7 +32,7 @@ extension TmuxTools {
         ),
 
         ToolDefinition(
-            name: "kill_server",
+            operation: .killServer,
             title: "Kill the whole tmux server",
             summary: "Ends every session on this server, and the server with them.",
             tier: .destructive,
