@@ -147,11 +147,11 @@ public struct Server: Sendable, Hashable {
         try await windowListingRows().map(\.link)
     }
 
-    private func windowListingRows() async throws(TmuxError) -> [WindowListingRow] {
+    private func windowListingRows() async throws(TmuxError) -> [WindowAppearance] {
         try await list(
-            TmuxCommand("list-windows", ["-a", "-F", WindowListingRow.projection.template]),
-            projection: WindowListingRow.projection,
-            row: { WindowListingRow(row: $0, endpoint: endpoint) }
+            TmuxCommand("list-windows", ["-a", "-F", WindowAppearance.projection.template]),
+            projection: WindowAppearance.projection,
+            row: { WindowAppearance(row: $0, endpoint: endpoint) }
         )
     }
 

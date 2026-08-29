@@ -108,7 +108,7 @@ let scenarios: [Scenario] = [
         detail: "new-window then split, read back",
         work: { server in
             guard let session = try await server.sessions().first else { return "-" }
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             _ = try await server.splitWindow(window)
             let panes = try await server.panes().filter { $0.windowID == window.id }
             return "\(panes.count) panes"

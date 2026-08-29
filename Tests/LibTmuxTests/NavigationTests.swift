@@ -13,7 +13,7 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session, named: "second")
+            let second = try await server.newWindow(in: session, named: "second").window
             let links = try await server.windowLinks()
             let firstLink = try #require(links.first { $0.windowID == first.id })
             let secondLink = try #require(links.first { $0.windowID == second.id })
@@ -41,7 +41,7 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
             let firstLink = try #require(
                 try await server.windowLinks().first { $0.windowID == first.id }
             )
@@ -74,7 +74,7 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
             let links = try await server.windowLinks()
             let firstLink = try #require(links.first { $0.windowID == first.id })
             let secondLink = try #require(links.first { $0.windowID == second.id })
@@ -104,10 +104,12 @@ struct NavigationTests {
             )
 
             let broken = try await server.breakPane(extra, from: source, named: "broken")
-            #expect(broken.name == "broken")
+            #expect(broken.window.name == "broken")
+            #expect(broken.link.sessionID == session.id)
+            #expect(broken.link.windowID == broken.window.id)
 
             let snapshot = try await server.snapshot()
-            #expect(snapshot.panes(of: broken).map(\.id) == [extra.id])
+            #expect(snapshot.panes(of: broken.window).map(\.id) == [extra.id])
             #expect(snapshot.panes(of: window).count == 1)
         }
     }
@@ -119,7 +121,7 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
             let pane = try #require(
                 try await server.snapshot().panes(of: second).first
             )
@@ -227,12 +229,7 @@ struct NavigationTests {
                 try await server.snapshot().windows(of: source).first { $0.name == "shared" }
             )
 
-            let sourceLink = try #require(
-                try await server.windowLinks().first {
-                    $0.windowID == shared.id && $0.sessionID == source.id
-                }
-            )
-            let inTarget = try await server.link(sourceLink, into: target)
+            let inTarget = try await server.link(shared, into: target)
 
             // Naming which session gained the window is what tells a `-s`/`-t`
             // swap apart from the correct call.
@@ -430,7 +427,7 @@ struct PaneGeometryTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
 
             try await server.setOption("@marked", to: "yes", of: first)
             let onFirst = try await server.option("@marked", of: first)

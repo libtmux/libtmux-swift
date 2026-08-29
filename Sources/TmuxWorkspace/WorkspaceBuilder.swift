@@ -48,7 +48,7 @@ public enum WorkspaceBuilder {
                     in: session,
                     named: window.windowName,
                     startDirectory: directory
-                )
+                ).window
             }
             try await build(window, in: created, of: workspace, on: server)
         }

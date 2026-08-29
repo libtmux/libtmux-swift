@@ -130,12 +130,15 @@ extension Server {
         return Session(row: rows[0], endpoint: endpoint)
     }
 
-    /// Creates a window in a session, after the ones already there.
+    /// Creates a window in a session and returns its exact appearance.
+    ///
+    /// The appearance is read from the creation reply, after the windows
+    /// already in the session when no relative placement is given.
     public func newWindow(
         in session: Session,
         named name: String? = nil,
         startDirectory: String? = nil
-    ) async throws(TmuxError) -> Window {
+    ) async throws(TmuxError) -> WindowAppearance {
         try await newWindow(
             target: session.id.rawValue,
             placement: nil,
@@ -145,7 +148,8 @@ extension Server {
         )
     }
 
-    /// Creates a window next to one that already exists.
+    /// Creates a window next to one that already exists and returns its exact
+    /// appearance.
     ///
     /// - Parameters:
     ///   - placement: which side of `neighbour` to take.
@@ -158,7 +162,7 @@ extension Server {
         _ neighbour: WindowLink,
         named name: String? = nil,
         startDirectory: String? = nil
-    ) async throws(TmuxError) -> Window {
+    ) async throws(TmuxError) -> WindowAppearance {
         try await newWindow(
             target: neighbour.target,
             placement: placement,
@@ -174,16 +178,17 @@ extension Server {
         named name: String?,
         startDirectory: String?,
         guardedBy values: [GuardedValue]
-    ) async throws(TmuxError) -> Window {
-        var arguments = ["-d", "-P", "-F", "#{window_id}", "-t", target]
+    ) async throws(TmuxError) -> WindowAppearance {
+        var arguments = [
+            "-d", "-P", "-F", WindowAppearance.projection.template, "-t", target,
+        ]
         if let placement { arguments.append(placement.flag) }
         if let name { arguments += ["-n", name] }
         if let startDirectory { arguments += ["-c", startDirectory] }
-        let id = try await identifier(
+        return try await windowAppearance(
             from: TmuxCommand("new-window", arguments),
             guardedBy: values
         )
-        return try await requireWindow(id, incarnation: values[0].incarnation)
     }
 
     /// Splits a window's active pane, returning the pane that appeared.
@@ -474,16 +479,24 @@ extension Server {
         return id
     }
 
-    func requireWindow(
-        _ id: String,
-        incarnation: ServerIncarnation? = nil
-    ) async throws(TmuxError) -> Window {
-        guard let window = try await windows().first(where: { $0.id.rawValue == id }),
-            incarnation == nil || window.incarnation == incarnation
-        else {
-            throw .serverRestarted
+    func windowAppearance(
+        from command: TmuxCommand,
+        guardedBy values: [GuardedValue]
+    ) async throws(TmuxError) -> WindowAppearance {
+        let reply = try await runGuarded(command, by: values)
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
         }
-        return window
+        let rows: [FormatRow]
+        do {
+            rows = try WindowAppearance.projection.decode(reply.standardOutput)
+        } catch {
+            throw .decodingFailed(error)
+        }
+        guard rows.count == 1 else {
+            throw .invocationFailed(reason: "tmux printed \(rows.count) window appearances")
+        }
+        return WindowAppearance(row: rows[0], endpoint: endpoint)
     }
 
     private func requirePane(

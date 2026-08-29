@@ -171,7 +171,7 @@ struct WatchTests {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)
             let source = try #require(
-                try await server.windowLinks().first { $0.windowID == pane.windowID }
+                try await server.windows().first { $0.id == pane.windowID }
             )
             let destination = try await server.newSession(named: "wait-destination")
             _ = try await server.link(source, into: destination)

@@ -44,7 +44,7 @@ struct ModeProbeTests {
             let session = try await server.newSession(named: "work")
 
             let window = try await server.connected(attachingTo: "bootstrap") { server, _ in
-                try await server.newWindow(in: session, named: "made-over-the-wire;")
+                try await server.newWindow(in: session, named: "made-over-the-wire;").window
             }
             #expect(window.name == "made-over-the-wire;")
 

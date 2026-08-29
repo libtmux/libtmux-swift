@@ -12,17 +12,13 @@ struct MutationTests {
             #expect(session.name == "made")
             #expect(session.id.rawValue.hasPrefix("$"))
 
-            let window = try await server.newWindow(in: session, named: "second")
-            #expect(window.name == "second")
-            let link = try #require(
-                try await server.windowLinks().first {
-                    $0.windowID == window.id && $0.sessionID == session.id
-                }
-            )
-            #expect(link.windowID == window.id)
+            let created = try await server.newWindow(in: session, named: "second")
+            #expect(created.window.name == "second")
+            #expect(created.link.sessionID == session.id)
+            #expect(created.link.windowID == created.window.id)
 
-            let pane = try await server.splitWindow(window)
-            #expect(pane.windowID == window.id)
+            let pane = try await server.splitWindow(created.window)
+            #expect(pane.windowID == created.window.id)
             #expect(pane.id.rawValue.hasPrefix("%"))
         }
     }
@@ -33,7 +29,7 @@ struct MutationTests {
             // base-index is configurable, so the first window need not be 0.
             _ = try await server.run(TmuxCommand("set-option", ["-g", "base-index", "7"]))
             let session = try await server.newSession(named: "based")
-            let window = try await server.newWindow(in: session, named: "seven")
+            let window = try await server.newWindow(in: session, named: "seven").window
 
             // Renaming through the id works regardless of where tmux numbered it.
             try await server.rename(window, to: "renamed")
@@ -51,7 +47,7 @@ struct MutationTests {
             // sent, which is the only way to tell a direction that works from
             // one that was merely spelled correctly.
             for direction in [PaneDirection.right, .left, .above, .below] {
-                let window = try await server.newWindow(in: session)
+                let window = try await server.newWindow(in: session).window
                 let pane = try await server.splitWindow(window, direction: direction)
                 let edges =
                     "top=\(pane.isAtTop) bottom=\(pane.isAtBottom) "
@@ -74,7 +70,7 @@ struct MutationTests {
     func splitDefaultsToBelow() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "default")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
 
             let pane = try await server.splitWindow(window)
 
@@ -87,11 +83,8 @@ struct MutationTests {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "place")
             let anchor = try await server.newWindow(in: session, named: "anchor")
-            let anchorLink = try #require(
-                try await server.windowLinks().first { $0.windowID == anchor.id }
-            )
-            _ = try await server.newWindow(.after, anchorLink, named: "after")
-            _ = try await server.newWindow(.before, anchorLink, named: "before")
+            _ = try await server.newWindow(.after, anchor.link, named: "after")
+            _ = try await server.newWindow(.before, anchor.link, named: "before")
 
             // Read back in tmux's order rather than trusting the indices each
             // window had when it was made: inserting before one renumbers it
@@ -113,17 +106,15 @@ struct MutationTests {
     @Test("relative creation uses the selected link's session")
     func relativeCreationUsesTheSelectedLinkSession() async throws {
         try await withTmuxServer { server in
-            let source = try #require(try await server.windowLinks().first)
+            let source = try #require(try await server.windows().first)
             let destination = try await server.newSession(named: "place-linked")
             let destinationLink = try await server.link(source, into: destination)
 
             let created = try await server.newWindow(
                 .after, destinationLink, named: "beside-link")
-            let appearances = try await server.windowLinks()
-                .filter { $0.windowID == created.id }
 
-            #expect(appearances.map(\.sessionID) == [destination.id])
-            #expect(appearances.map(\.index) == [destinationLink.index + 1])
+            #expect(created.link.sessionID == destination.id)
+            #expect(created.link.index == destinationLink.index + 1)
         }
     }
 
@@ -156,7 +147,7 @@ struct MutationTests {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "sized")
 
-            let byCells = try await server.newWindow(in: session)
+            let byCells = try await server.newWindow(in: session).window
             let narrow = try await server.splitWindow(
                 byCells,
                 direction: .right,
@@ -164,7 +155,7 @@ struct MutationTests {
             )
             #expect(narrow.width == 20)
 
-            let byShare = try await server.newWindow(in: session)
+            let byShare = try await server.newWindow(in: session).window
             let half = try await server.splitWindow(
                 byShare,
                 direction: .below,
@@ -190,8 +181,8 @@ struct MutationTests {
     func killingRemovesExactlyItsTarget() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "doomed")
-            let keep = try await server.newWindow(in: session, named: "keep")
-            let go = try await server.newWindow(in: session, named: "go")
+            let keep = try await server.newWindow(in: session, named: "keep").window
+            let go = try await server.newWindow(in: session, named: "go").window
 
             try await server.kill(go)
             let windows = try await server.windows()
@@ -208,7 +199,7 @@ struct MutationTests {
     func killingTheLastPaneTakesItsWindow() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "panes")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             let extra = try await server.splitWindow(window)
 
             try await server.kill(extra)
@@ -222,7 +213,7 @@ struct MutationTests {
     func paneOutputCanBeCaptured() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "capture")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             let pane = try #require(
                 try await server.snapshot().panes(of: window).first
             )
@@ -241,7 +232,7 @@ struct MutationTests {
     func literalKeysAreCharacters() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "literal")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             let pane = try #require(
                 try await server.snapshot().panes(of: window).first
             )

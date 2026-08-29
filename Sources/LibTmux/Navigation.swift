@@ -114,31 +114,41 @@ extension Server {
         )
     }
 
-    /// Moves a pane out into a window of its own, and returns that window.
+    /// Moves a pane out into a window of its own, and returns its appearance.
     public func breakPane(
         _ pane: Pane,
         from source: WindowLink,
         named name: String? = nil
-    ) async throws(TmuxError) -> Window {
+    ) async throws(TmuxError) -> WindowAppearance {
         _ = try expectedIncarnation([pane.incarnation, source.incarnation])
         guard pane.windowID == source.windowID else { throw .staleServerValue }
         let target = "\(source.target).\(pane.id.rawValue)"
-        var arguments = ["-d", "-P", "-F", "#{window_id}", "-s", target]
+        var arguments = [
+            "-d", "-P", "-F", WindowAppearance.projection.template, "-s", target,
+        ]
         if let name { arguments += ["-n", name] }
-        let id = try await identifier(
+        var appearance = try await windowAppearance(
             from: TmuxCommand("break-pane", arguments),
             guardedBy: [.pane(pane), .windowLink(source)]
         )
-        var window = try await requireWindow(id, incarnation: pane.incarnation)
         // Some releases ignore `-n` here and name the window after whatever is
         // running in it. Comparing the result rather than the version means
         // this corrects itself wherever the behaviour differs.
-        if let name, window.name != name {
-            try await rename(window, to: name)
-            let renamed = try await requireWindow(id, incarnation: pane.incarnation)
-            window = renamed
+        if let name, appearance.window.name != name {
+            try await rename(appearance.window, to: name)
+            appearance = WindowAppearance(
+                window: Window(
+                    id: appearance.window.id,
+                    name: name,
+                    paneCount: appearance.window.paneCount,
+                    width: appearance.window.width,
+                    height: appearance.window.height,
+                    incarnation: appearance.window.incarnation
+                ),
+                link: appearance.link
+            )
         }
-        return window
+        return appearance
     }
 
     /// Moves a pane into another window, splitting it.
@@ -428,12 +438,20 @@ extension Server {
     }
 
     /// Links a window into another session. The same window then appears in
-    /// both, sharing one id — which is tmux's model, not a copy.
+    /// both, sharing one id — which is tmux's model, not a copy. The source is
+    /// global because no existing session-local appearance is involved.
     public func link(
-        _ source: WindowLink,
+        _ window: Window,
         into session: Session
     ) async throws(TmuxError) -> WindowLink {
-        try await transfer(source, into: session, moving: false)
+        try await transfer(
+            sourceTarget: window.id.rawValue,
+            windowID: window.id,
+            sourceSessionID: nil,
+            sourceValue: .window(window),
+            into: session,
+            moving: false
+        )
     }
 
     /// Removes one of a linked window's appearances. The window survives while
@@ -450,10 +468,28 @@ extension Server {
         into destination: Session,
         moving: Bool
     ) async throws(TmuxError) -> WindowLink {
+        try await transfer(
+            sourceTarget: source.target,
+            windowID: source.windowID,
+            sourceSessionID: source.sessionID,
+            sourceValue: .windowLink(source),
+            into: destination,
+            moving: moving
+        )
+    }
+
+    private func transfer(
+        sourceTarget: String,
+        windowID: WindowID,
+        sourceSessionID: SessionID?,
+        sourceValue: GuardedValue,
+        into destination: Session,
+        moving: Bool
+    ) async throws(TmuxError) -> WindowLink {
         let incarnation = try expectedIncarnation([
-            source.incarnation, destination.incarnation,
+            sourceValue.incarnation, destination.incarnation,
         ])
-        guard !moving || source.sessionID != destination.id else {
+        guard !moving || sourceSessionID != destination.id else {
             throw .invocationFailed(reason: "move destination is the source session")
         }
         let commandName = moving ? "move-window" : "link-window"
@@ -470,16 +506,16 @@ extension Server {
                 TmuxCommand(
                     commandName,
                     [
-                        "-d", "-s", source.target, "-t",
+                        "-d", "-s", sourceTarget, "-t",
                         "\(destination.id.rawValue):\(index)",
                     ]
                 ),
-                by: [.windowLink(source), .session(destination)]
+                by: [sourceValue, .session(destination)]
             )
             if reply.isSuccess {
                 return WindowLink(
                     sessionID: destination.id,
-                    windowID: source.windowID,
+                    windowID: windowID,
                     index: index,
                     isActive: false,
                     incarnation: incarnation

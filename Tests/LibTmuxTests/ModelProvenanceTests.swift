@@ -151,7 +151,7 @@ struct ModelOperation: Sendable, CustomStringConvertible {
             _ = try await s.move(v.windowLink, to: v.otherSession)
         },
         mutation("linkWindow") { s, v in
-            _ = try await s.link(v.windowLink, into: v.session)
+            _ = try await s.link(v.window, into: v.session)
         },
         mutation("setWindowOption") { s, v in
             try await s.setOption("automatic-rename", to: "off", of: v.window)

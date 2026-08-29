@@ -53,12 +53,17 @@ public struct WindowLink: Sendable, Hashable, Codable, Identifiable {
     public var target: String { "\(sessionID.rawValue):\(index)" }
 }
 
-struct WindowListingRow: Sendable, Hashable {
-    let window: Window
-    let link: WindowLink
+/// One window and one session-local appearance, read from the same tmux reply.
+///
+/// Both properties are snapshots from one instant. ``Window/id`` identifies
+/// the global window for its lifetime, while ``WindowLink/id`` identifies this
+/// appearance only until tmux removes or reindexes the link.
+public struct WindowAppearance: Sendable, Hashable, Codable {
+    public let window: Window
+    public let link: WindowLink
 }
 
-extension WindowListingRow {
+extension WindowAppearance {
     private static let idField = FormatField("window_id", .identifier(WindowID.sigil))
     private static let nameField = FormatField("window_name")
     private static let indexField = FormatField("window_index", .integer)

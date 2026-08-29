@@ -46,8 +46,11 @@ struct FormatTests {
             let pane = try #require(
                 try await server.panes().first { $0.windowID == source.windowID }
             )
+            let window = try #require(
+                try await server.windows().first { $0.id == source.windowID }
+            )
             let destinationSession = try await server.newSession(named: "format-destination")
-            let destination = try await server.link(source, into: destinationSession)
+            let destination = try await server.link(window, into: destinationSession)
 
             #expect(
                 try await server.format("#{session_name}", for: source)
@@ -101,7 +104,7 @@ struct FormatTests {
     func formatOfADeadTargetReportsNothing() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "doomed")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             let pane = try #require(
                 try await server.panes().first { $0.windowID == window.id }
             )

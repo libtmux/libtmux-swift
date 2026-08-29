@@ -61,7 +61,7 @@ struct IdentityTests {
             let window = try #require(try await server.windows().first)
             let original = try #require(try await server.windowLinks().first)
 
-            let duplicate = try await server.link(original, into: session)
+            let duplicate = try await server.link(window, into: session)
             let linked = try await server.windowLinks().filter { $0.windowID == window.id }
             #expect(linked.count == 2)
             #expect(Set(linked.map(\.id)).count == 2)
@@ -87,7 +87,7 @@ struct IdentityTests {
     func concurrentLinksReturnTheirOwnAppearances() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
-            let source = try #require(try await server.windowLinks().first)
+            let source = try #require(try await server.windows().first)
             let links = try await withThrowingTaskGroup(of: WindowLink.self) { group in
                 for _ in 0..<8 {
                     group.addTask { try await server.link(source, into: session) }
@@ -103,11 +103,80 @@ struct IdentityTests {
         }
     }
 
+    @Test("window creation returns its exact appearance in one invocation")
+    func windowCreationReturnsItsExactAppearanceAtomically() async throws {
+        try await withTmuxServer { server in
+            let session = try #require(try await server.sessions().first)
+            let transport = InvocationCountingTransport()
+            let counted = Server(
+                endpoint: server.endpoint,
+                tmuxExecutable: server.tmuxExecutable,
+                transport: transport
+            )
+
+            let created: WindowAppearance = try await counted.newWindow(
+                in: session,
+                named: "atomic"
+            )
+
+            #expect(await transport.invocationCount == 1)
+            #expect(created.window.name == "atomic")
+            #expect(created.link.sessionID == session.id)
+            #expect(created.link.windowID == created.window.id)
+            let listed = try #require(
+                try await server.windowLinks().first { $0.windowID == created.window.id }
+            )
+            #expect(created.link.id == listed.id)
+        }
+    }
+
+    @Test("breaking a pane returns its exact appearance in one invocation")
+    func breakPaneReturnsItsExactAppearanceAtomically() async throws {
+        try await withTmuxServer { server in
+            let session = try #require(try await server.sessions().first)
+            let sourceWindow = try #require(try await server.windows().first)
+            let sourceLink = try #require(try await server.windowLinks().first)
+            let pane = try await server.splitWindow(sourceWindow)
+            let transport = InvocationCountingTransport()
+            let counted = Server(
+                endpoint: server.endpoint,
+                tmuxExecutable: server.tmuxExecutable,
+                transport: transport
+            )
+
+            let created: WindowAppearance = try await counted.breakPane(
+                pane,
+                from: sourceLink
+            )
+
+            #expect(await transport.invocationCount == 1)
+            #expect(created.link.sessionID == session.id)
+            #expect(created.link.windowID == created.window.id)
+            let listed = try #require(
+                try await server.windowLinks().first { $0.windowID == created.window.id }
+            )
+            #expect(created.link.id == listed.id)
+        }
+    }
+
+    @Test("linking needs a global window, not one of its existing links")
+    func linkingUsesTheGlobalWindow() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let destination = try await server.newSession(named: "link-global")
+
+            let linked = try await server.link(window, into: destination)
+
+            #expect(linked.windowID == window.id)
+            #expect(linked.sessionID == destination.id)
+        }
+    }
+
     @Test("a mismatched resolved socket path cannot authorize unlink")
     func mismatchedSocketPathCannotAuthorizeUnlink() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
-            let source = try #require(try await server.windowLinks().first)
+            let source = try #require(try await server.windows().first)
             let duplicate = try await server.link(source, into: session)
             let incarnation = duplicate.incarnation
             let forged = WindowLink(
@@ -135,7 +204,7 @@ struct IdentityTests {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
             let first = try #require(try await server.windows().first)
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
             let links = try await server.windowLinks()
             let firstLink = try #require(links.first { $0.windowID == first.id })
             let stale = try #require(
@@ -184,7 +253,7 @@ struct IdentityTests {
     func directGuardMarkersDoNotTriggerDisplayHooks() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
-            let source = try #require(try await server.windowLinks().first)
+            let source = try #require(try await server.windows().first)
             let duplicate = try await server.link(source, into: session)
             let set = try await server.setHook(
                 "after-display-message",
