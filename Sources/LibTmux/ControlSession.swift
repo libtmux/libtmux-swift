@@ -283,10 +283,11 @@ public actor ControlSession {
 
     /// Consumes one line of the server's output.
     ///
-    /// Replies are matched to waiters in order because tmux answers in order;
-    /// the number on each block is what proves that assumption rather than
-    /// assuming it. A block belongs to the oldest line that is still collecting
-    /// — see ``SubmittedLine`` for why that is not one block each.
+    /// Replies are matched to waiters in order because tmux answers in order,
+    /// and the parser refuses a block whose number does not advance rather than
+    /// letting one land on the wrong waiter. A block belongs to the oldest line
+    /// that is still collecting — see ``SubmittedLine`` for why that is not one
+    /// block each.
     func consume(_ line: String) {
         guard let event = parser.consume(line) else { return }
         switch event {

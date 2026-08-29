@@ -63,9 +63,12 @@ enum ControlEvent: Sendable, Hashable {
 }
 
 public struct ControlReply: Sendable, Hashable {
-    /// The number tmux stamped on this reply's block. Replies come back in the
-    /// order their commands were sent, and this is what proves it rather than
-    /// assuming it.
+    /// The number tmux stamped on this reply's block.
+    ///
+    /// tmux numbers a command when it runs it, from one counter shared by every
+    /// client, so a connection's own replies advance without being contiguous.
+    /// A block that does not advance is a protocol violation rather than a
+    /// reply, which is what keeps ordering proven rather than assumed.
     public let number: Int
     /// What the command printed, one entry per line, with the block's own
     /// `%begin` and `%end` removed.
@@ -130,6 +133,7 @@ struct ControlProtocolParser: Sendable {
 
     private let maximumReplyBytes: Int
     private var openBlock: OpenBlock?
+    private var lastBlockNumber: Int?
 
     init(maximumReplyBytes: Int = defaultTmuxReplyByteLimit) {
         precondition(maximumReplyBytes >= 0)
@@ -174,6 +178,12 @@ struct ControlProtocolParser: Sendable {
             guard let metadata = blockMetadata(rest) else {
                 return .protocolViolation("malformed %begin metadata")
             }
+            if let last = lastBlockNumber, metadata.number <= last {
+                return .protocolViolation(
+                    "block \(metadata.number) did not advance past \(last)"
+                )
+            }
+            lastBlockNumber = metadata.number
             openBlock = OpenBlock(metadata: metadata)
             return nil
         case "end", "error":

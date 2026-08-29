@@ -252,4 +252,26 @@ struct ControlProtocolTests {
         }
         #expect(!reason.isEmpty)
     }
+
+    @Test(
+        "a block number that does not advance is a violation, not a reply",
+        arguments: ["9", "8"]
+    )
+    func staleBlockNumbersFailClosed(_ second: String) {
+        let events = parse(
+            """
+            %begin 1 9 1
+            %end 1 9 1
+            %begin 1 \(second) 1
+            %end 1 \(second) 1
+            """
+        )
+        guard case .reply = events[0],
+            case let .protocolViolation(reason) = events[1]
+        else {
+            Issue.record("expected the first block to reply and the second to fail")
+            return
+        }
+        #expect(reason.contains("did not advance"))
+    }
 }
