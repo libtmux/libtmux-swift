@@ -25,6 +25,9 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// environment values, or other caller data that does not belong in an error.
     case commandFailed(command: String, exitCode: Int32, reason: String)
 
+    /// A reply exceeded its finite per-stream memory boundary.
+    case outputLimitExceeded(perStreamBytes: Int)
+
     /// The endpoint is not addressable. A UNIX socket path has a hard length
     /// limit far shorter than the filesystem's, and exceeding it fails at bind
     /// time rather than at construction.

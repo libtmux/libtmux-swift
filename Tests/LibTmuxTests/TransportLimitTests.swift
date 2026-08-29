@@ -5,6 +5,30 @@ import TmuxFixture
 
 @Suite("bounded process transport", .timeLimit(.minutes(1)))
 struct TransportLimitTests {
+    @Test("public direct commands have a finite output boundary")
+    func publicCommandBoundsOutput() async throws {
+        let endpoint = try Endpoint(
+            socketPath: "/tmp/libtmux-swift-test/public-transport-limit/socket"
+        )
+        let limit = 1_048_576
+        let server = Server(
+            endpoint: endpoint,
+            transport: FixedReplyTransport(
+                reply: TmuxReply(
+                    standardOutput: [UInt8](repeating: 0x78, count: limit + 1),
+                    standardError: [],
+                    exitCode: 0
+                )
+            )
+        )
+
+        await #expect(
+            throws: TmuxError.outputLimitExceeded(perStreamBytes: limit)
+        ) {
+            try await server.run(TmuxCommand("display-message"))
+        }
+    }
+
     @Test("an isolated command fails closed when output exceeds its limit")
     func isolatedCommandBoundsOutput() async throws {
         try await withTmuxServer { server in
@@ -12,9 +36,7 @@ struct TransportLimitTests {
             try await server.setBuffer(value, named: "bounded-output")
 
             await #expect(
-                throws: TmuxError.invocationFailed(
-                    reason: "tmux output exceeded 128 bytes per stream"
-                )
+                throws: TmuxError.outputLimitExceeded(perStreamBytes: 128)
             ) {
                 try await server.runIsolated(
                     TmuxCommand("show-buffer", ["-b", "bounded-output"]),
@@ -61,9 +83,7 @@ struct TransportLimitTests {
             )
         )
         await #expect(
-            throws: TmuxError.invocationFailed(
-                reason: "tmux output exceeded 4 bytes per stream"
-            )
+            throws: TmuxError.outputLimitExceeded(perStreamBytes: 4)
         ) {
             try await oversizedError.runIsolated(
                 TmuxCommand("display-message"),

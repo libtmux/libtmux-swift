@@ -71,6 +71,7 @@ public struct ControlReply: Sendable, Hashable {
     /// `%begin` and `%end` removed.
     public let lines: [String]
     let isControlCommand: Bool
+    let outputExceededLimit: Bool
     /// tmux closed the block with `%error` rather than `%end`. The reason is in
     /// ``lines``, the same place a successful reply's output is.
     public let isError: Bool
@@ -80,14 +81,22 @@ public struct ControlReply: Sendable, Hashable {
             number: number,
             lines: lines,
             isControlCommand: false,
+            outputExceededLimit: false,
             isError: isError
         )
     }
 
-    init(number: Int, lines: [String], isControlCommand: Bool, isError: Bool) {
+    init(
+        number: Int,
+        lines: [String],
+        isControlCommand: Bool,
+        outputExceededLimit: Bool = false,
+        isError: Bool
+    ) {
         self.number = number
         self.lines = lines
         self.isControlCommand = isControlCommand
+        self.outputExceededLimit = outputExceededLimit
         self.isError = isError
     }
 }
@@ -112,9 +121,20 @@ public struct ControlNotification: Sendable, Hashable {
 /// same start yields the same events, which is what makes the protocol testable
 /// without a live server.
 struct ControlProtocolParser: Sendable {
-    private var openBlock: (metadata: BlockMetadata, lines: [String])?
+    private struct OpenBlock: Sendable {
+        let metadata: BlockMetadata
+        var lines: [String] = []
+        var retainedBytes = 0
+        var outputExceededLimit = false
+    }
 
-    init() {}
+    private let maximumReplyBytes: Int
+    private var openBlock: OpenBlock?
+
+    init(maximumReplyBytes: Int = defaultTmuxReplyByteLimit) {
+        precondition(maximumReplyBytes >= 0)
+        self.maximumReplyBytes = maximumReplyBytes
+    }
 
     /// Consumes one line, returning an event if that line completed one.
     mutating func consume(_ line: String) -> ControlEvent? {
@@ -131,12 +151,13 @@ struct ControlProtocolParser: Sendable {
                             number: block.metadata.number,
                             lines: block.lines,
                             isControlCommand: block.metadata.isControlCommand,
+                            outputExceededLimit: block.outputExceededLimit,
                             isError: marker == "error"
                         )
                     )
                 }
             }
-            block.lines.append(line)
+            retain(line, in: &block)
             openBlock = block
             return nil
         }
@@ -153,7 +174,7 @@ struct ControlProtocolParser: Sendable {
             guard let metadata = blockMetadata(rest) else {
                 return .protocolViolation("malformed %begin metadata")
             }
-            openBlock = (metadata: metadata, lines: [])
+            openBlock = OpenBlock(metadata: metadata)
             return nil
         case "end", "error":
             guard let metadata = blockMetadata(rest) else {
@@ -173,6 +194,19 @@ struct ControlProtocolParser: Sendable {
 
     /// Whether a command's reply is still being read.
     public var isInsideBlock: Bool { openBlock != nil }
+
+    private func retain(_ line: String, in block: inout OpenBlock) {
+        guard !block.outputExceededLimit else { return }
+        let (lineBytes, lineOverflowed) = line.utf8.count.addingReportingOverflow(1)
+        let (totalBytes, totalOverflowed) = block.retainedBytes.addingReportingOverflow(lineBytes)
+        guard !lineOverflowed, !totalOverflowed, totalBytes <= maximumReplyBytes else {
+            block.outputExceededLimit = true
+            block.lines.removeAll(keepingCapacity: false)
+            return
+        }
+        block.retainedBytes = totalBytes
+        block.lines.append(line)
+    }
 }
 
 /// `%begin <timestamp> <number> <flags>`.

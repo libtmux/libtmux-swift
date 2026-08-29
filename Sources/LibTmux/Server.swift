@@ -95,7 +95,7 @@ public struct Server: Sendable, Hashable {
     ///
     /// A nonzero status is a reply, not an error: `has-session` answers a
     /// question with its exit code, and a rejected command carries its reason
-    /// on standard error.
+    /// on standard error. Each output stream is capped at 1 MiB.
     public func run(_ command: TmuxCommand) async throws(TmuxError) -> TmuxReply {
         try await run(rawArguments: command.argumentVector)
     }
@@ -373,7 +373,7 @@ actor ServerRuntime {
 
     func run(
         rawArguments: [String],
-        perStreamOutputLimit: Int = .max
+        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit
     ) async throws(TmuxError) -> TmuxReply {
         try requireTmuxCommandFits(rawArguments)
         // Copied out of isolation before the await so the actor is not held for

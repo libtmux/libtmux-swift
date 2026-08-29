@@ -32,6 +32,29 @@ private func parse(_ stream: String) -> [ControlEvent] {
 
 @Suite("control-mode protocol")
 struct ControlProtocolTests {
+    @Test("reply blocks discard output beyond their finite boundary")
+    func oversizedReplyBlockIsDiscarded() {
+        var exact = ControlProtocolParser(maximumReplyBytes: 5)
+        _ = exact.consume("%begin 1 1 1")
+        _ = exact.consume("1234")
+        guard case let .reply(exactReply) = exact.consume("%end 1 1 1") else {
+            Issue.record("expected an exact-boundary reply")
+            return
+        }
+        #expect(exactReply.lines == ["1234"])
+        #expect(!exactReply.outputExceededLimit)
+
+        var oversized = ControlProtocolParser(maximumReplyBytes: 5)
+        _ = oversized.consume("%begin 1 2 1")
+        _ = oversized.consume("12345")
+        guard case let .reply(oversizedReply) = oversized.consume("%end 1 2 1") else {
+            Issue.record("expected an oversized reply")
+            return
+        }
+        #expect(oversizedReply.lines.isEmpty)
+        #expect(oversizedReply.outputExceededLimit)
+    }
+
     @Test("control input has a finite line and encoding boundary")
     func controlInputIsBounded() {
         var oversized = ControlLineInput()

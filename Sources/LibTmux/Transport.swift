@@ -1,5 +1,11 @@
 import Subprocess
 
+let defaultTmuxReplyByteLimit = 1_048_576
+
+func tmuxOutputLimitError(_ limit: Int) -> TmuxError {
+    .outputLimitExceeded(perStreamBytes: limit)
+}
+
 #if canImport(System)
     import System
 #else
@@ -53,9 +59,7 @@ extension ProcessTransport {
         guard reply.standardOutput.count <= perStreamOutputLimit,
             reply.standardError.count <= perStreamOutputLimit
         else {
-            throw .invocationFailed(
-                reason: "tmux output exceeded \(perStreamOutputLimit) bytes per stream"
-            )
+            throw tmuxOutputLimitError(perStreamOutputLimit)
         }
         return reply
     }
@@ -76,7 +80,7 @@ struct SubprocessTransport: OutputLimitedProcessTransport {
             executable: executable,
             arguments: arguments,
             environment: environment,
-            perStreamOutputLimit: .max
+            perStreamOutputLimit: defaultTmuxReplyByteLimit
         )
     }
 
@@ -130,9 +134,7 @@ struct SubprocessTransport: OutputLimitedProcessTransport {
             )
         } catch let error as SubprocessError where error.code == .outputLimitExceeded {
             if Task.isCancelled { throw .cancelled }
-            throw .invocationFailed(
-                reason: "tmux output exceeded \(perStreamOutputLimit) bytes per stream"
-            )
+            throw tmuxOutputLimitError(perStreamOutputLimit)
         } catch let error as SubprocessError
             where error.code == .spawnFailed
             || error.code == .executableNotFound

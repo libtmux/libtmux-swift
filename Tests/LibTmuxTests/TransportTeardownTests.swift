@@ -41,9 +41,7 @@ struct TransportTeardownTests {
         try await probe.waitUntilReady()
         try probe.releaseOutput()
         await #expect(
-            throws: TmuxError.invocationFailed(
-                reason: "tmux output exceeded 16 bytes per stream"
-            )
+            throws: TmuxError.outputLimitExceeded(perStreamBytes: 16)
         ) {
             try await operation.value
         }

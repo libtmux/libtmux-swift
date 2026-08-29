@@ -32,6 +32,47 @@ private actor FailingSecondControlWriter {
 
 @Suite("control mode concurrency", .timeLimit(.minutes(1)))
 struct ControlModeConcurrencyTests {
+    @Test("an oversized reply fails without shifting the next reply")
+    func oversizedReplyPreservesNextReply() async throws {
+        let (writes, writeWitness) = AsyncStream.makeStream(of: [UInt8].self)
+        let control = ControlSession(
+            write: { writeWitness.yield($0) },
+            replyByteLimit: 5
+        )
+        await control.consume("%begin 1 1 0")
+        await control.consume("%end 1 1 0")
+        var writeIterator = writes.makeAsyncIterator()
+
+        let oversized = Task {
+            try await control.send(
+                line: "display-message -p first ; display-message -p second",
+                commands: 2
+            )
+        }
+        _ = await writeIterator.next()
+        await control.consume("%begin 1 2 1")
+        await control.consume("12")
+        await control.consume("%end 1 2 1")
+        await control.consume("%begin 1 3 1")
+        await control.consume("34")
+        await control.consume("%end 1 3 1")
+
+        await #expect(
+            throws: TmuxError.outputLimitExceeded(perStreamBytes: 5)
+        ) {
+            try await oversized.value
+        }
+
+        let next = Task {
+            try await control.send(TmuxCommand("display-message", ["-p", "next"]))
+        }
+        _ = await writeIterator.next()
+        await control.consume("%begin 1 4 1")
+        await control.consume("ok")
+        await control.consume("%end 1 4 1")
+        #expect(try await next.value.lines == ["ok"])
+    }
+
     @Test("concurrent sends each receive their own reply")
     func concurrentSendsAreAttributedCorrectly() async throws {
         try await withTmuxServer { server in

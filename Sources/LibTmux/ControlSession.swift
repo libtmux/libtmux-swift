@@ -15,7 +15,10 @@ private struct SubmittedLine {
 
     let id: UInt64
     let completion: Completion
+    let replyByteLimit: Int
     var collected: [ControlReply] = []
+    var collectedBytes = 0
+    var receivedCommands = 0
     var completionError: TmuxError?
     var answered = false
     /// Nil once cancellation has answered the caller. The line stays queued
@@ -26,8 +29,9 @@ private struct SubmittedLine {
         switch completion {
         case let .counted(commands):
             guard reply.isControlCommand else { return }
-            collected.append(reply)
-            answered = collected.count >= commands || reply.isError
+            if receivedCommands < Int.max { receivedCommands += 1 }
+            collect(reply)
+            answered = receivedCommands >= commands || reply.isError
         case let .fenced(marker):
             consumeFenced(reply, marker: marker)
         }
@@ -35,15 +39,35 @@ private struct SubmittedLine {
 
     private mutating func consumeFenced(_ reply: ControlReply, marker: String) {
         guard reply.isControlCommand else { return }
-        collected.append(reply)
+        collect(reply)
         if reply.lines.contains(marker) {
             answered = true
-            if reply.isError {
+            if reply.isError, completionError == nil {
                 completionError = .invocationFailed(
                     reason: "guarded request ended with an invalid control marker"
                 )
             }
         }
+    }
+
+    private mutating func collect(_ reply: ControlReply) {
+        guard completionError == nil else { return }
+        guard !reply.outputExceededLimit else {
+            completionError = tmuxOutputLimitError(replyByteLimit)
+            collected.removeAll(keepingCapacity: false)
+            return
+        }
+        for line in reply.lines {
+            let (lineBytes, lineOverflowed) = line.utf8.count.addingReportingOverflow(1)
+            let (totalBytes, totalOverflowed) = collectedBytes.addingReportingOverflow(lineBytes)
+            guard !lineOverflowed, !totalOverflowed, totalBytes <= replyByteLimit else {
+                completionError = tmuxOutputLimitError(replyByteLimit)
+                collected.removeAll(keepingCapacity: false)
+                return
+            }
+            collectedBytes = totalBytes
+        }
+        collected.append(reply)
     }
 
     /// The blocks as the one reply the caller asked for. A process concatenates
@@ -70,7 +94,8 @@ private struct AttachWaiter {
 /// the server volunteers meanwhile arrives on ``notifications``.
 public actor ControlSession {
     private let write: @Sendable ([UInt8]) async throws -> Void
-    private var parser = ControlProtocolParser()
+    private var parser: ControlProtocolParser
+    private let replyByteLimit: Int
     private var pending: [SubmittedLine] = []
     private var nextSubmissionID: UInt64 = 0
     private var attachWaiters: [AttachWaiter] = []
@@ -111,14 +136,20 @@ public actor ControlSession {
         self.write = { bytes in
             _ = try await writer.write(bytes)
         }
+        self.parser = ControlProtocolParser()
+        self.replyByteLimit = defaultTmuxReplyByteLimit
         self.broadcast = NotificationBroadcast()
     }
 
     init(
         write: @escaping @Sendable ([UInt8]) async throws -> Void,
-        notificationLimit: Int = NotificationBroadcast.defaultLimit
+        notificationLimit: Int = NotificationBroadcast.defaultLimit,
+        replyByteLimit: Int = defaultTmuxReplyByteLimit
     ) {
+        precondition(replyByteLimit >= 0)
         self.write = write
+        self.parser = ControlProtocolParser(maximumReplyBytes: replyByteLimit)
+        self.replyByteLimit = replyByteLimit
         self.broadcast = NotificationBroadcast(limit: notificationLimit)
     }
 
@@ -132,6 +163,7 @@ public actor ControlSession {
     /// Concurrent sends are safe. tmux answers in the order it receives
     /// commands, so replies are matched to waiters in that order — which holds
     /// because writes are chained, not merely because they are usually fast.
+    /// A reply exceeding 1 MiB fails with ``TmuxError/outputLimitExceeded(perStreamBytes:)``.
     public func send(_ command: TmuxCommand) async throws(TmuxError) -> ControlReply {
         try requireSingleLine(command.argumentVector)
         return try await send(
@@ -185,6 +217,7 @@ public actor ControlSession {
                     SubmittedLine(
                         id: id,
                         completion: completion,
+                        replyByteLimit: replyByteLimit,
                         continuation: continuation
                     )
                 )
@@ -259,6 +292,10 @@ public actor ControlSession {
         switch event {
         case let .reply(reply):
             guard isAttached else {
+                guard !reply.outputExceededLimit else {
+                    finish(throwing: tmuxOutputLimitError(replyByteLimit))
+                    return
+                }
                 guard !reply.isError else {
                     let replyText = reply.lines.joined(separator: "\n")
                     finish(

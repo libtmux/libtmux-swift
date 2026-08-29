@@ -71,6 +71,8 @@ extension Server {
     }
 
     /// The pane's visible contents, one line per row.
+    /// The source read is capped at 1 MiB; use incremental capture for a large
+    /// scrollback instead of collecting its entire history.
     ///
     /// - Parameters:
     ///   - pane: the pane to read.
