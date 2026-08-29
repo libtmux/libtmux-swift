@@ -1,7 +1,19 @@
+import Foundation
 import Testing
-import TmuxFixture
 
 @testable import LibTmux
+@testable import TmuxFixture
+
+@Suite("named socket namespace")
+struct NamedSocketNamespaceTests {
+    @Test("the allowed root requires a path-component boundary")
+    func rootRequiresAComponentBoundary() {
+        let root = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+        #expect(isAllowedNamedSocketRoot(root))
+        #expect(isAllowedNamedSocketRoot(root.appendingPathComponent("named")))
+        #expect(!isAllowedNamedSocketRoot(URL(fileURLWithPath: "\(root.path)-other")))
+    }
+}
 
 /// A socket *name* is the half of ``Endpoint`` a path-addressed fixture never
 /// reaches, and tmux resolves a name inside `TMUX_TMPDIR` rather than beside

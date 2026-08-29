@@ -116,10 +116,16 @@ public func withTmuxServer<Result>(
 public let namedSocketRoot: URL? = ProcessInfo.processInfo.environment["TMUX_TMPDIR"]
     .map { URL(fileURLWithPath: $0) }
 
+func isAllowedNamedSocketRoot(_ root: URL) -> Bool {
+    let allowed = socketRoot.standardizedFileURL.resolvingSymlinksInPath().path
+    let candidate = root.standardizedFileURL.resolvingSymlinksInPath().path
+    return candidate == allowed || candidate.hasPrefix("\(allowed)/")
+}
+
 /// Whether this run can address servers by socket name inside the suite's root.
 public var namedSocketsAvailable: Bool {
     guard let root = namedSocketRoot else { return false }
-    return root.path.hasPrefix(socketRoot.path)
+    return isAllowedNamedSocketRoot(root)
 }
 
 /// Thrown when a name-addressed case runs without a directory to put it in.
