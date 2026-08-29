@@ -145,7 +145,7 @@ extension Server {
                     advanced && aligned.tail == nil && rows.first?.isEmpty == true
                 if rows.first == (aligned.tail ?? "") { rows.removeFirst() }
                 if completedBlankAnchor { rows.insert("", at: 0) }
-                if advanced, end == state.absoluteCursorRow, rows.last?.isEmpty == true {
+                if advanced, rows.last?.isEmpty == true {
                     rows.removeLast()
                 }
                 let nextCursor = try makeCursor(

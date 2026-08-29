@@ -113,6 +113,42 @@ struct CaptureSinceTests {
         }
     }
 
+    @Test("a forward scan reports blank rows once across chunks")
+    func forwardScanDoesNotRepeatBlankChunkBoundary() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let tmux = server.shellInvocation
+            let script =
+                "printf '\\033c'; \(tmux) wait-for -S forward-blanks-ready; "
+                + "\(tmux) wait-for forward-blanks-start; "
+                + "printf 'head\\n\\n\\n\\n\\n\\ntail\\n'; "
+                + "\(tmux) wait-for -S forward-blanks-done; "
+                + "\(tmux) wait-for forward-blanks-release"
+            try await server.respawn(pane, running: [script])
+            try await server.wait(for: "forward-blanks-ready")
+            try await server.clearHistory(pane)
+            let started = try await server.capture(pane, since: nil)
+
+            try await server.signal("forward-blanks-start")
+            try await server.wait(for: "forward-blanks-done")
+            var visited: [String] = []
+            let result = try await server.scanForward(
+                pane,
+                since: started.cursor,
+                sourceLinesPerChunk: 4,
+                maximumChunks: 8,
+                perStreamOutputLimit: 1_048_576
+            ) { rows in
+                visited.append(contentsOf: rows)
+                return false
+            }
+            try await server.signal("forward-blanks-release")
+
+            #expect(!result.hasMore)
+            #expect(visited == ["head", "", "", "", "", "", "tail"])
+        }
+    }
+
     @Test("incremental capture survives history collection")
     func historyCollectionKeepsTheDelta() async throws {
         try await withTmuxServer { server in
