@@ -12,10 +12,9 @@ public struct TmuxTools: Sendable {
     private static let sharedPaneRuns = PaneRunCoordinator()
 
     let server: Server
-    /// The highest tier a call may reach. Anything above it is hidden from
-    /// `tools/list` as well as refused, so a client configured for reading is
-    /// never shown a way to write.
-    public let tier: SafetyTier
+    /// The authority shared by tool listing and invocation.
+    public let authority: ToolAuthority
+    public var tier: SafetyTier { authority.tier }
     /// The ceiling every wait is clamped to.
     ///
     /// What an unbounded wait costs is not the transport — calls are served
@@ -33,16 +32,31 @@ public struct TmuxTools: Sendable {
         waitCeiling: Duration = .seconds(120),
         caller: CallerIdentity? = CallerIdentity.current()
     ) {
+        self.init(
+            server: server,
+            authority: ToolAuthority(tier: tier),
+            waitCeiling: waitCeiling,
+            caller: caller
+        )
+    }
+
+    /// Creates a tool set with explicit authority.
+    public init(
+        server: Server,
+        authority: ToolAuthority,
+        waitCeiling: Duration = .seconds(120),
+        caller: CallerIdentity? = CallerIdentity.current()
+    ) {
         self.server = server
-        self.tier = tier
+        self.authority = authority
         self.waitCeiling = max(.zero, waitCeiling)
         self.caller = caller
         self.paneRuns = Self.sharedPaneRuns
     }
 
-    /// The tools visible at this server's tier.
+    /// The tools visible under this server's authority.
     public var visibleDefinitions: [ToolDefinition] {
-        Self.definitions.filter { $0.tier <= tier }
+        Self.definitions.filter { authority.rejection(for: $0) == nil }
     }
 
     /// Runs a tool and returns its result.
@@ -81,13 +95,7 @@ public struct TmuxTools: Sendable {
         guard let definition = Self.byName[request.name] else {
             throw ToolError.unknownTool(request.name)
         }
-        guard definition.tier <= tier else {
-            throw ToolError.deniedByTier(
-                request.name,
-                needs: definition.tier,
-                allowed: tier
-            )
-        }
+        if let rejection = authority.rejection(for: definition) { throw rejection }
         let arguments = try Arguments(request, for: definition)
 
         return try await definition.operation.execute(

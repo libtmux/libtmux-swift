@@ -118,12 +118,12 @@ do {
 
 let tools = TmuxTools(
     server: server,
-    tier: configuration.tier,
+    authority: configuration.authority,
     waitCeiling: configuration.waitCeiling
 )
 note(
     "serving \(configuration.endpointSummary) through \(configuration.tmuxExecutable) "
-        + "at the \(configuration.tier.rawValue) tier"
+        + "with \(configuration.authority.summary)"
 )
 
 private let writer: NonblockingLineWriter

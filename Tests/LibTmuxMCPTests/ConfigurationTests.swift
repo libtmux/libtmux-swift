@@ -55,6 +55,36 @@ struct ConfigurationTests {
         #expect(configuration.warnings.first?.contains("destructve") == true)
     }
 
+    @Test("exact tool names are parsed without widening the tier")
+    func exactToolsAreRead() {
+        let configuration = ServerConfiguration(
+            environment: [
+                "LIBTMUX_SAFETY": "mutating",
+                "LIBTMUX_MCP_TOOLS": "new_window, list_sessions",
+            ]
+        )
+
+        #expect(configuration.tier == .mutating)
+        #expect(configuration.authority.enabledTools == [.newWindow, .listSessions])
+        #expect(configuration.warnings.isEmpty)
+    }
+
+    @Test(
+        "an invalid exact tool selection fails closed",
+        arguments: ["new_window,teleport", "new_window,,send_keys"]
+    )
+    func invalidExactToolSelectionFailsClosed(_ configured: String) {
+        let configuration = ServerConfiguration(
+            environment: [
+                "LIBTMUX_SAFETY": "mutating",
+                "LIBTMUX_MCP_TOOLS": configured,
+            ]
+        )
+
+        #expect(configuration.authority.enabledTools?.isEmpty == true)
+        #expect(configuration.warnings.count == 1)
+    }
+
     @Test("a wait ceiling past the hard limit is clamped, and says so")
     func ceilingIsClamped() {
         let configuration = ServerConfiguration(

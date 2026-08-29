@@ -461,11 +461,15 @@ and change tmux state:
 | `LIBTMUX_SOCKET_PATH` | — | A socket *path*, when a name will not do |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
 | `LIBTMUX_SAFETY` | `readonly` | The highest tier of tool served: `readonly`, `mutating`, `destructive` |
+| `LIBTMUX_MCP_TOOLS` | all within the tier | A comma-separated exact tool allowlist, intersected with `LIBTMUX_SAFETY` |
 | `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The ceiling every wait is clamped to, itself capped at 300 |
 
 The tiers classify tool intent; they do not sandbox the host. `mutating`
 exposes `run_shell` and `send_keys`, which can execute commands through a pane.
 Grant it only to clients trusted to act as the tmux user.
+
+Use `LIBTMUX_MCP_TOOLS=new_window,list_sessions` to expose only those tools.
+An unknown or malformed name serves no tools and reports the problem on stderr.
 
 All are optional. Anything the server wants to tell a human goes to stderr,
 because stdout is the protocol and a stray line there corrupts it.

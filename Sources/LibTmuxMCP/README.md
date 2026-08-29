@@ -32,6 +32,19 @@ Those tiers classify tool intent; they do not sandbox the host. `.mutating`
 includes `run_shell` and `send_keys`, so expose it only to callers trusted to
 act as the tmux user.
 
+For least authority, pass a typed exact selection:
+
+```swift
+let authority = ToolAuthority(
+    tier: .mutating,
+    enabledTools: [.listSessions, .newWindow]
+)
+let tools = TmuxTools(server: server, authority: authority)
+```
+
+The tier remains an upper bound, and adding a future tool does not add it to an
+exact selection.
+
 ## The tools
 
 The [root tool catalogue](../../README.md#the-tools) groups every tool by

@@ -65,6 +65,52 @@ struct ToolSafetyTests {
         }
     }
 
+    @Test("an exact tool selection governs listings and calls")
+    func exactToolSelectionIsShared() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/unstarted-exact-tools"
+        )
+        let tools = TmuxTools(
+            server: server,
+            authority: ToolAuthority(
+                tier: .mutating,
+                enabledTools: [.newWindow]
+            )
+        )
+
+        #expect(Set(tools.visibleDefinitions.map(\.name)) == ["new_window"])
+        for name in ["run_shell", "send_keys"] {
+            await #expect(throws: ToolError.notEnabled(name)) {
+                try await tools.call(ToolCall(name: name))
+            }
+        }
+    }
+
+    @Test("the safety tier caps an exact tool selection")
+    func tierCapsExactToolSelection() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/unstarted-capped-tools"
+        )
+        let tools = TmuxTools(
+            server: server,
+            authority: ToolAuthority(
+                tier: .readonly,
+                enabledTools: [.newWindow]
+            )
+        )
+
+        #expect(tools.visibleDefinitions.isEmpty)
+        await #expect(
+            throws: ToolError.deniedByTier(
+                "new_window",
+                needs: .mutating,
+                allowed: .readonly
+            )
+        ) {
+            try await tools.call(ToolCall(name: "new_window"))
+        }
+    }
+
     @Test("a tool above the tier is hidden as well as refused")
     func toolsAboveTheTierAreHidden() async throws {
         try await withTmuxServer { server in

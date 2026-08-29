@@ -1,6 +1,7 @@
 import LibTmux
 
-enum ToolOperation: String, Sendable, Hashable, CaseIterable {
+/// The stable protocol name of an MCP tool.
+public enum ToolOperation: String, Sendable, Hashable, CaseIterable {
     case describeServer = "describe_server"
     case describeFilters = "describe_filters"
     case listServers = "list_servers"

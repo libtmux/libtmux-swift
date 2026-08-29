@@ -402,6 +402,7 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
     case wrongArgumentType(String, expected: String)
     case notAllowed(String, value: String, allowed: [String])
     case deniedByTier(String, needs: SafetyTier, allowed: SafetyTier)
+    case notEnabled(String)
     case refusedForSafety(String)
     case tmuxRejected(String)
     case timedOut(String, seconds: Double)
@@ -431,6 +432,8 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
             \(allowed.rawValue). Restart it with LIBTMUX_SAFETY=\(needs.rawValue) \
             if that is what you want.
             """
+        case let .notEnabled(name):
+            "\(name) is not enabled by this server's exact tool selection"
         case let .refusedForSafety(reason):
             reason
         case let .tmuxRejected(reason):
