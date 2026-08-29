@@ -1,8 +1,16 @@
 import Foundation
 
-package struct BoundedPaneCapture: Sendable, Hashable {
-    package let lines: [String]
-    package let droppedLines: Int
+/// A bounded read of a pane.
+public struct PaneCapture: Sendable, Hashable {
+    /// The newest rows, in terminal order.
+    public let lines: [String]
+    /// Older rows omitted to honor the requested limit.
+    public let droppedLines: Int
+
+    public init(lines: [String], droppedLines: Int = 0) {
+        self.lines = lines
+        self.droppedLines = droppedLines
+    }
 }
 
 struct PaneCaptureBounds: Sendable, Hashable {
@@ -13,6 +21,8 @@ struct PaneCaptureBounds: Sendable, Hashable {
 }
 
 extension Server {
+    static let captureOutputByteLimit = defaultTmuxReplyByteLimit
+
     // MARK: Talking to a pane
 
     /// Sends keys to a pane.
@@ -84,13 +94,27 @@ extension Server {
         try await capture(pane, startingAt: includingHistory ? .start : nil)
     }
 
+    /// Reads the newest rows without collecting older rows that will be discarded.
+    public func capture(
+        _ pane: Pane,
+        includingHistory: Bool = false,
+        maximumLines: Int
+    ) async throws(TmuxError) -> PaneCapture {
+        try await captureTail(
+            pane,
+            includingHistory: includingHistory,
+            maximumLines: maximumLines,
+            perStreamOutputLimit: Self.captureOutputByteLimit
+        )
+    }
+
     /// Reads the newest slice without collecting the rows it will discard.
     package func captureTail(
         _ pane: Pane,
         includingHistory: Bool,
         maximumLines: Int,
         perStreamOutputLimit: Int
-    ) async throws(TmuxError) -> BoundedPaneCapture {
+    ) async throws(TmuxError) -> PaneCapture {
         let bounds = try await captureBounds(for: pane)
         return try await captureTail(
             pane,
@@ -107,7 +131,7 @@ extension Server {
         _ pane: Pane,
         maximumLines: Int,
         perStreamOutputLimit: Int
-    ) async throws(TmuxError) -> BoundedPaneCapture {
+    ) async throws(TmuxError) -> PaneCapture {
         let bounds = try await captureBounds(for: pane)
         return try await captureTail(
             pane,
@@ -123,7 +147,7 @@ extension Server {
         _ pane: Pane,
         historyLines: Int,
         perStreamOutputLimit: Int
-    ) async throws(TmuxError) -> BoundedPaneCapture {
+    ) async throws(TmuxError) -> PaneCapture {
         guard historyLines >= 0 else {
             throw .invocationFailed(reason: "pane capture lookback cannot be negative")
         }
@@ -150,7 +174,7 @@ extension Server {
         throughAbsoluteRow lastRow: Int?,
         maximumLines: Int,
         perStreamOutputLimit: Int
-    ) async throws(TmuxError) -> BoundedPaneCapture {
+    ) async throws(TmuxError) -> PaneCapture {
         guard firstRow >= 0 else {
             throw .invocationFailed(reason: "pane output start is invalid")
         }
@@ -200,7 +224,7 @@ extension Server {
         guard !sourceOverflowed, !droppedOverflowed else {
             throw .invocationFailed(reason: "pane capture size overflowed")
         }
-        return BoundedPaneCapture(lines: Array(kept), droppedLines: droppedLines)
+        return PaneCapture(lines: Array(kept), droppedLines: droppedLines)
     }
 
     func captureTail(
@@ -210,7 +234,7 @@ extension Server {
         bounds: PaneCaptureBounds,
         maximumLines: Int,
         perStreamOutputLimit: Int
-    ) async throws(TmuxError) -> BoundedPaneCapture {
+    ) async throws(TmuxError) -> PaneCapture {
         guard maximumLines > 0 else {
             throw .invocationFailed(reason: "a bounded capture needs at least one line")
         }
@@ -269,7 +293,7 @@ extension Server {
         guard !overflowed else {
             throw .invocationFailed(reason: "pane capture size overflowed")
         }
-        return BoundedPaneCapture(lines: Array(kept), droppedLines: droppedLines)
+        return PaneCapture(lines: Array(kept), droppedLines: droppedLines)
     }
 
     func captureBounds(for pane: Pane) async throws(TmuxError) -> PaneCaptureBounds {

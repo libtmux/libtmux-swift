@@ -35,7 +35,7 @@ extension Server {
             pane,
             since: cursor,
             limit: limit,
-            perStreamOutputLimit: Self.incrementalCaptureOutputLimit
+            perStreamOutputLimit: Self.captureOutputByteLimit
         )
     }
 
@@ -594,6 +594,5 @@ extension Server {
     }
 
     private static let incrementalCaptureAttempts = 3
-    private static let incrementalCaptureOutputLimit = 1_048_576
     private static let maximumCheckpointCandidates = 128
 }

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -23,6 +24,39 @@ struct CaptureSinceTests {
             try await Task.sleep(for: .milliseconds(100))
         }
         return latest
+    }
+
+    @Test("bounded history capture reports omitted rows")
+    func boundedHistoryCaptureReportsOmittedRows() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let height = try #require(
+                try await server.format("#{pane_height}", addressing: pane.id.rawValue)
+                    .flatMap(Int.init)
+            )
+            let count = height + 8
+            let ready = "bounded-public-ready-\(UUID().uuidString)"
+            let hold = "bounded-public-hold-\(UUID().uuidString)"
+            try await server.run(
+                "stty -echo; printf '\\033c'; i=0; while [ \"$i\" -lt \(count) ]; do "
+                    + "printf 'row-%03d\\n' \"$i\"; i=$((i + 1)); done; "
+                    + "\(server.shellInvocation) wait-for -S \(ready); "
+                    + "\(server.shellInvocation) wait-for \(hold)",
+                in: pane
+            )
+            try await server.wait(for: ready)
+
+            let capture = try await server.capture(
+                pane,
+                includingHistory: true,
+                maximumLines: 3
+            )
+
+            #expect(capture.lines.count == 3)
+            #expect(capture.lines.contains(String(format: "row-%03d", count - 1)))
+            #expect(capture.droppedLines > 0)
+            try await server.signal(hold)
+        }
     }
 
     @Test("incremental capture bounds pane output at the transport")
