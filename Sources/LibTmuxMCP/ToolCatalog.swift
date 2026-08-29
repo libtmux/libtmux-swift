@@ -73,7 +73,7 @@ public struct ToolArgument: Sendable, Hashable {
     /// The most entries accepted in an array argument.
     public let maximumItems: Int?
 
-    public init(
+    init(
         name: String,
         summary: String,
         kind: Kind = .string,
@@ -154,7 +154,7 @@ public struct ToolDefinition: Sendable, Hashable {
     /// so a schema the server may break is worse than none at all.
     public let outputSchema: JSONValue?
 
-    public init(
+    init(
         name: String,
         title: String,
         summary: String,
