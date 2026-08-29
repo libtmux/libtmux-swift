@@ -9,6 +9,13 @@ private struct IncrementalPaneState {
     let alternateScreen: Bool
 }
 
+/// What an output wait knows on entry: the rows a match scans, and the cursor
+/// its forward scans continue from.
+struct EntryCapture: Sendable {
+    let rows: [String]
+    let cursor: CaptureCursor
+}
+
 extension Server {
     /// Reads only what a pane has printed since `cursor`.
     ///
@@ -357,6 +364,57 @@ extension Server {
             historyLimit: historyLimit,
             paneWidth: paneWidth,
             alternateScreen: fields[7] == "1"
+        )
+    }
+
+    /// Answers both entry questions in one state read and one capture.
+    ///
+    /// A wait needs the rows a match scans and the cursor its later scans
+    /// continue from. Read separately those cost two state reads and two
+    /// captures of overlapping rows, and the pane can move between them. One
+    /// read keeps them consistent and halves the round-trips a wait pays before
+    /// it can answer "that is already on screen".
+    func captureEntry(
+        _ pane: Pane,
+        historyLines: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> EntryCapture {
+        guard historyLines >= 0 else {
+            throw .invocationFailed(reason: "pane capture lookback cannot be negative")
+        }
+        let state = try await incrementalPaneState(for: pane)
+        let bounds = state.bounds
+        let start = max(-historyLines, -bounds.historySize)
+        let (span, spanOverflowed) = bounds.cursorRow.subtractingReportingOverflow(start)
+        let (requested, countOverflowed) = span.addingReportingOverflow(1)
+        guard !spanOverflowed, !countOverflowed else {
+            throw .invocationFailed(reason: "pane capture size overflowed")
+        }
+        let capture = try await captureTail(
+            pane,
+            startingAt: .line(start),
+            endingAt: bounds.cursorRow,
+            bounds: bounds,
+            maximumLines: requested,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        var rows = capture.lines
+        if requested == 1, rows.isEmpty { rows = [""] }
+        // The cursor is anchored on the last row read. A short capture would
+        // anchor it above the real cursor, and every later scan would re-read
+        // or skip rows from there on.
+        guard capture.droppedLines == 0, rows.count == requested else {
+            throw .invocationFailed(reason: "tmux returned an incomplete pane capture")
+        }
+        return EntryCapture(
+            rows: rows,
+            cursor: try makeCursor(
+                for: pane,
+                state: state,
+                anchor: state.absoluteCursorRow,
+                rawRows: Array(rows.suffix(CaptureCursor.maximumCheckpointRows + 1)),
+                fallback: nil
+            )
         )
     }
 

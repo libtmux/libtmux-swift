@@ -143,8 +143,10 @@ struct WatchTests {
                 }
             )
 
+            // The entry read is one capture, so the next one is the catch-up
+            // scan this must not reach.
             let transport = CaptureRecordingTransport()
-            await transport.beforeCapture(3) { () async throws in
+            await transport.beforeCapture(2) { () async throws in
                 do {
                     try await Task.sleep(for: .seconds(1))
                 } catch {
@@ -166,7 +168,7 @@ struct WatchTests {
             #expect(result.matchedAtEntry)
             #expect(!result.sawNewOutput)
             let requests = await transport.captureRequests
-            #expect(requests.count == 2)
+            #expect(requests.count == 1)
         }
     }
 

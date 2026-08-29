@@ -14,23 +14,21 @@ struct OutputWaitSession: Sendable {
     func run() async throws(OutputWaitError) -> OutputWait {
         let keptTail = tailLimit
 
-        // Establish an absolute cursor before reading the entry screen. A
-        // second cursor read below catches anything that arrived between the
-        // two, so opening the event connection cannot create a blind spot.
+        // One read establishes the cursor and the entry screen together, so
+        // they describe the same instant. The catch-up scan below still covers
+        // anything that arrives while the event connection opens.
         let entryRace = await raceOrdinaryWaitOperation(until: deadline) {
-            let incremental = try await self.retryingStaleOutputRead(until: deadline) {
+            try await self.retryingStaleOutputRead(until: deadline) {
                 try await withOutputWaitErrorMapping {
-                    try await self.server.capture(pane, since: nil)
+                    try await self.server.captureEntry(
+                        pane,
+                        historyLines: Self.waitHistoryLines,
+                        perStreamOutputLimit: Self.waitCaptureOutputLimit
+                    )
                 }
             }
-            let rows = try await self.retryingStaleOutputRead(until: deadline) {
-                try await withOutputWaitErrorMapping {
-                    try await self.waitLookbackRows(using: self.server, in: pane)
-                }
-            }
-            return WaitEntryRead(incremental: incremental, rows: rows)
         }
-        let entryRead: WaitEntryRead
+        let entryRead: EntryCapture
         switch entryRace {
         case let .completed(value): entryRead = value
         case let .failed(error): throw error
@@ -44,7 +42,7 @@ struct OutputWaitSession: Sendable {
             )
         case .cancelled: throw .tmux(.cancelled)
         }
-        var incremental = entryRead.incremental
+        var cursor = entryRead.cursor
         let entryRows = entryRead.rows
         let entryMatch = try firstEntryOutputMatch(
             in: entryRows,
@@ -121,7 +119,7 @@ struct OutputWaitSession: Sendable {
             )
         }
 
-        let entryCursor = incremental.cursor
+        let entryCursor = cursor
         let caughtAtEntryRace = await raceWaitOperation(
             until: deadline,
             classifyingCompletionWith: { $0.operationCompletion }
@@ -154,7 +152,7 @@ struct OutputWaitSession: Sendable {
             )
         case .cancelled: throw .tmux(.cancelled)
         }
-        incremental = IncrementalCapture(lines: [], cursor: caughtAtEntry.cursor)
+        cursor = caughtAtEntry.cursor
         var sawNewOutput = caughtAtEntry.sawNewOutput
         var newest = caughtAtEntry.tail
         if let output = caughtAtEntry.output { return output }
@@ -203,7 +201,7 @@ struct OutputWaitSession: Sendable {
                 cycle = try await waitForOutputCycle(
                     pane: pane,
                     attachment: attachment,
-                    cursor: incremental.cursor,
+                    cursor: cursor,
                     newest: newest,
                     sawNewOutput: sawNewOutput,
                     tailLimit: keptTail,
@@ -261,8 +259,8 @@ struct OutputWaitSession: Sendable {
             }
             switch cycle {
             case let .answered(output): return output
-            case let .reattach(cursor, lines, sawOutput):
-                incremental = IncrementalCapture(lines: [], cursor: cursor)
+            case let .reattach(next, lines, sawOutput):
+                cursor = next
                 newest = lines
                 sawNewOutput = sawOutput
             case let .finished(outcome, lines, sawOutput):
@@ -691,11 +689,6 @@ struct OutputWaitSession: Sendable {
 private struct PaneAttachment: Sendable, Hashable {
     let sessionID: SessionID
     let windowID: WindowID
-}
-
-private struct WaitEntryRead: Sendable {
-    let incremental: IncrementalCapture
-    let rows: [String]
 }
 
 private enum OutputWaitCycle: Sendable {
