@@ -355,8 +355,12 @@ struct OutputWaitSession: Sendable {
                     var newest = newest
                     var sawNewOutput = sawNewOutput
                     while true {
+                        // No settling delay before the scan: tmux queues
+                        // `%output` and parses those same bytes into the grid
+                        // inside one callback, and cannot flush the
+                        // notification until it returns to its event loop, so
+                        // the capture that follows is already reading them.
                         var wake = await doorbell.wait()
-                        if wake == .output { try await Task.sleep(for: .milliseconds(25)) }
                         if ContinuousClock.now >= deadline { wake = .timedOut }
 
                         if wake == .output || wake == .scan || wake == .inspect
