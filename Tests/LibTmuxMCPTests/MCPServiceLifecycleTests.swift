@@ -16,27 +16,26 @@ struct MCPServiceLifecycleTests {
             handler: MCPRequestHandler(tools: TmuxTools(server: server))
         )
         let (lines, continuation) = AsyncStream<String>.makeStream()
+        let (completions, completionWitness) = AsyncStream.makeStream(
+            of: Bool.self,
+            bufferingPolicy: .bufferingOldest(1)
+        )
         let serving = Task {
             await service.serveUntilWriteFails(lines) { _ in false }
+            completionWitness.yield(true)
+            completionWitness.finish()
         }
 
         continuation.yield(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#)
-        let stopped = await withTaskGroup(of: Bool.self) { tasks in
-            tasks.addTask {
-                await serving.value
-                return true
-            }
-            tasks.addTask {
-                try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled else { return false }
-                serving.cancel()
-                continuation.finish()
-                return false
-            }
-            let first = await tasks.next() ?? false
-            tasks.cancelAll()
-            return first
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            completionWitness.yield(false)
         }
+        var completionIterator = completions.makeAsyncIterator()
+        let stopped = await completionIterator.next() ?? false
+        watchdog.cancel()
+        completionWitness.finish()
         continuation.finish()
         serving.cancel()
         await serving.value
