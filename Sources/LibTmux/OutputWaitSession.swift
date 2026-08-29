@@ -46,15 +46,16 @@ struct OutputWaitSession: Sendable {
             sawNewOutput: false,
             alternateScreen: entryRead.alternateScreen
         )
-        let entryMatch =
+        let entryHit =
             entryRead.alternateScreen
             ? nil
-            : try firstEntryOutputMatch(
+            : try firstOutputWaitHit(
                 in: entryRows,
                 patterns: patterns,
-                stops: stops
+                stops: stops,
+                countingAnyRow: false
             )
-        let wasAlreadyShowing = entryMatch != nil
+        let wasAlreadyShowing = entryHit != nil
 
         // A deadline that spent any of itself on the alternate screen says
         // nothing about the pattern, because matching was suppressed while it
@@ -86,47 +87,35 @@ struct OutputWaitSession: Sendable {
         // Answered up front rather than inferred from a timeout: "already on
         // screen" and "never happened" look identical afterwards, and only one
         // of them is fixed by waiting longer.
-        if let entryMatch, !requireFresh {
+        if let entryHit, !requireFresh {
             return ending(
-                entryMatch.outcome,
-                matched: entryMatch.matched,
-                matchedIndex: entryMatch.matchedIndex,
+                entryHit.outcome,
+                matched: entryHit.matched,
+                matchedIndex: entryHit.matchedIndex,
                 tail: entryRows
             )
         }
 
         let answer: OutputWaitAnswer = { arrived, tail, outputEvent in
-            for line in arrived {
-                if let hit = try firstOutputPatternMatch(
-                    in: line,
-                    patterns: stops
-                ) {
-                    return ending(
-                        .stopped,
-                        matched: stops[hit].source,
-                        matchedIndex: hit,
-                        sawNewOutput: true,
-                        tail: tail
-                    )
-                }
-                guard !patterns.isEmpty else {
-                    return ending(.matched, sawNewOutput: true, tail: tail)
-                }
-                if let hit = try firstOutputPatternMatch(
-                    in: line,
-                    patterns: patterns
-                ) {
-                    return ending(
-                        .matched,
-                        matched: patterns[hit].source,
-                        matchedIndex: hit,
-                        sawNewOutput: true,
-                        tail: tail
-                    )
-                }
+            var hit = try firstOutputWaitHit(
+                in: arrived,
+                patterns: patterns,
+                stops: stops,
+                countingAnyRow: true
+            )
+            // An event with no rows still counts when nothing was asked for:
+            // the pane moved, which is all an unpatterned wait was told to see.
+            if hit == nil, outputEvent, patterns.isEmpty {
+                hit = OutputWaitHit(outcome: .matched)
             }
-            guard outputEvent, patterns.isEmpty else { return nil }
-            return ending(.matched, sawNewOutput: true, tail: tail)
+            guard let hit else { return nil }
+            return ending(
+                hit.outcome,
+                matched: hit.matched,
+                matchedIndex: hit.matchedIndex,
+                sawNewOutput: true,
+                tail: tail
+            )
         }
 
         let entryCursor = progress.cursor
@@ -199,40 +188,21 @@ struct OutputWaitSession: Sendable {
                     answer: answer
                 )
             } catch let error {
-                if case .matching = error { throw error }
-                if case .tmux(.cancelled) = error { throw error }
-                if case .tmux(.staleServerValue) = error,
-                    ContinuousClock.now >= deadline
-                {
-                    return ending(
-                        expired(),
-                        sawNewOutput: progress.sawNewOutput,
-                        tail: progress.tail
-                    )
-                }
-                guard ContinuousClock.now < deadline else { throw error }
-                let currentRace = await raceOrdinaryWaitOperation(until: deadline) {
-                    try await self.waitAttachment(using: self.server, for: pane)
-                }
-                guard let stillLiving = try settled(currentRace) else {
-                    return ending(
-                        expired(),
-                        sawNewOutput: progress.sawNewOutput,
-                        tail: progress.tail
-                    )
-                }
-                guard let current = stillLiving else {
+                switch try await survivable(error, having: attachment, for: pane) {
+                case .reattach: continue
+                case .paneClosed:
                     return ending(
                         .paneClosed,
                         sawNewOutput: progress.sawNewOutput,
                         tail: progress.tail
                     )
+                case .expired:
+                    return ending(
+                        expired(),
+                        sawNewOutput: progress.sawNewOutput,
+                        tail: progress.tail
+                    )
                 }
-                guard current != attachment else {
-                    if case .tmux(.staleServerValue) = error { continue }
-                    throw error
-                }
-                continue
             }
             switch cycle {
             case let .answered(output): return output
@@ -248,6 +218,36 @@ struct OutputWaitSession: Sendable {
         }
 
         return ending(expired(), sawNewOutput: progress.sawNewOutput, tail: progress.tail)
+    }
+
+    /// Whether a failed cycle is the wait's answer or something it can carry on
+    /// from.
+    ///
+    /// A connection breaks when the pane moves to another session, which is not
+    /// a failure of the wait but of the client it was holding. Telling the two
+    /// apart costs one read of where the pane is now, so the error is rethrown
+    /// unless the pane has in fact moved.
+    private func survivable(
+        _ error: OutputWaitError,
+        having attachment: PaneAttachment,
+        for pane: Pane
+    ) async throws(OutputWaitError) -> SurvivedCycle {
+        if case .matching = error { throw error }
+        if case .tmux(.cancelled) = error { throw error }
+        let stale: Bool
+        if case .tmux(.staleServerValue) = error { stale = true } else { stale = false }
+        if stale, ContinuousClock.now >= deadline { return .expired }
+        guard ContinuousClock.now < deadline else { throw error }
+        let race = await raceOrdinaryWaitOperation(until: deadline) {
+            try await self.waitAttachment(using: self.server, for: pane)
+        }
+        guard let living = try settled(race) else { return .expired }
+        guard let current = living else { return .paneClosed }
+        guard current != attachment else {
+            if stale { return .reattach }
+            throw error
+        }
+        return .reattach
     }
 
     /// The value a race produced, or `nil` when the deadline won — which every
@@ -687,6 +687,12 @@ private struct WaitProgress: Sendable {
     var alternateScreen: Bool
 }
 
+private enum SurvivedCycle: Sendable {
+    case reattach
+    case paneClosed
+    case expired
+}
+
 private enum OutputWaitCycle: Sendable {
     case answered(OutputWait)
     case reattach(WaitProgress)
@@ -852,26 +858,36 @@ func firstOutputPatternMatch(
     return nil
 }
 
-private func firstEntryOutputMatch(
+/// The first row that settles the wait, and what it settles it as.
+///
+/// A stop wins over a match on the same row. `countingAnyRow` is what an empty
+/// `patterns` means once the wait is running — anything at all ends it — and it
+/// is off at entry, where every row is something that was already there.
+private func firstOutputWaitHit(
     in rows: [String],
     patterns: [RegexPattern],
     stops: [RegexPattern],
+    countingAnyRow: Bool,
     maximumWork: Int = RegexPattern.defaultMaximumWork
-) throws(OutputWaitError) -> EntryOutputMatch? {
+) throws(OutputWaitError) -> OutputWaitHit? {
     for row in rows {
         if let index = try firstOutputPatternMatch(
             in: row, patterns: stops, maximumWork: maximumWork)
         {
-            return EntryOutputMatch(
+            return OutputWaitHit(
                 outcome: .stopped,
                 matched: stops[index].source,
                 matchedIndex: index
             )
         }
+        guard !patterns.isEmpty else {
+            if countingAnyRow { return OutputWaitHit(outcome: .matched) }
+            continue
+        }
         if let index = try firstOutputPatternMatch(
             in: row, patterns: patterns, maximumWork: maximumWork)
         {
-            return EntryOutputMatch(
+            return OutputWaitHit(
                 outcome: .matched,
                 matched: patterns[index].source,
                 matchedIndex: index
@@ -881,10 +897,10 @@ private func firstEntryOutputMatch(
     return nil
 }
 
-private struct EntryOutputMatch {
+private struct OutputWaitHit {
     let outcome: OutputWait.Outcome
-    let matched: String
-    let matchedIndex: Int
+    var matched: String? = nil
+    var matchedIndex: Int? = nil
 }
 
 private func withOutputWaitErrorMapping<Result>(
