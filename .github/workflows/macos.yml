@@ -102,7 +102,7 @@ jobs:
           xcrun --show-sdk-version
 
       - name: Build with default traits
-        run: xcrun swift build
+        run: xcrun swift build --force-resolved-versions
 
       # Every pane is a pty, the suite runs its cases in parallel, and Darwin
       # caps ptys far lower than Linux does — past the cap tmux reports
@@ -119,5 +119,5 @@ jobs:
           "$LIBTMUX_TMUX_BIN" -V
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
-          xcrun swift test --package-path Examples
-          xcrun swift test --traits YAMLWorkspaces
+          xcrun swift test --package-path Examples --force-resolved-versions
+          xcrun swift test --traits YAMLWorkspaces --force-resolved-versions

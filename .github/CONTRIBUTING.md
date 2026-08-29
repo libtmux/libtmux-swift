@@ -27,7 +27,7 @@ That the default configuration builds is its own check, because the trait-on
 test below covers a different graph:
 
 ```console
-$ swift build
+$ swift build --force-resolved-versions
 ```
 
 **On Darwin, build with Xcode's toolchain rather than one from swift.org.**
@@ -44,11 +44,12 @@ The suite runs against real tmux — no mocks of the server — one private sock
 per case, with servers reaped even when a run is killed outright.
 
 The `YAMLWorkspaces` trait is off by default and six tests come with it, the
-YAML reader and everything that exercises it. A bare `swift test` passes while
-covering less, which is why the gate names the trait:
+YAML reader and everything that exercises it. A bare
+`swift test --force-resolved-versions` passes while covering less, which is why
+the gate names the trait:
 
 ```console
-$ swift test --traits YAMLWorkspaces
+$ swift test --traits YAMLWorkspaces --force-resolved-versions
 ```
 
 The named-socket cases resolve a socket *name*, which tmux looks up inside
@@ -57,7 +58,10 @@ the other ports' included. Name the directory and those cases run; without it
 they skip and say why:
 
 ```console
-$ TMUX_TMPDIR=/tmp/libtmux-swift-test/named swift test --traits YAMLWorkspaces
+$ TMUX_TMPDIR=/tmp/libtmux-swift-test/named \
+    swift test \
+    --traits YAMLWorkspaces \
+    --force-resolved-versions
 ```
 
 The fixture does not set that variable itself: `setenv` writes to `environ`
@@ -69,20 +73,22 @@ resolves its binary through it, so this exercises the release named rather than
 whichever one the machine ships:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
+$ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux \
+    swift test \
+    --force-resolved-versions
 ```
 
 The examples are their own package and are run separately:
 
 ```console
-$ swift test --package-path Examples
+$ swift test --package-path Examples --force-resolved-versions
 ```
 
-**Run the trait-on command last.** A default-trait resolve drops the Yams pin
-from `Package.resolved`, and SwiftPM will not put it back into a file that is
-missing it. Committing that deletion is the mistake to avoid. `swift build` and
-the DocC command are both default-trait resolves, so both do it; the examples
-package has its own `Package.resolved` and leaves this one alone.
+`Package.resolved` tracks a superset that includes Yams even when the trait is
+off. Root commands use `--force-resolved-versions` to take the pinned revisions
+for the dependencies they resolve and leave the unused Yams pin intact.
+Downstream packages that use the libraries resolve independently. The examples
+package enforces its own `Package.resolved` and leaves the root file alone.
 
 ## Flaky, or broken?
 
@@ -96,7 +102,7 @@ a wrong value, and the commit touched nothing the case reads. Re-running the one
 case in a loop is cheaper than another round of CI:
 
 ```console
-$ for _ in $(seq 20); do swift test --filter observersDoNotDivideNotifications || break; done
+$ for _ in $(seq 20); do swift test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
 ```
 
 All three can hold and it can still be a defect. A run where every cell from
@@ -127,15 +133,24 @@ The documentation. DocC warnings fail the job, so a broken symbol link is an
 error rather than a note:
 
 ```console
-$ swift package generate-documentation --target LibTmux
+$ swift package \
+    --force-resolved-versions \
+    generate-documentation \
+    --target LibTmux
 ```
 
 ```console
-$ swift package generate-documentation --target TmuxWorkspace
+$ swift package \
+    --force-resolved-versions \
+    generate-documentation \
+    --target TmuxWorkspace
 ```
 
 ```console
-$ swift package generate-documentation --target LibTmuxMCP
+$ swift package \
+    --force-resolved-versions \
+    generate-documentation \
+    --target LibTmuxMCP
 ```
 
 Python under `Scripts/` is held to the ruff configuration beside it, in

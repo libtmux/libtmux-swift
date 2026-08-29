@@ -185,7 +185,8 @@ jobs:
           set -euo pipefail
           : > docs.log
           for target in LibTmux TmuxWorkspace LibTmuxMCP; do
-            swift package generate-documentation --target "$target" 2>&1 | tee -a docs.log
+            swift package --force-resolved-versions generate-documentation \
+              --target "$target" 2>&1 | tee -a docs.log
           done
           if rg -q 'warning:' docs.log; then
             echo "::error::DocC reported warnings"
@@ -203,11 +204,10 @@ jobs:
           python3 Scripts/update_mode_matrix.py --check
 
       # The trait is off by default, so this proves the configuration a consumer
-      # gets without asking for anything still compiles. It runs before the
-      # suite because a default-trait resolve drops the Yams pin, and the
-      # trait-on run below puts the checkout back.
+      # gets without asking for anything still compiles. Resolved-version
+      # enforcement keeps the tracked superset unchanged when Yams is unused.
       - name: Build with default traits
-        run: swift build
+        run: swift build --force-resolved-versions
 
       - name: Test
         run: |
@@ -223,10 +223,9 @@ jobs:
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
           # The examples are their own package, so the root invocation does not
-          # reach them. It runs first because it resolves this package with the
-          # trait on and leaves the root `Package.resolved` alone, where a
-          # default-trait resolve afterwards would drop the Yams pin.
-          swift test --package-path Examples
+          # reach them. Their resolved-version flag enforces
+          # `Examples/Package.resolved` and leaves the root lock alone.
+          swift test --package-path Examples --force-resolved-versions
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
-          swift test --traits YAMLWorkspaces
+          swift test --traits YAMLWorkspaces --force-resolved-versions
