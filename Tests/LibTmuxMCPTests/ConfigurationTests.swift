@@ -67,6 +67,15 @@ struct ConfigurationTests {
         #expect(configuration.warnings.count == 1)
     }
 
+    @Test("a fractional wait ceiling keeps its precision")
+    func fractionalCeilingIsPreserved() {
+        let configuration = ServerConfiguration(
+            environment: ["LIBTMUX_MCP_WAIT_MAX_SECONDS": "1.25"]
+        )
+        #expect(configuration.waitCeiling == .milliseconds(1_250))
+        #expect(configuration.warnings.isEmpty)
+    }
+
     @Test("a ceiling that is not a number falls back rather than becoming zero")
     func unreadableCeilingFallsBack() {
         // `Double("soon")` is nil, and treating that as zero would make every
@@ -76,6 +85,17 @@ struct ConfigurationTests {
             environment: ["LIBTMUX_MCP_WAIT_MAX_SECONDS": "soon"]
         )
         #expect(configuration.waitCeiling == .seconds(120))
+    }
+
+    @Test("nonfinite wait ceilings fall back without trapping")
+    func nonfiniteCeilingsFallBack() {
+        for value in ["nan", "inf", "-inf"] {
+            let configuration = ServerConfiguration(
+                environment: ["LIBTMUX_MCP_WAIT_MAX_SECONDS": value]
+            )
+            #expect(configuration.waitCeiling == .seconds(120))
+            #expect(configuration.warnings.count == 1)
+        }
     }
 
     @Test("a ceiling of zero still leaves a wait long enough to do anything")

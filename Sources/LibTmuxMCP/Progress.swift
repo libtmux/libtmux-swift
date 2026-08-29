@@ -65,12 +65,12 @@ public struct ProgressReporter: Sendable {
         _ work: @escaping @Sendable () async throws -> Result
     ) async rethrows -> Result {
         guard token != nil else { return try await work() }
-        let total = Self.seconds(deadline)
+        let total = deadline.secondsValue
         return try await withThrowingTaskGroup(of: Result?.self) { group in
             group.addTask { try await work() }
             group.addTask {
                 var elapsed = 0.0
-                let step = Self.seconds(interval)
+                let step = interval.secondsValue
                 while elapsed < total {
                     try await Task.sleep(for: interval)
                     elapsed += step
@@ -98,8 +98,4 @@ public struct ProgressReporter: Sendable {
         }
     }
 
-    private static func seconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds)
-            + Double(duration.components.attoseconds) / 1e18
-    }
 }

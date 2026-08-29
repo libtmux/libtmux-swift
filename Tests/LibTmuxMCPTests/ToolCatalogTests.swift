@@ -113,6 +113,25 @@ struct ToolCatalogTests {
         }
     }
 
+    @Test("timeout arguments reject nonfinite numbers")
+    func timeoutArgumentsMustBeFinite() throws {
+        let definition = try #require(TmuxTools.byName["run_shell"])
+        for value in [Double.nan, .infinity, -.infinity] {
+            let call = ToolCall(
+                name: "run_shell",
+                arguments: .object([
+                    "pane": .string("pane-ref"),
+                    "command": .string("true"),
+                    "timeout": .number(value),
+                ])
+            )
+            let arguments = try Arguments(call, for: definition)
+            #expect(throws: ToolError.self) {
+                try arguments.seconds("timeout", or: 30)
+            }
+        }
+    }
+
     @Test("behaviour hints match the tier each tool is filed under")
     func annotationsMatchTiers() {
         for definition in TmuxTools.definitions {
@@ -136,6 +155,11 @@ struct ToolCatalogTests {
                 .joined(separator: "\n\n")
             #expect(text.utf8.count <= Instructions.maximumBytes)
         }
+        let fractional = Instructions.required(
+            tier: .mutating,
+            waitCeiling: .milliseconds(1_250)
+        ).joined(separator: "\n\n")
+        #expect(fractional.contains("1.25s"))
     }
 
     private static func sample(for argument: ToolArgument) -> JSONValue {

@@ -48,12 +48,29 @@ public struct ServerConfiguration: Sendable, Hashable {
             self.tier = .mutating
         }
 
-        let requestedCeiling = environment["LIBTMUX_MCP_WAIT_MAX_SECONDS"]
-            .flatMap(Double.init)
+        let rawCeiling = environment["LIBTMUX_MCP_WAIT_MAX_SECONDS"]
+        var requestedCeiling: Double?
+        if let rawCeiling {
+            if let parsed = Double(rawCeiling), parsed.isFinite {
+                requestedCeiling = parsed
+            } else {
+                warnings.append(
+                    "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(rawCeiling) is not a finite number; "
+                        + "using 120s"
+                )
+            }
+        }
         if let requestedCeiling, requestedCeiling > Self.hardWaitCeiling {
             warnings.append(
-                "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(Int(requestedCeiling)) exceeds the "
+                "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(rawCeiling ?? String(requestedCeiling)) "
+                    + "exceeds the "
                     + "\(Int(Self.hardWaitCeiling))s hard ceiling; using that instead"
+            )
+        }
+        if let requestedCeiling, requestedCeiling < 1 {
+            warnings.append(
+                "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(rawCeiling ?? String(requestedCeiling)) "
+                    + "is below the 1s floor; using that instead"
             )
         }
         let ceiling = min(requestedCeiling ?? 120, Self.hardWaitCeiling)

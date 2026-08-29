@@ -86,7 +86,7 @@ enum Instructions {
 
             """
             Tier: \(tier.rawValue) — tools above it are hidden and refused \
-            (LIBTMUX_SAFETY). Waits clamp to \(Int(waitCeiling.components.seconds))s \
+            (LIBTMUX_SAFETY). Waits clamp to \(waitCeiling.secondsText)s \
             and report the limit. Raw run_command(s) are destructive-tier escape \
             hatches requiring confirm_unsafe, a current server ref, and a deadline. \
             No attach, prompts or choose-*; they need a terminal. Persistent hooks \

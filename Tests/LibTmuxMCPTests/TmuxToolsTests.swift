@@ -303,12 +303,16 @@ struct TmuxToolsTests {
     @Test("describe_server answers what would otherwise cost a turn each")
     func describeServerAnswersTheOrientingQuestions() async throws {
         try await withTmuxServer { server in
-            let outcome = try await TmuxTools(server: server, tier: .readonly)
-                .call(ToolCall(name: "describe_server"))
+            let outcome = try await TmuxTools(
+                server: server,
+                tier: .readonly,
+                waitCeiling: .milliseconds(1_250)
+            ).call(ToolCall(name: "describe_server"))
             let described = try outcome.decode(ServerDescription.self)
             #expect(described.tmuxVersion != nil)
             #expect(described.isSupported == true)
             #expect(described.safetyTier == .readonly)
+            #expect(described.waitCeilingSeconds == 1.25)
             #expect(described.sessionCount >= 1)
             #expect(described.capabilities.formatSubscriptions)
         }

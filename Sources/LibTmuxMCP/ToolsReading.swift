@@ -23,7 +23,7 @@ extension TmuxTools {
                 serverProcessID: before.processID,
                 sessionCount: sessions.count,
                 safetyTier: tier,
-                waitCeilingSeconds: Double(waitCeiling.components.seconds),
+                waitCeilingSeconds: waitCeiling.secondsValue,
                 callerPane: guardState.ownPane?.rawValue,
                 callerSession: guardState.isSameServer ? caller?.sessionID?.rawValue : nil,
                 capabilities: ServerDescription.Capabilities(

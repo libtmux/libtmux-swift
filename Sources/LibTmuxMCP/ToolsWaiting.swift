@@ -179,8 +179,6 @@ extension TmuxTools {
     }
 
     static func elapsed(since start: ContinuousClock.Instant) -> Double {
-        let interval = ContinuousClock.now - start
-        return Double(interval.components.seconds)
-            + Double(interval.components.attoseconds) / 1e18
+        (ContinuousClock.now - start).secondsValue
     }
 }

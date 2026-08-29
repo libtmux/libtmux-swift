@@ -6,6 +6,23 @@ import TmuxFixture
 @testable import LibTmuxMCP
 
 extension TmuxToolsTests {
+    @Test("wait ceilings keep fractional and sub-floor precision")
+    func waitCeilingsKeepTheirPrecision() throws {
+        let server = try Server(socketPath: "/tmp/libtmux-swift-test/unstarted-duration")
+        let fractional = TmuxTools(server: server, waitCeiling: .milliseconds(1_250))
+            .bounded(10)
+        let short = TmuxTools(server: server, waitCeiling: .milliseconds(50))
+            .bounded(10)
+        let negative = TmuxTools(server: server, waitCeiling: .seconds(-1))
+
+        #expect(fractional.duration == .milliseconds(1_250))
+        #expect(fractional.enforced == 1.25)
+        #expect(short.duration == .milliseconds(50))
+        #expect(short.enforced == 0.05)
+        #expect(negative.waitCeiling == .zero)
+        #expect(negative.bounded(10).duration == .zero)
+    }
+
     @Test("waiting for a busy pane is bounded")
     func busyPaneWaitUsesTheRequestedTimeout() async throws {
         try await withTmuxServer { server in

@@ -33,7 +33,7 @@ public struct TmuxTools: Sendable {
     ) {
         self.server = server
         self.tier = tier
-        self.waitCeiling = waitCeiling
+        self.waitCeiling = max(.zero, waitCeiling)
         self.caller = caller
         self.paneRuns = Self.sharedPaneRuns
     }
@@ -114,9 +114,12 @@ public struct TmuxTools: Sendable {
 
     /// Clamps a requested wait to the ceiling, and says what was enforced.
     func bounded(_ seconds: Double) -> (duration: Duration, enforced: Double) {
-        let ceiling = Double(waitCeiling.components.seconds)
-        let enforced = max(0.1, min(seconds, ceiling))
-        return (.milliseconds(Int(enforced * 1000)), enforced)
+        let ceiling = max(Duration.zero, waitCeiling)
+        let floor = min(Duration.milliseconds(100), ceiling)
+        if seconds <= floor.secondsValue { return (floor, floor.secondsValue) }
+        if seconds >= ceiling.secondsValue { return (ceiling, ceiling.secondsValue) }
+        let requested = Duration.seconds(seconds)
+        return (requested, requested.secondsValue)
     }
 
     /// Resolves an MCP pane reference to the current typed model.
