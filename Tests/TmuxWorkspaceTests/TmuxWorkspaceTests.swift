@@ -187,8 +187,8 @@ struct WorkspaceBuildingTests {
             await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(workspace, on: server)
             }
-            let sessions = try await server.sessions()
-            #expect(sessions.allSatisfy { $0.name != "rollback" })
+            let remains = try await server.hasSession("rollback")
+            #expect(!remains)
         }
     }
 
