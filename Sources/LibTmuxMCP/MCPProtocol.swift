@@ -284,7 +284,7 @@ public struct MCPRequestHandler: Sendable {
     /// `notifications/cancelled` is the one that matters: it is how a client
     /// says it has stopped waiting, and the only way a wait already in flight
     /// can be stopped early.
-    public static func cancelledRequestID(in line: String) -> JSONValue? {
+    static func cancelledRequestID(in line: String) -> JSONValue? {
         guard case let .request(request) = decodeRequest(line), request.id == nil,
             request.method == "notifications/cancelled"
         else { return nil }

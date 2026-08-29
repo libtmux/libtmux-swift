@@ -52,7 +52,7 @@ public struct MCPService: Sendable {
     ///
     /// A `false` result closes active requests and drops queued output. A
     /// successful writer preserves the normal end-of-input drain.
-    public func serveUntilWriteFails(
+    package func serveUntilWriteFails(
         _ lines: AsyncStream<String>,
         write: @escaping @Sendable (String) async -> Bool
     ) async {
@@ -237,7 +237,7 @@ private actor RequestRegistry {
 
 extension MCPRequestHandler {
     /// The id a request will be answered under, for tracking it while it runs.
-    public static func requestID(in line: String) -> JSONValue? {
+    static func requestID(in line: String) -> JSONValue? {
         guard case let .request(request) = decodeRequest(line) else { return nil }
         return request.id
     }
