@@ -27,7 +27,7 @@ extension TmuxToolsTests {
     func busyPaneWaitUsesTheRequestedTimeout() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let first = try await tools.call(
                 ToolCall(
                     name: "run_shell",
@@ -231,7 +231,7 @@ extension TmuxToolsTests {
     @Test("a channel wait returns when the channel is signalled")
     func channelWaitReturnsOnSignal() async throws {
         try await withTmuxServer { server in
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             async let waited = tools.call(
                 ToolCall(
                     name: "wait_for_channel",

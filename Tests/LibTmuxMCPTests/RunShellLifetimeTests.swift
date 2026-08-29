@@ -17,7 +17,7 @@ struct RunShellLifetimeTests {
                 transport: transport
             )
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
 
             await #expect(throws: TmuxError.processLaunchFailed(reason: "did not spawn")) {
                 try await tools.call(
@@ -44,7 +44,7 @@ struct RunShellLifetimeTests {
                 transport: transport
             )
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
 
             await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
                 try await tools.call(
@@ -77,7 +77,7 @@ struct RunShellLifetimeTests {
             )
             let pane = try #require(try await server.panes().first)
             let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let nonce = UUID().uuidString
             let started = "libtmux-test-run-shell-started-\(nonce)"
             let release = "libtmux-test-run-shell-release-\(nonce)"
@@ -139,7 +139,7 @@ struct RunShellLifetimeTests {
                 transport: transport
             )
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
 
             await #expect(throws: TmuxError.invocationFailed(reason: "capture failed")) {
                 try await tools.call(
@@ -171,7 +171,7 @@ struct RunShellLifetimeTests {
                 transport: transport
             )
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let nonce = UUID().uuidString
             let release = "libtmux-test-run-shell-release-\(nonce)"
             let result = try await tools.call(
@@ -216,7 +216,7 @@ struct RunShellLifetimeTests {
             )
             let pane = try #require(try await server.panes().first)
             let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
             let started = "libtmux-test-run-shell-submitted-\(nonce)"
             let release = "libtmux-test-run-shell-release-\(nonce)"
@@ -277,7 +277,7 @@ struct RunShellLifetimeTests {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
             let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
             let started = "libtmux-test-run-shell-started-\(nonce)"
             let release = "libtmux-test-run-shell-release-\(nonce)"

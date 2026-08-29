@@ -125,7 +125,11 @@ struct OutputSchemaTests {
     @Test("what the waiting tools answer is what they advertise")
     func waitingToolsConform() async throws {
         try await withTmuxServer { server in
-            let tools = TmuxTools(server: server, waitCeiling: .seconds(2))
+            let tools = TmuxTools(
+                server: server,
+                tier: .mutating,
+                waitCeiling: .seconds(2)
+            )
             let pane = try #require(try await server.panes().first)
             let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
 

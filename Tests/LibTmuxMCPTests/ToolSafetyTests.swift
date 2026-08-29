@@ -37,6 +37,34 @@ struct ToolSafetyTests {
         }
     }
 
+    @Test("default tool listings are readonly")
+    func defaultToolListingsAreReadonly() throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/unstarted-default-listing"
+        )
+        let visible = TmuxTools(server: server).visibleDefinitions
+
+        #expect(visible.contains { $0.name == "list_panes" })
+        #expect(visible.allSatisfy { $0.tier == .readonly })
+    }
+
+    @Test("default tools refuse mutating calls")
+    func defaultToolsRefuseMutatingCalls() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/unstarted-default-call"
+        )
+
+        await #expect(
+            throws: ToolError.deniedByTier(
+                "send_keys",
+                needs: .mutating,
+                allowed: .readonly
+            )
+        ) {
+            try await TmuxTools(server: server).call(ToolCall(name: "send_keys"))
+        }
+    }
+
     @Test("a tool above the tier is hidden as well as refused")
     func toolsAboveTheTierAreHidden() async throws {
         try await withTmuxServer { server in

@@ -25,9 +25,10 @@ public struct TmuxTools: Sendable {
     let caller: CallerIdentity?
     let paneRuns: PaneRunCoordinator
 
+    /// Creates a read-only tool set unless a higher tier is selected.
     public init(
         server: Server,
-        tier: SafetyTier = .mutating,
+        tier: SafetyTier = .readonly,
         waitCeiling: Duration = .seconds(120),
         caller: CallerIdentity? = CallerIdentity.current()
     ) {

@@ -31,11 +31,14 @@ is environment, so a client config is where you say so:
 | Variable | Default | What it selects |
 | --- | --- | --- |
 | `LIBTMUX_SOCKET` | `default` | The socket *name*, resolved inside `TMUX_TMPDIR` |
+| `LIBTMUX_SOCKET_PATH` | none | An exact socket path, which takes precedence over `LIBTMUX_SOCKET` |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
+| `LIBTMUX_SAFETY` | `readonly` | The highest tool tier; set `mutating` or `destructive` to opt in to writes |
+| `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The wait ceiling in seconds, clamped from 1 through 300 |
 | `TMUX_TMPDIR` | tmux's own default | Where a socket name is looked up |
 
-All three are optional; with none set it serves the `default` socket through the
-first `tmux` on `PATH`.
+All six are optional; with none set it serves readonly tools for the `default`
+socket through the first `tmux` on `PATH`, with a 120-second wait ceiling.
 
 ## Driving it by hand
 

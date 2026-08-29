@@ -68,7 +68,7 @@ extension TmuxToolsTests {
                 TmuxCommand("resize-window", ["-t", pane.windowID.rawValue, "-x", "12"])
             )
             #expect(try await server.formatGlobal("#{pane_width}", for: pane) == "12")
-            let outcome = try await TmuxTools(server: server).call(
+            let outcome = try await TmuxTools(server: server, tier: .mutating).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
@@ -115,7 +115,7 @@ extension TmuxToolsTests {
                 try await boundedServer.panes().first { $0.id == pane.id }
             )
             let filler = String(repeating: "x", count: 57)
-            let outcome = try await TmuxTools(server: boundedServer).call(
+            let outcome = try await TmuxTools(server: boundedServer, tier: .mutating).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
@@ -179,7 +179,7 @@ extension TmuxToolsTests {
             try await server.signal(release)
             try await server.wait(for: settled)
 
-            let result = try await TmuxTools(server: server).call(
+            let result = try await TmuxTools(server: server, tier: .mutating).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
@@ -209,7 +209,7 @@ extension TmuxToolsTests {
             try await server.run("PATH=/nonexistent; export PATH", in: pane)
             try await Task.sleep(for: .milliseconds(200))
 
-            let outcome = try await TmuxTools(server: server).call(
+            let outcome = try await TmuxTools(server: server, tier: .mutating).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
@@ -229,7 +229,7 @@ extension TmuxToolsTests {
     func runShellCarriesFailure() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let outcome = try await TmuxTools(server: server).call(
+            let outcome = try await TmuxTools(server: server, tier: .mutating).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
@@ -247,7 +247,7 @@ extension TmuxToolsTests {
     func runShellSurvivesATrailingComment() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let outcome = try await tools.call(
                 ToolCall(
                     name: "run_shell",
@@ -279,7 +279,11 @@ extension TmuxToolsTests {
             _ = try await server.link(source, into: destination)
             _ = try await server.link(source, into: destination)
 
-            let outcome = try await TmuxTools(server: server, caller: nil).call(
+            let outcome = try await TmuxTools(
+                server: server,
+                tier: .mutating,
+                caller: nil
+            ).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
@@ -313,7 +317,7 @@ extension TmuxToolsTests {
             )
             try await server.wait(for: seeded)
 
-            let outcome = try await TmuxTools(server: server).call(
+            let outcome = try await TmuxTools(server: server, tier: .mutating).call(
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
@@ -332,7 +336,7 @@ extension TmuxToolsTests {
     func concurrentRunShellCallsKeepTheirStatus() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let results = try await withThrowingTaskGroup(of: (Int, Int?).self) { group in
                 for expected in 1...8 {
                     group.addTask {
@@ -362,7 +366,7 @@ extension TmuxToolsTests {
     func timedOutRunKeepsThePaneLease() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let first = try await tools.call(
                 ToolCall(
                     name: "run_shell",
@@ -396,7 +400,7 @@ extension TmuxToolsTests {
     func paneLeaseIsSharedAcrossToolValues() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let firstTools = TmuxTools(server: server)
+            let firstTools = TmuxTools(server: server, tier: .mutating)
             let first = try await firstTools.call(
                 ToolCall(
                     name: "run_shell",
@@ -409,7 +413,7 @@ extension TmuxToolsTests {
             )
             #expect(try first.decode(RunShellResult.self).timedOut)
 
-            let secondTools = TmuxTools(server: server)
+            let secondTools = TmuxTools(server: server, tier: .mutating)
             await #expect(throws: ToolError.self) {
                 try await secondTools.call(
                     ToolCall(
@@ -429,7 +433,7 @@ extension TmuxToolsTests {
     func paneRespawnReleasesTimedOutRun() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let first = try await tools.call(
                 ToolCall(
                     name: "run_shell",
@@ -468,7 +472,7 @@ extension TmuxToolsTests {
             )
             _ = try await server.setOption(
                 "remain-on-exit", to: "on", scope: .window(window))
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             let first = try await tools.call(
                 ToolCall(
                     name: "run_shell",
@@ -514,7 +518,7 @@ extension TmuxToolsTests {
                   {"window_name":"two","panes":[{"shell_command":[]},{"shell_command":[]}]}
                 ]}
                 """
-            let outcome = try await TmuxTools(server: server).call(
+            let outcome = try await TmuxTools(server: server, tier: .mutating).call(
                 ToolCall(
                     name: "apply_workspace",
                     arguments: .object(["plan": .string(plan)])

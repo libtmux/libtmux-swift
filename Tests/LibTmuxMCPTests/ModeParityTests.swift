@@ -21,7 +21,7 @@ struct ModeParityTests {
                 connected,
                 _ in
                 let pane = try #require(try await connected.panes().first)
-                let tools = TmuxTools(server: connected)
+                let tools = TmuxTools(server: connected, tier: .mutating)
                 let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
                 let task = Task {
                     try await tools.call(

@@ -10,7 +10,7 @@ struct ReachToolTests {
     @Test("what set_option wrote, show_options reads back")
     func optionsRoundTrip() async throws {
         try await withTmuxServer { server in
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             _ = try await tools.call(
                 ToolCall(
                     name: "set_option",
@@ -101,7 +101,7 @@ struct ReachToolTests {
     func rejectedEnvironmentWriteIsAnError() async throws {
         try await withTmuxServer { server in
             do {
-                _ = try await TmuxTools(server: server).call(
+                _ = try await TmuxTools(server: server, tier: .mutating).call(
                     ToolCall(
                         name: "set_environment",
                         arguments: .object([
@@ -123,7 +123,7 @@ struct ReachToolTests {
     func pasteDoesNotInterpretKeys() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let tools = TmuxTools(server: server)
+            let tools = TmuxTools(server: server, tier: .mutating)
             // send_keys would read this as an interrupt and a newline. That it
             // does is right for driving a program and exactly wrong for text.
             _ = try await tools.call(

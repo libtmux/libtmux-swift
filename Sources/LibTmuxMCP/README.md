@@ -15,11 +15,14 @@ these tools served over stdio.
 import LibTmuxMCP
 
 let tools = TmuxTools(server: server)
-for definition in TmuxTools.definitions {
+for definition in tools.visibleDefinitions {
     print(definition.name, definition.summary)
 }
 let result = try await tools.call(ToolCall(name: "list_panes"))
 ```
+
+`TmuxTools(server:)` permits readonly tools. Pass `tier: .mutating` or
+`tier: .destructive` explicitly when the embedding should expose writes.
 
 ## The tools
 
