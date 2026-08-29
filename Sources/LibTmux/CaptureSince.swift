@@ -103,7 +103,7 @@ extension Server {
                     return ForwardCaptureResult(
                         cursor: reset.cursor,
                         linesMissed: reset.linesMissed,
-                        reanchored: reset.restarted,
+                        reanchor: reset.restarted ? .respawn : .none,
                         droppedLines: reset.droppedLines,
                         hasMore: false,
                         alternateScreen: state.alternateScreen
@@ -117,7 +117,7 @@ extension Server {
                     return ForwardCaptureResult(
                         cursor: previousCursor,
                         linesMissed: false,
-                        reanchored: false,
+                        reanchor: .none,
                         droppedLines: 0,
                         hasMore: false,
                         alternateScreen: true
@@ -134,7 +134,7 @@ extension Server {
                     return ForwardCaptureResult(
                         cursor: reset.cursor,
                         linesMissed: false,
-                        reanchored: true,
+                        reanchor: .gridHandback,
                         droppedLines: reset.droppedLines,
                         hasMore: false,
                         alternateScreen: false
@@ -157,7 +157,7 @@ extension Server {
                     return ForwardCaptureResult(
                         cursor: reset.cursor,
                         linesMissed: true,
-                        reanchored: false,
+                        reanchor: .none,
                         droppedLines: 0,
                         hasMore: false,
                         alternateScreen: state.alternateScreen
@@ -204,7 +204,7 @@ extension Server {
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
                     linesMissed: false,
-                    reanchored: false,
+                    reanchor: .none,
                     droppedLines: 0,
                     hasMore: hasMore,
                     alternateScreen: state.alternateScreen

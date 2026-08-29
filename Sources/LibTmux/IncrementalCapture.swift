@@ -146,13 +146,23 @@ public struct IncrementalCapture: Sendable, Hashable, Codable {
     }
 }
 
+/// Why a forward scan established its cursor with no usable predecessor, which
+/// decides what the rows already on screen mean.
+package enum CursorReanchor: Sendable, Hashable {
+    /// The cursor carried on from where the last scan left it.
+    case none
+    /// The pane was respawned, so everything on screen is the new process's and
+    /// none of it predates the wait.
+    case respawn
+    /// A full-screen program handed the grid back, so what is on screen is what
+    /// was there before it took over — older than the wait, not newer.
+    case gridHandback
+}
+
 package struct ForwardCaptureResult: Sendable, Hashable {
     package let cursor: CaptureCursor
     package let linesMissed: Bool
-    /// The cursor was established with no usable predecessor — the pane was
-    /// respawned, or a full-screen program handed the grid back — so what is on
-    /// screen has not been offered to the caller yet.
-    package let reanchored: Bool
+    package let reanchor: CursorReanchor
     package let droppedLines: Int
     package let hasMore: Bool
     /// The rows came from the grid a full-screen program paints, which tmux

@@ -591,7 +591,7 @@ struct OutputWaitSession: Sendable {
         case .timedOut: return timedOut()
         case .pending: break
         }
-        if scan.reanchored, !scan.alternateScreen {
+        if offersArrivedRows(scan.reanchor), !scan.alternateScreen {
             let arrived: [String]
             do {
                 arrived = try await waitLookbackRows(using: server, in: pane).filter { !$0.isEmpty }
@@ -647,6 +647,19 @@ struct OutputWaitSession: Sendable {
             deadlineReached: false,
             alternateScreen: scan.alternateScreen
         )
+    }
+
+    /// Whether the rows a reanchor exposes count as output this wait can match.
+    ///
+    /// A respawn puts a new process's output on screen. A program handing the
+    /// grid back puts back what was there before it took over, which a wait
+    /// told to count only new output must not match.
+    private func offersArrivedRows(_ reanchor: CursorReanchor) -> Bool {
+        switch reanchor {
+        case .none: false
+        case .respawn: true
+        case .gridHandback: !requireFresh
+        }
     }
 
     private func waitLookbackRows(

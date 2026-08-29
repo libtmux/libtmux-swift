@@ -682,6 +682,22 @@ struct WatchTests {
             try await server.sendKeys(
                 [#"printf '\033[?1049l'; printf 'back-again\n'"#, "Enter"], to: pane)
             #expect(try await leaving.outcome == .matched)
+
+            // Begun under the program, so the grid it hands back is what was
+            // there beforehand. A wait told to count only new output must not
+            // match `back-again`, which is older than the wait itself.
+            try await server.run(#"printf '\033[?1049h'"#, in: pane)
+            try await Task.sleep(for: .milliseconds(400))
+            async let fresh = server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("^back-again$")],
+                requiringFreshOutput: true,
+                timeout: .seconds(2)
+            )
+            try await Task.sleep(for: .milliseconds(500))
+            try await server.sendKeys(
+                [#"printf '\033[?1049l'"#, "Enter"], to: pane)
+            #expect(try await fresh.outcome != .matched)
         }
     }
 
