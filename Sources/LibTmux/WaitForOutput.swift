@@ -107,13 +107,13 @@ extension Server {
         // two, so opening the event connection cannot create a blind spot.
         var incremental = try await retryingStaleOutputRead(until: deadline) {
             () async throws(OutputWaitError) -> IncrementalCapture in
-            try await outputWaitTmux {
+            try await withOutputWaitErrorMapping {
                 try await capture(pane, since: nil)
             }
         }
         let entryRows = try await retryingStaleOutputRead(until: deadline) {
             () async throws(OutputWaitError) -> [String] in
-            try await outputWaitTmux { try await waitLookbackRows(in: pane) }
+            try await withOutputWaitErrorMapping { try await waitLookbackRows(in: pane) }
         }
         let entryMatch = try firstEntryOutputMatch(
             in: entryRows,
@@ -209,7 +209,7 @@ extension Server {
 
         while ContinuousClock.now < deadline {
             guard
-                let attachment = try await outputWaitTmux({
+                let attachment = try await withOutputWaitErrorMapping({
                     try await waitAttachment(for: pane)
                 })
             else {
@@ -239,7 +239,7 @@ extension Server {
                 if case .tmux(.cancelled) = error { throw error }
                 guard ContinuousClock.now < deadline else { throw error }
                 guard
-                    let current = try await outputWaitTmux({
+                    let current = try await withOutputWaitErrorMapping({
                         try await waitAttachment(for: pane)
                     })
                 else {
@@ -274,7 +274,10 @@ extension Server {
             }
         }
 
-        let closed = try await outputWaitTmux { try await waitAttachment(for: pane) } == nil
+        let closed =
+            try await withOutputWaitErrorMapping {
+                try await waitAttachment(for: pane)
+            } == nil
         return OutputWait(
             outcome: closed ? .paneClosed : .timedOut,
             sawNewOutput: sawNewOutput,
@@ -653,18 +656,6 @@ private struct EntryOutputMatch {
     let outcome: OutputWait.Outcome
     let matched: String
     let matchedIndex: Int
-}
-
-private func outputWaitTmux<Result>(
-    _ operation: () async throws -> Result
-) async throws(OutputWaitError) -> Result {
-    do {
-        return try await operation()
-    } catch let error as OutputWaitError {
-        throw error
-    } catch {
-        throw .tmux(normalizedTmuxError(error))
-    }
 }
 
 private func withOutputWaitErrorMapping<Result>(
