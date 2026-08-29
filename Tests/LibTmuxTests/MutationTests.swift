@@ -277,6 +277,18 @@ struct MutationTests {
             let created = try await server.newWindow(in: session, named: "n-#{host}")
             #expect(created.window.name == "n-#{host}")
 
+            // A start directory is expanded the same way, and there `#(...)`
+            // runs rather than merely substituting.
+            let directory = NSTemporaryDirectory() + "libtmux-swift-test-dir-#H"
+            try FileManager.default.createDirectory(
+                atPath: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(atPath: directory) }
+            let placed = try await server.newWindow(
+                in: session, named: "cwd", startDirectory: directory)
+            #expect(
+                try await server.format(
+                    "#{pane_current_path}", for: placed.link) == directory)
+
             // tmux expands a buffer path too, so a file whose name contains
             // format syntax could not be reached at all.
             let path = NSTemporaryDirectory() + "libtmux-swift-test-#{host_short}.txt"

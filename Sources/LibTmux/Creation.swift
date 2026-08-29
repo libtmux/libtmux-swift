@@ -92,7 +92,9 @@ extension Server {
             "-d", "-P", "-F", Session.projection.template, "-s", tmuxLiteralArgument(name),
         ]
         if let windowName { arguments += ["-n", tmuxLiteralArgument(windowName)] }
-        if let startDirectory { arguments += ["-c", startDirectory] }
+        if let startDirectory {
+            arguments += ["-c", tmuxLiteralArgument(startDirectory)]
+        }
         let reply = try await run(TmuxCommand("new-session", arguments))
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
@@ -163,7 +165,9 @@ extension Server {
         ]
         if let placement { arguments.append(placement.flag) }
         if let name { arguments += ["-n", tmuxLiteralArgument(name)] }
-        if let startDirectory { arguments += ["-c", startDirectory] }
+        if let startDirectory {
+            arguments += ["-c", tmuxLiteralArgument(startDirectory)]
+        }
         return try await windowAppearance(
             from: TmuxCommand("new-window", arguments),
             guardedBy: values
@@ -228,7 +232,9 @@ extension Server {
         var arguments = ["-d", "-P", "-F", "#{pane_id}", "-t", target]
         arguments += direction.flags
         if let size { arguments += ["-l", size.argument] }
-        if let startDirectory { arguments += ["-c", startDirectory] }
+        if let startDirectory {
+            arguments += ["-c", tmuxLiteralArgument(startDirectory)]
+        }
         let id = try await identifier(
             from: TmuxCommand("split-window", arguments),
             guardedBy: values
