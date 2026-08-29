@@ -130,16 +130,20 @@ public enum TmuxServers {
     ) throws(TmuxError) -> CandidateScan {
         var scan = CandidateScan()
         roots: for root in roots {
+            let rootURL = URL(fileURLWithPath: root, isDirectory: true)
             guard
                 let entries = FileManager.default.enumerator(
-                    at: URL(fileURLWithPath: root, isDirectory: true),
+                    at: rootURL,
                     includingPropertiesForKeys: nil,
                     options: [.skipsSubdirectoryDescendants]
                 )
             else { continue }
             for case let entry as URL in entries {
                 if Task.isCancelled { throw .cancelled }
-                guard scan.inspect(entry.path, isSocket: isSocket(at:)) else { break roots }
+                let path = (rootURL.path as NSString).appendingPathComponent(
+                    entry.lastPathComponent
+                )
+                guard scan.inspect(path, isSocket: isSocket(at:)) else { break roots }
             }
         }
         return scan
