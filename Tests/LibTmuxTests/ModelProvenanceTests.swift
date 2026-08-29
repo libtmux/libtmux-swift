@@ -20,6 +20,19 @@ struct ModelProvenanceTests {
         #expect(await transport.invocationCount == 0)
     }
 
+    @Test("a zero-timeout wait still refuses a foreign pane")
+    func zeroTimeoutWaitRefusesForeignPane() async throws {
+        let local = try ProvenanceFixture(path: "zero-local")
+        let foreign = try ProvenanceFixture(path: "zero-foreign")
+        let transport = GuardProbeTransport(expected: local.values.incarnation)
+        let server = Server(endpoint: local.endpoint, transport: transport)
+
+        await #expect(throws: OutputWaitError.tmux(.foreignServerValue)) {
+            try await server.waitForOutput(in: foreign.values.pane, timeout: .zero)
+        }
+        #expect(await transport.invocationCount == 0)
+    }
+
     @Test(
         "mutations use a queued incarnation guard",
         arguments: ModelOperation.mutations
@@ -175,7 +188,7 @@ struct ModelOperation: Sendable, CustomStringConvertible {
         },
         read("waitForPaneOutput") { s, v in
             do {
-                _ = try await s.waitForOutput(in: v.pane, timeout: .zero)
+                _ = try await s.waitForOutput(in: v.pane, timeout: .seconds(1))
             } catch let waitError as OutputWaitError {
                 if case let .tmux(error) = waitError { throw error }
                 throw waitError

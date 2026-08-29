@@ -97,6 +97,11 @@ extension Server {
         timeout: Duration = .seconds(30),
         tailLimit: Int = 20
     ) async throws(OutputWaitError) -> OutputWait {
+        do {
+            _ = try expectedIncarnation([pane.incarnation])
+        } catch {
+            throw .tmux(error)
+        }
         let started = ContinuousClock.now
         let deadline = started.advanced(by: timeout)
         let keptTail = max(0, tailLimit)
