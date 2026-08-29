@@ -205,7 +205,8 @@ extension Server {
         of pane: Pane
     ) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("select-pane", ["-t", pane.id.rawValue, "-T", title]),
+            TmuxCommand(
+                "select-pane", ["-t", pane.id.rawValue, "-T", tmuxLiteralArgument(title)]),
             guardedBy: [.pane(pane)]
         )
     }

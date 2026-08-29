@@ -260,4 +260,22 @@ struct MutationTests {
             #expect(try await server.sessions().contains { $0.id == session.id })
         }
     }
+    @Test("a name carrying format syntax is stored as written")
+    func namesAreNotExpanded() async throws {
+        try await withTmuxServer { server in
+            // tmux expands a name before storing it, so an unescaped one would
+            // come back naming the session, or carrying the machine's hostname.
+            let window = try #require(try await server.windows().first)
+            try await server.rename(window, to: "w-#{session_name}")
+            #expect(try await server.windows().first?.name == "w-#{session_name}")
+
+            let session = try #require(try await server.sessions().first)
+            try await server.rename(session, to: "s-#{host_short}")
+            #expect(try await server.sessions().first?.name == "s-#{host_short}")
+
+            let created = try await server.newWindow(in: session, named: "n-#{host}")
+            #expect(created.window.name == "n-#{host}")
+        }
+    }
+
 }

@@ -131,6 +131,18 @@ package func tmuxFormatRequestsShellJob(_ template: String) -> Bool {
     return false
 }
 
+/// Escapes text tmux expands but the caller meant literally.
+///
+/// tmux runs a name, a title, and the other data arguments through the format
+/// expander before storing them, so a window renamed to `w-#{session_name}`
+/// ends up named after its session and one renamed to `r-#{host_short}` ends
+/// up carrying the machine's hostname. Doubling `#` is tmux's own escape and
+/// is not expanded again. A caller that wants a name tmux keeps re-evaluating
+/// sets `automatic-rename-format`, which is an option rather than a name.
+func tmuxLiteralArgument(_ value: String) -> String {
+    value.replacingOccurrences(of: "#", with: "##")
+}
+
 /// Escapes text used as a direct tmux format comparison operand.
 func tmuxFormatComparisonOperand(_ value: String) -> String {
     var escaped = ""

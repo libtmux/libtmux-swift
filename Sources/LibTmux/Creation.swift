@@ -88,8 +88,10 @@ extension Server {
         startDirectory: String? = nil,
         windowName: String? = nil
     ) async throws(TmuxError) -> Session {
-        var arguments = ["-d", "-P", "-F", Session.projection.template, "-s", name]
-        if let windowName { arguments += ["-n", windowName] }
+        var arguments = [
+            "-d", "-P", "-F", Session.projection.template, "-s", tmuxLiteralArgument(name),
+        ]
+        if let windowName { arguments += ["-n", tmuxLiteralArgument(windowName)] }
         if let startDirectory { arguments += ["-c", startDirectory] }
         let reply = try await run(TmuxCommand("new-session", arguments))
         guard reply.isSuccess else {
@@ -160,7 +162,7 @@ extension Server {
             "-d", "-P", "-F", WindowAppearance.projection.template, "-t", target,
         ]
         if let placement { arguments.append(placement.flag) }
-        if let name { arguments += ["-n", name] }
+        if let name { arguments += ["-n", tmuxLiteralArgument(name)] }
         if let startDirectory { arguments += ["-c", startDirectory] }
         return try await windowAppearance(
             from: TmuxCommand("new-window", arguments),
