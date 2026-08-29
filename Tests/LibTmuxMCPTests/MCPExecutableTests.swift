@@ -162,6 +162,11 @@ struct MCPExecutableTests {
                 in: pane
             )
             #expect(await receivesSignal(unblocked, from: server, within: .seconds(5)))
+            #expect(
+                try await server.options(.pane(pane)).allSatisfy {
+                    !$0.name.hasPrefix("@libtmux_mcp_")
+                }
+            )
         }
     }
 

@@ -145,7 +145,8 @@ extension TmuxTools {
                         + "\(cleanup.statusOption) $?; "
                         + "printf '\\r\\n'; \(endMarker); "
                         + "\(tmux) wait-for -S \(cleanup.channel); "
-                        + "\(tmux) wait-for \(cleanup.releaseChannel)",
+                        + "\(tmux) wait-for \(cleanup.releaseChannel); "
+                        + "\(tmux) set-option -pu -t \(target) \(cleanup.statusOption)",
                     "Enter",
                 ],
                 to: pane
