@@ -136,24 +136,31 @@ extension TmuxTools {
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
         let started = ContinuousClock.now
         let server = server
-        let released = await progress.whileRunning(
-            upTo: timeout,
-            describing: "blocked on channel \(channel)"
-        ) {
-            await withTaskGroup(of: Bool.self) { group in
-                group.addTask {
-                    (try? await server.wait(for: channel)) != nil
+        let released: Bool
+        do {
+            released = try await progress.whileRunning(
+                upTo: timeout,
+                describing: "blocked on channel \(channel)"
+            ) {
+                try await withThrowingTaskGroup(of: Bool.self) { group in
+                    group.addTask {
+                        try await server.wait(for: channel)
+                        return true
+                    }
+                    group.addTask {
+                        try await Task.sleep(for: timeout)
+                        return false
+                    }
+                    let first = try await group.next() ?? false
+                    // Cancelling the wait is what keeps a timeout from leaving a
+                    // tmux process blocked on a channel nobody will ever signal.
+                    group.cancelAll()
+                    return first
                 }
-                group.addTask {
-                    try? await Task.sleep(for: timeout)
-                    return false
-                }
-                let first = await group.next() ?? false
-                // Cancelling the wait is what keeps a timeout from leaving a
-                // tmux process blocked on a channel nobody will ever signal.
-                group.cancelAll()
-                return first
             }
+        } catch {
+            if Task.isCancelled { throw TmuxError.cancelled }
+            throw error
         }
         return .init(
             ChannelWaitResult(

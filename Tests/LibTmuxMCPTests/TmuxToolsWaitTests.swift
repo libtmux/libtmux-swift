@@ -246,4 +246,22 @@ extension TmuxToolsTests {
             #expect(try outcome.decode(ChannelWaitResult.self).released == false)
         }
     }
+
+    @Test("a channel wait failure is not reported as a timeout")
+    func channelWaitFailureIsPropagated() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/channel-wait-failure",
+            tmuxExecutable: "/tmp/libtmux-swift-test/missing-tmux-\(UUID())"
+        )
+        await #expect(throws: TmuxError.self) {
+            try await TmuxTools(server: server).call(
+                ToolCall(
+                    name: "wait_for_channel",
+                    arguments: .object([
+                        "channel": .string("unreachable"), "timeout": .number(1),
+                    ])
+                )
+            )
+        }
+    }
 }
