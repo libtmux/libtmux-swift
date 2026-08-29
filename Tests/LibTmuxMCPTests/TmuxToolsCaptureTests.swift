@@ -178,4 +178,32 @@ extension TmuxToolsTests {
         }
     }
 
+    @Test("tool matching refuses aggregate work exhaustion")
+    func toolMatchingRefusesAggregateWorkExhaustion() throws {
+        let pattern = try RegexPattern("z$")
+        let budget = try RegexMatchBudget(maximum: 20)
+        #expect(
+            try !ToolPattern.matches(
+                pattern,
+                in: "aaaa",
+                argument: "pattern",
+                budget: budget
+            )
+        )
+
+        #expect(
+            throws: ToolError.refusedForSafety(
+                "bounded matching for pattern could not finish: "
+                    + "workLimitExceeded(maximum: 20)"
+            )
+        ) {
+            try ToolPattern.matches(
+                pattern,
+                in: "aaaa",
+                argument: "pattern",
+                budget: budget
+            )
+        }
+    }
+
 }

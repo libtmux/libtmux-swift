@@ -76,6 +76,7 @@ extension TmuxTools {
                 caseInsensitive: caseInsensitive
             )
         }
+        let matchBudget = RegexMatchBudget()
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
 
         let started = ContinuousClock.now
@@ -116,7 +117,8 @@ extension TmuxTools {
                             if try ToolPattern.matches(
                                 matching,
                                 in: change.value,
-                                argument: "matching"
+                                argument: "matching",
+                                budget: matchBudget
                             ) {
                                 return (change.value, true)
                             }

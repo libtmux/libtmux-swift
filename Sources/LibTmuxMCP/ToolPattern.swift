@@ -44,10 +44,22 @@ enum ToolPattern {
     static func matches(
         _ pattern: RegexPattern,
         in text: String,
-        argument: String
+        argument: String,
+        budget: RegexMatchBudget
     ) throws -> Bool {
         do {
-            return try pattern.containsMatch(in: text)
+            return try pattern.containsMatch(in: text, budget: budget)
+        } catch {
+            throw matchingFailure(error, argument: argument)
+        }
+    }
+
+    static func evaluate<Result>(
+        argument: String,
+        _ operation: () throws(RegexMatchError) -> Result
+    ) throws -> Result {
+        do {
+            return try operation()
         } catch {
             throw matchingFailure(error, argument: argument)
         }

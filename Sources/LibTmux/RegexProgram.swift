@@ -120,6 +120,28 @@ struct RegexWorkMeter {
     }
 }
 
+package final class RegexMatchBudget: @unchecked Sendable {
+    private let lock = NSLock()
+    private var meter: RegexWorkMeter
+
+    package init() {
+        meter = RegexWorkMeter(maximum: RegexPattern.defaultMaximumWork)
+    }
+
+    package init(maximum: Int) throws(RegexMatchError) {
+        guard maximum > 0 else { throw .invalidWorkLimit(maximum) }
+        meter = RegexWorkMeter(maximum: maximum)
+    }
+
+    func withMeter<Result>(
+        _ operation: (inout RegexWorkMeter) throws(RegexMatchError) -> Result
+    ) throws(RegexMatchError) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return try operation(&meter)
+    }
+}
+
 fileprivate struct RegexPatch {
     enum Slot {
         case first

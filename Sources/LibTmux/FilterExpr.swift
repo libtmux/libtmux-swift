@@ -192,24 +192,31 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
     /// Evaluated against a value already in hand. Matching never reaches tmux,
     /// so iterating results cannot spawn a process.
     public func matches(_ root: Root) throws(RegexMatchError) -> Bool {
+        try matches(root, budget: RegexMatchBudget())
+    }
+
+    package func matches(
+        _ root: Root,
+        budget: RegexMatchBudget
+    ) throws(RegexMatchError) -> Bool {
         switch self {
         case let .comparison(fieldID, operation):
             guard let value = Root.filterValue(fieldID, of: root) else {
                 return false
             }
-            return try operation.matches(value)
+            return try operation.matches(value, budget: budget)
         case let .and(children):
             for child in children {
-                if try !child.matches(root) { return false }
+                if try !child.matches(root, budget: budget) { return false }
             }
             return true
         case let .or(children):
             for child in children {
-                if try child.matches(root) { return true }
+                if try child.matches(root, budget: budget) { return true }
             }
             return false
         case let .not(child):
-            return try !child.matches(root)
+            return try !child.matches(root, budget: budget)
         }
     }
 
@@ -255,7 +262,10 @@ extension FilterOperation {
         }
     }
 
-    func matches(_ value: FilterValue) throws(RegexMatchError) -> Bool {
+    func matches(
+        _ value: FilterValue,
+        budget: RegexMatchBudget
+    ) throws(RegexMatchError) -> Bool {
         switch self {
         case let .equals(expected):
             return value == expected
@@ -278,7 +288,7 @@ extension FilterOperation {
             return expected.contains(value)
         case let .matches(pattern):
             guard case let .text(text) = value else { return false }
-            return try pattern.containsMatch(in: text)
+            return try pattern.containsMatch(in: text, budget: budget)
         }
     }
 }
@@ -303,8 +313,15 @@ extension Sequence where Element: Filterable {
     public func filter(
         _ expression: FilterExpr<Element>
     ) throws(RegexMatchError) -> [Element] {
+        try filter(expression, regexBudget: RegexMatchBudget())
+    }
+
+    package func filter(
+        _ expression: FilterExpr<Element>,
+        regexBudget: RegexMatchBudget
+    ) throws(RegexMatchError) -> [Element] {
         var result: [Element] = []
-        for element in self where try expression.matches(element) {
+        for element in self where try expression.matches(element, budget: regexBudget) {
             result.append(element)
         }
         return result

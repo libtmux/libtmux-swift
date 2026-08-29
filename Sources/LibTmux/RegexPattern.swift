@@ -104,7 +104,14 @@ public struct RegexPattern: Sendable, Hashable, Codable {
         in input: String,
         maximumWork: Int = Self.defaultMaximumWork
     ) throws(RegexMatchError) -> Bool {
-        guard maximumWork > 0 else { throw .invalidWorkLimit(maximumWork) }
+        let budget = try RegexMatchBudget(maximum: maximumWork)
+        return try containsMatch(in: input, budget: budget)
+    }
+
+    package func containsMatch(
+        in input: String,
+        budget: RegexMatchBudget
+    ) throws(RegexMatchError) -> Bool {
         let inputBytes = input.utf8.count
         guard inputBytes <= Self.maximumInputUTF8Bytes else {
             throw .inputTooLong(
@@ -112,8 +119,9 @@ public struct RegexPattern: Sendable, Hashable, Codable {
                 actualUTF8Bytes: inputBytes
             )
         }
-        var meter = RegexWorkMeter(maximum: maximumWork)
-        return try program.containsMatch(in: input, options: options, meter: &meter)
+        return try budget.withMeter { (meter: inout RegexWorkMeter) throws(RegexMatchError) in
+            try program.containsMatch(in: input, options: options, meter: &meter)
+        }
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {

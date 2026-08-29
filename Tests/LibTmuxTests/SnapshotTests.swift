@@ -281,6 +281,33 @@ struct SnapshotRelationTests {
         #expect(try snapshot.windows(.some, ofPanes: vimish).map(\.id) == ["@0", "@1"])
     }
 
+    @Test("relation matching shares work across owners")
+    func relationMatchingSharesWorkAcrossOwners() throws {
+        let related = Snapshot(
+            incarnation: fixtureIncarnation,
+            sessions: [session("$0", "first"), session("$1", "second")],
+            windows: [window("@0"), window("@1")],
+            windowLinks: [link("@0", session: "$0"), link("@1", session: "$1")],
+            panes: [
+                pane("%0", window: "@0", command: "aaaa"),
+                pane("%1", window: "@1", command: "aaaa"),
+            ],
+            clients: []
+        )
+        let expression = try FilterExpr<Pane>.where(
+            \.currentCommand,
+            .matches(try RegexPattern("z$"))
+        )
+
+        #expect(throws: RegexMatchError.workLimitExceeded(maximum: 20)) {
+            try related.sessions(
+                .some,
+                ofPanes: expression,
+                regexBudget: try RegexMatchBudget(maximum: 20)
+            )
+        }
+    }
+
     @Test("a snapshot round-trips through JSON")
     func snapshotRoundTripsThroughJSON() throws {
         let data = try JSONEncoder().encode(snapshot)

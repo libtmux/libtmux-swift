@@ -203,6 +203,24 @@ struct FilterExprTests {
         }
     }
 
+    @Test("one pattern budget spans every filtered value")
+    func patternBudgetSpansFilteredValues() throws {
+        let pattern = try RegexPattern("z$")
+        let expression = try FilterExpr<Pane>.where(
+            \.currentCommand,
+            .matches(pattern)
+        )
+        let input = [makePane(command: "aaaa"), makePane(command: "aaaa")]
+        #expect(try !pattern.containsMatch(in: "aaaa", maximumWork: 20))
+
+        #expect(throws: RegexMatchError.workLimitExceeded(maximum: 20)) {
+            try input.filter(
+                expression,
+                regexBudget: try RegexMatchBudget(maximum: 20)
+            )
+        }
+    }
+
     @Test("every filterable field lowers and reads back")
     func everyFieldLowersAndReadsBack() {
         // Key paths cannot cross a test-argument boundary — they are not

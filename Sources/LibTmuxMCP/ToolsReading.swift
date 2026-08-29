@@ -52,7 +52,11 @@ extension TmuxTools {
         // one listing that reads a whole snapshot.
         let query = try JSONDecoder().decode(RelationQuery<Pane>.self, from: relation)
         try validateFilter(query.expression, argument: "pane_relation")
-        let sessions = try await server.snapshot().sessions(ofPanes: query)
+        let snapshot = try await server.snapshot()
+        let sessions = try ToolPattern.evaluate(argument: "pane_relation") {
+            () throws(RegexMatchError) -> [Session] in
+            try snapshot.sessions(ofPanes: query)
+        }
         return .listing("sessions", project(sessions.map { SessionResult($0) }, keeping: fields))
     }
 
@@ -63,7 +67,10 @@ extension TmuxTools {
         if let filter = try arguments.document("filter") {
             let expression = try JSONDecoder().decode(FilterExpr<Window>.self, from: filter)
             try validateFilter(expression, argument: "filter")
-            selected = try snapshot.windows.filter(expression)
+            selected = try ToolPattern.evaluate(argument: "filter") {
+                () throws(RegexMatchError) -> [Window] in
+                try snapshot.windows.filter(expression)
+            }
         } else {
             selected = snapshot.windows
         }
@@ -81,7 +88,10 @@ extension TmuxTools {
         if let filter = try arguments.document("filter") {
             let expression = try JSONDecoder().decode(FilterExpr<Pane>.self, from: filter)
             try validateFilter(expression, argument: "filter")
-            selected = try panes.filter(expression)
+            selected = try ToolPattern.evaluate(argument: "filter") {
+                () throws(RegexMatchError) -> [Pane] in
+                try panes.filter(expression)
+            }
         } else {
             selected = panes
         }
@@ -144,6 +154,7 @@ extension TmuxTools {
             argument: "pattern",
             caseInsensitive: caseInsensitive
         )
+        let matchBudget = RegexMatchBudget()
         let history = try arguments.bool("history", or: false)
         let lineLimit = try arguments.integer(
             "max_lines_per_pane",
@@ -155,7 +166,10 @@ extension TmuxTools {
         if let filter = try arguments.document("filter") {
             let predicate = try JSONDecoder().decode(FilterExpr<Pane>.self, from: filter)
             try validateFilter(predicate, argument: "filter")
-            panes = try panes.filter(predicate)
+            panes = try ToolPattern.evaluate(argument: "filter") {
+                () throws(RegexMatchError) -> [Pane] in
+                try panes.filter(predicate, regexBudget: matchBudget)
+            }
         }
 
         var matches: [PaneMatch] = []
@@ -187,7 +201,14 @@ extension TmuxTools {
             )
             if bounded.droppedLines > 0 { truncated = true }
             for (offset, line) in bounded.lines.enumerated() {
-                guard try ToolPattern.matches(expression, in: line, argument: "pattern") else {
+                guard
+                    try ToolPattern.matches(
+                        expression,
+                        in: line,
+                        argument: "pattern",
+                        budget: matchBudget
+                    )
+                else {
                     continue
                 }
                 guard matches.count < limit else {

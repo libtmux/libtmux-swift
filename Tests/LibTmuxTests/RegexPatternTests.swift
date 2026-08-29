@@ -205,4 +205,19 @@ struct RegexPatternTests {
             try pattern.containsMatch(in: "z", maximumWork: 0)
         }
     }
+
+    @Test("one work budget spans every match in an operation")
+    func aggregateWorkBudgetSpansMatches() throws {
+        let pattern = try RegexPattern("z$")
+        let input = String(repeating: "a", count: 10)
+        #expect(try !pattern.containsMatch(in: input, maximumWork: 100))
+
+        let budget = try RegexMatchBudget(maximum: 100)
+        #expect(try !pattern.containsMatch(in: input, budget: budget))
+        #expect(throws: RegexMatchError.workLimitExceeded(maximum: 100)) {
+            for _ in 0..<10 {
+                _ = try pattern.containsMatch(in: input, budget: budget)
+            }
+        }
+    }
 }

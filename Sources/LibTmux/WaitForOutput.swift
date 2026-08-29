@@ -107,6 +107,7 @@ extension Server {
         let started = ContinuousClock.now
         let deadline = started.advanced(by: timeout)
         let keptTail = max(0, tailLimit)
+        let matchBudget = RegexMatchBudget()
 
         // Establish an absolute cursor before reading the entry screen. A
         // second cursor read below catches anything that arrived between the
@@ -115,13 +116,21 @@ extension Server {
             try await capture(pane, since: nil)
         }
         let entryRows = try await outputWaitTmux { try await waitLookbackRows(in: pane) }
-        let alreadyShowing = try firstMatchingRow(in: entryRows, patterns: patterns)
+        let alreadyShowing = try firstMatchingRow(
+            in: entryRows,
+            patterns: patterns,
+            budget: matchBudget
+        )
         let wasAlreadyShowing = alreadyShowing != nil
 
         let answer: @Sendable ([String], [String]) throws(OutputWaitError) -> OutputWait? = {
             arrived, tail in
             for line in arrived {
-                if let hit = try firstOutputPatternMatch(in: line, patterns: stops) {
+                if let hit = try firstOutputPatternMatch(
+                    in: line,
+                    patterns: stops,
+                    budget: matchBudget
+                ) {
                     return OutputWait(
                         outcome: .stopped,
                         matched: stops[hit].source,
@@ -133,7 +142,11 @@ extension Server {
                     )
                 }
                 guard !patterns.isEmpty else { continue }
-                if let hit = try firstOutputPatternMatch(in: line, patterns: patterns) {
+                if let hit = try firstOutputPatternMatch(
+                    in: line,
+                    patterns: patterns,
+                    budget: matchBudget
+                ) {
                     return OutputWait(
                         outcome: .matched,
                         matched: patterns[hit].source,
@@ -173,7 +186,11 @@ extension Server {
         // of them is fixed by waiting longer.
         if let alreadyShowing, !requireFresh {
             let row = entryRows[alreadyShowing]
-            let hit = try firstOutputPatternMatch(in: row, patterns: patterns)
+            let hit = try firstOutputPatternMatch(
+                in: row,
+                patterns: patterns,
+                budget: matchBudget
+            )
             return OutputWait(
                 outcome: .matched,
                 matched: hit.map { patterns[$0].source },
@@ -557,11 +574,12 @@ actor WaitDoorbell {
 
 func firstOutputPatternMatch(
     in text: String,
-    patterns: [RegexPattern]
+    patterns: [RegexPattern],
+    budget: RegexMatchBudget
 ) throws(OutputWaitError) -> Int? {
     for (index, pattern) in patterns.enumerated() {
         do {
-            if try pattern.containsMatch(in: text) { return index }
+            if try pattern.containsMatch(in: text, budget: budget) { return index }
         } catch let error {
             throw .matching(error)
         }
@@ -571,10 +589,13 @@ func firstOutputPatternMatch(
 
 private func firstMatchingRow(
     in rows: [String],
-    patterns: [RegexPattern]
+    patterns: [RegexPattern],
+    budget: RegexMatchBudget
 ) throws(OutputWaitError) -> Int? {
     for (index, row) in rows.enumerated() {
-        if try firstOutputPatternMatch(in: row, patterns: patterns) != nil { return index }
+        if try firstOutputPatternMatch(in: row, patterns: patterns, budget: budget) != nil {
+            return index
+        }
     }
     return nil
 }

@@ -98,17 +98,25 @@ struct WatchTests {
 
     @Test("a matcher refusal remains distinct from a timeout")
     func matcherRefusalPropagates() throws {
-        let members = String(repeating: "a", count: 4_000)
-        let pattern = try RegexPattern("[\(members)]")
+        let pattern = try RegexPattern("z$")
+        let budget = try RegexMatchBudget(maximum: 20)
+        #expect(
+            try firstOutputPatternMatch(
+                in: "aaaa",
+                patterns: [pattern],
+                budget: budget
+            ) == nil
+        )
 
         #expect(
             throws: OutputWaitError.matching(
-                .workLimitExceeded(maximum: RegexPattern.defaultMaximumWork)
+                .workLimitExceeded(maximum: 20)
             )
         ) {
             try firstOutputPatternMatch(
-                in: String(repeating: "z", count: 4_000),
-                patterns: [pattern]
+                in: "aaaa",
+                patterns: [pattern],
+                budget: budget
             )
         }
     }

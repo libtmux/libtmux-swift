@@ -146,10 +146,24 @@ extension Snapshot {
         _ quantifier: RelationQuantifier,
         ofPanes expression: FilterExpr<Pane>
     ) throws(RegexMatchError) -> [Session] {
+        try sessions(
+            quantifier,
+            ofPanes: expression,
+            regexBudget: RegexMatchBudget()
+        )
+    }
+
+    package func sessions(
+        _ quantifier: RelationQuantifier,
+        ofPanes expression: FilterExpr<Pane>,
+        regexBudget: RegexMatchBudget
+    ) throws(RegexMatchError) -> [Session] {
         var result: [Session] = []
         for session in fromIncarnation(sessions) {
             let related = panes(of: session)
-            let matches = try related.count(where: expression.matches)
+            let matches = try related.count { (pane: Pane) throws(RegexMatchError) in
+                try expression.matches(pane, budget: regexBudget)
+            }
             if quantifier.holds(over: matches, of: related.count) {
                 result.append(session)
             }
@@ -162,10 +176,24 @@ extension Snapshot {
         _ quantifier: RelationQuantifier,
         ofWindows expression: FilterExpr<Window>
     ) throws(RegexMatchError) -> [Session] {
+        try sessions(
+            quantifier,
+            ofWindows: expression,
+            regexBudget: RegexMatchBudget()
+        )
+    }
+
+    package func sessions(
+        _ quantifier: RelationQuantifier,
+        ofWindows expression: FilterExpr<Window>,
+        regexBudget: RegexMatchBudget
+    ) throws(RegexMatchError) -> [Session] {
         var result: [Session] = []
         for session in fromIncarnation(sessions) {
             let related = windows(of: session)
-            let matches = try related.count(where: expression.matches)
+            let matches = try related.count { (window: Window) throws(RegexMatchError) in
+                try expression.matches(window, budget: regexBudget)
+            }
             if quantifier.holds(over: matches, of: related.count) {
                 result.append(session)
             }
@@ -178,10 +206,24 @@ extension Snapshot {
         _ quantifier: RelationQuantifier,
         ofPanes expression: FilterExpr<Pane>
     ) throws(RegexMatchError) -> [Window] {
+        try windows(
+            quantifier,
+            ofPanes: expression,
+            regexBudget: RegexMatchBudget()
+        )
+    }
+
+    package func windows(
+        _ quantifier: RelationQuantifier,
+        ofPanes expression: FilterExpr<Pane>,
+        regexBudget: RegexMatchBudget
+    ) throws(RegexMatchError) -> [Window] {
         var result: [Window] = []
         for window in fromIncarnation(windows) {
             let related = panes(of: window)
-            let matches = try related.count(where: expression.matches)
+            let matches = try related.count { (pane: Pane) throws(RegexMatchError) in
+                try expression.matches(pane, budget: regexBudget)
+            }
             if quantifier.holds(over: matches, of: related.count) {
                 result.append(window)
             }
