@@ -48,7 +48,9 @@ public struct ProgressReporter: Sendable {
         ]
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(notification) else { return }
+        guard let data = try? encoder.encode(notification),
+            data.count <= MCPRequestHandler.maximumResponseBytes
+        else { return }
         await emit(String(decoding: data, as: UTF8.self))
     }
 

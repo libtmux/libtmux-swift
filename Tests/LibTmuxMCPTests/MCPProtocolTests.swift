@@ -165,7 +165,7 @@ struct MCPProtocolTests {
 
         #expect(result["isError"]?.boolValue == true)
         #expect(try object(reply)["id"] == .number(1))
-        #expect(reply.utf8.count <= MCPRequestHandler.maximumToolResponseBytes)
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
     }
 
     @Test("oversized tool errors use a bounded failure with the original id")
@@ -188,7 +188,7 @@ struct MCPProtocolTests {
             body["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue
                 == "tool failed with an oversized error"
         )
-        #expect(reply.utf8.count <= MCPRequestHandler.maximumToolResponseBytes)
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
     }
 
     @Test("a tool call with an unanswerable id is not answered under another id")
@@ -203,6 +203,47 @@ struct MCPProtocolTests {
             ])
         )
         #expect(try await handler().respond(to: request) == nil)
+    }
+
+    @Test("oversized non-tool results become bounded protocol errors")
+    func protocolResultsAreBounded() async throws {
+        let command = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .number(3),
+                "method": .string("prompts/get"),
+                "params": .object([
+                    "name": .string("run_and_wait"),
+                    "arguments": .object([
+                        "command": .string(command), "pane": .string("%1"),
+                    ]),
+                ]),
+            ])
+        )
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["id"] == .number(3))
+        #expect(body["error"]?["code"] == .number(-32001))
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
+    }
+
+    @Test("oversized protocol errors retry with a fixed bounded message")
+    func protocolErrorsAreBounded() async throws {
+        let method = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .number(4),
+                "method": .string(method),
+            ]))
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["id"] == .number(4))
+        #expect(body["error"]?["message"]?.stringValue == "response exceeds the encoded byte limit")
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
     }
 
     @Test("a notification expects no reply, and neither does a line that is not one")

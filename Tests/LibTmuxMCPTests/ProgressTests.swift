@@ -63,6 +63,18 @@ struct ProgressTests {
         #expect(token == .number(0))
     }
 
+    @Test("an oversized progress token emits no oversized protocol line")
+    func oversizedProgressIsNotEmitted() async {
+        let emitted = Emitted()
+        let reporter = ProgressReporter(
+            token: .string(String(repeating: "\\", count: 600_000)),
+            emit: { await emitted.record($0) }
+        )
+
+        await reporter.report(1, of: 2, "running")
+        #expect(await emitted.lines.isEmpty)
+    }
+
     @Test("a client that did not ask is not sent anything")
     func silenceWithoutAToken() async throws {
         try await withTmuxServer { server in

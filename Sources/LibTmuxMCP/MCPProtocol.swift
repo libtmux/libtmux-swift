@@ -29,7 +29,8 @@ public struct MCPRequestHandler: Sendable {
     public static var protocolVersion: String { protocolVersions[0] }
     public static let serverName = "libtmux"
     public static let serverVersion = LibTmuxVersion.current
-    static let maximumToolResponseBytes = 1_000_000
+    static let maximumRequestBytes = 2_000_000
+    static let maximumResponseBytes = 1_000_000
 
     private let tools: TmuxTools
     private let resources: TmuxResources
@@ -57,57 +58,66 @@ public struct MCPRequestHandler: Sendable {
         to line: String,
         emit: @escaping @Sendable (String) async -> Void = { _ in }
     ) async -> String? {
-        guard !line.isEmpty,
+        guard !line.isEmpty, line.utf8.count <= Self.maximumRequestBytes,
             let request = try? decoder.decode(MCPRequest.self, from: Data(line.utf8))
         else {
             return nil
         }
         guard let id = request.id else { return nil }
+        guard minimalFailure(id: id) != nil else { return nil }
 
         switch request.method {
         case "initialize":
-            return encode([
-                "jsonrpc": .string("2.0"),
-                "id": id,
-                "result": .object([
-                    "protocolVersion": .string(
-                        Self.negotiated(request.params?["protocolVersion"]?.stringValue)
-                    ),
-                    "capabilities": .object([
-                        "tools": .object(["listChanged": .bool(false)]),
-                        "resources": .object([
-                            "subscribe": .bool(false), "listChanged": .bool(false),
+            return boundedResponse(
+                id: id,
+                [
+                    "jsonrpc": .string("2.0"),
+                    "id": id,
+                    "result": .object([
+                        "protocolVersion": .string(
+                            Self.negotiated(request.params?["protocolVersion"]?.stringValue)
+                        ),
+                        "capabilities": .object([
+                            "tools": .object(["listChanged": .bool(false)]),
+                            "resources": .object([
+                                "subscribe": .bool(false), "listChanged": .bool(false),
+                            ]),
+                            "prompts": .object(["listChanged": .bool(false)]),
                         ]),
-                        "prompts": .object(["listChanged": .bool(false)]),
+                        "serverInfo": .object([
+                            "name": .string(Self.serverName),
+                            "title": .string("tmux"),
+                            "version": .string(Self.serverVersion),
+                        ]),
+                        "instructions": .string(
+                            Instructions.text(
+                                tier: tools.tier,
+                                waitCeiling: tools.waitCeiling,
+                                caller: tools.caller
+                            )
+                        ),
                     ]),
-                    "serverInfo": .object([
-                        "name": .string(Self.serverName),
-                        "title": .string("tmux"),
-                        "version": .string(Self.serverVersion),
-                    ]),
-                    "instructions": .string(
-                        Instructions.text(
-                            tier: tools.tier,
-                            waitCeiling: tools.waitCeiling,
-                            caller: tools.caller
-                        )
-                    ),
-                ]),
-            ])
+                ])
 
         case "tools/list":
-            return encode([
-                "jsonrpc": .string("2.0"),
-                "id": id,
-                "result": .object([
-                    "tools": .array(tools.visibleDefinitions.map(\.listing))
-                ]),
-            ])
+            return boundedResponse(
+                id: id,
+                [
+                    "jsonrpc": .string("2.0"),
+                    "id": id,
+                    "result": .object([
+                        "tools": .array(tools.visibleDefinitions.map(\.listing))
+                    ]),
+                ])
 
         case "tools/call":
             // Do not run a tool when no bounded response can echo its id.
             guard toolFailure(id: id, message: Self.oversizedToolError) != nil else {
-                return nil
+                return failure(
+                    id: id,
+                    code: -32001,
+                    message: "request id leaves no room for a tool response"
+                )
             }
             guard let call = Self.toolCall(request.params) else {
                 return failure(id: id, code: -32602, message: "tools/call needs a tool name")
@@ -128,29 +138,35 @@ public struct MCPRequestHandler: Sendable {
             }
 
         case "resources/list":
-            return encode([
-                "jsonrpc": .string("2.0"),
-                "id": id,
-                "result": .object(["resources": .array(TmuxResources.fixed)]),
-            ])
+            return boundedResponse(
+                id: id,
+                [
+                    "jsonrpc": .string("2.0"),
+                    "id": id,
+                    "result": .object(["resources": .array(TmuxResources.fixed)]),
+                ])
 
         case "resources/templates/list":
-            return encode([
-                "jsonrpc": .string("2.0"),
-                "id": id,
-                "result": .object(["resourceTemplates": .array(TmuxResources.templates)]),
-            ])
+            return boundedResponse(
+                id: id,
+                [
+                    "jsonrpc": .string("2.0"),
+                    "id": id,
+                    "result": .object(["resourceTemplates": .array(TmuxResources.templates)]),
+                ])
 
         case "resources/read":
             guard let uri = request.params?["uri"]?.stringValue else {
                 return failure(id: id, code: -32602, message: "resources/read needs a uri")
             }
             do {
-                return encode([
-                    "jsonrpc": .string("2.0"),
-                    "id": id,
-                    "result": .object(["contents": .array([try await resources.read(uri)])]),
-                ])
+                return boundedResponse(
+                    id: id,
+                    [
+                        "jsonrpc": .string("2.0"),
+                        "id": id,
+                        "result": .object(["contents": .array([try await resources.read(uri)])]),
+                    ])
             } catch {
                 // -32002 is the specification's code for a resource that is not
                 // there, which clients distinguish from a malformed request.
@@ -158,11 +174,13 @@ public struct MCPRequestHandler: Sendable {
             }
 
         case "prompts/list":
-            return encode([
-                "jsonrpc": .string("2.0"),
-                "id": id,
-                "result": .object(["prompts": .array(Prompts.listing)]),
-            ])
+            return boundedResponse(
+                id: id,
+                [
+                    "jsonrpc": .string("2.0"),
+                    "id": id,
+                    "result": .object(["prompts": .array(Prompts.listing)]),
+                ])
 
         case "prompts/get":
             guard let name = request.params?["name"]?.stringValue else {
@@ -176,10 +194,16 @@ public struct MCPRequestHandler: Sendable {
             else {
                 return failure(id: id, code: -32602, message: "no prompt named \(name)")
             }
-            return encode(["jsonrpc": .string("2.0"), "id": id, "result": rendered])
+            return boundedResponse(
+                id: id,
+                ["jsonrpc": .string("2.0"), "id": id, "result": rendered]
+            )
 
         case "ping":
-            return encode(["jsonrpc": .string("2.0"), "id": id, "result": .object([:])])
+            return boundedResponse(
+                id: id,
+                ["jsonrpc": .string("2.0"), "id": id, "result": .object([:])]
+            )
 
         default:
             return failure(id: id, code: -32601, message: "no method \(request.method)")
@@ -192,7 +216,8 @@ public struct MCPRequestHandler: Sendable {
     /// says it has stopped waiting, and the only way a wait already in flight
     /// can be stopped early.
     public static func cancelledRequestID(in line: String) -> JSONValue? {
-        guard let request = try? JSONDecoder().decode(MCPRequest.self, from: Data(line.utf8)),
+        guard line.utf8.count <= maximumRequestBytes,
+            let request = try? JSONDecoder().decode(MCPRequest.self, from: Data(line.utf8)),
             request.method == "notifications/cancelled"
         else { return nil }
         return request.params?["requestId"]
@@ -223,7 +248,7 @@ public struct MCPRequestHandler: Sendable {
                 "code": .number(Double(code)),
                 "message": .string(message),
             ]),
-        ])
+        ]) ?? minimalFailure(id: id)
     }
 
     func capacityFailure(id: JSONValue, maximum: Int) -> String? {
@@ -235,15 +260,33 @@ public struct MCPRequestHandler: Sendable {
     }
 
     private func encode(_ body: [String: JSONValue]) -> String? {
-        guard let data = try? encoder.encode(body) else { return nil }
+        guard let data = try? encoder.encode(body),
+            data.count <= Self.maximumResponseBytes
+        else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func encodeToolResponse(_ body: [String: JSONValue]) -> String? {
-        guard let data = try? encoder.encode(body),
-            data.count <= Self.maximumToolResponseBytes
-        else { return nil }
-        return String(decoding: data, as: UTF8.self)
+    private func boundedResponse(
+        id: JSONValue,
+        _ body: [String: JSONValue]
+    ) -> String? {
+        encode(body)
+            ?? failure(
+                id: id,
+                code: -32001,
+                message: "response exceeds the encoded byte limit"
+            )
+    }
+
+    private func minimalFailure(id: JSONValue) -> String? {
+        encode([
+            "jsonrpc": .string("2.0"),
+            "id": id,
+            "error": .object([
+                "code": .number(-32001),
+                "message": .string("response exceeds the encoded byte limit"),
+            ]),
+        ])
     }
 
     func toolResponse(id: JSONValue, outcome: ToolOutcome) -> String? {
@@ -263,7 +306,7 @@ public struct MCPRequestHandler: Sendable {
                 "isError": .bool(false),
             ]),
         ]
-        return encodeToolResponse(body)
+        return encode(body)
             ?? toolFailure(
                 id: id,
                 message: "tool result exceeds the 1000000-byte encoded response limit"
@@ -284,7 +327,7 @@ public struct MCPRequestHandler: Sendable {
                 ]),
             ]),
         ]
-        if let response = encodeToolResponse(body) { return response }
+        if let response = encode(body) { return response }
 
         let bounded: [String: JSONValue] = [
             "jsonrpc": .string("2.0"),
@@ -298,7 +341,7 @@ public struct MCPRequestHandler: Sendable {
                 ]),
             ]),
         ]
-        return encodeToolResponse(bounded)
+        return encode(bounded)
     }
 
     private static let oversizedToolError = "tool failed with an oversized error"

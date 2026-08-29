@@ -108,7 +108,7 @@ private actor RequestRegistry {
 extension MCPRequestHandler {
     /// The id a request will be answered under, for tracking it while it runs.
     public static func requestID(in line: String) -> JSONValue? {
-        guard
+        guard line.utf8.count <= maximumRequestBytes,
             let request = try? JSONDecoder().decode(
                 MCPRequest.self,
                 from: Data(line.utf8)

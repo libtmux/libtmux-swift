@@ -497,8 +497,8 @@ job safely.
 **It will not spend context you did not ask it to.** Listings take a `fields`
 argument, so one field can be one field rather than every record in full.
 Pane reads collect at most 262,144 bytes per stream and return at most 128,000
-UTF-8 bytes in whole rows. A complete encoded tool response above 1,000,000
-bytes is refused. Each result says how many older rows it dropped.
+UTF-8 bytes in whole rows. No encoded protocol line exceeds 1,000,000 bytes.
+Each result says how many older rows it dropped.
 `run_shell` returns only what that command printed, not its echoed wrapper or
 the shell prompt. `capture_since` returns a cursor, so watching something across
 turns sends the difference rather than the screen — a pane that has been quiet
