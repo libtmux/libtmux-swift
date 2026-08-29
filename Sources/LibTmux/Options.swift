@@ -260,6 +260,65 @@ extension Server {
     ) async throws(TmuxError) -> TmuxReply {
         try await run(TmuxCommand("set-hook", scope.arguments + ["-R", name]))
     }
+
+    // MARK: Options on one object
+
+    /// Sets an option on one window, rather than on the window table as a
+    /// whole.
+    public func setOption(
+        _ name: String,
+        to value: String,
+        of window: Window
+    ) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("set-option", ["-w", "-t", window.id.rawValue, name, value]),
+            guardedBy: [.window(window)]
+        )
+    }
+
+    /// Reads an option from one window.
+    public func option(
+        _ name: String,
+        of window: Window
+    ) async throws(TmuxError) -> String? {
+        let reply = try await runGuarded(
+            TmuxCommand("show-options", ["-w", "-t", window.id.rawValue, "-v", name]),
+            by: [.window(window)],
+            checkingTargets: false
+        )
+        guard reply.isSuccess else { return nil }
+        var value = reply.text
+        if value.hasSuffix("\n") { value.removeLast() }
+        return value.isEmpty ? nil : value
+    }
+
+    package func paneOption(
+        _ name: String,
+        of pane: Pane
+    ) async throws(TmuxError) -> String? {
+        let reply = try await runGuarded(
+            TmuxCommand(
+                "show-options", ["-p", "-t", pane.id.rawValue, "-v", name]
+            ),
+            by: [.pane(pane)]
+        )
+        guard reply.isSuccess else { return nil }
+        var value = reply.text
+        if value.hasSuffix("\n") { value.removeLast() }
+        return value.isEmpty ? nil : value
+    }
+
+    package func unsetPaneOption(
+        _ name: String,
+        of pane: Pane
+    ) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand(
+                "set-option", ["-p", "-t", pane.id.rawValue, "-u", name]
+            ),
+            guardedBy: [.pane(pane)]
+        )
+    }
 }
 
 /// tmux prints `name value`, and a value may contain spaces, so only the first
