@@ -70,6 +70,48 @@ struct CaptureSinceTests {
         }
     }
 
+    @Test("a forward scan retries output racing its bounded chunk")
+    func forwardScanRetriesOutputRace() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            try await fixture.run(
+                "stty -echo; \(fixture.shellInvocation) wait-for -S forward-scan-ready",
+                in: pane
+            )
+            try await fixture.wait(for: "forward-scan-ready")
+            let started = try await fixture.capture(pane, since: nil)
+            let transport = CaptureRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            await transport.beforeNextCapture { () async throws(TmuxError) in
+                try await fixture.run(
+                    "printf '\\nforward-raced\\n'; "
+                        + "\(fixture.shellInvocation) wait-for -S forward-scan-raced",
+                    in: pane
+                )
+                try await fixture.wait(for: "forward-scan-raced")
+            }
+            var visited: [String] = []
+
+            let result = try await server.scanForward(
+                pane,
+                since: started.cursor,
+                sourceLinesPerChunk: 16,
+                perStreamOutputLimit: 1_048_576
+            ) { rows in
+                visited.append(contentsOf: rows)
+                return false
+            }
+
+            #expect(!result.linesMissed)
+            #expect(visited.contains("forward-raced"))
+            #expect(await transport.captureLimits.count == 2)
+        }
+    }
+
     @Test("incremental capture survives history collection")
     func historyCollectionKeepsTheDelta() async throws {
         try await withTmuxServer { server in

@@ -71,87 +71,94 @@ extension Server {
         guard perStreamOutputLimit > 0 else {
             throw .invocationFailed(reason: "a forward capture needs a positive output limit")
         }
-        let state = try await incrementalPaneState(for: pane)
-        guard cursor.pane == pane.id.rawValue,
-            cursor.incarnation == pane.incarnation,
-            cursor.processID == state.processID
-        else {
-            let reset = try await markIncremental(
-                pane,
-                state: state,
-                perStreamOutputLimit: perStreamOutputLimit,
-                restarted: true
-            )
-            return ForwardCaptureResult(
-                cursor: reset.cursor,
-                linesMissed: reset.linesMissed,
-                restarted: reset.restarted,
-                droppedLines: reset.droppedLines
-            )
-        }
-        guard
-            let aligned = try await align(
-                cursor,
-                in: pane,
-                state: state,
-                perStreamOutputLimit: perStreamOutputLimit
-            )
-        else {
-            let reset = try await markIncremental(
-                pane,
-                state: state,
-                perStreamOutputLimit: perStreamOutputLimit,
-                linesMissed: true
-            )
-            return ForwardCaptureResult(
-                cursor: reset.cursor,
-                linesMissed: true,
-                restarted: false,
-                droppedLines: 0
-            )
-        }
-
-        var start = aligned.anchor
-        var previousCursor = aligned
+        var previousCursor = cursor
+        var remainingAttempts = Self.incrementalCaptureAttempts
         while true {
-            let (candidateEnd, endOverflowed) = start.addingReportingOverflow(
-                sourceLinesPerChunk - 1
-            )
-            let end =
-                endOverflowed
-                ? state.absoluteCursorRow
-                : min(
-                    candidateEnd,
-                    state.absoluteCursorRow
+            do {
+                let state = try await incrementalPaneState(for: pane)
+                guard previousCursor.pane == pane.id.rawValue,
+                    previousCursor.incarnation == pane.incarnation,
+                    previousCursor.processID == state.processID
+                else {
+                    let reset = try await markIncremental(
+                        pane,
+                        state: state,
+                        perStreamOutputLimit: perStreamOutputLimit,
+                        restarted: true
+                    )
+                    return ForwardCaptureResult(
+                        cursor: reset.cursor,
+                        linesMissed: reset.linesMissed,
+                        restarted: reset.restarted,
+                        droppedLines: reset.droppedLines
+                    )
+                }
+                guard
+                    let aligned = try await align(
+                        previousCursor,
+                        in: pane,
+                        state: state,
+                        perStreamOutputLimit: perStreamOutputLimit
+                    )
+                else {
+                    let reset = try await markIncremental(
+                        pane,
+                        state: state,
+                        perStreamOutputLimit: perStreamOutputLimit,
+                        linesMissed: true
+                    )
+                    return ForwardCaptureResult(
+                        cursor: reset.cursor,
+                        linesMissed: true,
+                        restarted: false,
+                        droppedLines: 0
+                    )
+                }
+
+                let start = aligned.anchor
+                let (candidateEnd, endOverflowed) = start.addingReportingOverflow(
+                    sourceLinesPerChunk - 1
                 )
-            let rawRows = try await captureExactRows(
-                pane,
-                from: start,
-                through: end,
-                state: state,
-                perStreamOutputLimit: perStreamOutputLimit
-            )
-            var rows = rawRows
-            if let tail = previousCursor.tail, rows.first == tail { rows.removeFirst() }
-            if end == state.absoluteCursorRow {
-                while rows.last?.isEmpty == true { rows.removeLast() }
+                let end =
+                    endOverflowed
+                    ? state.absoluteCursorRow
+                    : min(candidateEnd, state.absoluteCursorRow)
+                let rawRows = try await captureExactRows(
+                    pane,
+                    from: start,
+                    through: end,
+                    state: state,
+                    perStreamOutputLimit: perStreamOutputLimit
+                )
+                var rows = rawRows
+                if let tail = aligned.tail, rows.first == tail { rows.removeFirst() }
+                if end == state.absoluteCursorRow {
+                    while rows.last?.isEmpty == true { rows.removeLast() }
+                }
+                let nextCursor = try makeCursor(
+                    for: pane,
+                    state: state,
+                    anchor: end,
+                    rawRows: rawRows,
+                    fallback: aligned
+                )
+                previousCursor = nextCursor
+                remainingAttempts = Self.incrementalCaptureAttempts
+                let result = ForwardCaptureResult(
+                    cursor: nextCursor,
+                    linesMissed: false,
+                    restarted: false,
+                    droppedLines: 0
+                )
+                if visit(rows) || end == state.absoluteCursorRow { return result }
+            } catch let error {
+                remainingAttempts -= 1
+                guard case .staleServerValue = error, remainingAttempts > 0 else {
+                    throw error
+                }
+                guard !Task.isCancelled else { throw .cancelled }
+                await Task.yield()
             }
-            let nextCursor = try makeCursor(
-                for: pane,
-                state: state,
-                anchor: end,
-                rawRows: rawRows,
-                fallback: previousCursor
-            )
-            previousCursor = nextCursor
-            let result = ForwardCaptureResult(
-                cursor: nextCursor,
-                linesMissed: false,
-                restarted: false,
-                droppedLines: 0
-            )
-            if visit(rows) || end == state.absoluteCursorRow { return result }
-            start = end
         }
     }
 
