@@ -68,7 +68,7 @@ public struct MCPRequestHandler: Sendable {
     /// new one. Anything unrecognised gets the newest, which is what the
     /// specification says to do.
     public static let protocolVersions = [
-        "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05",
+        "2025-11-25", "2025-06-18", "2024-11-05",
     ]
     public static var protocolVersion: String { protocolVersions[0] }
     public static let serverName = "libtmux"

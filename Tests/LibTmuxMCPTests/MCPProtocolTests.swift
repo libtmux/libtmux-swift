@@ -333,9 +333,9 @@ struct MCPProtocolTests {
         #expect(await handler.respond(to: #"{"jsonrpc":"2.0","method":"ping"}"#) == nil)
     }
 
-    @Test("the client's protocol revision is echoed when this server speaks it")
+    @Test("only revisions whose message shapes are implemented are negotiated")
     func protocolRevisionIsNegotiated() async throws {
-        for requested in MCPRequestHandler.protocolVersions {
+        for requested in ["2025-11-25", "2025-06-18", "2024-11-05"] {
             let reply = try #require(
                 await handler().respond(
                     to: #"""
@@ -346,18 +346,20 @@ struct MCPProtocolTests {
             )
             #expect(try object(reply)["result"]?["protocolVersion"]?.stringValue == requested)
         }
-        // An unrecognised revision gets this server's newest rather than an
-        // error: the specification says to answer with what is supported.
-        let reply = try #require(
-            await handler().respond(
-                to:
-                    #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}"#
+
+        for unsupported in ["2025-03-26", "1999-01-01"] {
+            let reply = try #require(
+                await handler().respond(
+                    to: #"""
+                        {"jsonrpc":"2.0","id":1,"method":"initialize",
+                        "params":{"protocolVersion":"\#(unsupported)"}}
+                        """#.replacingOccurrences(of: "\n", with: "")
+                )
             )
-        )
-        #expect(
-            try object(reply)["result"]?["protocolVersion"]?.stringValue
-                == MCPRequestHandler.protocolVersion
-        )
+            #expect(
+                try object(reply)["result"]?["protocolVersion"]?.stringValue == "2025-11-25"
+            )
+        }
     }
 
     @Test("initialize carries the instructions a model reads before choosing a tool")
