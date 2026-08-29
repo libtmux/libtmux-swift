@@ -1,0 +1,135 @@
+import Foundation
+import Testing
+import TmuxFixture
+
+@testable import LibTmux
+@testable import LibTmuxMCP
+
+@Suite("the tool catalogue", .timeLimit(.minutes(1)))
+struct ToolCatalogTests {
+    @Test("every tool is described before it can be called")
+    func everyToolIsDescribed() {
+        for definition in TmuxTools.definitions {
+            #expect(!definition.summary.isEmpty)
+            #expect(!definition.title.isEmpty)
+            for argument in definition.arguments {
+                #expect(!argument.summary.isEmpty)
+            }
+        }
+    }
+
+    @Test("no two tools share a name")
+    func toolNamesAreUnique() {
+        let names = TmuxTools.definitions.map(\.name)
+        #expect(Set(names).count == names.count)
+    }
+
+    @Test("every declared argument is one the tool can actually receive")
+    func declaredArgumentsAreReadable() throws {
+        // The bug this replaces: the protocol layer named the arguments it
+        // carried, and the two it forgot could never arrive however correctly
+        // they were sent. Reading through the declaration is what makes the
+        // schema and the reader the same list.
+        for definition in TmuxTools.definitions {
+            var members: [String: JSONValue] = [:]
+            for argument in definition.arguments {
+                members[argument.name] = Self.sample(for: argument)
+            }
+            let call = ToolCall(name: definition.name, arguments: .object(members))
+            #expect(throws: Never.self) { try Arguments(call, for: definition) }
+        }
+    }
+
+    @Test("an argument the tool does not declare is refused, with the list")
+    func undeclaredArgumentsAreRefused() throws {
+        let definition = try #require(TmuxTools.byName["wait_for_output"])
+        let call = ToolCall(
+            name: "wait_for_output",
+            arguments: .object(["pane": .string("%0"), "pattern": .string("x")])
+        )
+        // Silently ignoring this is what makes a wait look like a quiet pane.
+        #expect(throws: ToolError.self) { try Arguments(call, for: definition) }
+    }
+
+    @Test("a required argument that is missing says which one")
+    func missingRequiredArgumentIsNamed() throws {
+        let definition = try #require(TmuxTools.byName["read_format"])
+        #expect(throws: ToolError.missingArgument("template")) {
+            try Arguments(ToolCall(name: "read_format"), for: definition)
+        }
+    }
+
+    @Test("a value outside an argument's enum is refused with the choices")
+    func valueOutsideEnumIsRefused() throws {
+        let definition = try #require(TmuxTools.byName["split_pane"])
+        let call = ToolCall(
+            name: "split_pane",
+            arguments: .object(["pane": .string("%0"), "direction": .string("sideways")])
+        )
+        let arguments = try Arguments(call, for: definition)
+        #expect(throws: ToolError.self) { try arguments.string("direction", or: "below") }
+    }
+
+    @Test("every schema declares its type and refuses extra properties")
+    func schemasAreWellFormed() {
+        for definition in TmuxTools.definitions {
+            let schema = definition.inputSchema
+            #expect(schema["type"]?.stringValue == "object")
+            #expect(schema["additionalProperties"]?.boolValue == false)
+            let properties = schema["properties"]?.objectValue ?? [:]
+            #expect(properties.count == definition.arguments.count)
+            for argument in definition.arguments {
+                let member = properties[argument.name]
+                #expect(member?["type"]?.stringValue == argument.kind.schemaType)
+                #expect(member?["description"]?.stringValue?.isEmpty == false)
+                if argument.kind == .stringArray || argument.kind == .commandArray {
+                    #expect(member?["items"] != nil)
+                }
+                if argument.kind == .commandArray {
+                    #expect(member?["items"]?["type"]?.stringValue == "object")
+                    #expect(
+                        member?["items"]?["required"]?.arrayValue?.contains(.string("command"))
+                            == true
+                    )
+                }
+            }
+        }
+    }
+
+    @Test("behaviour hints match the tier each tool is filed under")
+    func annotationsMatchTiers() {
+        for definition in TmuxTools.definitions {
+            let annotations = definition.annotations
+            #expect(
+                annotations["readOnlyHint"]?.boolValue == (definition.tier == .readonly)
+            )
+            #expect(
+                annotations["destructiveHint"]?.boolValue
+                    == (definition.tier == .destructive)
+            )
+        }
+    }
+
+    @Test("the server blurb fits the budget clients allocate for it")
+    func instructionsFitTheBudget() {
+        // Measured rather than asserted at runtime: a blurb that outgrew its
+        // budget should fail here, not drop a section in front of a user.
+        for tier in SafetyTier.allCases {
+            let text = Instructions.required(tier: tier, waitCeiling: .seconds(120))
+                .joined(separator: "\n\n")
+            #expect(text.utf8.count <= Instructions.maximumBytes)
+        }
+    }
+
+    private static func sample(for argument: ToolArgument) -> JSONValue {
+        if let first = argument.allowed.first { return .string(first) }
+        switch argument.kind {
+        case .string: return .string("%0")
+        case .integer, .number: return .number(1)
+        case .boolean: return .bool(false)
+        case .stringArray: return .array([.string("x")])
+        case .commandArray: return .array([.object(["command": .string("list-sessions")])])
+        case .object: return .object([:])
+        }
+    }
+}

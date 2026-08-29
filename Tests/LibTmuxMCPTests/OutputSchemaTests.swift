@@ -5,22 +5,6 @@ import TmuxFixture
 
 @testable import LibTmuxMCP
 
-private func wireRef(_ pane: Pane) -> String {
-    WireReferenceCodec.processLocal.reference(to: pane)
-}
-
-private func wireRef(_ session: Session) -> String {
-    WireReferenceCodec.processLocal.reference(to: session)
-}
-
-private func wireRef(_ window: Window) -> String {
-    WireReferenceCodec.processLocal.reference(to: window)
-}
-
-private func serverRef(_ server: Server) async throws -> String {
-    WireReferenceCodec.processLocal.reference(to: try #require(try await server.incarnation()))
-}
-
 /// A declared output schema is a promise MCP holds the server to: whatever
 /// `structuredContent` carries must conform to it. So these run the tools for
 /// real and check the answers against what was advertised, rather than checking
