@@ -174,8 +174,12 @@ struct ModelOperation: Sendable, CustomStringConvertible {
             _ = try await s.capture(v.pane, since: nil)
         },
         read("waitForPaneOutput") { s, v in
-            _ = try await s.waitForOutput(
-                in: v.pane, timeout: .zero)
+            do {
+                _ = try await s.waitForOutput(in: v.pane, timeout: .zero)
+            } catch let waitError as OutputWaitError {
+                if case let .tmux(error) = waitError { throw error }
+                throw waitError
+            }
         },
     ]
 
