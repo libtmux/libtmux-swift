@@ -87,17 +87,20 @@ struct ClientTests {
 
     @Test("a command still waiting when the connection closes says so")
     func closedConnectionReportsItself() async throws {
-        try await withTmuxServer { server in
-            _ = await #expect(throws: TmuxError.connectionClosed) {
-                try await server.withControlMode(attachingTo: "bootstrap") { control in
-                    // Killing the server ends this connection; the reply to a
-                    // command sent after it can never arrive.
-                    _ = try await control.send(TmuxCommand("kill-server"))
-                    _ = try await control.send(
-                        TmuxCommand("display-message", ["-p", "unreachable"])
-                    )
-                }
-            }
+        let (writes, witness) = AsyncStream.makeStream(of: Void.self)
+        let control = ControlSession(write: { _ in witness.yield() })
+        await control.consume("%begin 1 1 0")
+        await control.consume("%end 1 1 0")
+
+        let pending = Task {
+            try await control.send(TmuxCommand("display-message", ["-p", "unreachable"]))
+        }
+        var iterator = writes.makeAsyncIterator()
+        _ = await iterator.next()
+        await control.finish(throwing: TmuxError.connectionClosed)
+
+        await #expect(throws: TmuxError.connectionClosed) {
+            try await pending.value
         }
     }
 }

@@ -67,7 +67,7 @@ private struct SubmittedLine {
 /// command that produced it — the attribution a `;` list cannot give. Anything
 /// the server volunteers meanwhile arrives on ``notifications``.
 public actor ControlSession {
-    private let writer: StandardInputWriter
+    private let write: @Sendable ([UInt8]) async throws -> Void
     private var parser = ControlProtocolParser()
     private var pending: [SubmittedLine] = []
     private var attachWaiters: [CheckedContinuation<Void, any Error>] = []
@@ -102,7 +102,13 @@ public actor ControlSession {
     }
 
     init(writer: StandardInputWriter) {
-        self.writer = writer
+        self.write = { bytes in
+            _ = try await writer.write(bytes)
+        }
+    }
+
+    init(write: @escaping @Sendable ([UInt8]) async throws -> Void) {
+        self.write = write
     }
 
     /// Sends a command and waits for the block tmux brackets its reply with.
@@ -160,7 +166,7 @@ public actor ControlSession {
             pending.append(
                 SubmittedLine(completion: completion, continuation: continuation)
             )
-            let writer = self.writer
+            let write = self.write
             // Chained to the previous send: the queue is ordered by who
             // entered the actor, and the writes have to reach tmux in that
             // same order or a reply lands on the wrong waiter.
@@ -168,7 +174,7 @@ public actor ControlSession {
             lastWrite = Task { [line] in
                 await previous?.value
                 do {
-                    _ = try await writer.write(Array("\(line)\n".utf8))
+                    try await write(Array("\(line)\n".utf8))
                 } catch {
                     // A failed write means the connection is gone, and the
                     // transport's word for it — `Broken pipe` — is not one this
