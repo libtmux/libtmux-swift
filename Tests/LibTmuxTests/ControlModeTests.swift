@@ -5,14 +5,9 @@ import TmuxFixture
 
 private actor ControlBodyProbe {
     private(set) var entered = false
-    private(set) var wasCancelled = false
 
     func recordEntry() {
         entered = true
-    }
-
-    func recordCancellation() {
-        wasCancelled = true
     }
 }
 
@@ -45,8 +40,8 @@ struct ControlModeTests {
         }
     }
 
-    @Test("losing the output stream cancels a sleeping body")
-    func outputLossCancelsSleepingBody() async throws {
+    @Test("losing the output stream rejects a sleeping body's success")
+    func outputLossRejectsSleepingBodySuccess() async throws {
         try await withTmuxServer { server in
             let probe = ControlBodyProbe()
             let (started, startWitness) = AsyncStream.makeStream(of: Void.self)
@@ -59,11 +54,7 @@ struct ControlModeTests {
                         )
                         await probe.recordEntry()
                         startWitness.yield()
-                        do {
-                            try await Task.sleep(for: .milliseconds(500))
-                        } catch is CancellationError {
-                            await probe.recordCancellation()
-                        }
+                        try await Task.sleep(for: .milliseconds(100))
                     }
                     return nil
                 } catch let error as TmuxError {
@@ -79,7 +70,6 @@ struct ControlModeTests {
 
             #expect(await connection.value == .connectionClosed)
             #expect(await probe.entered)
-            #expect(await probe.wasCancelled)
         }
     }
 

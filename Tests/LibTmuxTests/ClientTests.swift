@@ -8,27 +8,29 @@ struct ClientTests {
     @Test("a control connection appears as a client and detaches")
     func controlConnectionIsAClientAndDetaches() async throws {
         try await withTmuxServer { server in
-            try await server.withControlMode(attachingTo: "bootstrap") { control in
-                _ = try await control.send(TmuxCommand("display-message", ["-p", "hi"]))
+            await #expect(throws: TmuxError.connectionClosed) {
+                try await server.withControlMode(attachingTo: "bootstrap") { control in
+                    _ = try await control.send(TmuxCommand("display-message", ["-p", "hi"]))
 
-                // The control connection is a real client, reported with the
-                // flag that distinguishes it from a terminal.
-                var clients = try await server.clients()
-                for _ in 0..<100 where clients.isEmpty {
-                    try await Task.sleep(for: .milliseconds(20))
-                    clients = try await server.clients()
+                    // The control connection is a real client, reported with the
+                    // flag that distinguishes it from a terminal.
+                    var clients = try await server.clients()
+                    for _ in 0..<100 where clients.isEmpty {
+                        try await Task.sleep(for: .milliseconds(20))
+                        clients = try await server.clients()
+                    }
+                    let client = try #require(clients.first)
+                    #expect(client.isControlMode)
+
+                    try await server.detach(client)
+
+                    var after = try await server.clients()
+                    for _ in 0..<100 where !after.isEmpty {
+                        try await Task.sleep(for: .milliseconds(20))
+                        after = try await server.clients()
+                    }
+                    #expect(after.isEmpty)
                 }
-                let client = try #require(clients.first)
-                #expect(client.isControlMode)
-
-                try await server.detach(client)
-
-                var after = try await server.clients()
-                for _ in 0..<100 where !after.isEmpty {
-                    try await Task.sleep(for: .milliseconds(20))
-                    after = try await server.clients()
-                }
-                #expect(after.isEmpty)
             }
             // Detaching a client leaves the server and its sessions alone.
             let running = try await server.isRunning()
@@ -44,21 +46,23 @@ struct ClientTests {
             let sessions = try await server.sessions()
             let session = try #require(sessions.first)
 
-            try await server.withControlMode(attachingTo: session.id.rawValue) { _ in
-                var clients = try await server.clients()
-                for _ in 0..<100 where clients.isEmpty {
-                    try await Task.sleep(for: .milliseconds(20))
-                    clients = try await server.clients()
-                }
-                #expect(!clients.isEmpty)
+            await #expect(throws: TmuxError.connectionClosed) {
+                try await server.withControlMode(attachingTo: session.id.rawValue) { _ in
+                    var clients = try await server.clients()
+                    for _ in 0..<100 where clients.isEmpty {
+                        try await Task.sleep(for: .milliseconds(20))
+                        clients = try await server.clients()
+                    }
+                    #expect(!clients.isEmpty)
 
-                try await server.detachClients(from: session)
-                var after = try await server.clients()
-                for _ in 0..<100 where !after.isEmpty {
-                    try await Task.sleep(for: .milliseconds(20))
-                    after = try await server.clients()
+                    try await server.detachClients(from: session)
+                    var after = try await server.clients()
+                    for _ in 0..<100 where !after.isEmpty {
+                        try await Task.sleep(for: .milliseconds(20))
+                        after = try await server.clients()
+                    }
+                    #expect(after.isEmpty)
                 }
-                #expect(after.isEmpty)
             }
 
             // Detaching nobody is also success, so teardown need not list first.

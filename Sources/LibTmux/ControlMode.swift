@@ -85,6 +85,8 @@ extension Server {
     ///   - session: the session to attach to, which must already exist.
     ///   - body: the work to run, given this server and the connection
     ///     carrying it.
+    /// - Throws: ``TmuxError/connectionClosed`` if the connection ends before
+    ///   `body`, including when `body` detaches its own client.
     public func connected<Result: Sendable>(
         attachingTo session: String,
         _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result
@@ -152,6 +154,8 @@ extension Server {
     ///     only for a session it is attached to, so a connection with no
     ///     target sees command replies and little else.
     ///   - body: the work to run against the connection.
+    /// - Throws: ``TmuxError/connectionClosed`` if the connection ends before
+    ///   `body`, including when `body` detaches its own client.
     public func withControlMode<Result: Sendable>(
         attachingTo session: String,
         _ body: @escaping @Sendable (ControlSession) async throws -> Result
@@ -208,13 +212,14 @@ extension Server {
                     return .body(try await body(control))
                 }
 
+                var streamEnded = false
                 while let outcome = try await group.next() {
                     switch outcome {
                     case let .body(value):
+                        if streamEnded { throw TmuxError.connectionClosed }
                         return value
                     case .streamEnded:
-                        group.cancelAll()
-                        throw TmuxError.connectionClosed
+                        streamEnded = true
                     }
                 }
                 throw TmuxError.connectionClosed
