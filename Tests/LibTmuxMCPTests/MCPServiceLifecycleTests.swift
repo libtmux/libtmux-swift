@@ -5,6 +5,12 @@ import TmuxFixture
 
 @testable import LibTmuxMCP
 
+private enum WriterFailureEvent: Sendable, Equatable {
+    case wrote(String)
+    case serviceCompleted
+    case watchdog
+}
+
 @Suite("MCP service lifecycle", .timeLimit(.minutes(1)))
 struct MCPServiceLifecycleTests {
     @Test("writer failure ends service before input ends")
@@ -16,31 +22,42 @@ struct MCPServiceLifecycleTests {
             handler: MCPRequestHandler(tools: TmuxTools(server: server))
         )
         let (lines, continuation) = AsyncStream<String>.makeStream()
-        let (completions, completionWitness) = AsyncStream.makeStream(
-            of: Bool.self,
-            bufferingPolicy: .bufferingOldest(1)
-        )
+        let (events, eventWitness) = AsyncStream<WriterFailureEvent>.makeStream()
         let serving = Task {
-            await service.serveUntilWriteFails(lines) { _ in false }
-            completionWitness.yield(true)
-            completionWitness.finish()
+            await service.serveUntilWriteFails(lines) { line in
+                eventWitness.yield(.wrote(line))
+                return false
+            }
+            eventWitness.yield(.serviceCompleted)
         }
 
         continuation.yield(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#)
         let watchdog = Task {
             try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled else { return }
-            completionWitness.yield(false)
+            eventWitness.yield(.watchdog)
         }
-        var completionIterator = completions.makeAsyncIterator()
-        let stopped = await completionIterator.next() ?? false
-        watchdog.cancel()
-        completionWitness.finish()
-        continuation.finish()
-        serving.cancel()
-        await serving.value
 
-        #expect(stopped)
+        var iterator = events.makeAsyncIterator()
+        guard case let .wrote(line)? = await iterator.next() else {
+            Issue.record("the service completed before invoking its writer")
+            watchdog.cancel()
+            serving.cancel()
+            continuation.finish()
+            eventWitness.finish()
+            await serving.value
+            await watchdog.value
+            return
+        }
+        #expect(line.contains(#""id":1"#))
+        #expect(await iterator.next() == .serviceCompleted)
+
+        watchdog.cancel()
+        serving.cancel()
+        continuation.finish()
+        eventWitness.finish()
+        await serving.value
+        await watchdog.value
     }
 
     @Test("cancelling the service cancels active request work")
