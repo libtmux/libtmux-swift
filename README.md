@@ -488,7 +488,8 @@ package that it means to you.
 | `read_format` | Any tmux format, reaching fields the listings do not carry |
 | `show_options` `show_environment` `show_hooks` | What tmux has been configured to do |
 | `run_shell` | Runs a command, waits for it, reports its exit status |
-| `wait_for_output` `watch_format` `wait_for_channel` `signal_channel` | The four waits, all bounded and cancellable |
+| `wait_for_output` `watch_format` `wait_for_channel` | Three bounded, cancellable waits |
+| `signal_channel` | Releases processes waiting on a tmux channel |
 | `send_keys` `paste_text` | Keystrokes a program should interpret; text that should not be |
 | `new_session` `new_window` `split_pane` | Building |
 | `rename` `select` `resize_pane` `select_layout` | Rearranging |
@@ -507,7 +508,7 @@ can know its fields without spending a call to find out. Answers travel as
 
 ### Three things it does that a wrapper does not
 
-**It will not get stuck.** Every wait is clamped to a ceiling and reports what
+**Waits have deadlines.** Every wait is clamped to a ceiling and reports what
 was actually enforced. Requests are served concurrently, so a thirty-second
 wait does not hold up the `ping` beside it, and `notifications/cancelled` stops
 one that the client has stopped caring about. The tmux commands that block
@@ -519,14 +520,16 @@ job safely.
 argument, so one field can be one field rather than every record in full.
 Pane reads collect at most 262,144 bytes per stream and return at most 128,000
 UTF-8 bytes in whole rows. No encoded protocol line exceeds 1,000,000 bytes.
-Each result says how many older rows it dropped.
+Pane captures, incremental reads, output waits, and shell runs say how many
+older rows they dropped.
 `run_shell` returns only what that command printed, not its echoed wrapper or
 the shell prompt. `capture_since` returns a cursor, so watching something across
 turns sends the difference rather than the screen — a pane that has been quiet
 answers nothing at all.
 
-**It will tell you it is still there.** A wait that runs for a minute reports
-progress the whole time, when the client asks for it with a `progressToken`.
+**Long waits report life signs.** When a client sends a `progressToken`, a long
+wait sends advisory progress while output has capacity. Final answers and
+protocol errors take priority when the client stops draining output.
 
 **It will not end the conversation.** When the server runs inside tmux it knows
 which pane is its own: `list_panes` marks that row, `describe_server` names it,

@@ -16,7 +16,7 @@ import LibTmuxMCP
 ```
 
 ```swift
-public func useEmbeddedTools(on server: Server) async throws -> Int {
+public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
     let tools = TmuxTools(server: server)
     for definition in tools.visibleDefinitions {
         print(definition.name, definition.summary)
