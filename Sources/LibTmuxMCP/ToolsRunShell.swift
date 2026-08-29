@@ -60,7 +60,6 @@ extension TmuxTools {
                 cleanup,
                 in: pane,
                 finished: finished,
-                deadline: deadline,
                 enforcedTimeout: enforced,
                 maxLines: maxLines,
                 started: started
@@ -187,13 +186,15 @@ extension TmuxTools {
         _ cleanup: RunShellCleanup,
         in pane: Pane,
         finished: Bool,
-        deadline: ContinuousClock.Instant,
         enforcedTimeout: Double,
         maxLines: Int,
         started: ContinuousClock.Instant
     ) async throws -> ToolOutcome {
         try await server.using(.direct) { server in
             let captureLimit = try cleanup.captureLineLimit(for: maxLines)
+            let captureDeadline = ContinuousClock.now.advanced(
+                by: Self.runShellCaptureSettleTimeout
+            )
             let output: RunShellOutput
             while true {
                 do {
@@ -213,11 +214,20 @@ extension TmuxTools {
                         break
                     }
                 } catch let error as TmuxError {
-                    guard error == .staleServerValue, ContinuousClock.now < deadline else {
+                    guard error == .staleServerValue else { throw error }
+                    guard ContinuousClock.now < captureDeadline else {
+                        if !finished {
+                            output = RunShellOutput(
+                                lines: [],
+                                linesMissed: true,
+                                droppedLines: 0
+                            )
+                            break
+                        }
                         throw error
                     }
                 }
-                guard ContinuousClock.now < deadline else {
+                guard ContinuousClock.now < captureDeadline else {
                     throw TmuxError.invocationFailed(
                         reason: "run_shell completed without an output end"
                     )
@@ -427,6 +437,8 @@ extension TmuxTools {
         let linesMissed: Bool
         let droppedLines: Int
     }
+
+    private static let runShellCaptureSettleTimeout = Duration.seconds(1)
 
     private static func markerRows(_ marker: String, width: Int) -> [String] {
         let characters = Array(marker)

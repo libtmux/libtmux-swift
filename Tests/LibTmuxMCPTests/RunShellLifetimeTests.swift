@@ -342,6 +342,35 @@ struct RunShellLifetimeTests {
         }
     }
 
+    @Test("a moving timeout snapshot still reports the timeout")
+    func movingTimeoutSnapshotStillReportsTimeout() async throws {
+        try await withTmuxServer { fixture in
+            let transport = RunShellCaptureTransport(staleCaptureFailures: .max)
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try #require(try await server.panes().first)
+            let release = "libtmux-test-run-shell-release-\(UUID().uuidString)"
+            let result = try await TmuxTools(server: server, tier: .mutating).call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(WireReferenceCodec.processLocal.reference(to: pane)),
+                        "command": .string("\(server.shellInvocation) wait-for \(release)"),
+                        "timeout": .number(0.1),
+                    ])
+                )
+            ).decode(RunShellResult.self)
+
+            #expect(result.timedOut)
+            #expect(result.output.isEmpty)
+            #expect(result.linesMissed)
+            try await fixture.signal(release)
+        }
+    }
+
     @Test("cancelling after dispatch retains the pane lease until cleanup")
     func cancellationAfterDispatchRetainsPaneLease() async throws {
         try await withTmuxServer { fixture in
@@ -505,10 +534,12 @@ private actor FailingRunShellLaunchTransport: ProcessTransport {
 private actor RunShellCaptureTransport: OutputLimitedProcessTransport {
     private let underlying = SubprocessTransport()
     private let failingCapture: Int?
+    private var staleCaptureFailures: Int
     private(set) var captureLimits: [Int] = []
 
-    init(failingCapture: Int? = nil) {
+    init(failingCapture: Int? = nil, staleCaptureFailures: Int = 0) {
         self.failingCapture = failingCapture
+        self.staleCaptureFailures = staleCaptureFailures
     }
 
     var captureCount: Int { captureLimits.count }
@@ -536,6 +567,10 @@ private actor RunShellCaptureTransport: OutputLimitedProcessTransport {
             captureLimits.append(perStreamOutputLimit)
             if let failingCapture, captureLimits.count == failingCapture {
                 throw .invocationFailed(reason: "capture failed")
+            }
+            if captureLimits.count > 1, staleCaptureFailures > 0 {
+                staleCaptureFailures -= 1
+                throw .staleServerValue
             }
         }
         return try await underlying.run(
