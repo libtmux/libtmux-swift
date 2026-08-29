@@ -127,8 +127,25 @@ extension Server {
             "-d", "-P", "-F", WindowAppearance.projection.template, "-s", target,
         ]
         if let name { arguments += ["-n", name] }
+        var command = TmuxCommand("break-pane", arguments)
+        if name == nil {
+            // tmux 3.7 crashes when break-pane receives no -n value. Choose
+            // the workaround here so the appearance reply stays atomic.
+            let workaround = TmuxCommand(
+                "break-pane",
+                arguments + ["-n", "libtmux"]
+            )
+            command = TmuxCommand(
+                "if-shell",
+                [
+                    "-F", "#{==:#{version},3.7}",
+                    workaround.parsedString,
+                    command.parsedString,
+                ]
+            )
+        }
         var appearance = try await windowAppearance(
-            from: TmuxCommand("break-pane", arguments),
+            from: command,
             guardedBy: [.pane(pane), .windowLink(source)]
         )
         // Some releases ignore `-n` here and name the window after whatever is
