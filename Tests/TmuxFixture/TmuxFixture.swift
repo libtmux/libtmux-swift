@@ -88,11 +88,9 @@ public func withTmuxServer<Result>(
             // the dotfiles the line above exists to keep out, and enough startup
             // to delay the first prompt past the keys a case sends. Naming the
             // command drops the login pass. `ENV` is the remaining rc hook, and
-            // `sh` on macOS is bash, whose prompt differs, so both are set in the
-            // server environment rather than as assignments in front of the
-            // command — a prefixed assignment would become the window's name.
+            // is set in the server environment rather than in front of the
+            // command, where it would become the window's name.
             TmuxCommand("set-environment", ["-g", "ENV", ""]),
-            TmuxCommand("set-environment", ["-g", "PS1", "\(shellPrompt) "]),
             // `exec` so the pane holds one process: without it tmux keeps the
             // `-c` wrapper alive, and a case that `exec`s its own command still
             // reports the wrapper as the pane's command.
@@ -112,11 +110,6 @@ public func withTmuxServer<Result>(
     }
 }
 
-/// What the fixture's pinned shell prints when it is ready for a command.
-///
-/// A captured row keeps no trailing space, so this is the whole row.
-public let shellPrompt = "$"
-
 /// Waits until a pane's shell has drawn its first prompt.
 ///
 /// Keys sent before that are echoed with no prompt in front of them, which
@@ -124,6 +117,10 @@ public let shellPrompt = "$"
 /// looking for a row equal to what it printed is then waiting for something
 /// that cannot arrive, and reports it as a timeout naming nothing. One capture
 /// settles it for every case that follows.
+///
+/// What the prompt *says* is not portable — `sh` is dash on Linux and bash on
+/// macOS, which prints `sh-3.2$` — so readiness is that the pane has drawn
+/// anything at all. Until the shell starts it has drawn nothing.
 ///
 /// This reads the pane directly rather than through the wait machinery: a
 /// fixture that bootstrapped itself with the code under test would make every
@@ -136,7 +133,7 @@ public func waitForShellPrompt(
         throw TmuxFixtureError.shellNeverPrompted
     }
     let ready = try await waitUntil(within: timeout) {
-        try await server.capture(pane).contains(shellPrompt)
+        try await server.capture(pane).contains { !$0.isEmpty }
     }
     guard ready else { throw TmuxFixtureError.shellNeverPrompted }
 }
@@ -235,11 +232,9 @@ public func withNamedTmuxServer<Result>(
             // the dotfiles the line above exists to keep out, and enough startup
             // to delay the first prompt past the keys a case sends. Naming the
             // command drops the login pass. `ENV` is the remaining rc hook, and
-            // `sh` on macOS is bash, whose prompt differs, so both are set in the
-            // server environment rather than as assignments in front of the
-            // command — a prefixed assignment would become the window's name.
+            // is set in the server environment rather than in front of the
+            // command, where it would become the window's name.
             TmuxCommand("set-environment", ["-g", "ENV", ""]),
-            TmuxCommand("set-environment", ["-g", "PS1", "\(shellPrompt) "]),
             // `exec` so the pane holds one process: without it tmux keeps the
             // `-c` wrapper alive, and a case that `exec`s its own command still
             // reports the wrapper as the pane's command.
