@@ -144,10 +144,7 @@ struct WatchTests {
             )
 
             // The entry read is one capture, so the next one is the catch-up
-            // scan this must not reach. The capture count is what proves that;
-            // the timeout only has to outlast one tmux round-trip, because a
-            // budget near it fails on a loaded machine for reading too slowly
-            // rather than for reaching catch-up.
+            // scan this must not reach, and the count is what proves it.
             let transport = CaptureRecordingTransport()
             await transport.beforeCapture(2) { () async throws in
                 do {
