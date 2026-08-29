@@ -76,7 +76,7 @@ Every tag until `0.1.0` is a prerelease, and a prerelease has to be named
 exactly. `from: "0.1.0"` matches none of them — SwiftPM keeps prereleases out
 of a range whose bound has none — and `from: "0.1.0-alpha.2"` errs the other
 way, resolving forward into `0.2.0-alpha.1` and every prerelease after it.
-Neither is what you want from alpha software, so name the one you tested:
+Neither is what you want from alpha software, so name an exact release:
 
 ```swift
 .package(
@@ -89,7 +89,10 @@ Neither is what you want from alpha software, so name the one you tested:
 .product(name: "LibTmux", package: "libtmux-swift")
 ```
 
-To follow unreleased work instead, depend on the branch:
+> [!NOTE]
+> This page documents unreleased `master`. The exact dependency above installs
+> the released alpha.2 API; [read that tag's README][alpha2-readme] for matching
+> examples. To compile the examples on this page, depend on `master`:
 
 ```swift
 .package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
@@ -700,3 +703,4 @@ MIT. See [LICENSE](LICENSE).
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
+[alpha2-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.2/README.md
