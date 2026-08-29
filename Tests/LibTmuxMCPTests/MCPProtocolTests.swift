@@ -30,13 +30,17 @@ private func encoded(_ value: JSONValue) throws -> String {
     String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
 }
 
+private func initializeRequest(
+    protocolVersion: String = MCPRequestHandler.protocolVersion
+) -> String {
+    #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"\#(protocolVersion)","capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}"#
+}
+
 @Suite("MCP protocol")
 struct MCPProtocolTests {
     @Test("initialize answers with the protocol version and who is serving")
     func initializeAnswers() async throws {
-        let reply = try #require(
-            await handler().respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
-        )
+        let reply = try #require(await handler().respond(to: initializeRequest()))
         let body = try object(reply)
         let result = try #require(body["result"])
         #expect(result["protocolVersion"]?.stringValue == MCPRequestHandler.protocolVersion)
@@ -44,6 +48,30 @@ struct MCPProtocolTests {
         // What a client is told this server is, which is the package's
         // own version rather than a number kept beside it.
         #expect(result["serverInfo"]?["version"]?.stringValue == LibTmuxVersion.current)
+    }
+
+    @Test(
+        "initialize requires its schema's fields and types",
+        arguments: [
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":[],"clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":[]}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":1,"version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tests"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tests","version":1}}}"#,
+        ]
+    )
+    func invalidInitializeParametersAreRefused(_ request: String) async throws {
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["error"]?["code"] == .number(-32602))
+        #expect(body["result"] == nil)
     }
 
     @Test("an integer id comes back an integer, not a float")
@@ -153,6 +181,20 @@ struct MCPProtocolTests {
         #expect(try object(reply)["error"]?["code"] == .number(-32602))
     }
 
+    @Test("an unknown tool is an invalid-params protocol error")
+    func unknownToolIsAProtocolError() async throws {
+        let reply = try #require(
+            await handler().respond(
+                to: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope"}}"#
+            )
+        )
+        let body = try object(reply)
+
+        #expect(body["error"]?["code"] == .number(-32602))
+        #expect(body["error"]?["message"]?.stringValue?.contains("nope") == true)
+        #expect(body["result"] == nil)
+    }
+
     @Test(
         "tools/call requires an arguments object",
         arguments: ["[]", "true", #""x""#]
@@ -184,7 +226,7 @@ struct MCPProtocolTests {
         #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
     }
 
-    @Test("oversized tool errors use a bounded failure with the original id")
+    @Test("oversized unknown-tool errors use a bounded protocol failure")
     func toolErrorsAreBoundedAfterJSONEscaping() async throws {
         let name = String(repeating: "\\", count: 600_000)
         let request = try encoded(
@@ -199,11 +241,8 @@ struct MCPProtocolTests {
         let body = try object(reply)
 
         #expect(body["id"] == .number(2))
-        #expect(body["result"]?["isError"]?.boolValue == true)
-        #expect(
-            body["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue
-                == "tool failed with an oversized error"
-        )
+        #expect(body["error"]?["code"] == .number(-32001))
+        #expect(body["result"] == nil)
         #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
     }
 
@@ -337,24 +376,14 @@ struct MCPProtocolTests {
     func protocolRevisionIsNegotiated() async throws {
         for requested in ["2025-11-25", "2025-06-18", "2024-11-05"] {
             let reply = try #require(
-                await handler().respond(
-                    to: #"""
-                        {"jsonrpc":"2.0","id":1,"method":"initialize",
-                        "params":{"protocolVersion":"\#(requested)"}}
-                        """#.replacingOccurrences(of: "\n", with: "")
-                )
+                await handler().respond(to: initializeRequest(protocolVersion: requested))
             )
             #expect(try object(reply)["result"]?["protocolVersion"]?.stringValue == requested)
         }
 
         for unsupported in ["2025-03-26", "1999-01-01"] {
             let reply = try #require(
-                await handler().respond(
-                    to: #"""
-                        {"jsonrpc":"2.0","id":1,"method":"initialize",
-                        "params":{"protocolVersion":"\#(unsupported)"}}
-                        """#.replacingOccurrences(of: "\n", with: "")
-                )
+                await handler().respond(to: initializeRequest(protocolVersion: unsupported))
             )
             #expect(
                 try object(reply)["result"]?["protocolVersion"]?.stringValue == "2025-11-25"
@@ -364,9 +393,7 @@ struct MCPProtocolTests {
 
     @Test("initialize carries the instructions a model reads before choosing a tool")
     func initializeCarriesInstructions() async throws {
-        let reply = try #require(
-            await handler().respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
-        )
+        let reply = try #require(await handler().respond(to: initializeRequest()))
         let instructions = try #require(
             try object(reply)["result"]?["instructions"]?.stringValue
         )
@@ -387,7 +414,7 @@ struct MCPProtocolTests {
                     serverProcessID: 1
                 )
             )
-            .respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+            .respond(to: initializeRequest())
         )
         let instructions = try #require(
             try object(reply)["result"]?["instructions"]?.stringValue
@@ -397,9 +424,7 @@ struct MCPProtocolTests {
 
     @Test("capabilities name every surface this server actually serves")
     func capabilitiesMatchTheSurfaces() async throws {
-        let reply = try #require(
-            await handler().respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
-        )
+        let reply = try #require(await handler().respond(to: initializeRequest()))
         let capabilities = try #require(try object(reply)["result"]?["capabilities"])
         // Declaring a surface that answers nothing is worse than not declaring
         // it: a client lists it once and gets an error.

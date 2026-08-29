@@ -72,7 +72,7 @@ struct MCPServeTests {
                     to: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope"}}"#
                 )
             )
-            #expect(try object(refused)["result"]?["isError"] == .bool(true))
+            #expect(try object(refused)["error"]?["code"] == .number(-32602))
 
             // The connection is a stream of independent lines: one bad request
             // must not end it.

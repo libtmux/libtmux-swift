@@ -118,6 +118,13 @@ public struct MCPRequestHandler: Sendable {
 
         switch request.method {
         case "initialize":
+            guard let requested = Self.initializeProtocolVersion(request.params) else {
+                return failure(
+                    id: id,
+                    code: -32602,
+                    message: "initialize needs protocolVersion, capabilities, and clientInfo"
+                )
+            }
             return boundedResponse(
                 id: id,
                 [
@@ -125,7 +132,7 @@ public struct MCPRequestHandler: Sendable {
                     "id": id,
                     "result": .object([
                         "protocolVersion": .string(
-                            Self.negotiated(request.params?["protocolVersion"]?.stringValue)
+                            Self.negotiated(requested)
                         ),
                         "capabilities": .object([
                             "tools": .object(["listChanged": .bool(false)]),
@@ -174,6 +181,13 @@ public struct MCPRequestHandler: Sendable {
                     id: id,
                     code: -32602,
                     message: "tools/call needs a tool name and object arguments"
+                )
+            }
+            guard TmuxTools.byName[call.name] != nil else {
+                return failure(
+                    id: id,
+                    code: -32602,
+                    message: ToolError.unknownTool(call.name).description
                 )
             }
             do {
@@ -288,6 +302,17 @@ public struct MCPRequestHandler: Sendable {
         guard let requested, protocolVersions.contains(requested) else {
             return protocolVersion
         }
+        return requested
+    }
+
+    static func initializeProtocolVersion(_ params: JSONValue?) -> String? {
+        guard let members = params?.objectValue,
+            let requested = members["protocolVersion"]?.stringValue,
+            members["capabilities"]?.objectValue != nil,
+            let clientInfo = members["clientInfo"]?.objectValue,
+            clientInfo["name"]?.stringValue != nil,
+            clientInfo["version"]?.stringValue != nil
+        else { return nil }
         return requested
     }
 
