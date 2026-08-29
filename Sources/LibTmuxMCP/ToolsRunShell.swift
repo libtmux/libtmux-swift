@@ -297,8 +297,8 @@ extension TmuxTools {
     private static func definitelyDidNotDispatch(_ error: any Error) -> Bool {
         guard let tmuxError = error as? TmuxError else { return false }
         return switch tmuxError {
-        case .foreignServerValue, .processLaunchFailed, .requestNotSubmitted,
-            .serverRestarted, .staleServerValue:
+        case .commandTooLarge, .foreignServerValue, .processLaunchFailed,
+            .requestNotSubmitted, .serverRestarted, .staleServerValue:
             true
         default:
             false

@@ -7,6 +7,44 @@ import TmuxFixture
 
 @Suite("run_shell lifetime", .timeLimit(.minutes(2)))
 struct RunShellLifetimeTests {
+    @Test("a command rejected before dispatch releases the pane lease")
+    func preDispatchRejectionReleasesPaneLease() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
+            let tools = TmuxTools(server: server, tier: .mutating)
+
+            do {
+                _ = try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(paneRef),
+                            "command": .string(String(repeating: "x", count: 20_000)),
+                        ])
+                    )
+                )
+                Issue.record("oversized command was accepted")
+            } catch let ToolError.tmux(.commandTooLarge(actualBytes, maximumBytes)) {
+                #expect(actualBytes > maximumBytes)
+            } catch {
+                Issue.record("unexpected error: \(error)")
+            }
+
+            let next = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(paneRef),
+                        "command": .string("printf 'lease-released\\n'"),
+                        "timeout": .number(2),
+                    ])
+                )
+            ).decode(RunShellResult.self)
+            #expect(next.output == ["lease-released"])
+        }
+    }
+
     @Test("a launch failure releases the pane lease")
     func launchFailureReleasesPaneLease() async throws {
         try await withTmuxServer { fixture in

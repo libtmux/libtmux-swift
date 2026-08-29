@@ -17,6 +17,9 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// says otherwise, the action may have reached tmux.
     case invocationFailed(reason: String)
 
+    /// A direct tmux client cannot encode the command, so it was not submitted.
+    case commandTooLarge(actualBytes: Int, maximumBytes: Int)
+
     /// The endpoint is not addressable. A UNIX socket path has a hard length
     /// limit far shorter than the filesystem's, and exceeding it fails at bind
     /// time rather than at construction.

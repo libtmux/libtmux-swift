@@ -373,6 +373,7 @@ actor ServerRuntime {
         rawArguments: [String],
         perStreamOutputLimit: Int = .max
     ) async throws(TmuxError) -> TmuxReply {
+        try requireTmuxCommandFits(rawArguments)
         // Copied out of isolation before the await so the actor is not held for
         // the lifetime of a tmux process.
         let transport = self.transport

@@ -24,6 +24,33 @@ public struct TmuxCommand: Sendable, Hashable {
     }
 }
 
+// tmux packs argv after a four-byte argc in its 16 KiB command message.
+private let maximumTmuxCommandPayloadBytes = 16_380
+
+func requireTmuxCommandFits(_ arguments: [String]) throws(TmuxError) {
+    var actualBytes = 0
+    for argument in arguments {
+        let (argumentBytes, argumentOverflowed) = argument.utf8.count
+            .addingReportingOverflow(1)
+        let (nextBytes, totalOverflowed) = actualBytes.addingReportingOverflow(
+            argumentBytes
+        )
+        guard !argumentOverflowed, !totalOverflowed else {
+            throw .commandTooLarge(
+                actualBytes: .max,
+                maximumBytes: maximumTmuxCommandPayloadBytes
+            )
+        }
+        actualBytes = nextBytes
+    }
+    guard actualBytes <= maximumTmuxCommandPayloadBytes else {
+        throw .commandTooLarge(
+            actualBytes: actualBytes,
+            maximumBytes: maximumTmuxCommandPayloadBytes
+        )
+    }
+}
+
 /// What tmux said.
 ///
 /// Output is bytes. tmux does not promise UTF-8 — a pane title can carry
