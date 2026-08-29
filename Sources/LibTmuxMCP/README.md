@@ -64,4 +64,20 @@ replace one that has expired. Exact window occurrences carry both a global
 `TmuxTools` is written against `Server` and never mentions a mode, so it works
 the same directly or over a connection.
 
+## Adding a tool
+
+A tool is three declarations, and the compiler holds them together:
+
+- a case on `ToolOperation`, whose raw value is the name a client calls;
+- a `ToolDefinition` in one of the `ToolDefinitions+*.swift` files, carrying
+  the schema and the safety tier;
+- a method on `TmuxTools` in one of the `Tools*.swift` files, which
+  `ToolOperation.execute` dispatches to.
+
+The dispatch is an exhaustive switch, so a case without a method does not
+compile, and `ToolCatalogTests` fails a case without a definition or a
+definition without a case. Behaviour lives in the operation rather than in a
+closure on the definition because a definition is `Hashable` and a closure is
+not.
+
 [MCP]: https://modelcontextprotocol.io
