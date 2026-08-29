@@ -322,6 +322,7 @@ extension TmuxTools {
                     try? await Task.sleep(for: .milliseconds(500))
                     guard !Task.isCancelled else { return }
                     do {
+                        guard try await server.incarnation() == pane.incarnation else { return }
                         guard
                             try await server.formatGlobal("#{pane_dead}", for: pane) != "1"
                         else { return }

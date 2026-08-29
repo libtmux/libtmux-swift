@@ -129,6 +129,47 @@ struct RunShellLifetimeTests {
         }
     }
 
+    @Test("server departure ends pending cleanup")
+    func serverDepartureEndsPendingCleanup() async throws {
+        try await withTmuxServer { fixture in
+            let transport = FailingRunShellWaitTransport(failures: .max)
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server, tier: .mutating)
+            await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
+                try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(WireReferenceCodec.processLocal.reference(to: pane)),
+                            "command": .string(
+                                "\(server.shellInvocation) wait-for never"
+                            ),
+                        ])
+                    )
+                )
+            }
+
+            #expect(
+                try await waitUntil(within: .seconds(1)) {
+                    await transport.waitFailureCount >= 2
+                }
+            )
+            #expect(await tools.paneRuns.isHeld(pane))
+            await transport.departEndpoint()
+            #expect(
+                try await waitUntil(within: .seconds(5)) {
+                    !(await tools.paneRuns.isHeld(pane))
+                }
+            )
+            try await fixture.signal("never")
+        }
+    }
+
     @Test("a completed run does not erase a capture failure")
     func finalCaptureFailureIsPropagated() async throws {
         try await withTmuxServer { fixture in
@@ -414,9 +455,14 @@ private actor FailingRunShellWaitTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private let failureLimit: Int
     private(set) var waitFailureCount = 0
+    private var endpointDeparted = false
 
     init(failures: Int = 1) {
         self.failureLimit = failures
+    }
+
+    func departEndpoint() {
+        endpointDeparted = true
     }
 
     func run(
@@ -424,9 +470,16 @@ private actor FailingRunShellWaitTransport: ProcessTransport {
         arguments: [String],
         environment: [String: String]
     ) async throws(TmuxError) -> TmuxReply {
-        if waitFailureCount < failureLimit, arguments.contains("wait-for"),
-            arguments.contains(where: { $0.contains("libtmux-mcp-done-") })
-        {
+        if endpointDeparted {
+            if arguments.contains("display-message") {
+                return TmuxReply(standardOutput: [], standardError: [], exitCode: 1)
+            }
+            throw .invocationFailed(reason: "endpoint unavailable")
+        }
+        let isRunShellWait =
+            arguments.contains("wait-for")
+            && arguments.contains(where: { $0.contains("libtmux-mcp-done-") })
+        if waitFailureCount < failureLimit, isRunShellWait {
             waitFailureCount += 1
             throw .invocationFailed(reason: "wait failed")
         }
