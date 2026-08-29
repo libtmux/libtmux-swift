@@ -114,8 +114,22 @@ public enum TmuxServers {
         probe: @escaping @Sendable (String) async throws(TmuxError) -> DiscoveredServer?
     ) async throws(TmuxError) -> ServerDiscovery {
         let roots = directories ?? defaultDirectories()
+        let scan = try scanCandidates(in: roots)
+
+        if Task.isCancelled { throw .cancelled }
+        return try await discover(
+            candidates: scan.candidates,
+            truncatedFromScan: scan.truncated,
+            probeTimeout: probeTimeout,
+            probe: probe
+        )
+    }
+
+    private static func scanCandidates(
+        in roots: [String]
+    ) throws(TmuxError) -> CandidateScan {
         var scan = CandidateScan()
-        scan: for root in roots {
+        roots: for root in roots {
             guard
                 let entries = FileManager.default.enumerator(
                     at: URL(fileURLWithPath: root, isDirectory: true),
@@ -125,17 +139,10 @@ public enum TmuxServers {
             else { continue }
             for case let entry as URL in entries {
                 if Task.isCancelled { throw .cancelled }
-                guard scan.inspect(entry.path, isSocket: isSocket(at:)) else { break scan }
+                guard scan.inspect(entry.path, isSocket: isSocket(at:)) else { break roots }
             }
         }
-
-        if Task.isCancelled { throw .cancelled }
-        return try await discover(
-            candidates: scan.candidates,
-            truncatedFromScan: scan.truncated,
-            probeTimeout: probeTimeout,
-            probe: probe
-        )
+        return scan
     }
 
     static func discover<Entries: Sequence>(
