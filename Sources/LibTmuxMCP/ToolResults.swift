@@ -239,6 +239,8 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
     let matchedIndex: Int?
     /// `false` with `outcome: "timedOut"` means the pane really was quiet —
     /// suspect the command never ran, because no change of pattern fixes it.
+    /// With `outcome: "expiredWhileReading"` it means nothing: the reads that
+    /// would have seen output never finished.
     let sawNewOutput: Bool
     /// The pattern was on screen before the wait started. Not a match — but it
     /// means the thing happened and you asked afterwards, which is the opposite

@@ -24,11 +24,14 @@ extension TmuxTools {
                 command whose output looks identical to last time.
 
                 Read the result before changing anything:
-                - `sawNewOutput: false`, `matchedAtEntry: false` — the pane stayed \
-                quiet. The thing never ran; no pattern fixes that.
+                - `outcome: "timedOut"` with `sawNewOutput: false` — the pane \
+                stayed quiet. The thing never ran; no pattern fixes that.
                 - `outcome: "timedOut"` with output — it printed something else. \
                 `tail` holds what it actually said; fix the pattern from that.
                 - `outcome: "stopped"` — a `stops` marker hit. `matched` says which.
+                - `outcome: "expiredWhileReading"` — the timeout was too short to \
+                read the pane at all, so the other fields report nothing. Ask \
+                again with a longer one; the pattern is not the problem.
 
                 For a command you wrote yourself, run_shell is cheaper and exact.
                 """,

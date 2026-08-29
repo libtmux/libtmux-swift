@@ -105,6 +105,9 @@ enum Prompts {
                 something else. `tail` holds what it actually said; fix the pattern \
                 from that rather than from memory.
                    - `outcome: "stopped"` — a failure marker hit. `matched` says which.
+                   - `outcome: "expiredWhileReading"` — the timeout ran out before \
+                the pane could be read. Nothing was observed, so read no meaning \
+                into the other fields; ask again with a longer timeout.
 
                 If the question is about *state* rather than text — has the command \
                 finished, has the pane died — use `watch_format` with \

@@ -7,8 +7,18 @@ public struct OutputWait: Sendable, Hashable, Codable {
         case matched
         /// One of `stops` appeared first. `matchedIndex` says which.
         case stopped
-        /// Nothing matched before the deadline.
+        /// Nothing matched before the deadline, in reads that finished.
         case timedOut
+        /// The deadline arrived while a read of the pane was still in flight,
+        /// so the wait never finished looking.
+        ///
+        /// This is not ``timedOut``: it does not say the pattern failed to
+        /// appear, only that there was not time to find out. It answers a
+        /// timeout shorter than a tmux round-trip — including a zero one —
+        /// and a machine loaded enough to make an ordinary read miss an
+        /// ordinary deadline. Retrying with a longer timeout is the fix;
+        /// changing the pattern is not.
+        case expiredWhileReading
         /// The pane went away, so nothing more can arrive.
         case paneClosed
     }
@@ -20,11 +30,15 @@ public struct OutputWait: Sendable, Hashable, Codable {
     public let matchedIndex: Int?
     /// Whether anything at all arrived. `false` with
     /// ``Outcome/timedOut`` means the pane was quiet — usually the command
-    /// never ran, which no change of pattern will fix.
+    /// never ran, which no change of pattern will fix. Under
+    /// ``Outcome/expiredWhileReading`` it says nothing: the reads that would
+    /// have seen output did not finish.
     public let sawNewOutput: Bool
     /// A match or stop condition was already on screen when the wait began.
     /// It accompanies an immediate match or stop, or the later outcome when
-    /// `requireFresh` made the wait look past it.
+    /// `requireFresh` made the wait look past it. Under
+    /// ``Outcome/expiredWhileReading`` it is only meaningful if the entry
+    /// screen itself was read.
     public let matchedAtEntry: Bool
     /// The last lines that arrived, newest last, for reading when the pattern
     /// was wrong.

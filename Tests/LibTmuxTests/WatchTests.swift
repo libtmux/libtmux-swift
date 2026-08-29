@@ -172,6 +172,20 @@ struct WatchTests {
         }
     }
 
+    @Test("a zero timeout reads nothing and does not call the pane quiet")
+    func zeroTimeoutReportsThatItNeverLooked() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            let result = try await fixture.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("^never-printed$")],
+                timeout: .zero
+            )
+
+            #expect(result.outcome == .expiredWhileReading)
+        }
+    }
+
     @Test("a matcher refusal wins an expired scan")
     func matcherRefusalWinsExpiredScan() {
         let refusal = OutputWaitError.matching(
@@ -426,7 +440,10 @@ struct WatchTests {
                 timeout: .milliseconds(100)
             )
 
-            #expect(result.outcome == .timedOut)
+            // The deadline still holds, which is this case's point; the wait
+            // now says it never finished reading rather than calling the pane
+            // quiet on a capture it abandoned.
+            #expect(result.outcome == .expiredWhileReading)
             #expect(result.seconds < 0.5)
         }
     }

@@ -33,8 +33,11 @@ struct OutputWaitSession: Sendable {
         case let .completed(value): entryRead = value
         case let .failed(error): throw error
         case .timedOut:
+            // Nothing was read, so nothing here is a finding: reporting
+            // `timedOut` would claim the pattern was absent and the pane quiet
+            // on the strength of never having looked.
             return OutputWait(
-                outcome: .timedOut,
+                outcome: .expiredWhileReading,
                 sawNewOutput: false,
                 matchedAtEntry: false,
                 tail: [],
@@ -143,8 +146,11 @@ struct OutputWaitSession: Sendable {
         case let .completed(scan): caughtAtEntry = scan
         case let .failed(error): throw error
         case .timedOut:
+            // The entry screen was read, so `matchedAtEntry` stands; the scan
+            // that would have seen new output was cut short, so the outcome
+            // must not present its silence as a quiet pane.
             return OutputWait(
-                outcome: .timedOut,
+                outcome: .expiredWhileReading,
                 sawNewOutput: false,
                 matchedAtEntry: wasAlreadyShowing,
                 tail: [],

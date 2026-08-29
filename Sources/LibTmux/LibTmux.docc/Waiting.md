@@ -129,16 +129,17 @@ liveness check is what distinguishes a removed pane from a quiet one.
 
 ## Reading the result
 
-A wait that ends without a match has three quite different causes, and the
+A wait that ends without a match has several quite different causes, and the
 result distinguishes them rather than leaving it to be guessed:
 
 | Field | What it means |
 | --- | --- |
-| `sawNewOutput: false` | The pane stayed quiet. The command never ran; no pattern fixes that. |
+| `sawNewOutput: false`, `outcome: .timedOut` | The pane stayed quiet. The command never ran; no pattern fixes that. |
 | `sawNewOutput: true`, `outcome: .timedOut` | Output arrived and did not match. `tail` holds what it actually said. |
 | `matchedAtEntry: true` | It was on screen when the wait started — matched at once, or waited past under `requiringFreshOutput`. |
 | `outcome: .stopped` | A `stops` marker hit first. `matchedIndex` says which. |
 | `outcome: .paneClosed` | The pane went away, so nothing more can arrive. |
+| `outcome: .expiredWhileReading` | The timeout ran out before a read finished, so nothing above it was established. Ask again with a longer one. |
 
 `matchedAtEntry` is the one worth knowing about. The condition is checked
 before it is blocked on, the way any other wait on a predicate works: a pattern
@@ -165,9 +166,9 @@ this is for:
 
 | Waiting for a line that has not been printed yet | Polling | waitForOutput |
 | --- | --- | --- |
-| pane captures taken | one per tick, for as long as the wait lasts | 5 captures |
+| pane captures taken | one per tick, for as long as the wait lasts | 4 captures |
 | quiet liveness | checked by every capture | one in-band target check per second |
-| tmux processes spent | one per capture | 11; quiet checks reuse the connection |
+| tmux processes spent | one per capture | 9; quiet checks reuse the connection |
 
 <!-- waiting-matrix:end -->
 
