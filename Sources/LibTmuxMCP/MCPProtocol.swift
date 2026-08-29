@@ -254,13 +254,14 @@ public struct MCPRequestHandler: Sendable {
             guard let name = request.params?["name"]?.stringValue else {
                 return failure(id: id, code: -32602, message: "prompts/get needs a name")
             }
-            guard
-                let rendered = Prompts.render(
+            let rendered: JSONValue
+            do {
+                rendered = try Prompts.render(
                     name,
                     arguments: request.params?["arguments"] ?? .object([:])
                 )
-            else {
-                return failure(id: id, code: -32602, message: "no prompt named \(name)")
+            } catch {
+                return failure(id: id, code: -32602, message: error.description)
             }
             return boundedResponse(
                 id: id,

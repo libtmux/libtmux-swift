@@ -484,6 +484,14 @@ struct MCPProtocolTests {
     @Test("every prompt renders with the arguments it declares")
     func promptsRender() async throws {
         let handler = try handler()
+        let paneReference = "tmux1_TEST_ONLY_OPAQUE_REF"
+        let samples = [
+            "command": "printf ready",
+            "pane": paneReference,
+            "ready": "ready",
+            "session": "work",
+            "directory": ".",
+        ]
         let listed = try #require(
             await handler.respond(to: #"{"jsonrpc":"2.0","id":1,"method":"prompts/list"}"#)
         )
@@ -495,17 +503,46 @@ struct MCPProtocolTests {
 
         for prompt in prompts {
             let name = try #require(prompt["name"]?.stringValue)
+            let arguments = Dictionary(
+                uniqueKeysWithValues: (prompt["arguments"]?.arrayValue ?? []).compactMap {
+                    argument -> (String, JSONValue)? in
+                    guard
+                        let argumentName = argument["name"]?.stringValue,
+                        let sample = samples[argumentName]
+                    else { return nil }
+                    return (argumentName, .string(sample))
+                }
+            )
             let reply = try #require(
                 await handler.respond(
-                    to: #"""
-                        {"jsonrpc":"2.0","id":1,"method":"prompts/get",
-                        "params":{"name":"\#(name)","arguments":{}}}
-                        """#.replacingOccurrences(of: "\n", with: "")
+                    to: try encoded(
+                        .object([
+                            "jsonrpc": .string("2.0"),
+                            "id": .number(1),
+                            "method": .string("prompts/get"),
+                            "params": .object([
+                                "name": .string(name),
+                                "arguments": .object(arguments),
+                            ]),
+                        ])
+                    )
                 )
             )
             let messages = try #require(try object(reply)["result"]?["messages"]?.arrayValue)
             let text = try #require(messages.first?["content"]?["text"]?.stringValue)
             #expect(!text.isEmpty, "\(name) rendered nothing")
+            if arguments["pane"] != nil {
+                #expect(text.contains(paneReference))
+                #expect(!text.contains("%1"))
+                let pane = try #require(
+                    prompt["arguments"]?.arrayValue?.first {
+                        $0["name"]?.stringValue == "pane"
+                    }
+                )
+                let description = try #require(pane["description"]?.stringValue)
+                #expect(description.contains("list_panes"))
+                #expect(!description.contains("%1"))
+            }
             // A recipe that calls a tool this server does not have sends the
             // model somewhere it cannot go, and the failure surfaces as a
             // confused agent rather than as an error here.
@@ -515,6 +552,48 @@ struct MCPProtocolTests {
                     "prompt \(name) calls \(called), which is not a tool"
                 )
             }
+        }
+    }
+
+    @Test("required prompt arguments are protocol errors when absent")
+    func promptsRequireTheirArguments() async throws {
+        for name in ["run_and_wait", "watch_until_ready", "build_workspace"] {
+            let reply = try #require(
+                await handler().respond(
+                    to: #"""
+                        {"jsonrpc":"2.0","id":1,"method":"prompts/get",
+                        "params":{"name":"\#(name)","arguments":{}}}
+                        """#.replacingOccurrences(of: "\n", with: "")
+                )
+            )
+            #expect(try object(reply)["error"]?["code"] == .number(-32602))
+        }
+    }
+
+    @Test("prompt arguments are a declared string map")
+    func promptArgumentsAreValidated() async throws {
+        let invalid: [(String, JSONValue)] = [
+            ("find_my_pane", .array([])),
+            ("find_my_pane", .object(["typo": .string("x")])),
+            ("watch_until_ready", .object(["pane": .string("ref"), "ready": .number(1)])),
+        ]
+        for (name, arguments) in invalid {
+            let reply = try #require(
+                await handler().respond(
+                    to: try encoded(
+                        .object([
+                            "jsonrpc": .string("2.0"),
+                            "id": .number(1),
+                            "method": .string("prompts/get"),
+                            "params": .object([
+                                "name": .string(name),
+                                "arguments": arguments,
+                            ]),
+                        ])
+                    )
+                )
+            )
+            #expect(try object(reply)["error"]?["code"] == .number(-32602))
         }
     }
 

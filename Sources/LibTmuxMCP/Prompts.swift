@@ -7,6 +7,29 @@ import Foundation
 /// deliberate: each one exists because the obvious approach to the same problem
 /// is measurably worse, and says so.
 enum Prompts {
+    enum RenderError: Error, CustomStringConvertible {
+        case unknown(String)
+        case invalidMap(String)
+        case missing(prompt: String, arguments: [String])
+        case invalid(prompt: String, argument: String)
+        case unexpected(prompt: String, arguments: [String])
+
+        var description: String {
+            switch self {
+            case let .unknown(name): "no prompt named \(name)"
+            case let .invalidMap(prompt):
+                "prompt \(prompt) arguments must be an object of strings"
+            case let .missing(prompt, arguments):
+                "prompt \(prompt) requires argument(s): \(arguments.joined(separator: ", "))"
+            case let .invalid(prompt, argument):
+                "prompt \(prompt) argument \(argument) must be a string"
+            case let .unexpected(prompt, arguments):
+                "prompt \(prompt) does not accept argument(s): "
+                    + arguments.joined(separator: ", ")
+            }
+        }
+    }
+
     struct Recipe {
         let name: String
         let title: String
@@ -14,6 +37,10 @@ enum Prompts {
         let arguments: [(name: String, description: String, required: Bool)]
         let render: @Sendable ([String: String]) -> String
     }
+
+    private static let paneReferenceDescription =
+        "The opaque pane ref returned by list_panes or snapshot. Re-list after "
+        + "this MCP process restarts; raw %N pane ids are invalid."
 
     static let all: [Recipe] = [
         Recipe(
@@ -24,11 +51,11 @@ enum Prompts {
                 + "polling or prompt-matching.",
             arguments: [
                 ("command", "The shell command to run.", true),
-                ("pane", "The pane to run it in, such as %1.", true),
+                ("pane", paneReferenceDescription, true),
             ]
         ) { arguments in
-            let command = arguments["command"] ?? "make"
-            let pane = arguments["pane"] ?? "%1"
+            let command = arguments["command", default: ""]
+            let pane = arguments["pane", default: ""]
             return """
                 Run this in tmux pane \(pane), wait for it, and read the result:
 
@@ -55,11 +82,11 @@ enum Prompts {
                 "Wait for a daemon, dev server or build that another process "
                 + "started to reach a known state.",
             arguments: [
-                ("pane", "The pane it is running in.", true),
+                ("pane", paneReferenceDescription, true),
                 ("ready", "A bounded regular expression that means it is ready.", false),
             ]
         ) { arguments in
-            let pane = arguments["pane"] ?? "%1"
+            let pane = arguments["pane", default: ""]
             let ready = arguments["ready"] ?? "ready"
             return """
                 Something you did not start is running in pane \(pane). Wait for it:
@@ -97,7 +124,7 @@ enum Prompts {
                 ("directory", "Where its panes start.", false),
             ]
         ) { arguments in
-            let session = arguments["session"] ?? "work"
+            let session = arguments["session", default: ""]
             let directory = arguments["directory"] ?? "."
             return """
                 Build a session named \(session) in one call:
@@ -172,9 +199,37 @@ enum Prompts {
         }
     }
 
-    static func render(_ name: String, arguments: JSONValue) -> JSONValue? {
-        guard let recipe = all.first(where: { $0.name == name }) else { return nil }
-        let values = (arguments.objectValue ?? [:]).compactMapValues(\.stringValue)
+    static func render(
+        _ name: String,
+        arguments: JSONValue
+    ) throws(RenderError) -> JSONValue {
+        guard let recipe = all.first(where: { $0.name == name }) else {
+            throw .unknown(name)
+        }
+        guard case let .object(rawValues) = arguments else {
+            throw .invalidMap(name)
+        }
+        let declared = Set(recipe.arguments.map(\.name))
+        let unexpected = rawValues.keys.filter { !declared.contains($0) }.sorted()
+        guard unexpected.isEmpty else {
+            throw .unexpected(prompt: name, arguments: unexpected)
+        }
+        let missing = recipe.arguments.compactMap { argument in
+            argument.required && rawValues[argument.name] == nil ? argument.name : nil
+        }
+        guard missing.isEmpty else {
+            throw .missing(prompt: name, arguments: missing)
+        }
+        var values: [String: String] = [:]
+        for argument in recipe.arguments {
+            guard let raw = rawValues[argument.name] else {
+                continue
+            }
+            guard let value = raw.stringValue else {
+                throw .invalid(prompt: name, argument: argument.name)
+            }
+            values[argument.name] = value
+        }
         return .object([
             "description": .string(recipe.description),
             "messages": .array([
