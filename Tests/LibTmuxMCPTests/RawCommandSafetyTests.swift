@@ -45,10 +45,7 @@ struct RawCommandSafetyTests {
                     )
                 )
             }
-            let option = try await server.run(
-                TmuxCommand("show-options", ["-gv", "@unsafe-ran"])
-            )
-            #expect(!option.isSuccess)
+            #expect(try await server.option("@unsafe-ran", scope: .globalSession) == nil)
         }
     }
 

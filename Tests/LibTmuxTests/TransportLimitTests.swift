@@ -88,10 +88,7 @@ struct TransportLimitTests {
                     perStreamOutputLimit: 128
                 )
             }
-            let option = try await server.run(
-                TmuxCommand("show-options", ["-gv", "@isolated-guard"])
-            )
-            #expect(!option.isSuccess)
+            #expect(try await server.option("@isolated-guard", scope: .globalSession) == nil)
         }
     }
 
