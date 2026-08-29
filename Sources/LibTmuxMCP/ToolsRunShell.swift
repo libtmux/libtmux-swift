@@ -109,10 +109,9 @@ extension TmuxTools {
         with cleanup: RunShellCleanup,
         in pane: Pane
     ) async throws {
-        // The status goes into a unique pane option rather than onto the screen: it is
-        // read back exactly, and the pane the user is looking at gains no line
-        // of bookkeeping. The `;` separators fire whether the command passed or
-        // failed, so a failing command cannot leave the wait deadlocked.
+        // `eval` reads the command as quoted data, so its trailing comments or
+        // escapes cannot consume the bookkeeping suffix. The status goes into
+        // a pane option rather than onto the screen and is read back exactly.
         //
         // Spelled through `shellInvocation` rather than as a bare `tmux`: that
         // would be whichever tmux is on the pane's PATH, and a client of a
@@ -123,7 +122,8 @@ extension TmuxTools {
         try await server.using(.direct) { server in
             try await server.sendKeys(
                 [
-                    "\(command); \(tmux) set-option -p -t \(pane.id.rawValue) "
+                    "eval \(shellQuoted(command)); "
+                        + "\(tmux) set-option -p -t \(pane.id.rawValue) "
                         + "\(cleanup.statusOption) $?; "
                         + "\(tmux) wait-for -S \(cleanup.channel)",
                     "Enter",

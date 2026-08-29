@@ -127,6 +127,28 @@ extension TmuxToolsTests {
         }
     }
 
+    @Test("run_shell isolates its bookkeeping from a trailing comment")
+    func runShellSurvivesATrailingComment() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let outcome = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(wireRef(pane)),
+                        "command": .string("(exit 7) # trailing comment"),
+                        "timeout": .number(1),
+                    ])
+                )
+            )
+            let result = try outcome.decode(RunShellResult.self)
+            #expect(!result.timedOut)
+            #expect(result.exitStatus == 7)
+            #expect(!(await tools.paneRuns.isHeld(pane)))
+        }
+    }
+
     @Test("run_shell is pane-global when its window has several links")
     func runShellDoesNotRequireAWindowLink() async throws {
         try await withTmuxServer { server in

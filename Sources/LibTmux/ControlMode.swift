@@ -508,7 +508,7 @@ func requireSingleLine(_ arguments: [String]) throws(TmuxError) {
 /// Separate from ``tmuxQuoted`` despite the identical shape today: the two
 /// answer to different parsers, and a change made for one of them would
 /// otherwise silently apply to the other.
-func shellQuoted(_ argument: String) -> String {
+package func shellQuoted(_ argument: String) -> String {
     let safe = argument.allSatisfy { character in
         character.isLetter || character.isNumber || "_-./=:@%+,".contains(character)
     }
