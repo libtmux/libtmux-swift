@@ -438,15 +438,16 @@ struct SnapshotCaptureTests {
         #expect(await transport.incarnationProbeCount == 2)
     }
 
-    @Test("an absent server has no identity to capture")
-    func absentServerHasNoIdentity() async throws {
+    @Test("an absent server cannot answer an identity read")
+    func absentServerCannotAnswerIdentityRead() async throws {
         let server = try Server(
-            socketPath: "/tmp/lt-none-\(UUID().uuidString.prefix(8))",
+            socketPath: "/tmp/libtmux-swift-test/none-\(UUID().uuidString.prefix(8))",
             tmuxExecutable: tmuxExecutablePath()
         )
-        let processID = try await server.serverProcessID()
-        #expect(processID == nil)
-        await #expect(throws: TmuxError.serverRestarted) {
+        await #expect(throws: TmuxError.self) {
+            _ = try await server.serverProcessID()
+        }
+        await #expect(throws: TmuxError.self) {
             try await server.snapshot()
         }
     }

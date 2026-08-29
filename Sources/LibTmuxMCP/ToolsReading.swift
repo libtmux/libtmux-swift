@@ -5,9 +5,7 @@ import LibTmux
 
 extension TmuxTools {
     func describeServer() async throws -> ToolOutcome {
-        guard let before = try await server.incarnation() else {
-            throw ToolError.refusedForSafety("the tmux server is not running")
-        }
+        let before = try await server.incarnation()
         let version = try await server.version()
         let sessions = try await server.sessions()
         let after = try await server.incarnation()

@@ -192,9 +192,8 @@ public struct Server: Sendable, Hashable {
 
     /// Every session on this server, in tmux's own order.
     ///
-    /// Returns an empty array when the server is not running — the same answer
-    /// as a running server with no sessions. Use ``isRunning()`` when the
-    /// difference matters.
+    /// Use ``isRunning()`` when absence is an expected probe; a failed listing
+    /// throws rather than impersonating a running server with no sessions.
     public func sessions() async throws(TmuxError) -> [Session] {
         try await list(
             TmuxCommand("list-sessions", ["-F", Session.projection.template]),
@@ -267,7 +266,7 @@ public struct Server: Sendable, Hashable {
         let panes = try await panes()
         let clients = try await clients()
         let after = try await incarnation()
-        guard let before, let after, before == after else {
+        guard before == after else {
             throw .serverRestarted
         }
         return Snapshot(
@@ -280,44 +279,47 @@ public struct Server: Sendable, Hashable {
         )
     }
 
-    /// The running server's process id, or `nil` if nothing is listening.
+    /// The running server's process id.
     ///
     /// A restart changes it, which is what lets a multi-command capture prove
     /// it came from one server.
-    public func serverProcessID() async throws(TmuxError) -> Int? {
-        try await incarnation()?.processID
+    public func serverProcessID() async throws(TmuxError) -> Int {
+        try await incarnation().processID
     }
 
-    /// The running daemon at this endpoint, or `nil` if none is listening.
-    public func incarnation() async throws(TmuxError) -> ServerIncarnation? {
+    /// The running daemon at this endpoint.
+    ///
+    /// Use ``isRunning()`` for a Boolean probe. This read throws when tmux
+    /// cannot answer so absence cannot look like an empty identity.
+    public func incarnation() async throws(TmuxError) -> ServerIncarnation {
         let projection = FormatProjection(ServerIncarnation.projectionFields)
+        let command = TmuxCommand("display-message", ["-p", projection.template])
         let reply = try await run(
-            rawArguments: TmuxCommand("display-message", ["-p", projection.template])
-                .argumentVector
+            rawArguments: command.argumentVector
         )
-        guard reply.isSuccess else { return nil }
+        guard reply.isSuccess else { throw reply.failure(for: command) }
+        let rows: [FormatRow]
         do {
-            guard let row = try projection.decode(reply.standardOutput).first else {
-                return nil
-            }
-            return ServerIncarnation(row: row, endpoint: endpoint)
+            rows = try projection.decode(reply.standardOutput)
         } catch {
             throw .decodingFailed(error)
         }
+        guard let row = rows.first else {
+            throw .invocationFailed(reason: "tmux returned no server identity")
+        }
+        return ServerIncarnation(row: row, endpoint: endpoint)
     }
 
     /// Runs a listing and decodes it.
     ///
-    /// A failed tmux command yields an empty array: a server that is not
-    /// running has no windows, and callers that need to tell that apart from a
-    /// running-but-empty server have ``isRunning()``.
+    /// A failed tmux command throws; only a successful empty listing is empty.
     private func list<Element: Sendable>(
         _ command: TmuxCommand,
         projection: FormatProjection,
         row: (FormatRow) -> Element
     ) async throws(TmuxError) -> [Element] {
         let reply = try await run(rawArguments: command.argumentVector)
-        guard reply.isSuccess else { return [] }
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         do {
             return try projection.decode(reply.standardOutput).map(row)
         } catch {

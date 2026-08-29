@@ -89,7 +89,7 @@ struct MCPServeTests {
             let handler = MCPRequestHandler(
                 tools: TmuxTools(server: server, tier: .destructive)
             )
-            let incarnation = try #require(try await server.incarnation())
+            let incarnation = try await server.incarnation()
             let serverReference = WireReferenceCodec.processLocal.reference(to: incarnation)
             _ = await handler.respond(
                 to: #"""

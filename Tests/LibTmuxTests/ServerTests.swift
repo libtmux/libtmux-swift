@@ -386,16 +386,26 @@ struct RealTmuxTests {
         }
     }
 
-    @Test("a server that was never started reports no sessions and is not running")
-    func absentServerIsEmptyAndNotRunning() async throws {
+    @Test("an absent server is a failed read and a negative probe")
+    func absentServerIsNotAnEmptyListing() async throws {
         let server = try Server(
-            socketPath: "/tmp/lt-absent-\(UUID().uuidString.prefix(8))",
+            socketPath: "/tmp/libtmux-swift-test/absent-\(UUID().uuidString.prefix(8))",
             tmuxExecutable: tmuxExecutablePath()
         )
-        let sessions = try await server.sessions()
-        #expect(sessions.isEmpty)
-        let running = try await server.isRunning()
-        #expect(!running)
+        do {
+            _ = try await server.sessions()
+            Issue.record("an absent server returned an empty listing")
+        } catch let .commandFailed(command, exitCode, reason) {
+            #expect(command == "list-sessions")
+            #expect(exitCode != 0)
+            #expect(!reason.isEmpty)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+        await #expect(throws: TmuxError.self) {
+            _ = try await server.incarnation()
+        }
+        #expect(!(try await server.isRunning()))
     }
 
     @Test("killing the server leaves nothing listening")

@@ -231,7 +231,7 @@ struct ReachToolTests {
     @Test("kill_server identifies the daemon it killed")
     func killServerIdentifiesKilledDaemon() async throws {
         try await withTmuxServer { server in
-            let incarnation = try #require(try await server.incarnation())
+            let incarnation = try await server.incarnation()
             let outcome = try await TmuxTools(
                 server: server,
                 tier: .destructive,

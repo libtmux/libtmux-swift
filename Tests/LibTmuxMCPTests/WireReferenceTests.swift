@@ -91,7 +91,7 @@ struct WireReferenceTests {
     @Test("the fingerprint covers every incarnation field")
     func fingerprintCoversTheFullIncarnation() async throws {
         try await withTmuxServer { server in
-            let base = try #require(try await server.incarnation())
+            let base = try await server.incarnation()
             let variants = [
                 base,
                 ServerIncarnation(

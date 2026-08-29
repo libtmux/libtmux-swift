@@ -46,5 +46,5 @@ func wireRef(_ window: Window) -> String {
 }
 
 func serverRef(_ server: Server) async throws -> String {
-    WireReferenceCodec.processLocal.reference(to: try #require(try await server.incarnation()))
+    WireReferenceCodec.processLocal.reference(to: try await server.incarnation())
 }

@@ -39,7 +39,7 @@ struct IdentityTests {
     @Test("listed values carry the daemon's resolved socket path")
     func listedValuesCarryResolvedSocketProvenance() async throws {
         try await withTmuxServer { server in
-            let incarnation = try #require(try await server.incarnation())
+            let incarnation = try await server.incarnation()
             let socketPath = try #require(try await server.format("#{socket_path}"))
             #expect(incarnation.socketPath == socketPath)
 

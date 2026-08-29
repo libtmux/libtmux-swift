@@ -75,7 +75,7 @@ struct TransportLimitTests {
     @Test("a replacement daemon cannot receive an isolated command")
     func replacementCannotReceiveIsolatedCommand() async throws {
         try await withTmuxServer { server in
-            let stale = try #require(try await server.incarnation())
+            let stale = try await server.incarnation()
             _ = try await server.run(TmuxCommand("kill-server"))
             _ = try await server.run(
                 TmuxCommand("new-session", ["-d", "-s", "replacement"])
@@ -95,7 +95,7 @@ struct TransportLimitTests {
     @Test("a stale server termination cannot kill a replacement daemon")
     func staleTerminationCannotKillReplacement() async throws {
         try await withTmuxServer { server in
-            let stale = try #require(try await server.incarnation())
+            let stale = try await server.incarnation()
             _ = try await server.run(TmuxCommand("kill-server"))
             _ = try await server.run(
                 TmuxCommand("new-session", ["-d", "-s", "replacement"])

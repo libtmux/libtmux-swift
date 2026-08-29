@@ -84,7 +84,7 @@ struct MCPServiceLifecycleTests {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
             let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
-            let incarnation = try #require(try await server.incarnation())
+            let incarnation = try await server.incarnation()
             let serverRef = WireReferenceCodec.processLocal.reference(to: incarnation)
             let output = LifecycleOutput(blocked: true)
             let service = MCPService(

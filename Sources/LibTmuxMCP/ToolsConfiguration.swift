@@ -52,9 +52,7 @@ extension TmuxTools {
     }
 
     func setOption(_ arguments: Arguments) async throws -> ToolOutcome {
-        guard let incarnation = try await server.incarnation() else {
-            throw ToolError.refusedForSafety("the tmux server is not running")
-        }
+        let incarnation = try await server.incarnation()
         let name = try arguments.string("name")
         let value = try arguments.string("value")
         let scope = try arguments.string("scope", or: "server")
@@ -80,9 +78,7 @@ extension TmuxTools {
     }
 
     func setEnvironment(_ arguments: Arguments) async throws -> ToolOutcome {
-        guard let incarnation = try await server.incarnation() else {
-            throw ToolError.refusedForSafety("the tmux server is not running")
-        }
+        let incarnation = try await server.incarnation()
         let name = try arguments.string("name")
         let value = try arguments.optionalString("value")
         let command = TmuxCommand(

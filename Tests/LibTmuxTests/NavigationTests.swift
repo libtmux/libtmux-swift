@@ -165,8 +165,8 @@ struct NavigationTests {
         }
     }
 
-    @Test("requireRunning distinguishes an absent server from an empty one")
-    func requireRunningDistinguishesAbsentFromEmpty() async throws {
+    @Test("requireRunning and listings both reject an absent server")
+    func requireRunningAgreesWithStrictListings() async throws {
         try await withTmuxServer { server in
             // A running server: no throw, whatever it does or does not hold.
             try await server.requireRunning()
@@ -175,9 +175,9 @@ struct NavigationTests {
             await #expect(throws: TmuxError.self) {
                 try await server.requireRunning()
             }
-            // The lenient accessor still answers with an empty array.
-            let sessions = try await server.sessions()
-            #expect(sessions.isEmpty)
+            await #expect(throws: TmuxError.self) {
+                _ = try await server.sessions()
+            }
         }
     }
 

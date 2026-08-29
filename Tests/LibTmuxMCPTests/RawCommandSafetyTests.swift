@@ -130,6 +130,6 @@ struct RawCommandSafetyTests {
 
 private func rawServerRef(_ server: Server) async throws -> String {
     WireReferenceCodec.processLocal.reference(
-        to: try #require(try await server.incarnation())
+        to: try await server.incarnation()
     )
 }

@@ -127,9 +127,7 @@ public struct TmuxTools: Sendable {
 
     /// Resolves a server reference against the daemon answering now.
     func serverIncarnation(_ reference: String) async throws -> ServerIncarnation {
-        guard let current = try await server.incarnation() else {
-            throw ToolError.refusedForSafety("the tmux server is not running")
-        }
+        let current = try await server.incarnation()
         return try WireReferenceCodec.processLocal.resolve(
             reference,
             among: [current],

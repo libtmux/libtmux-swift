@@ -272,8 +272,8 @@ extension Server {
 
     /// Throws unless a server is listening.
     ///
-    /// The listing accessors answer an unreachable server with an empty array,
-    /// which is the right default and the wrong answer when you need to know.
+    /// Use this when only availability matters; reads such as ``sessions()``
+    /// already throw when tmux cannot answer.
     public func requireRunning() async throws(TmuxError) {
         guard try await isRunning() else {
             throw .invocationFailed(reason: "no tmux server at this endpoint")

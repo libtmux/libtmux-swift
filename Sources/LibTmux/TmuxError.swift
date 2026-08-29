@@ -1,9 +1,8 @@
 /// Everything a tmux operation can fail with.
 ///
-/// A tmux command that runs and reports a nonzero status is a *reply*, not an
-/// error — ``Server/run(_:)-(TmuxCommand)`` hands it back as ``TmuxReply`` so a caller can
-/// read the diagnostic tmux wrote. This type covers the cases where no usable
-/// reply exists at all.
+/// ``Server/run(_:)-(TmuxCommand)`` hands every tmux status back as a
+/// ``TmuxReply``. Higher-level operations that promise a decoded value throw
+/// ``commandFailed(command:exitCode:reason:)`` when tmux rejects that read.
 public enum TmuxError: Error, Sendable, Hashable {
     /// The tmux client process was never started, so the requested command
     /// cannot have reached a daemon.
@@ -19,6 +18,12 @@ public enum TmuxError: Error, Sendable, Hashable {
 
     /// A direct tmux client cannot encode the command, so it was not submitted.
     case commandTooLarge(actualBytes: Int, maximumBytes: Int)
+
+    /// tmux received a typed command but rejected it.
+    ///
+    /// Only the command name is retained; arguments may contain pane text,
+    /// environment values, or other caller data that does not belong in an error.
+    case commandFailed(command: String, exitCode: Int32, reason: String)
 
     /// The endpoint is not addressable. A UNIX socket path has a hard length
     /// limit far shorter than the filesystem's, and exceeding it fails at bind

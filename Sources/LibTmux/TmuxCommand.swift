@@ -85,4 +85,12 @@ public struct TmuxReply: Sendable, Hashable {
         if text.hasSuffix("\n") { text.removeLast() }
         return text
     }
+
+    func failure(for command: TmuxCommand) -> TmuxError {
+        .commandFailed(
+            command: command.name,
+            exitCode: exitCode,
+            reason: errorText
+        )
+    }
 }
