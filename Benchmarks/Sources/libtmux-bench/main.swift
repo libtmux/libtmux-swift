@@ -274,7 +274,7 @@ func withBenchServer<Result>(
         // streaming figures somebody's dotfiles rather than the library's.
         TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
         TmuxCommand("new-session", ["-d", "-s", "bench"]),
-        reaperCommand(root: root),
+        try reaperCommand(root: root),
     ])
 
     func reap() async {

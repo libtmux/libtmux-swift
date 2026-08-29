@@ -41,7 +41,9 @@ struct QuickStartTests {
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
             TmuxCommand("new-session", ["-d", "-s", "quickstart"]),
-            reaperCommand(root: root.appendingPathComponent("tmux-\(getuid())/libtmux-swift")),
+            try reaperCommand(
+                root: root.appendingPathComponent("tmux-\(getuid())/libtmux-swift")
+            ),
         ])
         defer { Task { _ = try? await server.run(TmuxCommand("kill-server")) } }
 

@@ -13,6 +13,26 @@ struct NamedSocketNamespaceTests {
         #expect(isAllowedNamedSocketRoot(root.appendingPathComponent("named")))
         #expect(!isAllowedNamedSocketRoot(URL(fileURLWithPath: "\(root.path)-other")))
     }
+
+    @Test("the reaper accepts only owned descendants and shell-quotes them")
+    func reaperRootsAreScopedAndQuoted() throws {
+        let owned = URL(
+            fileURLWithPath: "/tmp/libtmux-swift-test/case's socket"
+        )
+        let command = try reaperCommand(root: owned)
+        let script = try #require(command.arguments.last)
+
+        #expect(script.contains("rm -rf \(shellQuoted(owned.path));"))
+        #expect(throws: UnsafeReaperRoot.self) {
+            try reaperCommand(root: URL(fileURLWithPath: "/"))
+        }
+        #expect(throws: UnsafeReaperRoot.self) {
+            try reaperCommand(root: URL(fileURLWithPath: "/tmp/libtmux-swift-test"))
+        }
+        #expect(throws: UnsafeReaperRoot.self) {
+            try reaperCommand(root: URL(fileURLWithPath: "/tmp/libtmux-python-test/case"))
+        }
+    }
 }
 
 /// A socket *name* is the half of ``Endpoint`` a path-addressed fixture never

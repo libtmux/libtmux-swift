@@ -83,7 +83,7 @@ public func withTmuxServer<Result>(
             // systems.
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
             TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-            reaperCommand(root: root),
+            try reaperCommand(root: root),
         ])
         do {
             let result = try await body(server)
@@ -181,7 +181,7 @@ public func withNamedTmuxServer<Result>(
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
             TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-            reaperCommand(root: socket),
+            try reaperCommand(root: socket),
         ])
         do {
             let result = try await body(server)
@@ -191,6 +191,15 @@ public func withNamedTmuxServer<Result>(
             _ = try? await server.run(TmuxCommand("kill-server"))
             throw error
         }
+    }
+}
+
+/// The reaper was asked to remove a path outside this port's owned roots.
+public struct UnsafeReaperRoot: Error, Sendable, Hashable, CustomStringConvertible {
+    public init() {}
+
+    public var description: String {
+        "a reaper root must be below /tmp/libtmux-swift-test or /tmp/libtmux-swift-dev"
     }
 }
 
@@ -224,11 +233,16 @@ public func withNamedTmuxServer<Result>(
 ///   POSIX does not require, and a `sleep` that rejects its argument turns this
 ///   into a busy loop per server rather than a slower one. Reaping a second
 ///   later costs nothing here.
-public func reaperCommand(root: URL) -> TmuxCommand {
+public func reaperCommand(root: URL) throws(UnsafeReaperRoot) -> TmuxCommand {
+    let candidate = root.standardizedFileURL.resolvingSymlinksInPath().path
+    let allowedRoots = ["/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev"]
+    guard allowedRoots.contains(where: { candidate.hasPrefix("\($0)/") }) else {
+        throw UnsafeReaperRoot()
+    }
     let owner = ProcessInfo.processInfo.processIdentifier
     let script = """
         while kill -0 \(owner) 2>/dev/null; do sleep 1; done; \
-        rm -rf '\(root.path)'; \
+        rm -rf \(shellQuoted(candidate)); \
         kill #{pid} 2>/dev/null
         """
     return TmuxCommand("run-shell", ["-b", script])
