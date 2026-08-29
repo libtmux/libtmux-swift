@@ -17,6 +17,13 @@ private func handler(
     )
 }
 
+private func handler(authority: ToolAuthority) throws -> MCPRequestHandler {
+    let server = try Server(socketPath: "/tmp/libtmux-swift-test/unstarted")
+    return MCPRequestHandler(
+        tools: TmuxTools(server: server, authority: authority, caller: nil)
+    )
+}
+
 private func visible(tier: SafetyTier = .mutating) throws -> [ToolDefinition] {
     let server = try Server(socketPath: "/tmp/libtmux-swift-test/unstarted")
     return TmuxTools(server: server, tier: tier).visibleDefinitions
@@ -401,6 +408,22 @@ struct MCPProtocolTests {
         // The two mistakes the blurb exists to prevent.
         #expect(instructions.contains("NOT FOR"))
         #expect(instructions.contains("WAIT, DON'T POLL"))
+    }
+
+    @Test("exact authority instructions name only available tools")
+    func exactAuthorityInstructionsMatchAvailableTools() async throws {
+        let authority = ToolAuthority(tier: .mutating, enabledTools: [.newWindow])
+        let reply = try #require(
+            await handler(authority: authority).respond(to: initializeRequest())
+        )
+        let instructions = try #require(
+            try object(reply)["result"]?["instructions"]?.stringValue
+        )
+
+        #expect(instructions.contains("new_window"))
+        for unavailable in ["run_shell", "describe_server", "capture_pane", "apply_workspace"] {
+            #expect(!instructions.contains(unavailable))
+        }
     }
 
     @Test("the caller's own pane reaches the client without a call spent on it")

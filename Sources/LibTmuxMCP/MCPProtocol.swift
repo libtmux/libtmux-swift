@@ -101,7 +101,7 @@ public struct MCPRequestHandler: Sendable {
                         ]),
                         "instructions": .string(
                             Instructions.text(
-                                tier: tools.tier,
+                                authority: tools.authority,
                                 waitCeiling: tools.waitCeiling,
                                 caller: tools.caller
                             )

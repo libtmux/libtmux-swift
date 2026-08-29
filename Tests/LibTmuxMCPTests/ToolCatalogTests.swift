@@ -248,12 +248,14 @@ struct ToolCatalogTests {
         // Measured rather than asserted at runtime: a blurb that outgrew its
         // budget should fail here, not drop a section in front of a user.
         for tier in SafetyTier.allCases {
-            let text = Instructions.required(tier: tier, waitCeiling: .seconds(120))
-                .joined(separator: "\n\n")
+            let text = Instructions.required(
+                authority: ToolAuthority(tier: tier),
+                waitCeiling: .seconds(120)
+            ).joined(separator: "\n\n")
             #expect(text.utf8.count <= Instructions.maximumBytes)
         }
         let fractional = Instructions.required(
-            tier: .mutating,
+            authority: ToolAuthority(tier: .mutating),
             waitCeiling: .milliseconds(1_250)
         ).joined(separator: "\n\n")
         #expect(fractional.contains("1.25s"))
