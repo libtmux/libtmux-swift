@@ -267,6 +267,24 @@ struct MCPServeTests {
         #expect(second["error"]?["code"] == .number(-32000))
     }
 
+    @Test("the service writes errors for malformed and invalid request lines")
+    func protocolErrorsReachTheClient() async throws {
+        let server = try Server(socketPath: "/tmp/libtmux-swift-test/unstarted")
+        let service = MCPService(handler: MCPRequestHandler(tools: TmuxTools(server: server)))
+        let answers = Answers()
+        let lines = AsyncStream<String> { continuation in
+            continuation.yield("{")
+            continuation.yield(#"{"jsonrpc":"1.0","method":"ping"}"#)
+            continuation.finish()
+        }
+
+        await service.serve(lines) { await answers.record($0) }
+
+        let replies = try await answers.order.map(object)
+        #expect(replies.map { $0["error"]?["code"] } == [.number(-32700), .number(-32600)])
+        #expect(replies.allSatisfy { $0["id"] == .null })
+    }
+
     private actor Answers {
         private(set) var order: [String] = []
         func record(_ line: String) { order.append(line) }

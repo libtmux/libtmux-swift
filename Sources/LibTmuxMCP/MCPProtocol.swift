@@ -5,13 +5,57 @@ import LibTmux
 // because top-level code in an executable target cannot be imported and so
 // cannot be tested.
 
-/// One JSON-RPC request, as far as this server reads them.
-struct MCPRequest: Decodable {
-    let jsonrpc: String
-    /// Absent on a notification, which expects no reply.
+/// One validated JSON-RPC request, as far as this server reads them.
+struct MCPRequest: Sendable {
+    /// Absent on a notification.
     let id: JSONValue?
     let method: String
     let params: JSONValue?
+
+    init?(_ value: JSONValue) {
+        guard case let .object(members) = value,
+            members["jsonrpc"] == .string("2.0"),
+            case let .string(method)? = members["method"],
+            Self.validID(members["id"]),
+            Self.validParams(members["params"])
+        else { return nil }
+        self.id = members["id"]
+        self.method = method
+        self.params = members["params"]
+    }
+
+    private static func validID(_ id: JSONValue?) -> Bool {
+        guard let id else { return true }
+        switch id {
+        case .integer, .unsignedInteger, .string: return true
+        case .null, .bool, .number, .array, .object: return false
+        }
+    }
+
+    private static func validParams(_ params: JSONValue?) -> Bool {
+        guard let params else { return true }
+        switch params {
+        case .object: return true
+        default: return false
+        }
+    }
+}
+
+enum MCPRequestDecoding {
+    case request(MCPRequest)
+    case malformedJSON
+    case invalidRequest
+    case oversized
+}
+
+package enum MCPInput {
+    package static func requestLine(for event: BoundedLineFramer.Event) -> String {
+        switch event {
+        case let .line(line): line
+        case .oversized: "null"
+        case .invalidUTF8: "{"
+        }
+    }
 }
 
 /// Answers MCP requests, one line at a time, without touching a file
@@ -35,7 +79,6 @@ public struct MCPRequestHandler: Sendable {
     private let tools: TmuxTools
     private let resources: TmuxResources
     private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 
     public init(tools: TmuxTools) {
         self.tools = tools
@@ -44,11 +87,10 @@ public struct MCPRequestHandler: Sendable {
 
     /// Answers one newline-delimited JSON-RPC request.
     ///
-    /// Returns the response line, or `nil` when there is nothing to say: a
-    /// blank line, a line that is not JSON-RPC at all, a notification, or a
-    /// tool call whose id cannot fit in a bounded response.
-    /// Unparseable input is ignored rather than answered, because a reply needs
-    /// an id to carry and a malformed line has none to quote back.
+    /// Returns the response line, or `nil` for a valid notification, an
+    /// oversized request, or a tool call whose id cannot fit in a bounded
+    /// response. Malformed JSON and invalid request objects receive the
+    /// standard JSON-RPC error with a null id.
     ///
     /// - Parameters:
     ///   - line: one JSON-RPC request without its trailing newline.
@@ -60,9 +102,15 @@ public struct MCPRequestHandler: Sendable {
         to line: String,
         emit: @escaping @Sendable (String) async -> Void = { _ in }
     ) async -> String? {
-        guard !line.isEmpty, line.utf8.count <= Self.maximumRequestBytes,
-            let request = try? decoder.decode(MCPRequest.self, from: Data(line.utf8))
-        else {
+        let request: MCPRequest
+        switch Self.decodeRequest(line) {
+        case let .request(decoded):
+            request = decoded
+        case .malformedJSON:
+            return failure(id: .null, code: -32700, message: "Parse error")
+        case .invalidRequest:
+            return failure(id: .null, code: -32600, message: "Invalid Request")
+        case .oversized:
             return nil
         }
         guard let id = request.id else { return nil }
@@ -218,11 +266,18 @@ public struct MCPRequestHandler: Sendable {
     /// says it has stopped waiting, and the only way a wait already in flight
     /// can be stopped early.
     public static func cancelledRequestID(in line: String) -> JSONValue? {
-        guard line.utf8.count <= maximumRequestBytes,
-            let request = try? JSONDecoder().decode(MCPRequest.self, from: Data(line.utf8)),
+        guard case let .request(request) = decodeRequest(line), request.id == nil,
             request.method == "notifications/cancelled"
         else { return nil }
         return request.params?["requestId"]
+    }
+
+    static func decodeRequest(_ line: String) -> MCPRequestDecoding {
+        guard line.utf8.count <= maximumRequestBytes else { return .oversized }
+        guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(line.utf8))
+        else { return .malformedJSON }
+        guard let request = MCPRequest(value) else { return .invalidRequest }
+        return .request(request)
     }
 
     static func negotiated(_ requested: String?) -> String {

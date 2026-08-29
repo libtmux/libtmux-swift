@@ -24,22 +24,26 @@ private func emitInput(
     to continuation: AsyncStream<String>.Continuation
 ) -> Bool {
     switch event {
-    case let .line(line):
-        guard AsyncStreamBackpressure.enqueue(line, to: continuation) else {
-            continuation.finish()
-            return false
-        }
-        return true
+    case .line:
+        break
     case .oversized:
         note(
-            "discarded a request above "
+            "refused a request above "
                 + "\(MCPRequestHandler.maximumRequestBytes) bytes"
         )
-        return true
     case .invalidUTF8:
-        note("discarded a request that was not UTF-8")
-        return true
+        note("refused a request that was not UTF-8")
     }
+    guard
+        AsyncStreamBackpressure.enqueue(
+            MCPInput.requestLine(for: event),
+            to: continuation
+        )
+    else {
+        continuation.finish()
+        return false
+    }
+    return true
 }
 
 /// Lines from standard input, read on a thread of its own.

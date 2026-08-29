@@ -246,14 +246,75 @@ struct MCPProtocolTests {
         #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
     }
 
-    @Test("a notification expects no reply, and neither does a line that is not one")
-    func silenceWhereSilenceIsCorrect() async throws {
+    @Test(
+        "malformed JSON receives a parse error",
+        arguments: ["", "not json at all", "{"]
+    )
+    func malformedJSONIsAnswered(_ line: String) async throws {
+        let reply = try #require(await handler().respond(to: line))
+        let body = try object(reply)
+        #expect(body["id"] == .null)
+        #expect(body["error"]?["code"] == .number(-32700))
+        #expect(body["error"]?["message"]?.stringValue == "Parse error")
+    }
+
+    @Test("stdio framing failures receive bounded protocol errors")
+    func framingFailuresAreAnswered() async throws {
         let handler = try handler()
-        // No id: a notification by JSON-RPC, which must not be answered.
+        for (event, code) in [
+            (BoundedLineFramer.Event.invalidUTF8, -32700),
+            (.oversized, -32600),
+        ] {
+            let reply = try #require(
+                await handler.respond(to: MCPInput.requestLine(for: event))
+            )
+            let body = try object(reply)
+            #expect(body["id"] == .null)
+            #expect(body["error"]?["code"] == .number(Double(code)))
+            #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
+        }
+    }
+
+    @Test(
+        "a JSON value that is not a request receives an invalid-request error",
+        arguments: [
+            "null",
+            "[]",
+            #"{"method":"ping"}"#,
+            #"{"jsonrpc":"1.0","method":"ping"}"#,
+            #"{"jsonrpc":"2.0"}"#,
+            #"{"jsonrpc":"2.0","method":1}"#,
+            #"{"jsonrpc":"2.0","method":"ping","params":true}"#,
+            #"{"jsonrpc":"2.0","method":"ping","params":[]}"#,
+        ]
+    )
+    func invalidRequestsAreAnswered(_ line: String) async throws {
+        let reply = try #require(await handler().respond(to: line))
+        let body = try object(reply)
+        #expect(body["id"] == .null)
+        #expect(body["error"]?["code"] == .number(-32600))
+        #expect(body["error"]?["message"]?.stringValue == "Invalid Request")
+    }
+
+    @Test(
+        "only string and integer request ids are valid",
+        arguments: ["null", "1.5", "true", "false", "[]", "{}"]
+    )
+    func invalidRequestIDsAreRefused(_ id: String) async throws {
+        let reply = try #require(
+            await handler().respond(
+                to: #"{"jsonrpc":"2.0","id":\#(id),"method":"ping"}"#
+            )
+        )
+        let body = try object(reply)
+        #expect(body["id"] == .null)
+        #expect(body["error"]?["code"] == .number(-32600))
+    }
+
+    @Test("a valid notification expects no reply")
+    func notificationsAreSilent() async throws {
+        let handler = try handler()
         #expect(await handler.respond(to: #"{"jsonrpc":"2.0","method":"ping"}"#) == nil)
-        #expect(await handler.respond(to: "") == nil)
-        #expect(await handler.respond(to: "not json at all") == nil)
-        #expect(await handler.respond(to: "{") == nil)
     }
 
     @Test("the client's protocol revision is echoed when this server speaks it")

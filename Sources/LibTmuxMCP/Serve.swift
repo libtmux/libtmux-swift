@@ -50,6 +50,9 @@ public struct MCPService: Sendable {
                     continue
                 }
                 guard let identifier = MCPRequestHandler.requestID(in: line) else {
+                    if let response = await handler.respond(to: line) {
+                        await write(response)
+                    }
                     continue
                 }
                 guard
@@ -108,12 +111,7 @@ private actor RequestRegistry {
 extension MCPRequestHandler {
     /// The id a request will be answered under, for tracking it while it runs.
     public static func requestID(in line: String) -> JSONValue? {
-        guard line.utf8.count <= maximumRequestBytes,
-            let request = try? JSONDecoder().decode(
-                MCPRequest.self,
-                from: Data(line.utf8)
-            )
-        else { return nil }
+        guard case let .request(request) = decodeRequest(line) else { return nil }
         return request.id
     }
 }
