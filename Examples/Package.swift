@@ -57,7 +57,7 @@ let package = Package(
                 "ExampleCode",
                 .product(name: "LibTmux", package: "libtmux"),
                 .product(name: "TmuxWorkspace", package: "libtmux"),
-                .product(name: "TmuxTestSupport", package: "libtmux"),
+                .product(name: "TmuxFixture", package: "libtmux"),
             ]
         ),
     ],

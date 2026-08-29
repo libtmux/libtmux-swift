@@ -64,7 +64,7 @@ unless you ask.
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
 | **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
-| **[`TmuxTestSupport`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks; imported as `TmuxFixture`. | `LibTmux` |
+| **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
 
 Each has its own README with an install snippet, a usage example, and what it
 does and does not cover.
@@ -640,7 +640,7 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 | Path | What is in it |
 | --- | --- |
 | [`Sources/`][sources] | The four runtime products |
-| [`Tests/`][tests] | The suite, and the `TmuxTestSupport` product every suite provisions servers through |
+| [`Tests/`][tests] | The suite, and the `TmuxFixture` product every suite provisions servers through |
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
 | [`Parity/`][parity] | What Python libtmux exposes, recorded, and what this port does about each of it |

@@ -1,13 +1,12 @@
-# `TmuxTestSupport`
+# `TmuxFixture`
 
 Provisions an isolated real tmux server for a test or benchmark and reaps it
 when the body returns, throws, or its owning process is killed.
 
-The package product is `TmuxTestSupport`; the module it exports is
-`TmuxFixture`:
+The package product and module are both `TmuxFixture`:
 
 ```swift
-.product(name: "TmuxTestSupport", package: "libtmux-swift")
+.product(name: "TmuxFixture", package: "libtmux-swift")
 ```
 
 ```swift

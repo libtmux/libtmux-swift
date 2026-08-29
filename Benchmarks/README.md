@@ -20,11 +20,11 @@ built rather than from a copy of it:
 dependencies: [.package(name: "libtmux", path: "..")]
 ```
 
-The root package's `TmuxTestSupport` product exports the `TmuxFixture` module
-from [`Tests/TmuxFixture`][fixture], the same fixture every suite provisions
-servers through. The benchmark consumes that product rather than copying the
-fixture, so it provisions and reaps servers exactly as the suites do — including
-reaping them when a run is killed outright.
+The root package's `TmuxFixture` product comes from
+[`Tests/TmuxFixture`][fixture], the same fixture every suite provisions servers
+through. The benchmark consumes that product rather than copying the fixture,
+so it provisions and reaps servers exactly as the suites do — including reaping
+them when a run is killed outright.
 
 ## Running it
 
