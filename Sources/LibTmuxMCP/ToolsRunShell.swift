@@ -67,7 +67,12 @@ extension TmuxTools {
             if finished {
                 await paneRuns.release(pane)
             } else {
-                schedulePaneRunCleanup(cleanup, in: pane, waitForCompletion: true)
+                schedulePaneRunCleanup(
+                    cleanup,
+                    in: pane,
+                    waitForCompletion: true,
+                    releaseWhenReady: false
+                )
             }
             return outcome
         } catch {
@@ -78,12 +83,12 @@ extension TmuxTools {
                 if Self.definitelyDidNotDispatch(error) {
                     await paneRuns.release(pane)
                 } else {
-                    schedulePaneRunCleanup(cleanup, in: pane, waitForCompletion: true)
+                    await abandonRunShell(cleanup, in: pane, waitForCompletion: true)
                 }
             case .started(let cleanup):
-                schedulePaneRunCleanup(cleanup, in: pane, waitForCompletion: true)
+                await abandonRunShell(cleanup, in: pane, waitForCompletion: true)
             case .finishing(let cleanup):
-                schedulePaneRunCleanup(cleanup, in: pane, waitForCompletion: false)
+                await abandonRunShell(cleanup, in: pane, waitForCompletion: false)
             }
             throw error
         }
@@ -272,26 +277,59 @@ extension TmuxTools {
     private func schedulePaneRunCleanup(
         _ cleanup: RunShellCleanup,
         in pane: Pane,
-        waitForCompletion: Bool
+        waitForCompletion: Bool,
+        releaseWhenReady: Bool
     ) {
         let paneRuns = paneRuns
         let server = server
         Task {
             if waitForCompletion {
                 try? await server.using(.direct) { server in
-                    await Self.finishTimedOutRun(cleanup, pane: pane, server: server)
+                    await Self.finishTimedOutRun(
+                        cleanup,
+                        pane: pane,
+                        server: server,
+                        releaseWhenComplete: releaseWhenReady
+                    )
                 }
                 await paneRuns.release(pane)
             } else {
-                // The pane remains held at the release channel until cleanup
-                // lets its shell print the next prompt.
                 try? await server.using(.direct) { server in
-                    try await server.signal(cleanup.releaseChannel)
+                    if releaseWhenReady { try await server.signal(cleanup.releaseChannel) }
                     await Self.clearRunShellOptions(cleanup, pane: pane, server: server)
                 }
                 await paneRuns.release(pane)
             }
         }
+    }
+
+    private func abandonRunShell(
+        _ cleanup: RunShellCleanup,
+        in pane: Pane,
+        waitForCompletion: Bool
+    ) async {
+        let released = await releaseRunShellGate(cleanup)
+        schedulePaneRunCleanup(
+            cleanup,
+            in: pane,
+            waitForCompletion: waitForCompletion,
+            releaseWhenReady: !released
+        )
+    }
+
+    private func releaseRunShellGate(_ cleanup: RunShellCleanup) async -> Bool {
+        let server = server
+        let release = Task<Bool, Never> {
+            do {
+                try await server.using(.direct) { server in
+                    try await server.signal(cleanup.releaseChannel)
+                }
+                return true
+            } catch {
+                return false
+            }
+        }
+        return await release.value
     }
 
     private static func definitelyDidNotDispatch(_ error: any Error) -> Bool {
@@ -338,7 +376,8 @@ extension TmuxTools {
     private static func finishTimedOutRun(
         _ cleanup: RunShellCleanup,
         pane: Pane,
-        server: Server
+        server: Server,
+        releaseWhenComplete: Bool
     ) async {
         let completed = await withTaskGroup(of: Bool.self) { group in
             group.addTask {
@@ -393,7 +432,9 @@ extension TmuxTools {
             group.cancelAll()
             return completed
         }
-        if completed { try? await server.signal(cleanup.releaseChannel) }
+        if completed, releaseWhenComplete {
+            try? await server.signal(cleanup.releaseChannel)
+        }
         await clearRunShellOptions(cleanup, pane: pane, server: server)
     }
 

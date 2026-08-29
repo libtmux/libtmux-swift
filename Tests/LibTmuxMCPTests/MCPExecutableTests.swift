@@ -1,5 +1,9 @@
 import Foundation
+import LibTmux
 import Testing
+import TmuxFixture
+
+@testable import LibTmuxMCP
 
 #if canImport(Darwin)
     import Darwin
@@ -7,7 +11,7 @@ import Testing
     import Glibc
 #endif
 
-@Suite("MCP executable")
+@Suite("MCP executable", .timeLimit(.minutes(1)))
 struct MCPExecutableTests {
     @Test("the executable responds with nonblocking output while input remains open")
     func executableReadsAvailableInput() throws {
@@ -75,7 +79,95 @@ struct MCPExecutableTests {
         #expect(process.terminationStatus == 0)
     }
 
-    private func launchExecutable() throws -> (Process, Pipe, Pipe, Int32) {
+    @Test("process exit cannot leave a pane waiting on MCP cleanup")
+    func processExitReleasesRunShellGate() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socketPath) = server.endpoint else {
+                Issue.record("fixture did not use a socket path")
+                return
+            }
+            let pane = try #require(try await server.panes().first)
+            let started = "mcp-exit-started-\(UUID().uuidString)"
+            let release = "mcp-exit-release-\(UUID().uuidString)"
+            let unblocked = "mcp-exit-unblocked-\(UUID().uuidString)"
+            let (process, input, output, outputFlagsDescriptor) = try launchExecutable(
+                environment: [
+                    "LIBTMUX_SOCKET_PATH": socketPath,
+                    "LIBTMUX_TMUX_BIN": server.tmuxExecutable,
+                    "LIBTMUX_SAFETY": "mutating",
+                ]
+            )
+            defer {
+                _ = close(outputFlagsDescriptor)
+                stop(process, input: input)
+            }
+
+            try write(
+                .object([
+                    "jsonrpc": .string("2.0"),
+                    "id": .string("panes"),
+                    "method": .string("tools/call"),
+                    "params": .object(["name": .string("list_panes")]),
+                ]),
+                to: input
+            )
+            let listingLine = try #require(
+                readLine(from: output.fileHandleForReading, within: .seconds(3))
+            )
+            let listing = try JSONDecoder().decode(
+                JSONValue.self,
+                from: Data(listingLine.utf8)
+            )
+            let paneRef = try #require(
+                listing["result"]?["structuredContent"]?["panes"]?.arrayValue?
+                    .first?["ref"]?.stringValue
+            )
+
+            let command =
+                "\(server.shellInvocation) wait-for -S \(started); "
+                + "\(server.shellInvocation) wait-for \(release)"
+            try write(
+                .object([
+                    "jsonrpc": .string("2.0"),
+                    "id": .string("run"),
+                    "method": .string("tools/call"),
+                    "params": .object([
+                        "name": .string("run_shell"),
+                        "arguments": .object([
+                            "pane": .string(paneRef),
+                            "command": .string(command),
+                            "timeout": .number(20),
+                        ]),
+                        "_meta": .object(["progressToken": .string("run")]),
+                    ]),
+                ]),
+                to: input
+            )
+            #expect(await receivesSignal(started, from: server, within: .seconds(10)))
+
+            try output.fileHandleForReading.close()
+            let exited = try await waitUntil(within: .seconds(10)) {
+                !process.isRunning
+            }
+            guard exited else {
+                Issue.record("MCP executable did not exit after its output closed")
+                return
+            }
+            process.waitUntilExit()
+
+            try await server.signal(release)
+            try await server.run(
+                "printf 'pane-unblocked\\n'; "
+                    + "\(server.shellInvocation) wait-for -S \(unblocked)",
+                in: pane
+            )
+            #expect(await receivesSignal(unblocked, from: server, within: .seconds(5)))
+        }
+    }
+
+    private func launchExecutable(
+        environment overrides: [String: String] = [:]
+    ) throws -> (Process, Pipe, Pipe, Int32) {
         let binary = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -95,6 +187,7 @@ struct MCPExecutableTests {
         process.standardError = Pipe()
         var environment = ProcessInfo.processInfo.environment
         environment["LIBTMUX_SOCKET_PATH"] = "/tmp/libtmux-swift-test/stdio-unstarted"
+        for (name, value) in overrides { environment[name] = value }
         process.environment = environment
         do {
             try process.run()
@@ -117,6 +210,36 @@ struct MCPExecutableTests {
                 #"{"jsonrpc":"2.0","id":\#(identifier),"method":"ping"}"#.utf8 + [10]
             )
         )
+    }
+
+    private func write(_ request: JSONValue, to input: Pipe) throws {
+        var data = try JSONEncoder().encode(request)
+        data.append(10)
+        try input.fileHandleForWriting.write(contentsOf: data)
+    }
+
+    private func receivesSignal(
+        _ channel: String,
+        from server: Server,
+        within timeout: Duration
+    ) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                do {
+                    try await server.wait(for: channel)
+                    return true
+                } catch {
+                    return false
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
     }
 
     private func readLine(
