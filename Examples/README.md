@@ -8,7 +8,7 @@ fails the build when a documented block appears in no file below.
 
 ```console
 $ python3 Scripts/check_examples.py --min-executed 36
-39 documented examples, each compiled; 36 of them run against a real tmux
+40 documented examples, each compiled; 36 of them run against a real tmux
 ```
 
 ## Why this is its own package
@@ -103,10 +103,12 @@ Three things fail quietly, and all three have cost time:
 - **A line inserted into the middle of a quoted span breaks the match**, even
   though both the example and the page still read correctly on their own.
 
-Three examples are compiled and never run, for reasons that will not change:
-`SIGPIPE` is a process-global disposition the test runner has already chosen,
-`TmuxContext.current()` is only non-nil inside a pane, and the quick start is
-top-level code no test can call — it is spawned instead.
+Four documented blocks compile without counting as executed. The process-global
+`SIGPIPE` example appears here and in DocC, backed by one function intentionally
+not run because the test harness has already chosen that disposition.
+`TmuxContext.current()` is only non-nil inside a pane. The regular-expression
+filter does not yet have an example test. The quick start is top-level code, but
+its test spawns it, so it does count as executed.
 
 Every test here provisions servers through the same fixture as the main suite,
 so every socket stays under `/tmp/libtmux-swift-test/`.

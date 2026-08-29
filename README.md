@@ -593,7 +593,7 @@ executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-39 documented examples, each compiled; 36 of them run against a real tmux
+40 documented examples, each compiled; 36 of them run against a real tmux
 ```
 
 That check fails if a fence here has no example behind it, so what you read
