@@ -253,6 +253,41 @@ public actor ControlSession {
 }
 
 extension Server {
+    func connected<Result: Sendable>(
+        attachingTo sessionID: SessionID,
+        expecting incarnation: ServerIncarnation,
+        _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result
+    ) async throws -> Result {
+        let expected = try expectedIncarnation([incarnation])
+        guard try await self.incarnation() == expected else {
+            throw TmuxError.serverRestarted
+        }
+        do {
+            return try await connected(attachingTo: sessionID.rawValue) { server, control in
+                let request = GuardedRequest(
+                    command: TmuxCommand(
+                        "display-message",
+                        ["-p", "-t", sessionID.rawValue, "#{session_id}"]
+                    ),
+                    incarnation: expected,
+                    targets: [
+                        GuardedTarget(
+                            target: sessionID.rawValue,
+                            condition: "#{==:#{session_id},\(sessionID.rawValue)}"
+                        )
+                    ]
+                )
+                _ = try request.validate(await control.reply(to: request))
+                return try await body(server, control)
+            }
+        } catch TmuxError.connectionClosed {
+            guard try await self.incarnation() == expected else {
+                throw TmuxError.serverRestarted
+            }
+            throw TmuxError.connectionClosed
+        }
+    }
+
     /// Runs `body` with every command carried by one live connection instead
     /// of a new tmux process each time.
     ///

@@ -249,7 +249,10 @@ extension Server {
         answer: @escaping @Sendable ([String], [String]) -> OutputWait?
     ) async throws -> OutputWaitCycle {
         let owner = self
-        return try await connected(attachingTo: attachment.sessionID.rawValue) {
+        return try await connected(
+            attachingTo: attachment.sessionID,
+            expecting: pane.incarnation
+        ) {
             server, control in
             let doorbell = WaitDoorbell(primed: true)
             return try await withThrowingTaskGroup(of: Void.self) { group in
@@ -273,10 +276,10 @@ extension Server {
                 }
                 group.addTask {
                     while !Task.isCancelled {
-                        try? await Task.sleep(for: .milliseconds(500))
+                        try? await Task.sleep(for: .seconds(1))
                         guard !Task.isCancelled else { return }
                         do {
-                            guard let current = try await owner.waitAttachment(for: pane) else {
+                            guard let current = try await server.waitAttachment(for: pane) else {
                                 await doorbell.ring(.paneClosed)
                                 return
                             }
