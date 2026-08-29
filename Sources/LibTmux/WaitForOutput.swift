@@ -27,7 +27,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
         /// tmux fills that grid without adding to history, so what a capture
         /// returns is the program's paint rather than anything the pane
         /// printed — matching it reports text that was never written. Read the
-        /// screen with ``Server/capture(_:lines:)`` instead of retrying: a
+        /// screen with ``Server/capture(_:includingHistory:)`` instead of retrying: a
         /// different pattern does not change what the wait is allowed to see.
         case alternateScreen
     }

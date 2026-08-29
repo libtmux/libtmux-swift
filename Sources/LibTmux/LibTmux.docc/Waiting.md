@@ -140,6 +140,7 @@ result distinguishes them rather than leaving it to be guessed:
 | `outcome: .stopped` | A `stops` marker hit first. `matchedIndex` says which. |
 | `outcome: .paneClosed` | The pane went away, so nothing more can arrive. |
 | `outcome: .expiredWhileReading` | The timeout ran out before a read finished, so nothing above it was established. Ask again with a longer one. |
+| `outcome: .alternateScreen` | A pager, editor, or full-screen program held the pane. tmux fills that grid without adding to history, so matching was suppressed rather than run against paint. Read the screen with ``Server/capture(_:includingHistory:)``; a different pattern changes nothing. |
 
 `matchedAtEntry` is the one worth knowing about. The condition is checked
 before it is blocked on, the way any other wait on a predicate works: a pattern

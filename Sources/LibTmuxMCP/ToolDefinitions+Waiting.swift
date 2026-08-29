@@ -32,6 +32,11 @@ extension TmuxTools {
                 - `outcome: "expiredWhileReading"` — the timeout was too short to \
                 read the pane at all, so the other fields report nothing. Ask \
                 again with a longer one; the pattern is not the problem.
+                - `outcome: "alternateScreen"` — a pager, editor, or full-screen \
+                program held the pane, and tmux fills that grid without adding to \
+                history, so matching was suppressed rather than run against what \
+                the program painted. Read the screen with `capture_pane`; a \
+                different pattern changes nothing.
 
                 For a command you wrote yourself, run_shell is cheaper and exact.
                 """,
