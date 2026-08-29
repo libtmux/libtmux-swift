@@ -39,7 +39,7 @@ private func readStandardInput(into buffer: inout [UInt8]) -> Int {
 
 private func emitInput(
     _ event: BoundedLineFramer.Event,
-    to continuation: AsyncStream<String>.Continuation
+    to handoff: BoundedLineHandoff
 ) -> Bool {
     switch event {
     case .line:
@@ -52,16 +52,7 @@ private func emitInput(
     case .invalidUTF8:
         note("refused a request that was not UTF-8")
     }
-    guard
-        AsyncStreamBackpressure.enqueue(
-            MCPInput.requestLine(for: event),
-            to: continuation
-        )
-    else {
-        continuation.finish()
-        return false
-    }
-    return true
+    return handoff.submit(MCPInput.requestLine(for: event))
 }
 
 /// Lines from standard input, read on a thread of its own.
@@ -70,37 +61,37 @@ private func emitInput(
 /// stall whichever task was scheduled there — including the tool calls this
 /// server exists to run concurrently — so the one blocking call in the process
 /// gets a thread that is allowed to block.
-private func standardInputLines() -> AsyncStream<String> {
-    AsyncStream(bufferingPolicy: .bufferingOldest(queuedRequestLines)) { continuation in
-        let reader = Thread {
-            var framer = BoundedLineFramer(
-                maximumBytes: MCPRequestHandler.maximumRequestBytes
-            )
-            var buffer = [UInt8](repeating: 0, count: inputChunkBytes)
-            while true {
-                let count = readStandardInput(into: &buffer)
-                if count == 0 {
-                    for event in framer.finish() {
-                        guard emitInput(event, to: continuation) else { return }
-                    }
-                    continuation.finish()
-                    return
+private func standardInputLines() -> BoundedLineHandoff {
+    let handoff = BoundedLineHandoff(capacity: queuedRequestLines)
+    let reader = Thread {
+        var framer = BoundedLineFramer(
+            maximumBytes: MCPRequestHandler.maximumRequestBytes
+        )
+        var buffer = [UInt8](repeating: 0, count: inputChunkBytes)
+        while true {
+            let count = readStandardInput(into: &buffer)
+            if count == 0 {
+                for event in framer.finish() {
+                    guard emitInput(event, to: handoff) else { return }
                 }
-                if count < 0 {
-                    if errno == EINTR { continue }
-                    note("cannot read standard input: \(String(cString: strerror(errno)))")
-                    continuation.finish()
-                    return
-                }
-                let chunk = Data(buffer[..<count])
-                for event in framer.append(chunk) {
-                    guard emitInput(event, to: continuation) else { return }
-                }
+                handoff.finish()
+                return
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                note("cannot read standard input: \(String(cString: strerror(errno)))")
+                handoff.finish()
+                return
+            }
+            let chunk = Data(buffer[..<count])
+            for event in framer.append(chunk) {
+                guard emitInput(event, to: handoff) else { return }
             }
         }
-        reader.name = "libtmux-mcp.stdin"
-        reader.start()
     }
+    reader.name = "libtmux-mcp.stdin"
+    reader.start()
+    return handoff
 }
 
 let configuration = ServerConfiguration(

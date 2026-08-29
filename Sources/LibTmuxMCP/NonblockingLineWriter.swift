@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 
 #if canImport(Darwin)
@@ -20,12 +21,8 @@ package enum LineWriteResult: Sendable, Equatable {
 
 package struct NonblockingLineWriter: Sendable {
     private let fileDescriptor: Int32
-    private let retryDelay: Duration
 
-    package init(
-        fileDescriptor: Int32,
-        retryDelay: Duration = .milliseconds(2)
-    ) throws(NonblockingLineWriterSetupError) {
+    package init(fileDescriptor: Int32) throws(NonblockingLineWriterSetupError) {
         let flags = fcntl(fileDescriptor, F_GETFL)
         guard flags >= 0 else {
             throw .cannotReadFlags(errno)
@@ -34,7 +31,6 @@ package struct NonblockingLineWriter: Sendable {
             throw .cannotSetNonblocking(errno)
         }
         self.fileDescriptor = fileDescriptor
-        self.retryDelay = retryDelay
     }
 
     package func write(_ line: String) async -> LineWriteResult {
@@ -57,9 +53,7 @@ package struct NonblockingLineWriter: Sendable {
             let code = errno
             if count < 0, code == EINTR { continue }
             if count < 0, code == EAGAIN || code == EWOULDBLOCK {
-                do {
-                    try await Task.sleep(for: retryDelay)
-                } catch {
+                guard await WriteReadiness(fileDescriptor: fileDescriptor).wait() else {
                     return .cancelled
                 }
                 continue
@@ -68,6 +62,58 @@ package struct NonblockingLineWriter: Sendable {
             return .failed(code)
         }
         return .written
+    }
+}
+
+private final class WriteReadiness: @unchecked Sendable {
+    private let fileDescriptor: Int32
+    private let lock = NSLock()
+    private var source: DispatchSourceWrite?
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var resolved = false
+
+    init(fileDescriptor: Int32) {
+        self.fileDescriptor = fileDescriptor
+    }
+
+    func wait() async -> Bool {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if Task.isCancelled {
+                    lock.unlock()
+                    continuation.resume(returning: false)
+                    return
+                }
+                self.continuation = continuation
+                let source = DispatchSource.makeWriteSource(
+                    fileDescriptor: fileDescriptor,
+                    queue: .global()
+                )
+                self.source = source
+                source.setEventHandler { self.resolve(writable: true) }
+                lock.unlock()
+                source.resume()
+            }
+        } onCancel: {
+            resolve(writable: false)
+        }
+    }
+
+    private func resolve(writable: Bool) {
+        lock.lock()
+        guard !resolved else {
+            lock.unlock()
+            return
+        }
+        resolved = true
+        let source = source
+        self.source = nil
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+        source?.cancel()
+        continuation?.resume(returning: writable)
     }
 }
 

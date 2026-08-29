@@ -6,58 +6,6 @@ import Testing
 
 @Suite("bounded line framing")
 struct BoundedLineFramerTests {
-    @Test("a burst larger than the queue keeps every line")
-    func burstIsBackpressured() async throws {
-        let filledQueue = DispatchSemaphore(value: 0)
-        let stream = AsyncStream<Int>(bufferingPolicy: .bufferingOldest(2)) { continuation in
-            let producer = Thread {
-                for value in 0..<10 {
-                    guard AsyncStreamBackpressure.enqueue(value, to: continuation) else { break }
-                    if value == 1 { filledQueue.signal() }
-                }
-                continuation.finish()
-            }
-            producer.start()
-            filledQueue.wait()
-        }
-
-        try await Task.sleep(for: .milliseconds(10))
-        var received: [Int] = []
-        for await value in stream {
-            received.append(value)
-            try await Task.sleep(for: .milliseconds(2))
-        }
-
-        #expect(received == Array(0..<10))
-    }
-
-    @Test("ending a full stream releases its producer")
-    func terminationEndsBackpressure() async throws {
-        let (stream, continuation) = AsyncStream<Int>.makeStream(
-            bufferingPolicy: .bufferingOldest(1)
-        )
-        #expect(AsyncStreamBackpressure.enqueue(1, to: continuation))
-        let (results, resultContinuation) = AsyncStream<Bool>.makeStream()
-        let producer = Thread {
-            resultContinuation.yield(
-                AsyncStreamBackpressure.enqueue(2, to: continuation)
-            )
-            resultContinuation.finish()
-        }
-        producer.start()
-
-        try await Task.sleep(for: .milliseconds(20))
-        continuation.finish()
-
-        var accepted: Bool?
-        for await result in results {
-            accepted = result
-            break
-        }
-        #expect(accepted == false)
-        _ = stream
-    }
-
     @Test("fragmented UTF-8 lines survive chunk boundaries")
     func fragmentedUTF8Survives() {
         var framer = BoundedLineFramer(maximumBytes: 6)

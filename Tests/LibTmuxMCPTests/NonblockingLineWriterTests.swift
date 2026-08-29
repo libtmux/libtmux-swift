@@ -53,6 +53,33 @@ struct NonblockingLineWriterTests {
         #expect(await writing.value == .cancelled)
     }
 
+    @Test("a writable descriptor wakes a blocked write")
+    func writableDescriptorWakesBlockedWrite() async throws {
+        var descriptors = [Int32](repeating: 0, count: 2)
+        try #require(pipe(&descriptors) == 0)
+        let readDescriptor = descriptors[0]
+        let writeDescriptor = descriptors[1]
+        defer {
+            _ = close(readDescriptor)
+            _ = close(writeDescriptor)
+        }
+
+        let writer = try NonblockingLineWriter(fileDescriptor: writeDescriptor)
+        try fill(writeDescriptor)
+
+        let writing = Task { await writer.write("woken") }
+        defer { writing.cancel() }
+        try await Task.sleep(for: .milliseconds(20))
+
+        var bytes = [UInt8](repeating: 0, count: 4_096)
+        let count = bytes.withUnsafeMutableBytes { buffer in
+            systemRead(readDescriptor, buffer.baseAddress, buffer.count)
+        }
+        try #require(count > 0)
+
+        #expect(await completes(writing, within: .milliseconds(200)) == .written)
+    }
+
     private func fill(_ descriptor: Int32) throws {
         let bytes = [UInt8](repeating: 0, count: 4_096)
         while true {
@@ -62,6 +89,23 @@ struct NonblockingLineWriterTests {
             if count > 0 { continue }
             if count < 0, errno == EAGAIN || errno == EWOULDBLOCK { return }
             throw POSIXTestError(operation: "write", code: errno)
+        }
+    }
+
+    private func completes(
+        _ task: Task<LineWriteResult, Never>,
+        within timeout: Duration
+    ) async -> LineWriteResult? {
+        await withTaskGroup(of: LineWriteResult?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return nil
+            }
+            let result = await group.next() ?? nil
+            if result == nil { task.cancel() }
+            group.cancelAll()
+            return result
         }
     }
 }

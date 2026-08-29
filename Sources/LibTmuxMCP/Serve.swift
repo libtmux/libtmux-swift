@@ -35,8 +35,8 @@ public struct MCPService: Sendable {
     /// `write` closure must return cooperatively when its task is cancelled.
     /// `AsyncStream` concretely, rather than any non-throwing `AsyncSequence`:
     /// naming the failure type is what makes a sequence non-throwing, and that
-    /// spelling needs macOS 15 where this package supports 13. Both callers
-    /// have a stream in hand anyway — one reading a pipe, one a test.
+    /// spelling needs macOS 15 where this package supports 13. Package-only
+    /// transports share the generic request loop below.
     public func serve(
         _ lines: AsyncStream<String>,
         write: @escaping @Sendable (String) async -> Void
@@ -56,12 +56,37 @@ public struct MCPService: Sendable {
         _ lines: AsyncStream<String>,
         write: @escaping @Sendable (String) async -> Bool
     ) async {
+        await serveUntilWriteFails(
+            read: { registry, outbound in
+                await readRequests(lines, registry: registry, outbound: outbound)
+            },
+            write: write
+        )
+    }
+
+    package func serveUntilWriteFails(
+        _ handoff: BoundedLineHandoff,
+        write: @escaping @Sendable (String) async -> Bool
+    ) async {
+        defer { handoff.close() }
+        await serveUntilWriteFails(
+            read: { registry, outbound in
+                await readRequests(handoff, registry: registry, outbound: outbound)
+            },
+            write: write
+        )
+    }
+
+    private func serveUntilWriteFails(
+        read: @escaping @Sendable (RequestRegistry, OrderedOutbound) async -> Void,
+        write: @escaping @Sendable (String) async -> Bool
+    ) async {
         let registry = RequestRegistry()
         let outbound = OrderedOutbound(capacity: maximumInFlightRequests)
         await withTaskCancellationHandler {
             await withTaskGroup(of: ServiceEvent.self) { tasks in
                 tasks.addTask {
-                    await readRequests(lines, registry: registry, outbound: outbound)
+                    await read(registry, outbound)
                     return .inputEnded
                 }
                 tasks.addTask {
@@ -110,11 +135,11 @@ public struct MCPService: Sendable {
         }
     }
 
-    private func readRequests(
-        _ lines: AsyncStream<String>,
+    private func readRequests<Lines: AsyncSequence>(
+        _ lines: Lines,
         registry: RequestRegistry,
         outbound: OrderedOutbound
-    ) async {
+    ) async where Lines.Element == String, Lines.Failure == Never {
         await withTaskGroup(of: Void.self) { requestGroup in
             for await line in lines {
                 if Task.isCancelled { break }
