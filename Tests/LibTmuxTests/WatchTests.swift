@@ -213,6 +213,62 @@ struct WatchTests {
         }
     }
 
+    @Test("any output before a stop ends an unpatterned wait")
+    func anyOutputBeforeAStopWins() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let result = try await printing(
+                "ordinary-output\\nFAILED",
+                into: pane,
+                on: server
+            ) {
+                try await server.waitForOutput(
+                    in: pane,
+                    stoppingAt: [try RegexPattern("^FAILED")],
+                    requiringFreshOutput: true,
+                    timeout: .seconds(20)
+                )
+            }
+
+            #expect(result.outcome == .matched)
+            #expect(result.matched == nil)
+        }
+    }
+
+    @Test("output racing the initial cursor is retried")
+    func initialCursorRaceIsRetried() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            let transport = CaptureRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let current = try #require(
+                try await server.panes().first { $0.id == pane.id }
+            )
+            let marker = "cursor-race-\(UUID().uuidString)"
+            let ready = "cursor-race-ready-\(UUID().uuidString)"
+            await transport.beforeNextCapture { () async throws(TmuxError) in
+                try await fixture.run(
+                    "printf '\(marker)\\n'; \(fixture.shellInvocation) wait-for -S \(ready)",
+                    in: pane
+                )
+                try await fixture.wait(for: ready)
+            }
+
+            let result = try await server.waitForOutput(
+                in: current,
+                matching: [try RegexPattern(marker)],
+                timeout: .seconds(5)
+            )
+
+            #expect(result.outcome == .matched)
+            #expect(result.matchedAtEntry)
+        }
+    }
+
     @Test("a quiet pane times out saying it stayed quiet")
     func quietPaneReportsNoOutput() async throws {
         try await withTmuxServer { server in

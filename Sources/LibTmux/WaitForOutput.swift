@@ -112,10 +112,16 @@ extension Server {
         // Establish an absolute cursor before reading the entry screen. A
         // second cursor read below catches anything that arrived between the
         // two, so opening the event connection cannot create a blind spot.
-        var incremental = try await outputWaitTmux {
-            try await capture(pane, since: nil)
+        var incremental = try await retryingStaleOutputRead(until: deadline) {
+            () async throws(OutputWaitError) -> IncrementalCapture in
+            try await outputWaitTmux {
+                try await capture(pane, since: nil)
+            }
         }
-        let entryRows = try await outputWaitTmux { try await waitLookbackRows(in: pane) }
+        let entryRows = try await retryingStaleOutputRead(until: deadline) {
+            () async throws(OutputWaitError) -> [String] in
+            try await outputWaitTmux { try await waitLookbackRows(in: pane) }
+        }
         let alreadyShowing = try firstMatchingRow(
             in: entryRows,
             patterns: patterns,
@@ -141,7 +147,15 @@ extension Server {
                         seconds: Self.elapsed(since: started)
                     )
                 }
-                guard !patterns.isEmpty else { continue }
+                guard !patterns.isEmpty else {
+                    return OutputWait(
+                        outcome: .matched,
+                        sawNewOutput: true,
+                        matchedAtEntry: wasAlreadyShowing,
+                        tail: Array(tail.suffix(keptTail)),
+                        seconds: Self.elapsed(since: started)
+                    )
+                }
                 if let hit = try firstOutputPatternMatch(
                     in: line,
                     patterns: patterns,
@@ -158,24 +172,20 @@ extension Server {
                     )
                 }
             }
-            guard patterns.isEmpty, !arrived.isEmpty else { return nil }
-            return OutputWait(
-                outcome: .matched,
-                sawNewOutput: true,
-                matchedAtEntry: wasAlreadyShowing,
-                tail: Array(tail.suffix(keptTail)),
-                seconds: Self.elapsed(since: started)
-            )
+            return nil
         }
 
-        let caughtAtEntry = try await scanWaitOutput(
-            in: pane,
-            since: incremental.cursor,
-            newest: [],
-            sawNewOutput: false,
-            tailLimit: keptTail,
-            answer: answer
-        )
+        let caughtAtEntry = try await retryingStaleOutputRead(until: deadline) {
+            () async throws(OutputWaitError) -> WaitCaptureScan in
+            try await scanWaitOutput(
+                in: pane,
+                since: incremental.cursor,
+                newest: [],
+                sawNewOutput: false,
+                tailLimit: keptTail,
+                answer: answer
+            )
+        }
         incremental = IncrementalCapture(lines: [], cursor: caughtAtEntry.cursor)
         var sawNewOutput = caughtAtEntry.sawNewOutput
         var newest = caughtAtEntry.tail
@@ -246,7 +256,10 @@ extension Server {
                         seconds: Self.elapsed(since: started)
                     )
                 }
-                guard current != attachment else { throw error }
+                guard current != attachment else {
+                    if case .tmux(.staleServerValue) = error { continue }
+                    throw error
+                }
                 continue
             }
             switch cycle {
@@ -388,6 +401,22 @@ extension Server {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private func retryingStaleOutputRead<Result>(
+        until deadline: ContinuousClock.Instant,
+        _ operation: () async throws(OutputWaitError) -> Result
+    ) async throws(OutputWaitError) -> Result {
+        while true {
+            do {
+                return try await operation()
+            } catch let error {
+                guard case .tmux(.staleServerValue) = error else { throw error }
+                guard !Task.isCancelled else { throw .tmux(.cancelled) }
+                guard ContinuousClock.now < deadline else { throw error }
+                await Task.yield()
             }
         }
     }
