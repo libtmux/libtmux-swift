@@ -496,10 +496,13 @@ job safely.
 
 **It will not spend context you did not ask it to.** Listings take a `fields`
 argument, so one field can be one field rather than every record in full.
-`capture_pane` caps its lines and says how many it dropped. `run_shell` returns
-only what that command printed, not the whole screen. `capture_since` returns a
-cursor, so watching something across turns sends the difference rather than the
-screen — a pane that has been quiet answers nothing at all.
+Pane reads collect at most 262,144 bytes per stream and return at most 128,000
+UTF-8 bytes in whole rows. A complete encoded tool response above 1,000,000
+bytes is refused. Each result says how many older rows it dropped.
+`run_shell` returns only what that command printed, not its echoed wrapper or
+the shell prompt. `capture_since` returns a cursor, so watching something across
+turns sends the difference rather than the screen — a pane that has been quiet
+answers nothing at all.
 
 **It will tell you it is still there.** A wait that runs for a minute reports
 progress the whole time, when the client asks for it with a `progressToken`.

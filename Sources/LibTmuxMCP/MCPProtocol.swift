@@ -29,6 +29,7 @@ public struct MCPRequestHandler: Sendable {
     public static var protocolVersion: String { protocolVersions[0] }
     public static let serverName = "libtmux"
     public static let serverVersion = LibTmuxVersion.current
+    static let maximumToolResponseBytes = 1_000_000
 
     private let tools: TmuxTools
     private let resources: TmuxResources
@@ -114,39 +115,11 @@ public struct MCPRequestHandler: Sendable {
                         emit: emit
                     )
                 )
-                return encode([
-                    "jsonrpc": .string("2.0"),
-                    "id": id,
-                    "result": .object([
-                        "content": .array([
-                            .object([
-                                "type": .string("text"),
-                                "text": .string(outcome.text),
-                            ])
-                        ]),
-                        // Modern clients parse this and never see the text;
-                        // older ones have only the text. Sending one would make
-                        // the server unusable on half of them.
-                        "structuredContent": outcome.structured,
-                        "isError": .bool(false),
-                    ]),
-                ])
+                return toolResponse(id: id, outcome: outcome)
             } catch {
                 // A tool that failed is a result the model should see and
                 // reason about, not a transport error that hides the reason.
-                return encode([
-                    "jsonrpc": .string("2.0"),
-                    "id": id,
-                    "result": .object([
-                        "isError": .bool(true),
-                        "content": .array([
-                            .object([
-                                "type": .string("text"),
-                                "text": .string(Self.message(for: error)),
-                            ])
-                        ]),
-                    ]),
-                ])
+                return toolFailure(id: id, message: Self.message(for: error))
             }
 
         case "resources/list":
@@ -251,6 +224,49 @@ public struct MCPRequestHandler: Sendable {
     private func encode(_ body: [String: JSONValue]) -> String? {
         guard let data = try? encoder.encode(body) else { return nil }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    func toolResponse(id: JSONValue, outcome: ToolOutcome) -> String? {
+        let body: [String: JSONValue] = [
+            "jsonrpc": .string("2.0"),
+            "id": id,
+            "result": .object([
+                "content": .array([
+                    .object([
+                        "type": .string("text"),
+                        "text": .string(outcome.text),
+                    ])
+                ]),
+                // Modern clients parse this and never see the text; older
+                // ones have only the text.
+                "structuredContent": outcome.structured,
+                "isError": .bool(false),
+            ]),
+        ]
+        guard let response = encode(body) else { return nil }
+        guard response.utf8.count <= Self.maximumToolResponseBytes else {
+            return toolFailure(
+                id: id,
+                message: "tool result exceeds the 1000000-byte encoded response limit"
+            )
+        }
+        return response
+    }
+
+    private func toolFailure(id: JSONValue, message: String) -> String? {
+        encode([
+            "jsonrpc": .string("2.0"),
+            "id": id,
+            "result": .object([
+                "isError": .bool(true),
+                "content": .array([
+                    .object([
+                        "type": .string("text"),
+                        "text": .string(message),
+                    ])
+                ]),
+            ]),
+        ])
     }
 
     /// Reads a `tools/call` params object.

@@ -137,6 +137,20 @@ struct MCPProtocolTests {
         #expect(try object(reply)["error"]?["code"] == .number(-32602))
     }
 
+    @Test("encoded tool responses have a wire limit")
+    func toolResponsesAreBoundedAfterJSONEscaping() throws {
+        let outcome = ToolOutcome(
+            structured: .object([
+                "text": .string(String(repeating: "\\", count: 500_000))
+            ])
+        )
+        let reply = try #require(try handler().toolResponse(id: .number(1), outcome: outcome))
+        let result = try #require(try object(reply)["result"])
+
+        #expect(result["isError"]?.boolValue == true)
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumToolResponseBytes)
+    }
+
     @Test("a notification expects no reply, and neither does a line that is not one")
     func silenceWhereSilenceIsCorrect() async throws {
         let handler = try handler()
