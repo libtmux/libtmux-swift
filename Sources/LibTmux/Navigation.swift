@@ -321,6 +321,10 @@ extension Server {
 
     /// Copies everything a pane outputs to a shell command, or stops doing so
     /// when `command` is omitted.
+    ///
+    /// > Warning: tmux expands the command as a format before running it, so
+    /// > `#(...)` inside it runs first and separately. Write the command, or
+    /// > double the `#` in anything that reaches one from elsewhere.
     public func pipe(
         _ pane: Pane,
         to command: String? = nil

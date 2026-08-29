@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -275,6 +276,14 @@ struct MutationTests {
 
             let created = try await server.newWindow(in: session, named: "n-#{host}")
             #expect(created.window.name == "n-#{host}")
+
+            // tmux expands a buffer path too, so a file whose name contains
+            // format syntax could not be reached at all.
+            let path = NSTemporaryDirectory() + "libtmux-swift-test-#{host_short}.txt"
+            defer { try? FileManager.default.removeItem(atPath: path) }
+            try "buffered\n".write(toFile: path, atomically: true, encoding: .utf8)
+            try await server.loadBuffer(from: path, named: "literal")
+            #expect(try await server.buffer(named: "literal") == "buffered")
         }
     }
 
