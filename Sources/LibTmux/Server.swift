@@ -118,6 +118,16 @@ public struct Server: Sendable, Hashable {
         try await runtime.run(rawArguments: rawArguments)
     }
 
+    package func runIsolated(
+        _ command: TmuxCommand,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        try await runtime.run(
+            rawArguments: command.argumentVector,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+    }
+
     /// Every session on this server, in tmux's own order.
     ///
     /// Returns an empty array when the server is not running — the same answer
@@ -297,7 +307,10 @@ actor ServerRuntime {
         self.transport = transport
     }
 
-    func run(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
+    func run(
+        rawArguments: [String],
+        perStreamOutputLimit: Int = .max
+    ) async throws(TmuxError) -> TmuxReply {
         // Copied out of isolation before the await so the actor is not held for
         // the lifetime of a tmux process.
         let transport = self.transport
@@ -310,7 +323,8 @@ actor ServerRuntime {
         return try await transport.run(
             executable: executable,
             arguments: arguments,
-            environment: TmuxProcessEnvironment.variables()
+            environment: TmuxProcessEnvironment.variables(),
+            perStreamOutputLimit: perStreamOutputLimit
         )
     }
 }

@@ -18,17 +18,77 @@ protocol ProcessTransport: Sendable {
     ) async throws(TmuxError) -> TmuxReply
 }
 
+protocol OutputLimitedProcessTransport: ProcessTransport {
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply
+}
+
+extension ProcessTransport {
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        guard perStreamOutputLimit >= 0 else {
+            throw .invocationFailed(reason: "output limit cannot be negative")
+        }
+        if let limited = self as? any OutputLimitedProcessTransport {
+            return try await limited.run(
+                executable: executable,
+                arguments: arguments,
+                environment: environment,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+        }
+        let reply = try await run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment
+        )
+        guard reply.standardOutput.count <= perStreamOutputLimit,
+            reply.standardError.count <= perStreamOutputLimit
+        else {
+            throw .invocationFailed(
+                reason: "tmux output exceeded \(perStreamOutputLimit) bytes per stream"
+            )
+        }
+        return reply
+    }
+}
+
 /// The shipped transport.
 ///
 /// Cancellation kills the child's whole process group: tmux forks a daemon and
 /// panes fork shells, so signalling only the direct child would leave the rest
 /// running.
-struct SubprocessTransport: ProcessTransport {
+struct SubprocessTransport: OutputLimitedProcessTransport {
     func run(
         executable: String,
         arguments: [String],
         environment: [String: String]
     ) async throws(TmuxError) -> TmuxReply {
+        try await run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            perStreamOutputLimit: .max
+        )
+    }
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        guard perStreamOutputLimit >= 0 else {
+            throw .invocationFailed(reason: "output limit cannot be negative")
+        }
         var platformOptions = PlatformOptions()
         platformOptions.createSession = true
 
@@ -49,8 +109,8 @@ struct SubprocessTransport: ProcessTransport {
                     platformOptions: platformOptions
                 ),
                 input: .none,
-                output: .data(limit: .max),
-                error: .data(limit: .max)
+                output: .data(limit: perStreamOutputLimit),
+                error: .data(limit: perStreamOutputLimit)
             )
             // A cancelled run still returns: the child is killed and reports
             // its signal. Handing that back as a reply would look like tmux
@@ -60,6 +120,11 @@ struct SubprocessTransport: ProcessTransport {
                 standardOutput: Array(result.standardOutput),
                 standardError: Array(result.standardError),
                 exitCode: exitCode(of: result.terminationStatus)
+            )
+        } catch let error as SubprocessError where error.code == .outputLimitExceeded {
+            if Task.isCancelled { throw .cancelled }
+            throw .invocationFailed(
+                reason: "tmux output exceeded \(perStreamOutputLimit) bytes per stream"
             )
         } catch {
             if error is CancellationError || Task.isCancelled {
