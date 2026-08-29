@@ -22,6 +22,7 @@ struct ProgressTests {
     func progressIsReportedDuringALongCall() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
             let emitted = Emitted()
             let handler = MCPRequestHandler(
                 tools: TmuxTools(server: server, waitCeiling: .seconds(30))
@@ -29,7 +30,7 @@ struct ProgressTests {
             _ = await handler.respond(
                 to: #"""
                     {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
+                    "name":"wait_for_output","arguments":{"pane":"\#(paneRef)",
                     "patterns":["never-arrives"],"require_fresh":true,"timeout":6},
                     "_meta":{"progressToken":"tok"}}}
                     """#.replacingOccurrences(of: "\n", with: ""),
@@ -66,6 +67,7 @@ struct ProgressTests {
     func silenceWithoutAToken() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
             let emitted = Emitted()
             let handler = MCPRequestHandler(
                 tools: TmuxTools(server: server, waitCeiling: .seconds(30))
@@ -73,7 +75,7 @@ struct ProgressTests {
             _ = await handler.respond(
                 to: #"""
                     {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
+                    "name":"wait_for_output","arguments":{"pane":"\#(paneRef)",
                     "patterns":["never-arrives"],"require_fresh":true,"timeout":4}}}
                     """#.replacingOccurrences(of: "\n", with: ""),
                 emit: { await emitted.record($0) }
@@ -87,6 +89,7 @@ struct ProgressTests {
     func progressSharesTheWriterWithTheAnswer() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
             let emitted = Emitted()
             let service = MCPService(
                 handler: MCPRequestHandler(
@@ -97,7 +100,7 @@ struct ProgressTests {
                 continuation.yield(
                     #"""
                     {"jsonrpc":"2.0","id":"w","method":"tools/call","params":{
-                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
+                    "name":"wait_for_output","arguments":{"pane":"\#(paneRef)",
                     "patterns":["never-arrives"],"require_fresh":true,"timeout":5},
                     "_meta":{"progressToken":7}}}
                     """#.replacingOccurrences(of: "\n", with: "")

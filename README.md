@@ -470,11 +470,11 @@ package that it means to you.
 | `wait_for_output` `watch_format` `wait_for_channel` `signal_channel` | The four waits, all bounded and cancellable |
 | `send_keys` `paste_text` | Keystrokes a program should interpret; text that should not be |
 | `new_session` `new_window` `split_pane` | Building |
-| `rename` `select` `resize_pane` `select_layout` `respawn_pane` | Rearranging, and restarting a pane that wedged |
+| `rename` `select` `resize_pane` `select_layout` | Rearranging |
 | `set_option` `set_environment` | Configuring |
 | `apply_workspace` | A whole session from one declarative plan |
-| `kill_pane` `kill_window` `kill_session` `kill_server` | Ending things, at the destructive tier only |
-| `run_command` `run_commands` | One tmux command, or a batch that says which step failed |
+| `respawn_pane` `kill_pane` `kill_window` `kill_session` `kill_server` | Restarting or ending processes, at the destructive tier |
+| `run_command` `run_commands` | Confirmed destructive-tier raw escape hatches, bounded by daemon, time, and output |
 
 Alongside them, `tmux://` resources for a client that would rather browse than
 call, and four prompts packaging the sequences that are easy to get wrong.

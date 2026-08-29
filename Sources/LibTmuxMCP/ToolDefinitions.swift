@@ -17,32 +17,67 @@ extension TmuxTools {
 
     private static let paneTarget = ToolArgument(
         name: "pane",
-        summary: "A pane id such as %1. Pane ids survive layout changes; indexes do not.",
+        summary:
+            "A pane ref returned by list_panes or snapshot. Re-list after this MCP "
+            + "process restarts.",
+        isRequired: true
+    )
+
+    private static let paneReadTarget = ToolArgument(
+        name: "pane",
+        summary:
+            "A pane ref returned by list_panes or snapshot. Re-list after this MCP "
+            + "process restarts.",
         isRequired: true
     )
 
     private static let paneWindowLink = ToolArgument(
         name: "window_link",
-        summary: "Exact $session:index link. Required only when the pane has several links."
+        summary: "Exact linkRef from list_windows. Required only when the pane has several links."
+    )
+
+    private static let serverTarget = ToolArgument(
+        name: "server_ref",
+        summary:
+            "The current server ref returned by describe_server. Re-read it after MCP restart.",
+        isRequired: true
     )
 
     private static let fields = ToolArgument(
         name: "fields",
         summary:
-            "Only these fields of each record, by the names describe_filters lists. "
-            + "Omit for every field. Use it when one field answers the question — a "
-            + "listing of a busy server is mostly context you will not read.",
+            "Only these response fields from each record. Omit for every field. "
+            + "Use it when one field answers the question — a listing of a busy "
+            + "server is mostly context you will not read. Target refs are always retained.",
         kind: .stringArray
     )
 
     private static let confirmSelf = ToolArgument(
         name: "confirm_self",
         summary:
-            "Proceed even when the target is the pane, session, or server this MCP "
-            + "is running inside. Without it such a call is refused, because it ends "
-            + "the conversation making it.",
+            "Proceed when a target is, or could become, a container of this MCP's pane. "
+            + "Window and session kills on the caller's server require this because "
+            + "membership can change before a separate kill executes.",
         kind: .boolean,
         defaultValue: .bool(false)
+    )
+
+    private static let confirmUnsafe = ToolArgument(
+        name: "confirm_unsafe",
+        summary:
+            "Set true to acknowledge that a raw tmux command bypasses typed target, "
+            + "caller, and command-specific safety checks.",
+        kind: .boolean,
+        isRequired: true
+    )
+
+    private static let rawCommandTimeout = ToolArgument(
+        name: "timeout",
+        summary:
+            "Seconds before the isolated tmux client is cancelled. Clamped to the "
+            + "server wait ceiling.",
+        kind: .number,
+        defaultValue: .number(10)
     )
 
     /// Every tool, in the order a client sees them.
@@ -66,7 +101,8 @@ extension TmuxTools {
             isIdempotent: true,
             outputSchema: Schema.object(
                 [
-                    "endpoint": Schema.string, "tmuxVersion": Schema.nullableString,
+                    "ref": Schema.string, "endpoint": Schema.string,
+                    "tmuxVersion": Schema.nullableString,
                     "isSupported": .object(["type": .array([.string("boolean"), .string("null")])]),
                     "serverProcessID": Schema.nullableInteger, "sessionCount": Schema.integer,
                     "safetyTier": Schema.string, "waitCeilingSeconds": Schema.number,
@@ -78,7 +114,8 @@ extension TmuxTools {
                         ], required: ["formatSubscriptions", "pushOutput", "controlModeBatching"]),
                 ],
                 required: [
-                    "endpoint", "sessionCount", "safetyTier", "waitCeilingSeconds", "capabilities",
+                    "ref", "endpoint", "sessionCount", "safetyTier", "waitCeilingSeconds",
+                    "capabilities",
                 ])
         ),
         ToolDefinition(
@@ -161,13 +198,26 @@ extension TmuxTools {
         ToolDefinition(
             name: "list_windows",
             title: "List windows",
-            summary: "Every window on the server, optionally filtered.",
+            summary:
+                "Every session-local window occurrence, optionally filtered by its "
+                + "global window facts.",
+            detail: """
+                Each row carries a process-local ref for later reads. Re-list after this MCP \
+                process restarts. \
+                A global window can be linked into several sessions or more than once in \
+                one session. Each occurrence therefore repeats the global id, name, size \
+                and pane count and adds sessionID, index, isActive and the exact \
+                $session:index target. A filter evaluates the global Window first, then \
+                returns every link to each matching window.
+                """,
             tier: .readonly,
             isIdempotent: true,
             arguments: [
                 ToolArgument(
                     name: "filter",
-                    summary: "A filter expression as JSON, as described by describe_filters.",
+                    summary:
+                        "A Window filter expression as JSON, as described by "
+                        + "describe_filters. Link fields such as target are not filterable.",
                     kind: .object
                 ),
                 fields,
@@ -179,6 +229,8 @@ extension TmuxTools {
             title: "List panes",
             summary: "Every pane on the server, optionally filtered.",
             detail: """
+                Each row carries a process-local ref for later reads. Re-list after this MCP \
+                process restarts. \
                 Searches pane *metadata* — what a pane is running, where it is, how \
                 big it is. For what a pane has printed, use search_panes or \
                 capture_pane; no filter here reads terminal text.
@@ -199,13 +251,15 @@ extension TmuxTools {
             name: "snapshot",
             title: "Read the server as one value",
             summary:
-                "Sessions, windows, panes and clients collected from separate listings.",
+                "Sessions, global windows, exact window links, panes and clients in one value.",
             detail: """
                 One tool call instead of walking the hierarchy level by level. The \
                 daemon identity is checked before and after the listings, so a daemon \
                 replacement is reported. Another client can mutate the same daemon \
-                between listings, so the result is not a tmux transaction. Prefer \
-                this whenever you want more than one level.
+                between listings, so the result is not a tmux transaction. The answer \
+                carries hierarchy facts, not the endpoint or socket path used to read \
+                them. Its refs expire when this MCP process restarts. Prefer this whenever \
+                you want more than one level.
                 """,
             tier: .readonly,
             isIdempotent: true
@@ -223,7 +277,7 @@ extension TmuxTools {
             tier: .readonly,
             isIdempotent: true,
             arguments: [
-                paneTarget,
+                paneReadTarget,
                 ToolArgument(
                     name: "history",
                     summary: "Include the scrollback from its start, not just the visible rows.",
@@ -241,9 +295,10 @@ extension TmuxTools {
             ],
             outputSchema: Schema.object(
                 [
-                    "pane": Schema.string, "lines": Schema.array(of: Schema.string),
+                    "paneRef": Schema.string, "pane": Schema.string,
+                    "lines": Schema.array(of: Schema.string),
                     "droppedLines": Schema.integer,
-                ], required: ["pane", "lines", "droppedLines"])
+                ], required: ["paneRef", "pane", "lines", "droppedLines"])
         ),
         ToolDefinition(
             name: "capture_since",
@@ -267,7 +322,7 @@ extension TmuxTools {
                 """,
             tier: .readonly,
             arguments: [
-                paneTarget,
+                paneReadTarget,
                 ToolArgument(
                     name: "cursor",
                     summary:
@@ -283,13 +338,15 @@ extension TmuxTools {
             ],
             outputSchema: Schema.object(
                 [
-                    "pane": Schema.string,
+                    "paneRef": Schema.string, "pane": Schema.string,
                     "lines": Schema.array(of: Schema.string),
                     "cursor": Schema.string,
                     "linesMissed": Schema.boolean,
                     "restarted": Schema.boolean,
                 ],
-                required: ["pane", "lines", "cursor", "linesMissed", "restarted"]
+                required: [
+                    "paneRef", "pane", "lines", "cursor", "linesMissed", "restarted",
+                ]
             )
         ),
         ToolDefinition(
@@ -298,7 +355,7 @@ extension TmuxTools {
             summary: "Finds a regular expression in the contents of every pane.",
             detail: """
                 The tool for "which pane mentions X". Reads content, where list_panes \
-                reads metadata. Each match carries its pane id and line, so the answer \
+                reads metadata. Each match carries its pane ref and line, so the answer \
                 is directly actionable.
                 """,
             tier: .readonly,
@@ -333,8 +390,12 @@ extension TmuxTools {
                 [
                     "matches": Schema.array(
                         of: Schema.object(
-                            ["pane": Schema.string, "line": Schema.integer, "text": Schema.string],
-                            required: ["pane", "line", "text"])), "panesSearched": Schema.integer,
+                            [
+                                "paneRef": Schema.string, "pane": Schema.string,
+                                "line": Schema.integer, "text": Schema.string,
+                            ],
+                            required: ["paneRef", "pane", "line", "text"])),
+                    "panesSearched": Schema.integer,
                     "panesAvailable": Schema.integer, "truncated": Schema.boolean,
                 ], required: ["matches", "panesSearched", "panesAvailable", "truncated"])
         ),
@@ -345,9 +406,10 @@ extension TmuxTools {
                 "Evaluates any tmux format, reaching fields the listings do not carry.",
             detail: """
                 The escape hatch for anything tmux can report but this server does not \
-                model — `#{pane_dead}`, `#{window_bell_flag}`, `#{client_termname}`. \
-                A target that no longer resolves reports null, which is how it differs \
-                from a field that is legitimately empty.
+                model — `#{pane_dead}` or `#{window_bell_flag}`. \
+                A stale target ref is refused; re-list after this MCP process restarts. \
+                With no target, null means tmux returned no server-level value, while \
+                an empty field is `""`.
                 """,
             tier: .readonly,
             isIdempotent: true,
@@ -358,8 +420,14 @@ extension TmuxTools {
                     isRequired: true
                 ),
                 target(
-                    "A tmux id — $0, @1, %2 — or omitted to ask about the server itself.",
+                    "A session ref, exact window linkRef, or pane ref; omit for the server.",
                     required: false
+                ),
+                ToolArgument(
+                    name: "window_link",
+                    summary:
+                        "Exact linkRef for a pane whose window has several links. "
+                        + "Returned by list_windows."
                 ),
             ],
             outputSchema: Schema.object(["value": Schema.nullableString])
@@ -411,7 +479,7 @@ extension TmuxTools {
             name: "show_environment",
             title: "Read the environment new panes inherit",
             summary:
-                "The variables tmux gives a process it starts, which is not this "
+                "The global variables tmux gives a process it starts, which is not this "
                 + "process's environment.",
             detail: """
                 A pane inherits tmux's environment, not the one the client was \
@@ -421,15 +489,6 @@ extension TmuxTools {
                 """,
             tier: .readonly,
             isIdempotent: true,
-            arguments: [
-                ToolArgument(
-                    name: "scope",
-                    summary: "The global environment, or one session's.",
-                    allowed: ["global", "session"],
-                    defaultValue: .string("global")
-                ),
-                target("The session, when the scope is session.", required: false),
-            ],
             outputSchema: Schema.object(
                 [
                     "variables": Schema.array(
@@ -445,7 +504,7 @@ extension TmuxTools {
         ToolDefinition(
             name: "show_hooks",
             title: "Read the hooks that are bound",
-            summary: "The commands tmux runs when something happens.",
+            summary: "The global commands tmux runs when something happens.",
             detail: """
                 Read-only on purpose. A hook outlives this process — it is server \
                 state, not a subscription — so one written from here would keep \
@@ -459,15 +518,6 @@ extension TmuxTools {
                 """,
             tier: .readonly,
             isIdempotent: true,
-            arguments: [
-                ToolArgument(
-                    name: "scope",
-                    summary: "The global table, or one session's.",
-                    allowed: ["global", "session"],
-                    defaultValue: .string("global")
-                ),
-                target("The session, when the scope is session.", required: false),
-            ],
             outputSchema: Schema.object(
                 [
                     "hooks": Schema.array(
@@ -521,7 +571,7 @@ extension TmuxTools {
                 """,
             tier: .readonly,
             arguments: [
-                paneTarget,
+                paneReadTarget,
                 ToolArgument(
                     name: "patterns",
                     summary:
@@ -556,14 +606,15 @@ extension TmuxTools {
             ],
             outputSchema: Schema.object(
                 [
-                    "outcome": Schema.string, "matched": Schema.nullableString,
+                    "paneRef": Schema.string, "outcome": Schema.string,
+                    "matched": Schema.nullableString,
                     "matchedIndex": Schema.nullableInteger, "sawNewOutput": Schema.boolean,
                     "matchedAtEntry": Schema.boolean, "tail": Schema.array(of: Schema.string),
                     "seconds": Schema.number, "effectiveTimeout": Schema.number,
                 ],
                 required: [
-                    "outcome", "sawNewOutput", "matchedAtEntry", "tail", "seconds",
-                    "effectiveTimeout",
+                    "paneRef", "outcome", "sawNewOutput", "matchedAtEntry", "tail",
+                    "seconds", "effectiveTimeout",
                 ])
         ),
         ToolDefinition(
@@ -590,7 +641,7 @@ extension TmuxTools {
                     summary: "A tmux format, such as #{pane_current_command}.",
                     isRequired: true
                 ),
-                paneTarget,
+                paneReadTarget,
                 paneWindowLink,
                 ToolArgument(
                     name: "matching",
@@ -607,9 +658,11 @@ extension TmuxTools {
             ],
             outputSchema: Schema.object(
                 [
+                    "paneRef": Schema.string, "linkRef": Schema.string,
                     "outcome": Schema.string, "value": Schema.nullableString,
                     "seconds": Schema.number, "effectiveTimeout": Schema.number,
-                ], required: ["outcome", "seconds", "effectiveTimeout"])
+                ],
+                required: ["paneRef", "linkRef", "outcome", "seconds", "effectiveTimeout"])
         ),
         ToolDefinition(
             name: "wait_for_channel",
@@ -706,13 +759,15 @@ extension TmuxTools {
             ],
             outputSchema: Schema.object(
                 [
-                    "pane": Schema.string, "exitStatus": Schema.nullableInteger,
+                    "paneRef": Schema.string, "pane": Schema.string,
+                    "exitStatus": Schema.nullableInteger,
                     "timedOut": Schema.boolean, "output": Schema.array(of: Schema.string),
                     "droppedLines": Schema.integer, "seconds": Schema.number,
                     "effectiveTimeout": Schema.number,
                 ],
                 required: [
-                    "pane", "timedOut", "output", "droppedLines", "seconds", "effectiveTimeout",
+                    "paneRef", "pane", "timedOut", "output", "droppedLines", "seconds",
+                    "effectiveTimeout",
                 ])
         ),
         ToolDefinition(
@@ -744,8 +799,11 @@ extension TmuxTools {
                 ),
             ],
             outputSchema: Schema.object(
-                ["pane": Schema.string, "keys": Schema.array(of: Schema.string)],
-                required: ["pane", "keys"])
+                [
+                    "paneRef": Schema.string, "pane": Schema.string,
+                    "keys": Schema.array(of: Schema.string),
+                ],
+                required: ["paneRef", "pane", "keys"])
         ),
         ToolDefinition(
             name: "new_session",
@@ -763,7 +821,16 @@ extension TmuxTools {
                     summary: "Where its first window starts."
                 ),
                 ToolArgument(name: "window_name", summary: "What to call its first window."),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "ref": Schema.string, "id": Schema.string, "name": Schema.string,
+                    "windowCount": Schema.integer, "isAttached": Schema.boolean,
+                    "createdAt": Schema.integer,
+                ],
+                required: [
+                    "ref", "id", "name", "windowCount", "isAttached", "createdAt",
+                ])
         ),
         ToolDefinition(
             name: "new_window",
@@ -771,10 +838,22 @@ extension TmuxTools {
             summary: "Creates a window in a session and returns it.",
             tier: .mutating,
             arguments: [
-                target("The session id or name to create it in."),
+                target("A session ref from list_sessions or snapshot."),
                 ToolArgument(name: "name", summary: "What to call it."),
                 ToolArgument(name: "start_directory", summary: "Where it starts."),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "windowRef": Schema.string, "linkRef": Schema.string,
+                    "id": Schema.string, "name": Schema.string, "paneCount": Schema.integer,
+                    "width": Schema.integer, "height": Schema.integer,
+                    "sessionID": Schema.string, "index": Schema.integer,
+                    "isActive": Schema.boolean, "target": Schema.string,
+                ],
+                required: [
+                    "windowRef", "linkRef", "id", "name", "paneCount", "width", "height",
+                    "sessionID", "index", "isActive", "target",
+                ])
         ),
         ToolDefinition(
             name: "split_pane",
@@ -790,7 +869,21 @@ extension TmuxTools {
                     defaultValue: .string("below")
                 ),
                 ToolArgument(name: "start_directory", summary: "Where the new pane starts."),
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "ref": Schema.string, "id": Schema.string, "index": Schema.integer,
+                    "width": Schema.integer, "height": Schema.integer,
+                    "isActive": Schema.boolean, "currentCommand": Schema.string,
+                    "currentPath": Schema.string, "isAtTop": Schema.boolean,
+                    "isAtBottom": Schema.boolean, "isAtLeft": Schema.boolean,
+                    "isAtRight": Schema.boolean, "windowID": Schema.string,
+                ],
+                required: [
+                    "ref", "id", "index", "width", "height", "isActive", "currentCommand",
+                    "currentPath", "isAtTop", "isAtBottom", "isAtLeft", "isAtRight",
+                    "windowID",
+                ])
         ),
         ToolDefinition(
             name: "apply_workspace",
@@ -799,7 +892,7 @@ extension TmuxTools {
                 "Builds a whole session — windows, panes, directories, commands — "
                 + "from one declarative plan.",
             detail: """
-                One call instead of a create-split-split-send sequence whose pane ids \
+                One call instead of a create-split-split-send sequence whose pane refs \
                 you have to thread by hand. The plan is tmuxp's shape, so an existing \
                 workspace file can be passed through unchanged.
 
@@ -816,7 +909,50 @@ extension TmuxTools {
                     kind: .object,
                     isRequired: true
                 )
-            ]
+            ],
+            outputSchema: Schema.object(
+                [
+                    "session": Schema.object(
+                        [
+                            "ref": Schema.string, "id": Schema.string, "name": Schema.string,
+                            "windowCount": Schema.integer, "isAttached": Schema.boolean,
+                            "createdAt": Schema.integer,
+                        ],
+                        required: [
+                            "ref", "id", "name", "windowCount", "isAttached", "createdAt",
+                        ]),
+                    "windows": Schema.array(
+                        of: Schema.object(
+                            [
+                                "windowRef": Schema.string, "linkRef": Schema.string,
+                                "id": Schema.string, "name": Schema.string,
+                                "paneCount": Schema.integer, "width": Schema.integer,
+                                "height": Schema.integer, "sessionID": Schema.string,
+                                "index": Schema.integer, "isActive": Schema.boolean,
+                                "target": Schema.string,
+                            ],
+                            required: [
+                                "windowRef", "linkRef", "id", "name", "paneCount", "width",
+                                "height", "sessionID", "index", "isActive", "target",
+                            ])),
+                    "panes": Schema.array(
+                        of: Schema.object(
+                            [
+                                "ref": Schema.string, "id": Schema.string,
+                                "index": Schema.integer, "width": Schema.integer,
+                                "height": Schema.integer, "isActive": Schema.boolean,
+                                "currentCommand": Schema.string, "currentPath": Schema.string,
+                                "isAtTop": Schema.boolean, "isAtBottom": Schema.boolean,
+                                "isAtLeft": Schema.boolean, "isAtRight": Schema.boolean,
+                                "windowID": Schema.string,
+                            ],
+                            required: [
+                                "ref", "id", "index", "width", "height", "isActive",
+                                "currentCommand", "currentPath", "isAtTop", "isAtBottom",
+                                "isAtLeft", "isAtRight", "windowID",
+                            ])),
+                ],
+                required: ["session", "windows", "panes"])
         ),
         ToolDefinition(
             name: "rename",
@@ -830,12 +966,15 @@ extension TmuxTools {
             tier: .mutating,
             isIdempotent: true,
             arguments: [
-                target("The session or window id to rename."),
+                target("A session ref or global windowRef to rename."),
                 ToolArgument(name: "name", summary: "What to call it.", isRequired: true),
             ],
             outputSchema: Schema.object(
-                ["kind": Schema.string, "id": Schema.string, "name": Schema.string],
-                required: ["kind", "id", "name"]
+                [
+                    "ref": Schema.string, "kind": Schema.string, "id": Schema.string,
+                    "name": Schema.string,
+                ],
+                required: ["ref", "kind", "id", "name"]
             )
         ),
         ToolDefinition(
@@ -851,13 +990,12 @@ extension TmuxTools {
             isIdempotent: true,
             arguments: [
                 target(
-                    "A pane id (%1) or exact window link ($session:index). A window id "
-                        + "(@1) works only when it has one link."
+                    "A pane ref from list_panes or exact linkRef from list_windows."
                 )
             ],
             outputSchema: Schema.object(
-                ["kind": Schema.string, "id": Schema.string],
-                required: ["kind", "id"]
+                ["ref": Schema.string, "kind": Schema.string, "id": Schema.string],
+                required: ["ref", "kind", "id"]
             )
         ),
         ToolDefinition(
@@ -872,8 +1010,11 @@ extension TmuxTools {
                 ToolArgument(name: "height", summary: "Rows.", kind: .integer),
             ],
             outputSchema: Schema.object(
-                ["pane": Schema.string, "width": Schema.integer, "height": Schema.integer],
-                required: ["pane", "width", "height"]
+                [
+                    "paneRef": Schema.string, "pane": Schema.string, "width": Schema.integer,
+                    "height": Schema.integer,
+                ],
+                required: ["paneRef", "pane", "width", "height"]
             )
         ),
         ToolDefinition(
@@ -888,7 +1029,7 @@ extension TmuxTools {
             tier: .mutating,
             isIdempotent: true,
             arguments: [
-                target("The window id to lay out."),
+                target("A global windowRef from list_windows or snapshot."),
                 ToolArgument(
                     name: "layout",
                     summary: "A tmux layout name, or a layout string tmux printed.",
@@ -900,8 +1041,11 @@ extension TmuxTools {
                 ),
             ],
             outputSchema: Schema.object(
-                ["window": Schema.string, "layout": Schema.string],
-                required: ["window", "layout"]
+                [
+                    "windowRef": Schema.string, "window": Schema.string,
+                    "layout": Schema.string,
+                ],
+                required: ["windowRef", "window", "layout"]
             )
         ),
         ToolDefinition(
@@ -910,12 +1054,12 @@ extension TmuxTools {
             summary: "Replaces the process in a pane, keeping the pane itself.",
             detail: """
                 The recovery action: a pane whose program has wedged or exited \
-                gets a new one without the pane id changing, so anything holding \
-                that id keeps working. Watchers are told — capture_since reports \
+                gets a new one without the pane ref changing, so anything holding \
+                that ref keeps working. Watchers are told — capture_since reports \
                 `restarted` rather than reading the new program's output as a \
                 continuation of the old one's.
                 """,
-            tier: .mutating,
+            tier: .destructive,
             arguments: [
                 paneTarget,
                 ToolArgument(
@@ -923,10 +1067,11 @@ extension TmuxTools {
                     summary: "What to run. Omit for the pane's default command.",
                     kind: .stringArray
                 ),
+                confirmSelf,
             ],
             outputSchema: Schema.object(
-                ["pane": Schema.string],
-                required: ["pane"]
+                ["paneRef": Schema.string, "pane": Schema.string],
+                required: ["paneRef", "pane"]
             )
         ),
         ToolDefinition(
@@ -953,14 +1098,17 @@ extension TmuxTools {
                 ),
             ],
             outputSchema: Schema.object(
-                ["pane": Schema.string, "characters": Schema.integer],
-                required: ["pane", "characters"]
+                [
+                    "paneRef": Schema.string, "pane": Schema.string,
+                    "characters": Schema.integer,
+                ],
+                required: ["paneRef", "pane", "characters"]
             )
         ),
         ToolDefinition(
             name: "set_environment",
             title: "Set what new panes inherit",
-            summary: "Sets a variable in the environment tmux gives processes it starts.",
+            summary: "Sets a global variable in the environment tmux gives new processes.",
             detail: """
                 Takes effect for panes started *after* it. A pane already running \
                 has the environment it was given, and nothing can reach into it.
@@ -973,23 +1121,19 @@ extension TmuxTools {
                     name: "value",
                     summary: "What to set it to. Omit to unset it.",
                 ),
-                ToolArgument(
-                    name: "scope",
-                    summary: "The global environment, or one session's.",
-                    allowed: ["global", "session"],
-                    defaultValue: .string("global")
-                ),
-                target("The session, when the scope is session.", required: false),
             ],
             outputSchema: Schema.object(
-                ["name": Schema.string, "value": Schema.nullableString],
-                required: ["name"]
+                [
+                    "serverRef": Schema.string, "name": Schema.string,
+                    "value": Schema.nullableString,
+                ],
+                required: ["serverRef", "name"]
             )
         ),
         ToolDefinition(
             name: "set_option",
             title: "Set a tmux option",
-            summary: "Sets a tmux option at server, session, window or pane scope.",
+            summary: "Sets a server or global tmux option.",
             tier: .mutating,
             isIdempotent: true,
             arguments: [
@@ -997,17 +1141,17 @@ extension TmuxTools {
                 ToolArgument(name: "value", summary: "What to set it to.", isRequired: true),
                 ToolArgument(
                     name: "scope",
-                    summary: "Which level the option belongs to.",
-                    allowed: ["server", "session", "window", "pane", "global"],
-                    defaultValue: .string("session")
+                    summary: "The server table, or the global session table.",
+                    allowed: ["server", "global"],
+                    defaultValue: .string("server")
                 ),
-                target("The object to set it on, when the scope is not server.", required: false),
             ],
             outputSchema: Schema.object(
                 [
-                    "exitCode": Schema.integer, "standardOutput": Schema.string,
+                    "serverRef": Schema.string, "exitCode": Schema.integer,
+                    "standardOutput": Schema.string,
                     "standardError": Schema.string,
-                ], required: ["exitCode", "standardOutput", "standardError"])
+                ], required: ["serverRef", "exitCode", "standardOutput", "standardError"])
         ),
 
         // MARK: Ending things
@@ -1019,25 +1163,28 @@ extension TmuxTools {
             tier: .destructive,
             arguments: [paneTarget, confirmSelf],
             outputSchema: Schema.object(
-                ["kind": Schema.string, "id": Schema.string], required: ["kind", "id"])
+                ["ref": Schema.string, "kind": Schema.string, "id": Schema.string],
+                required: ["ref", "kind", "id"])
         ),
         ToolDefinition(
             name: "kill_window",
             title: "Kill a window",
             summary: "Ends a window and every pane in it.",
             tier: .destructive,
-            arguments: [target("The window id to kill."), confirmSelf],
+            arguments: [target("A global windowRef to kill."), confirmSelf],
             outputSchema: Schema.object(
-                ["kind": Schema.string, "id": Schema.string], required: ["kind", "id"])
+                ["ref": Schema.string, "kind": Schema.string, "id": Schema.string],
+                required: ["ref", "kind", "id"])
         ),
         ToolDefinition(
             name: "kill_session",
             title: "Kill a session",
             summary: "Ends a session and every window in it.",
             tier: .destructive,
-            arguments: [target("The session id or name to kill."), confirmSelf],
+            arguments: [target("A session ref to kill."), confirmSelf],
             outputSchema: Schema.object(
-                ["kind": Schema.string, "id": Schema.string], required: ["kind", "id"])
+                ["ref": Schema.string, "kind": Schema.string, "id": Schema.string],
+                required: ["ref", "kind", "id"])
         ),
 
         ToolDefinition(
@@ -1045,10 +1192,10 @@ extension TmuxTools {
             title: "Kill the whole tmux server",
             summary: "Ends every session on this server, and the server with them.",
             tier: .destructive,
-            arguments: [confirmSelf],
+            arguments: [serverTarget, confirmSelf],
             outputSchema: Schema.object(
-                ["kind": Schema.string, "id": Schema.string],
-                required: ["kind", "id"]
+                ["ref": Schema.string, "kind": Schema.string, "id": Schema.string],
+                required: ["ref", "kind", "id"]
             )
         ),
 
@@ -1057,17 +1204,23 @@ extension TmuxTools {
         ToolDefinition(
             name: "run_command",
             title: "Run one tmux command",
-            summary: "Runs a single tmux command and returns what tmux said.",
+            summary: "Runs one explicitly confirmed raw tmux command in isolation.",
             detail: """
-                The escape hatch for anything above. Arguments are passed to tmux \
-                without a shell, so nothing here is expanded or word-split.
+                The unsafe escape hatch for anything above. Prefer a typed tool: this \
+                bypasses typed targets, caller protection, and command-specific checks. \
+                Arguments are passed to tmux without a shell, so this layer does not \
+                expand or word-split them; tmux commands can still run shells, aliases, \
+                command lists, and sourced configuration.
 
                 A nonzero exit is reported rather than thrown — `has-session` answers \
-                a question that way. Commands that block forever without a terminal \
-                are refused by name, with the tool that does the same job safely.
+                a question that way. The daemon incarnation is checked atomically, the \
+                client has a finite deadline, and stdout and stderr are each capped at \
+                256 KiB. Directly named terminal commands are refused early, but that \
+                convenience check is not a safety boundary.
                 """,
-            tier: .mutating,
+            tier: .destructive,
             arguments: [
+                serverTarget,
                 ToolArgument(
                     name: "command",
                     summary: "The tmux command name, such as new-window.",
@@ -1078,40 +1231,46 @@ extension TmuxTools {
                     summary: "Its arguments.",
                     kind: .stringArray
                 ),
+                confirmUnsafe,
+                rawCommandTimeout,
             ],
             outputSchema: Schema.object(
                 [
-                    "exitCode": Schema.integer, "standardOutput": Schema.string,
+                    "serverRef": Schema.string, "exitCode": Schema.integer,
+                    "standardOutput": Schema.string,
                     "standardError": Schema.string,
-                ], required: ["exitCode", "standardOutput", "standardError"])
+                ], required: ["serverRef", "exitCode", "standardOutput", "standardError"])
         ),
         ToolDefinition(
             name: "run_commands",
             title: "Run several tmux commands",
-            summary:
-                "Runs a list of tmux commands over one connection and reports each "
-                + "one's result separately.",
+            summary: "Runs up to 16 confirmed raw tmux commands and attributes each result.",
             detail: """
-                Cheaper than a call each, and unlike a `;` list it says which command \
-                failed: tmux numbers a control connection's replies, so output belongs \
-                to the command that produced it rather than to one merged stream.
+                The batch form of run_command, with the same unsafe boundary, daemon \
+                fence, output cap, and one deadline for the entire batch. Each command \
+                uses its own isolated client, so output belongs to the step that \
+                produced it rather than to one merged stream.
 
                 Stops at the first failure, as tmux does. Every command that ran \
                 carries its own output and status.
                 """,
-            tier: .mutating,
+            tier: .destructive,
             arguments: [
+                serverTarget,
                 ToolArgument(
                     name: "commands",
                     summary:
                         "The commands, as JSON: an array of {command, arguments[]} "
                         + "objects.",
-                    kind: .object,
+                    kind: .commandArray,
                     isRequired: true
-                )
+                ),
+                confirmUnsafe,
+                rawCommandTimeout,
             ],
             outputSchema: Schema.object(
                 [
+                    "serverRef": Schema.string,
                     "steps": Schema.array(
                         of: Schema.object(
                             [
@@ -1122,7 +1281,7 @@ extension TmuxTools {
                             required: [
                                 "step", "command", "exitCode", "standardOutput", "standardError",
                             ])), "requested": Schema.integer, "stoppedEarly": Schema.boolean,
-                ], required: ["steps", "requested", "stoppedEarly"])
+                ], required: ["serverRef", "steps", "requested", "stoppedEarly"])
         ),
     ]
 

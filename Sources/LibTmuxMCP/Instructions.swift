@@ -45,14 +45,15 @@ enum Instructions {
     static func required(tier: SafetyTier, waitCeiling: Duration) -> [String] {
         [
             """
-            tmux through libtmux for Swift. Server > Session > Window > Pane. \
-            Target panes by %1. Target window appearances by $session:index.
+            tmux via libtmux for Swift. Server > Session > Window > Pane. \
+            Listings return process-local refs; re-list after MCP restart. \
+            list_windows returns exact linkRef occurrences.
             """,
 
             """
             TRIGGERS: tmux panes, windows, sessions; 'this terminal', 'send keys', \
-            'scrollback', 'copy mode'. Pane %1 and session $1 ids are unambiguous; \
-            @1 needs $session:index when its window is linked more than once.
+            'scrollback', 'copy mode'. Use listing refs for follow-ups and linkRef \
+            when a window has several links.
             NOT FOR: browser tabs, editor splits (VS Code, Neovim), GUI windows \
             (i3, sway), Jupyter cells, login sessions. Ask once if genuinely unclear.
             """,
@@ -60,9 +61,8 @@ enum Instructions {
             """
             METADATA vs CONTENT: list_* and filters read what a pane *is* — command, \
             path, size. search_panes and capture_pane read what it has *printed*. \
-            Asking a listing about text finds nothing and looks like an empty server.
-            Watching a pane across turns: capture_since, which answers only the \
-            difference. capture_pane re-sends the whole screen every call.
+            Listings do not search text. Across turns use capture_since for only the \
+            difference; capture_pane re-sends the screen.
             """,
 
             """
@@ -74,24 +74,23 @@ enum Instructions {
             - wait_for_output: output you did NOT author. Event-driven. Always pass \
             `stops` for failure markers.
             - wait_for_channel: when the shell composition must be your own.
-            Never loop send_keys + capture_pane: it cannot tell slow from finished.
+            Never loop send_keys + capture_pane; it cannot tell slow from finished.
             """,
 
             """
             START WITH describe_server (tmux version, wait ceiling, which pane is \
             yours) and describe_filters (the vocabulary a `filter` may name).
-            ONE CALL: snapshot reads the hierarchy in separate commands and reports \
-            daemon replacement; apply_workspace builds a session from one plan; \
-            run_commands batches and says which step failed. Pass `fields` when one \
-            field answers the question.
+            ONE CALL: snapshot reads the hierarchy and detects daemon replacement; \
+            apply_workspace builds one plan. Pass `fields` for one-field questions.
             """,
 
             """
             Tier: \(tier.rawValue) — tools above it are hidden and refused \
             (LIBTMUX_SAFETY). Waits clamp to \(Int(waitCeiling.components.seconds))s \
-            and report what was enforced. No attach, prompts or choose-*: they wait \
-            for a terminal a tool call has not got, and run_command refuses them by \
-            name. Hooks outlive this process, so they belong in your tmux config.
+            and report the limit. Raw run_command(s) are destructive-tier escape \
+            hatches requiring confirm_unsafe, a current server ref, and a deadline. \
+            No attach, prompts or choose-*; they need a terminal. Persistent hooks \
+            belong in tmux config.
             """,
         ]
     }

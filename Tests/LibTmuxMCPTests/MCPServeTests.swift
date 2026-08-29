@@ -35,10 +35,11 @@ struct MCPServeTests {
             let body = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
             let rows = try #require(body["sessions"])
             let sessions = try JSONDecoder().decode(
-                [Session].self,
+                [SessionResult].self,
                 from: try JSONEncoder().encode(rows)
             )
             #expect(sessions.map(\.name) == ["bootstrap"])
+            #expect(sessions.allSatisfy { !$0.ref.isEmpty })
         }
     }
 
@@ -85,12 +86,18 @@ struct MCPServeTests {
     @Test("work a tool did is visible to the library that did not do it")
     func toolWorkIsVisibleOutside() async throws {
         try await withTmuxServer { server in
-            let handler = MCPRequestHandler(tools: TmuxTools(server: server))
+            let handler = MCPRequestHandler(
+                tools: TmuxTools(server: server, tier: .destructive)
+            )
+            let incarnation = try #require(try await server.incarnation())
+            let serverReference = WireReferenceCodec.processLocal.reference(to: incarnation)
             _ = await handler.respond(
                 to: #"""
                     {"jsonrpc":"2.0","id":1,"method":"tools/call","params":
-                    {"name":"run_command","arguments":{"command":"new-session",
-                    "arguments":["-d","-s","made-by-mcp"]}}}
+                    {"name":"run_command","arguments":{"server_ref":"\#(serverReference)",
+                    "command":"new-session",
+                    "arguments":["-d","-s","made-by-mcp"],
+                    "confirm_unsafe":true}}}
                     """#.replacingOccurrences(of: "\n", with: "")
             )
             let made = try await server.hasSession("made-by-mcp")
@@ -134,6 +141,7 @@ struct MCPServeTests {
     func slowCallsDoNotBlockOthers() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
             let service = MCPService(
                 handler: MCPRequestHandler(tools: TmuxTools(server: server))
             )
@@ -142,7 +150,7 @@ struct MCPServeTests {
                 continuation.yield(
                     #"""
                     {"jsonrpc":"2.0","id":"slow","method":"tools/call","params":
-                    {"name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
+                    {"name":"wait_for_output","arguments":{"pane":"\#(paneRef)",
                     "patterns":["never-arrives"],"timeout":4}}}
                     """#.replacingOccurrences(of: "\n", with: "")
                 )
@@ -163,6 +171,7 @@ struct MCPServeTests {
     func cancellationStopsAWait() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
             let service = MCPService(
                 handler: MCPRequestHandler(tools: TmuxTools(server: server))
             )
@@ -172,7 +181,7 @@ struct MCPServeTests {
                 continuation.yield(
                     #"""
                     {"jsonrpc":"2.0","id":"wait","method":"tools/call","params":
-                    {"name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
+                    {"name":"wait_for_output","arguments":{"pane":"\#(paneRef)",
                     "patterns":["never-arrives"],"timeout":60}}}
                     """#.replacingOccurrences(of: "\n", with: "")
                 )
@@ -208,6 +217,7 @@ struct MCPServeTests {
         case .integer, .number: return .number(1)
         case .boolean: return .bool(false)
         case .stringArray: return .array([.string("x")])
+        case .commandArray: return .array([.object(["command": .string("list-sessions")])])
         case .object: return .object([:])
         }
     }

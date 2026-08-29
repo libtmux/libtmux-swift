@@ -68,30 +68,15 @@ struct CallerGuard: Sendable {
         )
     }
 
-    func checkWindow(_ windowID: WindowID, panes: [Pane], override: Bool) throws {
+    func checkWindow(_ windowID: WindowID, override: Bool) throws {
         try checkContainer(
             "window \(windowID)",
-            holds: { $0.windowID == windowID },
-            panes: panes,
             override: override
         )
     }
 
-    func checkSession(
-        _ session: Session,
-        in snapshot: Snapshot,
-        override: Bool
-    ) throws {
-        guard !override, let own = ownPane,
-            snapshot.panes(of: session).contains(where: { $0.id == own })
-        else { return }
-        throw ToolError.refusedForSafety(
-            """
-            session \(session.id) holds \(own), the pane this MCP server runs in. \
-            Killing it ends the session you are talking through, and nothing would \
-            come back to say so. Pass confirm_self=true if that is genuinely the intent.
-            """
-        )
+    func checkSession(_ sessionID: SessionID, override: Bool) throws {
+        try checkContainer("session \(sessionID)", override: override)
     }
 
     func checkServer(override: Bool) throws {
@@ -107,17 +92,15 @@ struct CallerGuard: Sendable {
 
     private func checkContainer(
         _ described: String,
-        holds: (Pane) -> Bool,
-        panes: [Pane],
         override: Bool
     ) throws {
         guard !override, let own = ownPane else { return }
-        guard panes.contains(where: { $0.id == own && holds($0) }) else { return }
         throw ToolError.refusedForSafety(
             """
-            \(described) holds \(own), the pane this MCP server runs in. Killing it \
-            ends the session you are talking through, and nothing would come back \
-            to say so. Pass confirm_self=true if that is genuinely the intent.
+            \(described) is on the server containing \(own), the pane this MCP runs \
+            in. Pane membership can change between inspection and a separate kill, \
+            so this cannot safely prove the container will still exclude the caller. \
+            Pass confirm_self=true if killing it is genuinely the intent.
             """
         )
     }

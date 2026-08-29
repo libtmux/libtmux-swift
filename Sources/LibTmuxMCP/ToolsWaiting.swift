@@ -10,7 +10,12 @@ extension TmuxTools {
         _ arguments: Arguments,
         _ progress: ProgressReporter
     ) async throws -> ToolOutcome {
-        let pane = try await pane(try arguments.string("pane"))
+        let pane = try WireReferenceCodec.processLocal.resolve(
+            try arguments.string("pane"),
+            among: try await server.panes(),
+            argument: "pane",
+            refreshWith: "list_panes"
+        )
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
         let patterns = try arguments.optionalStrings("patterns") ?? []
         let stops = try arguments.strings("stops")
@@ -28,7 +33,7 @@ extension TmuxTools {
                 timeout: timeout
             )
         }
-        return .init(OutputWaitResult(result, effectiveTimeout: enforced))
+        return .init(OutputWaitResult(result, pane: pane, effectiveTimeout: enforced))
     }
 
     func watchFormat(
@@ -36,7 +41,12 @@ extension TmuxTools {
         _ progress: ProgressReporter
     ) async throws -> ToolOutcome {
         let paneID = try arguments.string("pane")
-        let pane = try await pane(paneID)
+        let pane = try WireReferenceCodec.processLocal.resolve(
+            paneID,
+            among: try await server.panes(),
+            argument: "pane",
+            refreshWith: "list_panes"
+        )
         let link = try await windowLink(
             for: pane, matching: try arguments.optionalString("window_link"))
         let format = try arguments.string("format")
@@ -97,6 +107,8 @@ extension TmuxTools {
         guard let outcome, outcome.1 else {
             return .init(
                 FormatWatchResult(
+                    paneRef: WireReferenceCodec.processLocal.reference(to: pane),
+                    linkRef: WireReferenceCodec.processLocal.reference(to: link),
                     outcome: "timedOut",
                     value: try await server.format(format, for: pane, through: link),
                     seconds: seconds,
@@ -106,6 +118,8 @@ extension TmuxTools {
         }
         return .init(
             FormatWatchResult(
+                paneRef: WireReferenceCodec.processLocal.reference(to: pane),
+                linkRef: WireReferenceCodec.processLocal.reference(to: link),
                 outcome: "changed",
                 value: outcome.0,
                 seconds: seconds,

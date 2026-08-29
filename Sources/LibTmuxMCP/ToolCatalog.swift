@@ -10,7 +10,7 @@ public enum SafetyTier: String, Sendable, Hashable, Codable, CaseIterable, Compa
     case readonly
     /// Creates, renames, resizes, and sends input.
     case mutating
-    /// Ends something: a pane, a window, a session, the server.
+    /// Ends objects, or runs a confirmed raw command outside typed safeguards.
     case destructive
 
     private var rank: Int {
@@ -38,6 +38,7 @@ public struct ToolArgument: Sendable, Hashable {
         case number
         case boolean
         case stringArray
+        case commandArray
         /// A nested JSON document, described by what it is rather than by its
         /// shape — a filter expression, a workspace plan.
         case object
@@ -48,7 +49,7 @@ public struct ToolArgument: Sendable, Hashable {
             case .integer: "integer"
             case .number: "number"
             case .boolean: "boolean"
-            case .stringArray: "array"
+            case .stringArray, .commandArray: "array"
             case .object: "object"
             }
         }
@@ -88,6 +89,20 @@ public struct ToolArgument: Sendable, Hashable {
         ]
         if kind == .stringArray {
             members["items"] = .object(["type": .string("string")])
+        }
+        if kind == .commandArray {
+            members["items"] = .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "command": .object(["type": .string("string")]),
+                    "arguments": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                ]),
+                "required": .array([.string("command")]),
+                "additionalProperties": .bool(false),
+            ])
         }
         if !allowed.isEmpty {
             members["enum"] = .array(allowed.map(JSONValue.string))
@@ -328,8 +343,7 @@ struct Arguments {
     }
 }
 
-/// Why a call could not be run at all, as distinct from a tmux command that ran
-/// and reported a nonzero status.
+/// Why a call could not produce its normal result.
 public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
     case unknownTool(String)
     case missingArgument(String)
@@ -338,6 +352,7 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
     case notAllowed(String, value: String, allowed: [String])
     case deniedByTier(String, needs: SafetyTier, allowed: SafetyTier)
     case refusedForSafety(String)
+    case tmuxRejected(String)
     case timedOut(String, seconds: Double)
 
     public var description: String {
@@ -364,10 +379,12 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
             """
         case let .refusedForSafety(reason):
             reason
+        case let .tmuxRejected(reason):
+            "tmux refused the command: \(reason)"
         case let .timedOut(name, seconds):
             """
-            \(name) gave up after \(seconds)s. The work it started is still \
-            running in tmux — read the pane, or call again with a longer timeout.
+            \(name) gave up after \(seconds)s. Its tmux command may already have \
+            taken effect; inspect current state before retrying it.
             """
         }
     }

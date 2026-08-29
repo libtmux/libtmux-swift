@@ -5,17 +5,22 @@ import LibTmux
 
 extension TmuxTools {
     func describeServer() async throws -> ToolOutcome {
-        let version = try? await server.version()
-        let processID = try? await server.serverProcessID()
-        let sessions = (try? await server.sessions()) ?? []
-        let guardState = await guardForCaller()
+        guard let before = try await server.incarnation() else {
+            throw ToolError.refusedForSafety("the tmux server is not running")
+        }
+        let version = try await server.version()
+        let sessions = try await server.sessions()
+        let after = try await server.incarnation()
+        guard after == before else { throw TmuxError.serverRestarted }
+        let guardState = guardForCaller(serverProcessID: before.processID)
 
         return .init(
             ServerDescription(
+                ref: WireReferenceCodec.processLocal.reference(to: before),
                 endpoint: endpointDescription,
-                tmuxVersion: version?.description,
-                isSupported: version.map { $0 >= TmuxVersion(major: 3, minor: 2) },
-                serverProcessID: processID,
+                tmuxVersion: version.description,
+                isSupported: version >= TmuxVersion(major: 3, minor: 2),
+                serverProcessID: before.processID,
                 sessionCount: sessions.count,
                 safetyTier: tier,
                 waitCeilingSeconds: Double(waitCeiling.components.seconds),
@@ -40,25 +45,33 @@ extension TmuxTools {
     func listSessions(_ arguments: Arguments) async throws -> ToolOutcome {
         let fields = try arguments.strings("fields")
         guard let relation = try arguments.document("pane_relation") else {
-            return .listing("sessions", project(try await server.sessions(), keeping: fields))
+            let sessions = try await server.sessions().map { SessionResult($0) }
+            return .listing("sessions", project(sessions, keeping: fields))
         }
         // A relation filter needs the related objects in hand, so this is the
         // one listing that reads a whole snapshot.
         let query = try JSONDecoder().decode(RelationQuery<Pane>.self, from: relation)
         try validateFilter(query.expression, argument: "pane_relation")
         let sessions = try await server.snapshot().sessions(ofPanes: query)
-        return .listing("sessions", project(sessions, keeping: fields))
+        return .listing("sessions", project(sessions.map { SessionResult($0) }, keeping: fields))
     }
 
     func listWindows(_ arguments: Arguments) async throws -> ToolOutcome {
         let fields = try arguments.strings("fields")
-        let windows = try await server.windows()
-        guard let filter = try arguments.document("filter") else {
-            return .listing("windows", project(windows, keeping: fields))
+        let snapshot = try await server.snapshot()
+        let selected: [Window]
+        if let filter = try arguments.document("filter") {
+            let expression = try JSONDecoder().decode(FilterExpr<Window>.self, from: filter)
+            try validateFilter(expression, argument: "filter")
+            selected = snapshot.windows.filter(expression)
+        } else {
+            selected = snapshot.windows
         }
-        let expression = try JSONDecoder().decode(FilterExpr<Window>.self, from: filter)
-        try validateFilter(expression, argument: "filter")
-        return .listing("windows", project(windows.filter(expression), keeping: fields))
+        let occurrences = WindowOccurrenceResult.projecting(
+            selected,
+            through: snapshot.windowLinks
+        )
+        return .listing("windows", project(occurrences, keeping: fields))
     }
 
     func listPanes(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -74,23 +87,32 @@ extension TmuxTools {
         }
         // Which row is the caller's own pane, so "which pane am I in?" needs no
         // second call and killing the wrong one needs no second thought.
-        let own = await guardForCaller().ownPane?.rawValue
-        return .listing("panes", project(selected, keeping: fields, markingCaller: own))
+        let own = try await guardForCaller().ownPane?.rawValue
+        return .listing(
+            "panes",
+            project(selected.map { PaneResult($0) }, keeping: fields, markingCaller: own)
+        )
     }
 
     func readSnapshot() async throws -> ToolOutcome {
-        .init(try await server.snapshot())
+        .init(SnapshotResult(try await server.snapshot()))
     }
 
     func capturePane(_ arguments: Arguments) async throws -> ToolOutcome {
         let target = try arguments.string("pane")
-        let pane = try await pane(target)
+        let pane = try WireReferenceCodec.processLocal.resolve(
+            target,
+            among: try await server.panes(),
+            argument: "pane",
+            refreshWith: "list_panes"
+        )
         let history = try arguments.bool("history", or: false)
         let maxLines = try arguments.integer("max_lines", or: 200)
         let rows = try await server.capture(pane, includingHistory: history)
         let kept = rows.suffix(max(1, maxLines))
         return .init(
             CaptureResult(
+                paneRef: WireReferenceCodec.processLocal.reference(to: pane),
                 pane: pane.id.rawValue,
                 lines: Array(kept),
                 // The end of a pane is almost always the part that matters, so
@@ -138,7 +160,14 @@ extension TmuxTools {
                     truncated = true
                     break
                 }
-                matches.append(PaneMatch(pane: pane.id.rawValue, line: offset + 1, text: line))
+                matches.append(
+                    PaneMatch(
+                        paneRef: WireReferenceCodec.processLocal.reference(to: pane),
+                        pane: pane.id.rawValue,
+                        line: offset + 1,
+                        text: line
+                    )
+                )
             }
         }
         return .init(
@@ -153,12 +182,76 @@ extension TmuxTools {
 
     func readFormat(_ arguments: Arguments) async throws -> ToolOutcome {
         let template = try arguments.string("template")
-        let value =
-            if let target = try arguments.optionalString("target") {
-                try await server.format(template, addressing: target)
-            } else {
-                try await server.format(template)
+        guard let target = try arguments.optionalString("target") else {
+            return .init(FormatResult(value: try await server.format(template)))
+        }
+
+        let references = WireReferenceCodec.processLocal
+        let snapshot = try await server.snapshot()
+        let value: String?
+        switch try references.checkedKind(
+            of: target,
+            argument: "target",
+            refreshWith: "a hierarchy listing"
+        ) {
+        case .session:
+            let session = try references.resolve(
+                target,
+                among: snapshot.sessions,
+                argument: "target",
+                refreshWith: "list_sessions"
+            )
+            value = try await server.format(template, for: session)
+        case .windowLink:
+            let link = try references.resolve(
+                target,
+                among: snapshot.windowLinks,
+                argument: "target",
+                refreshWith: "list_windows"
+            )
+            value = try await server.format(template, for: link)
+        case .pane:
+            let pane = try references.resolve(
+                target,
+                among: snapshot.panes,
+                argument: "target",
+                refreshWith: "list_panes"
+            )
+            let links = snapshot.windowLinks.filter {
+                $0.windowID == pane.windowID && $0.incarnation == pane.incarnation
             }
+            let link: WindowLink
+            if let linkReference = try arguments.optionalString("window_link") {
+                link = try references.resolve(
+                    linkReference,
+                    among: links,
+                    argument: "window_link",
+                    refreshWith: "list_windows"
+                )
+            } else if links.count == 1, let only = links.first {
+                link = only
+            } else {
+                throw ToolError.refusedForSafety(
+                    "the pane has several window links; pass a linkRef from list_windows"
+                )
+            }
+            value = try await server.format(template, for: pane, through: link)
+        case .window:
+            throw ToolError.wrongArgumentType(
+                "target",
+                expected: "a session, window-link, or pane ref; use linkRef for a window context"
+            )
+        case .server:
+            throw ToolError.wrongArgumentType(
+                "target",
+                expected: "no target for a server format"
+            )
+        case .client:
+            throw ToolError.wrongArgumentType(
+                "target",
+                expected: "a session, window-link, or pane ref; client formats are not supported"
+            )
+        }
         return .init(FormatResult(value: value))
     }
 
@@ -176,11 +269,14 @@ extension TmuxTools {
         let encoded = records.map { JSONValue.encoding($0) }
         guard !fields.isEmpty || caller != nil else { return .array(encoded) }
         let wanted = Set(fields)
+        let references = Set(["ref", "windowRef", "linkRef"])
         return .array(
             encoded.map { record in
                 guard var members = record.objectValue else { return record }
                 if !wanted.isEmpty {
-                    members = members.filter { wanted.contains($0.key) }
+                    members = members.filter {
+                        wanted.contains($0.key) || references.contains($0.key)
+                    }
                 }
                 if let caller, record["id"]?.stringValue == caller {
                     members["isCaller"] = .bool(true)
@@ -229,7 +325,12 @@ struct MatchExpression {
 
 extension TmuxTools {
     func captureSince(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await pane(try arguments.string("pane"))
+        let pane = try WireReferenceCodec.processLocal.resolve(
+            try arguments.string("pane"),
+            among: try await server.panes(),
+            argument: "pane",
+            refreshWith: "list_panes"
+        )
         let limit = max(1, try arguments.integer("max_lines", or: 200))
         var cursor: CaptureCursor?
         if let text = try arguments.optionalString("cursor") {
@@ -253,6 +354,7 @@ extension TmuxTools {
         )
         return .init(
             CaptureSinceResult(
+                paneRef: WireReferenceCodec.processLocal.reference(to: pane),
                 pane: pane.id.rawValue,
                 lines: read.lines,
                 cursor: encoded,
@@ -300,8 +402,7 @@ extension TmuxTools {
     }
 
     func showEnvironment(_ arguments: Arguments) async throws -> ToolOutcome {
-        let scope = try environmentScope(arguments)
-        let variables = try await server.environment(scope)
+        let variables = try await server.environment(.global)
         return .listing(
             "variables",
             .array(
@@ -316,14 +417,7 @@ extension TmuxTools {
     }
 
     func showHooks(_ arguments: Arguments) async throws -> ToolOutcome {
-        var scope = HookScope.global
-        if try arguments.string("scope", or: "global") == "session" {
-            guard let target = try arguments.optionalString("target") else {
-                throw ToolError.missingArgument("target")
-            }
-            scope = .session(target)
-        }
-        let hooks = try await server.hooks(scope)
+        let hooks = try await server.hooks(.global)
         return .listing(
             "hooks",
             .array(
@@ -338,14 +432,4 @@ extension TmuxTools {
         )
     }
 
-    /// Reads the scope both environment tools take, and the session it needs.
-    func environmentScope(_ arguments: Arguments) throws -> EnvironmentScope {
-        guard try arguments.string("scope", or: "global") == "session" else {
-            return .global
-        }
-        guard let target = try arguments.optionalString("target") else {
-            throw ToolError.missingArgument("target")
-        }
-        return .session(target)
-    }
 }

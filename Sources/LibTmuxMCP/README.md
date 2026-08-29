@@ -26,17 +26,22 @@ let result = try await tools.call(ToolCall(name: "list_panes"))
 | Tool | What it does |
 | --- | --- |
 | `list_sessions` | Every session, optionally selected by what its panes run |
-| `list_windows` | Every window on the server |
+| `list_windows` | Every exact `$session:index` occurrence of each matching window |
 | `list_panes` | Every pane, optionally filtered |
 | `describe_filters` | The filterable fields, their types, and their aliases |
 | `read_format` | Evaluates a tmux format, reaching fields the listings do not carry |
-| `run_command` | Runs one tmux command and returns what tmux said |
+| `run_command` `run_commands` | Confirmed destructive-tier raw escape hatches with daemon, time, and output bounds |
 
 `describe_filters` is what makes the rest usable. A client that does not speak
 Swift learns the filterable vocabulary from it at runtime, instead of hard
 coding field names that a rename would break — the same `FilterExpr` vocabulary
 [`LibTmux`](../LibTmux) offers in-process, which is why it can travel to a
 client at all.
+
+Hierarchy rows carry opaque references for follow-up reads. They bind the row
+to the current tmux daemon and expire when the MCP process restarts; re-list to
+replace one that has expired. Exact window occurrences carry both a global
+`windowRef` and session-local `linkRef`.
 
 `TmuxTools` is written against `Server` and never mentions a mode, so it works
 the same directly or over a connection.

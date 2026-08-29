@@ -119,15 +119,27 @@ public struct TmuxTools: Sendable {
         return (.milliseconds(Int(enforced * 1000)), enforced)
     }
 
-    /// Resolves a pane id to the pane, so a stale id fails with the id in the
-    /// message rather than as an opaque tmux error three calls later.
-    func pane(_ id: String) async throws -> Pane {
-        guard let found = try await server.panes().first(where: { $0.id.rawValue == id }) else {
-            throw ToolError.refusedForSafety(
-                "no pane \(id) on this server. Call list_panes for what is there."
-            )
+    /// Resolves an MCP pane reference to the current typed model.
+    func pane(_ reference: String) async throws -> Pane {
+        try WireReferenceCodec.processLocal.resolve(
+            reference,
+            among: try await server.panes(),
+            argument: "pane",
+            refreshWith: "list_panes"
+        )
+    }
+
+    /// Resolves a server reference against the daemon answering now.
+    func serverIncarnation(_ reference: String) async throws -> ServerIncarnation {
+        guard let current = try await server.incarnation() else {
+            throw ToolError.refusedForSafety("the tmux server is not running")
         }
-        return found
+        return try WireReferenceCodec.processLocal.resolve(
+            reference,
+            among: [current],
+            argument: "server_ref",
+            refreshWith: "describe_server"
+        )
     }
 
     /// Resolves the exact window appearance used for pane-scoped waits.
@@ -140,35 +152,38 @@ public struct TmuxTools: Sendable {
         }
 
         if let requestedTarget {
-            guard let link = links.first(where: { $0.target == requestedTarget }) else {
-                throw ToolError.refusedForSafety(
-                    "pane \(pane.id) has no window link \(requestedTarget)"
-                )
-            }
-            return link
+            return try WireReferenceCodec.processLocal.resolve(
+                requestedTarget,
+                among: links,
+                argument: "window_link",
+                refreshWith: "list_windows"
+            )
         }
 
         if links.count == 1 { return links[0] }
-        let guardForCaller = await guardForCaller()
+        let guardForCaller = try await guardForCaller()
         if guardForCaller.isSameServer, let sessionID = guardForCaller.identity?.sessionID {
             let callerLinks = links.filter { $0.sessionID == sessionID }
             if callerLinks.count == 1 { return callerLinks[0] }
         }
         throw ToolError.refusedForSafety(
-            "pane \(pane.id) has several window links; pass window_link as $session:index"
+            "pane \(pane.id) has several window links; pass a linkRef from list_windows"
         )
     }
 
     /// Whether the caller is on this server. One tmux command, so it is only
     /// asked by the tools whose answer depends on it.
-    func guardForCaller() async -> CallerGuard {
+    func guardForCaller() async throws -> CallerGuard {
         guard caller != nil else {
             return CallerGuard(identity: nil, isSameServer: false)
         }
-        let processID = try? await server.serverProcessID()
+        return guardForCaller(serverProcessID: try await server.serverProcessID())
+    }
+
+    func guardForCaller(serverProcessID: Int?) -> CallerGuard {
         return CallerGuard(
             identity: caller,
-            isSameServer: caller?.isOn(serverProcessID: processID) ?? false
+            isSameServer: caller?.isOn(serverProcessID: serverProcessID) ?? false
         )
     }
 }
