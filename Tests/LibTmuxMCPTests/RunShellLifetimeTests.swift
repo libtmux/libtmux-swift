@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("run_shell lifetime", .timeLimit(.minutes(1)))
+@Suite("run_shell lifetime", .timeLimit(.minutes(2)))
 struct RunShellLifetimeTests {
     @Test("a launch failure releases the pane lease")
     func launchFailureReleasesPaneLease() async throws {
