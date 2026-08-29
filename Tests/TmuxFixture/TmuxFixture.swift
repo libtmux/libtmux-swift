@@ -49,48 +49,50 @@ public func withTmuxServer<Result>(
     socketFileName: String = "s",
     _ body: (Server) async throws -> Result
 ) async throws -> Result {
-    _ = sigpipeIgnoredOnce
-    let root = socketRoot.appendingPathComponent("\(UUID().uuidString.prefix(8))")
-    // The shared root may already be there from an earlier case; this case's own
-    // directory may not, so a collision fails here rather than putting two
-    // servers on one socket.
-    try FileManager.default.createDirectory(
-        at: socketRoot,
-        withIntermediateDirectories: true,
-        attributes: [.posixPermissions: 0o700]
-    )
-    try FileManager.default.createDirectory(
-        at: root,
-        withIntermediateDirectories: false,
-        attributes: [.posixPermissions: 0o700]
-    )
-    defer { try? FileManager.default.removeItem(at: root) }
+    try await withTmuxFixtureCapacity {
+        _ = sigpipeIgnoredOnce
+        let root = socketRoot.appendingPathComponent("\(UUID().uuidString.prefix(8))")
+        // The shared root may already be there from an earlier case; this case's own
+        // directory may not, so a collision fails here rather than putting two
+        // servers on one socket.
+        try FileManager.default.createDirectory(
+            at: socketRoot,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
 
-    let server = try Server(
-        socketPath: root.appendingPathComponent(socketFileName).path,
-        tmuxExecutable: tmuxExecutablePath()
-    )
-    _ = try await server.run([
-        // Before the first session, so even the bootstrap pane gets it.
-        //
-        // A pane otherwise runs whoever's shell the machine is configured
-        // with, which makes a test's speed and its behaviour someone's dotfiles
-        // rather than the library's. An interactive shell with a line editor
-        // also discards input typed before it has finished starting, so a case
-        // that sends keys races that startup and loses on a busy machine. `sh`
-        // starts promptly, reads what it is given, and is on both supported
-        // systems.
-        TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
-        TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-        reaperCommand(root: root),
-    ])
-    do {
-        let result = try await body(server)
-        _ = try await server.run(TmuxCommand("kill-server"))
-        return result
-    } catch {
-        _ = try? await server.run(TmuxCommand("kill-server"))
-        throw error
+        let server = try Server(
+            socketPath: root.appendingPathComponent(socketFileName).path,
+            tmuxExecutable: tmuxExecutablePath()
+        )
+        _ = try await server.run([
+            // Before the first session, so even the bootstrap pane gets it.
+            //
+            // A pane otherwise runs whoever's shell the machine is configured
+            // with, which makes a test's speed and its behaviour someone's dotfiles
+            // rather than the library's. An interactive shell with a line editor
+            // also discards input typed before it has finished starting, so a case
+            // that sends keys races that startup and loses on a busy machine. `sh`
+            // starts promptly, reads what it is given, and is on both supported
+            // systems.
+            TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+            TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
+            reaperCommand(root: root),
+        ])
+        do {
+            let result = try await body(server)
+            _ = try await server.run(TmuxCommand("kill-server"))
+            return result
+        } catch {
+            _ = try? await server.run(TmuxCommand("kill-server"))
+            throw error
+        }
     }
 }
 
@@ -136,51 +138,53 @@ public struct NamedSocketRootMissing: Error, CustomStringConvertible {
 public func withNamedTmuxServer<Result>(
     _ body: (Server) async throws -> Result
 ) async throws -> Result {
-    _ = sigpipeIgnoredOnce
-    guard let root = namedSocketRoot, namedSocketsAvailable else {
-        // Reached only if a case forgot its `.enabled(if:)`; better to say so
-        // than to put a socket in the machine-wide directory.
-        throw NamedSocketRootMissing()
-    }
-    try FileManager.default.createDirectory(
-        at: root,
-        withIntermediateDirectories: true,
-        attributes: [.posixPermissions: 0o700]
-    )
-    let name = "libtmux-swift-\(UUID().uuidString.prefix(8))"
-    // tmux does not put the socket in `TMUX_TMPDIR` itself: it creates a
-    // `tmux-<uid>` directory inside it and puts the socket there, so that one
-    // directory can be shared between users without their sockets colliding.
-    // The reaper has to be told the path tmux will actually use, or it removes
-    // nothing and every case leaves its socket behind.
-    let socket =
-        root
-        .appendingPathComponent("tmux-\(getuid())")
-        .appendingPathComponent(name)
+    try await withTmuxFixtureCapacity {
+        _ = sigpipeIgnoredOnce
+        guard let root = namedSocketRoot, namedSocketsAvailable else {
+            // Reached only if a case forgot its `.enabled(if:)`; better to say so
+            // than to put a socket in the machine-wide directory.
+            throw NamedSocketRootMissing()
+        }
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let name = "libtmux-swift-\(UUID().uuidString.prefix(8))"
+        // tmux does not put the socket in `TMUX_TMPDIR` itself: it creates a
+        // `tmux-<uid>` directory inside it and puts the socket there, so that one
+        // directory can be shared between users without their sockets colliding.
+        // The reaper has to be told the path tmux will actually use, or it removes
+        // nothing and every case leaves its socket behind.
+        let socket =
+            root
+            .appendingPathComponent("tmux-\(getuid())")
+            .appendingPathComponent(name)
 
-    // The reaper covers a run that is killed outright; it cannot cover the
-    // ordinary exit, because `kill-server` takes tmux's background jobs with
-    // it before the job can remove anything. tmux does not reliably unlink a
-    // socket on its way out, so the ordinary path is cleaned here — the same
-    // division of labour the path-addressed fixture uses for its directory.
-    defer { try? FileManager.default.removeItem(at: socket) }
+        // The reaper covers a run that is killed outright; it cannot cover the
+        // ordinary exit, because `kill-server` takes tmux's background jobs with
+        // it before the job can remove anything. tmux does not reliably unlink a
+        // socket on its way out, so the ordinary path is cleaned here — the same
+        // division of labour the path-addressed fixture uses for its directory.
+        defer { try? FileManager.default.removeItem(at: socket) }
 
-    let server = try Server(
-        socketName: name,
-        tmuxExecutable: tmuxExecutablePath()
-    )
-    _ = try await server.run([
-        TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
-        TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-        reaperCommand(root: socket),
-    ])
-    do {
-        let result = try await body(server)
-        _ = try await server.run(TmuxCommand("kill-server"))
-        return result
-    } catch {
-        _ = try? await server.run(TmuxCommand("kill-server"))
-        throw error
+        let server = try Server(
+            socketName: name,
+            tmuxExecutable: tmuxExecutablePath()
+        )
+        _ = try await server.run([
+            TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+            TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
+            reaperCommand(root: socket),
+        ])
+        do {
+            let result = try await body(server)
+            _ = try await server.run(TmuxCommand("kill-server"))
+            return result
+        } catch {
+            _ = try? await server.run(TmuxCommand("kill-server"))
+            throw error
+        }
     }
 }
 
