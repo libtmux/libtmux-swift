@@ -12,7 +12,7 @@ One dependency ([swift-subprocess][]), and the only product most callers need.
 ```swift
 import LibTmux
 
-let server = try Server(socketPath: "/tmp/work.sock")
+let server = try Server(socketPath: "/tmp/libtmux-swift-dev/work.sock")
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
