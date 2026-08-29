@@ -479,6 +479,7 @@ struct RecordedCaptureRequest: Sendable {
 actor CaptureRecordingTransport: OutputLimitedProcessTransport {
     private let underlying = SubprocessTransport()
     private(set) var captureRequests: [RecordedCaptureRequest] = []
+    private var captureActions: [Int: @Sendable () async throws(TmuxError) -> Void] = [:]
     private var nextCaptureAction: (@Sendable () async throws(TmuxError) -> Void)?
     private var afterCaptureAction: (@Sendable () async throws(TmuxError) -> Void)?
 
@@ -490,6 +491,14 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
         _ action: @escaping @Sendable () async throws(TmuxError) -> Void
     ) {
         nextCaptureAction = action
+    }
+
+    func beforeCapture(
+        _ ordinal: Int,
+        _ action: @escaping @Sendable () async throws(TmuxError) -> Void
+    ) {
+        precondition(ordinal > 0)
+        captureActions[ordinal] = action
     }
 
     func afterEveryCapture(
@@ -525,6 +534,9 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
                     perStreamOutputLimit: perStreamOutputLimit
                 )
             )
+            if let action = captureActions[captureRequests.count] {
+                try await action()
+            }
             if let nextCaptureAction {
                 self.nextCaptureAction = nil
                 try await nextCaptureAction()

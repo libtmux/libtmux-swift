@@ -131,6 +131,155 @@ struct WatchTests {
         }
     }
 
+    @Test("an entry match wins before catch-up")
+    func entryMatchWinsBeforeCatchUp() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            let marker = "entry-match-\(UUID().uuidString)"
+            try await fixture.run("printf '\(marker)\\n'", in: pane)
+            #expect(
+                try await waitUntil {
+                    try await fixture.capture(pane).contains(marker)
+                }
+            )
+
+            let transport = CaptureRecordingTransport()
+            await transport.beforeCapture(3) { () async throws(TmuxError) in
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    throw .cancelled
+                }
+            }
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let result = try await server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("^\(marker)$")],
+                timeout: .milliseconds(100)
+            )
+
+            #expect(result.outcome == .matched)
+            #expect(result.matchedAtEntry)
+            #expect(!result.sawNewOutput)
+            let requests = await transport.captureRequests
+            #expect(requests.count == 2)
+        }
+    }
+
+    @Test("a matcher refusal wins an expired scan")
+    func matcherRefusalWinsExpiredScan() {
+        let refusal = OutputWaitError.matching(
+            .workLimitExceeded(maximum: 20)
+        )
+        let terminal = waitScanTerminal(
+            output: nil,
+            failure: refusal,
+            deadlineReached: true
+        )
+        #expect(terminal == .failed(refusal))
+    }
+
+    @Test("an answer selected before expiry survives a late operation handoff")
+    func selectedAnswerSurvivesLateOperationHandoff() async {
+        let answer = OutputWait(
+            outcome: .matched,
+            sawNewOutput: true,
+            tail: ["selected-before-expiry"],
+            seconds: 0
+        )
+        let selectedAt = ContinuousClock.now
+        let deadline = selectedAt.advanced(by: .milliseconds(100))
+        let result = await raceWaitOperation(
+            until: deadline,
+            classifyingCompletionWith: { _ in .causal(selectedAt: selectedAt) }
+        ) {
+            try? await Task.sleep(for: .seconds(1))
+            return answer
+        }
+
+        let completed: OutputWait?
+        if case let .completed(value) = result {
+            completed = value
+        } else {
+            completed = nil
+        }
+        #expect(completed == answer)
+    }
+
+    @Test("caller cancellation wins an operation completion")
+    func callerCancellationWinsOperationCompletion() async {
+        let answer = OutputWait(
+            outcome: .matched,
+            sawNewOutput: true,
+            tail: ["completed-after-cancellation"],
+            seconds: 0
+        )
+
+        for causal in [false, true] {
+            let selectedAt = ContinuousClock.now
+            let deadline = selectedAt.advanced(by: .seconds(5))
+            let (started, startWitness) = AsyncStream.makeStream(of: Void.self)
+            var startIterator = started.makeAsyncIterator()
+            let task = Task {
+                await raceWaitOperation(
+                    until: deadline,
+                    classifyingCompletionWith: { _ in
+                        causal ? .causal(selectedAt: selectedAt) : .ordinary
+                    }
+                ) {
+                    startWitness.yield()
+                    startWitness.finish()
+                    while !Task.isCancelled { await Task.yield() }
+                    return answer
+                }
+            }
+
+            _ = await startIterator.next()
+            task.cancel()
+            let result = await task.value
+            guard case .cancelled = result else {
+                Issue.record("caller cancellation lost; causal: \(causal)")
+                continue
+            }
+        }
+    }
+
+    @Test("caller cancellation wins an operation failure")
+    func callerCancellationWinsOperationFailure() async {
+        let failure = OutputWaitError.matching(
+            .workLimitExceeded(maximum: 20)
+        )
+        let operationStarted = WaitTestGate()
+        let failureReady = WaitTestGate()
+        let failureRelease = WaitTestGate()
+        let task = Task<WaitDeadlineRace<OutputWait>, Never> {
+            await raceWaitOperation(
+                until: ContinuousClock.now.advanced(by: .milliseconds(100)),
+                classifyingCompletionWith: { _ in .ordinary }
+            ) {
+                await operationStarted.open()
+                while !Task.isCancelled { await Task.yield() }
+                await failureReady.open()
+                await failureRelease.wait()
+                throw failure
+            }
+        }
+
+        await operationStarted.wait()
+        await failureReady.wait()
+        task.cancel()
+        await failureRelease.open()
+        let result = await task.value
+        guard case .cancelled = result else {
+            Issue.record("caller cancellation lost to an operation failure")
+            return
+        }
+    }
+
     @Test("a bounded forward scan finds an early line in a large burst")
     func earlyBurstMatchSurvivesBoundedCapture() async throws {
         try await withTmuxServer { fixture in
@@ -694,5 +843,22 @@ struct WatchTests {
                 ControlNotification(name: "output", arguments: "%0 hello")
             ) == nil
         )
+    }
+}
+
+private actor WaitTestGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let current = waiters
+        waiters.removeAll()
+        for waiter in current { waiter.resume() }
     }
 }

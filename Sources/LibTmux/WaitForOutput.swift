@@ -145,6 +145,20 @@ extension Server {
             stops: stops,
             budget: matchBudget
         )
+        // Answered up front rather than inferred from a timeout: "already on
+        // screen" and "never happened" look identical afterwards, and only one
+        // of them is fixed by waiting longer.
+        if let entryMatch, !requireFresh {
+            return OutputWait(
+                outcome: entryMatch.outcome,
+                matched: entryMatch.matched,
+                matchedIndex: entryMatch.matchedIndex,
+                sawNewOutput: false,
+                matchedAtEntry: true,
+                tail: Array(entryRows.suffix(keptTail)),
+                seconds: Self.elapsed(since: started)
+            )
+        }
         let wasAlreadyShowing = entryMatch != nil
 
         let answer: OutputWaitAnswer = { arrived, tail, outputEvent in
@@ -200,7 +214,10 @@ extension Server {
         }
 
         let entryCursor = incremental.cursor
-        let caughtAtEntryRace = await raceWaitOperation(until: deadline) {
+        let caughtAtEntryRace = await raceWaitOperation(
+            until: deadline,
+            classifyingCompletionWith: { $0.operationCompletion }
+        ) {
             try await self.retryingStaleOutputRead(until: deadline) {
                 try await self.scanWaitOutput(
                     in: pane,
@@ -233,20 +250,6 @@ extension Server {
         var newest = caughtAtEntry.tail
         if let output = caughtAtEntry.output { return output }
 
-        // Answered up front rather than inferred from a timeout: "already on
-        // screen" and "never happened" look identical afterwards, and only one
-        // of them is fixed by waiting longer.
-        if let entryMatch, !requireFresh {
-            return OutputWait(
-                outcome: entryMatch.outcome,
-                matched: entryMatch.matched,
-                matchedIndex: entryMatch.matchedIndex,
-                sawNewOutput: false,
-                matchedAtEntry: true,
-                tail: Array(entryRows.suffix(keptTail)),
-                seconds: Self.elapsed(since: started)
-            )
-        }
         if caughtAtEntry.deadlineReached {
             return OutputWait(
                 outcome: .timedOut,
@@ -410,7 +413,7 @@ extension Server {
                         while !Task.isCancelled {
                             try? await Task.sleep(for: .seconds(1))
                             guard !Task.isCancelled else { return }
-                            let currentRace = await server.raceWaitOperation(until: deadline) {
+                            let currentRace = await raceWaitOperation(until: deadline) {
                                 try await server.waitAttachment(for: pane)
                             }
                             switch currentRace {
@@ -450,7 +453,10 @@ extension Server {
                             let scanTail = newest
                             let scanSawOutput = sawNewOutput
                             let scanOutputEvent = wake == .output
-                            let scanRace = await server.raceWaitOperation(until: deadline) {
+                            let scanRace = await raceWaitOperation(
+                                until: deadline,
+                                classifyingCompletionWith: { $0.operationCompletion }
+                            ) {
                                 try await server.scanWaitOutput(
                                     in: pane,
                                     since: scanCursor,
@@ -476,7 +482,8 @@ extension Server {
                                 }
                                 if scan.hasMore { await doorbell.ring(.scan) }
                             case let .failed(error):
-                                let currentRace = await owner.raceWaitOperation(until: deadline) {
+                                if case .matching = error { throw error }
+                                let currentRace = await raceWaitOperation(until: deadline) {
                                     try await owner.waitAttachment(for: pane)
                                 }
                                 switch currentRace {
@@ -501,7 +508,7 @@ extension Server {
                         switch wake {
                         case .output, .scan: continue
                         case .inspect:
-                            let currentRace = await owner.raceWaitOperation(until: deadline) {
+                            let currentRace = await raceWaitOperation(until: deadline) {
                                 try await owner.waitAttachment(for: pane)
                             }
                             switch currentRace {
@@ -518,7 +525,7 @@ extension Server {
                                 throw OutputWaitError.tmux(.cancelled)
                             }
                         case .reattach, .connectionClosed:
-                            let currentRace = await owner.raceWaitOperation(until: deadline) {
+                            let currentRace = await raceWaitOperation(until: deadline) {
                                 try await owner.waitAttachment(for: pane)
                             }
                             switch currentRace {
@@ -589,47 +596,6 @@ extension Server {
         return PaneAttachment(sessionID: sessionID, windowID: windowID)
     }
 
-    private func raceWaitOperation<Value: Sendable>(
-        until deadline: ContinuousClock.Instant,
-        _ operation: @escaping @Sendable () async throws -> Value
-    ) async -> WaitDeadlineRace<Value> {
-        if Task.isCancelled { return .cancelled }
-        let now = ContinuousClock.now
-        guard now < deadline else { return .timedOut }
-        let remaining = now.duration(to: deadline)
-        return await withTaskGroup(of: WaitDeadlineRace<Value>.self) { group in
-            group.addTask {
-                do {
-                    let value = try await operation()
-                    if Task.isCancelled { return .cancelled }
-                    return ContinuousClock.now < deadline ? .completed(value) : .timedOut
-                } catch let error as OutputWaitError {
-                    if case .tmux(.staleServerValue) = error,
-                        ContinuousClock.now >= deadline
-                    {
-                        return .timedOut
-                    }
-                    return .failed(error)
-                } catch {
-                    let mapped = normalizedTmuxError(error)
-                    if case .staleServerValue = mapped,
-                        ContinuousClock.now >= deadline
-                    {
-                        return .timedOut
-                    }
-                    return .failed(.tmux(mapped))
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(for: remaining)
-                return Task.isCancelled ? .cancelled : .timedOut
-            }
-            let first = await group.next() ?? .cancelled
-            group.cancelAll()
-            return first
-        }
-    }
-
     private func scanWaitOutput(
         in pane: Pane,
         since cursor: CaptureCursor,
@@ -643,6 +609,7 @@ extension Server {
         var tail = newest
         var sawOutput = sawNewOutput
         var output: OutputWait?
+        var answerSelectedAt: ContinuousClock.Instant?
         var answerError: OutputWaitError?
         var deadlineReached = false
         let scan: ForwardCaptureResult
@@ -663,6 +630,10 @@ extension Server {
                 tail = Array((tail + arrived).suffix(tailLimit))
                 do {
                     output = try answer(arrived, tail, false)
+                    if output != nil {
+                        let selectedAt = ContinuousClock.now
+                        if selectedAt < deadline { answerSelectedAt = selectedAt }
+                    }
                 } catch let error as OutputWaitError {
                     answerError = error
                 } catch {
@@ -679,15 +650,38 @@ extension Server {
                 tail: tail,
                 sawNewOutput: sawOutput,
                 output: nil,
+                answerSelectedAt: nil,
                 hasMore: false,
                 deadlineReached: true
             )
         }
-        if deadlineReached || ContinuousClock.now >= deadline {
-            return timedOut()
+        func terminal(failure: OutputWaitError? = nil) -> WaitScanTerminal {
+            waitScanTerminal(
+                output: answerSelectedAt == nil ? nil : output,
+                failure: failure,
+                deadlineReached: deadlineReached || ContinuousClock.now >= deadline
+            )
         }
-        if let answerError { throw answerError }
-        if scan.linesMissed { throw .tmux(.outputContinuityLost) }
+        func answered(_ output: OutputWait) -> WaitCaptureScan {
+            WaitCaptureScan(
+                cursor: scan.cursor,
+                tail: tail,
+                sawNewOutput: sawOutput,
+                output: output,
+                answerSelectedAt: answerSelectedAt,
+                hasMore: scan.hasMore,
+                deadlineReached: false
+            )
+        }
+        let forwardFailure =
+            answerError
+            ?? (scan.linesMissed ? .tmux(.outputContinuityLost) : nil)
+        switch terminal(failure: forwardFailure) {
+        case let .failed(error): throw error
+        case let .answered(output): return answered(output)
+        case .timedOut: return timedOut()
+        case .pending: break
+        }
         if scan.restarted {
             let arrived: [String]
             do {
@@ -698,17 +692,48 @@ extension Server {
             guard ContinuousClock.now < deadline else { return timedOut() }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
-            output = try answer(arrived, tail, false)
+            do {
+                output = try answer(arrived, tail, false)
+                if output != nil {
+                    let selectedAt = ContinuousClock.now
+                    if selectedAt < deadline { answerSelectedAt = selectedAt }
+                }
+            } catch {
+                answerError = error
+            }
+            switch terminal(failure: answerError) {
+            case let .failed(error): throw error
+            case let .answered(output): return answered(output)
+            case .timedOut: return timedOut()
+            case .pending: break
+            }
         }
         if outputEvent {
             sawOutput = true
-            if output == nil { output = try answer([], tail, true) }
+            if output == nil {
+                do {
+                    output = try answer([], tail, true)
+                    if output != nil {
+                        let selectedAt = ContinuousClock.now
+                        if selectedAt < deadline { answerSelectedAt = selectedAt }
+                    }
+                } catch {
+                    answerError = error
+                }
+            }
+            switch terminal(failure: answerError) {
+            case let .failed(error): throw error
+            case let .answered(output): return answered(output)
+            case .timedOut: return timedOut()
+            case .pending: break
+            }
         }
         return WaitCaptureScan(
             cursor: scan.cursor,
             tail: tail,
             sawNewOutput: sawOutput,
             output: output,
+            answerSelectedAt: answerSelectedAt,
             hasMore: scan.hasMore,
             deadlineReached: false
         )
@@ -777,11 +802,103 @@ private enum OutputWaitCycle: Sendable {
     case finished(OutputWait.Outcome, [String], Bool)
 }
 
-private enum WaitDeadlineRace<Value: Sendable>: Sendable {
+enum WaitDeadlineRace<Value: Sendable>: Sendable {
     case completed(Value)
     case failed(OutputWaitError)
     case timedOut
     case cancelled
+}
+
+enum WaitOperationCompletion: Sendable {
+    case ordinary
+    case causal(selectedAt: ContinuousClock.Instant)
+}
+
+func raceWaitOperation<Value: Sendable>(
+    until deadline: ContinuousClock.Instant,
+    classifyingCompletionWith classify:
+        @escaping @Sendable (Value) -> WaitOperationCompletion = { _ in .ordinary },
+    _ operation: @escaping @Sendable () async throws -> Value
+) async -> WaitDeadlineRace<Value> {
+    if Task.isCancelled { return .cancelled }
+    let now = ContinuousClock.now
+    guard now < deadline else { return .timedOut }
+    let remaining = now.duration(to: deadline)
+    return await withTaskGroup(of: WaitDeadlineRace<Value>.self) { group in
+        group.addTask {
+            await completeWaitOperation(
+                until: deadline,
+                classifyingCompletionWith: classify,
+                operation
+            )
+        }
+        group.addTask {
+            try? await Task.sleep(for: remaining)
+            return Task.isCancelled ? .cancelled : .timedOut
+        }
+        let first = await group.next() ?? .cancelled
+        group.cancelAll()
+        if Task.isCancelled { return .cancelled }
+        guard case .timedOut = first else { return first }
+        while let late = await group.next() {
+            if Task.isCancelled { return .cancelled }
+            switch late {
+            case .completed:
+                return late
+            case let .failed(error):
+                switch error {
+                case .tmux(.cancelled), .tmux(.staleServerValue): continue
+                default: return late
+                }
+            case .timedOut, .cancelled:
+                continue
+            }
+        }
+        return Task.isCancelled ? .cancelled : first
+    }
+}
+
+private func completeWaitOperation<Value: Sendable>(
+    until deadline: ContinuousClock.Instant,
+    classifyingCompletionWith classify: @Sendable (Value) -> WaitOperationCompletion,
+    _ operation: @Sendable () async throws -> Value
+) async -> WaitDeadlineRace<Value> {
+    do {
+        let value = try await operation()
+        let arrivedBeforeDeadline = waitOperationCompletionArrivedBeforeDeadline(
+            classify(value),
+            handedOffAt: ContinuousClock.now,
+            deadline: deadline
+        )
+        if arrivedBeforeDeadline { return .completed(value) }
+        return Task.isCancelled ? .cancelled : .timedOut
+    } catch let error as OutputWaitError {
+        if case .tmux(.staleServerValue) = error,
+            ContinuousClock.now >= deadline
+        {
+            return .timedOut
+        }
+        return .failed(error)
+    } catch {
+        let mapped = normalizedTmuxError(error)
+        if case .staleServerValue = mapped,
+            ContinuousClock.now >= deadline
+        {
+            return .timedOut
+        }
+        return .failed(.tmux(mapped))
+    }
+}
+
+private func waitOperationCompletionArrivedBeforeDeadline(
+    _ completion: WaitOperationCompletion,
+    handedOffAt: ContinuousClock.Instant,
+    deadline: ContinuousClock.Instant
+) -> Bool {
+    switch completion {
+    case .ordinary: handedOffAt < deadline
+    case let .causal(selectedAt): selectedAt < deadline
+    }
 }
 
 private struct WaitCaptureScan: Sendable {
@@ -789,8 +906,32 @@ private struct WaitCaptureScan: Sendable {
     let tail: [String]
     let sawNewOutput: Bool
     let output: OutputWait?
+    let answerSelectedAt: ContinuousClock.Instant?
     let hasMore: Bool
     let deadlineReached: Bool
+
+    var operationCompletion: WaitOperationCompletion {
+        guard let answerSelectedAt else { return .ordinary }
+        return .causal(selectedAt: answerSelectedAt)
+    }
+}
+
+enum WaitScanTerminal: Sendable, Hashable {
+    case failed(OutputWaitError)
+    case answered(OutputWait)
+    case timedOut
+    case pending
+}
+
+func waitScanTerminal(
+    output: OutputWait?,
+    failure: OutputWaitError?,
+    deadlineReached: Bool
+) -> WaitScanTerminal {
+    if let failure { return .failed(failure) }
+    if let output { return .answered(output) }
+    if deadlineReached { return .timedOut }
+    return .pending
 }
 
 private typealias OutputWaitAnswer =
