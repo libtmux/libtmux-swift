@@ -406,7 +406,7 @@ extension TmuxTools {
                             return false
                         }
                         guard
-                            try await server.formatGlobal("#{pane_dead}", for: pane) != "1"
+                            try await server.formatGlobal("#{pane_dead}", for: pane) == "0"
                         else { return false }
                         let capture = try await server.captureBounded(
                             pane,

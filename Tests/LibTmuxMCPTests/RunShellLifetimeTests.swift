@@ -221,6 +221,43 @@ struct RunShellLifetimeTests {
         }
     }
 
+    @Test("removing a pane ends its pending cleanup")
+    func paneRemovalEndsPendingCleanup() async throws {
+        try await withTmuxServer { fixture in
+            let transport = FailingRunShellWaitTransport(failures: 1)
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try #require(try await server.panes().first)
+            _ = try await fixture.split(pane)
+            let tools = TmuxTools(server: server, tier: .mutating)
+
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "wait failed"))) {
+                try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(
+                                WireReferenceCodec.processLocal.reference(to: pane)
+                            ),
+                            "command": .string("\(server.shellInvocation) wait-for never"),
+                        ])
+                    )
+                )
+            }
+            #expect(await tools.paneRuns.isHeld(pane))
+
+            try await fixture.kill(pane)
+            #expect(
+                try await waitUntil(within: .seconds(2)) {
+                    !(await tools.paneRuns.isHeld(pane))
+                }
+            )
+        }
+    }
+
     @Test("server departure ends pending cleanup")
     func serverDepartureEndsPendingCleanup() async throws {
         try await withTmuxServer { fixture in
