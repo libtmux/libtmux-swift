@@ -145,54 +145,64 @@ extension Snapshot {
     public func sessions(
         _ quantifier: RelationQuantifier,
         ofPanes expression: FilterExpr<Pane>
-    ) -> [Session] {
-        fromIncarnation(sessions).filter { session in
+    ) throws(RegexMatchError) -> [Session] {
+        var result: [Session] = []
+        for session in fromIncarnation(sessions) {
             let related = panes(of: session)
-            return quantifier.holds(
-                over: related.count(where: expression.matches),
-                of: related.count
-            )
+            let matches = try related.count(where: expression.matches)
+            if quantifier.holds(over: matches, of: related.count) {
+                result.append(session)
+            }
         }
+        return result
     }
 
     /// Sessions whose windows satisfy a quantified filter.
     public func sessions(
         _ quantifier: RelationQuantifier,
         ofWindows expression: FilterExpr<Window>
-    ) -> [Session] {
-        fromIncarnation(sessions).filter { session in
+    ) throws(RegexMatchError) -> [Session] {
+        var result: [Session] = []
+        for session in fromIncarnation(sessions) {
             let related = windows(of: session)
-            return quantifier.holds(
-                over: related.count(where: expression.matches),
-                of: related.count
-            )
+            let matches = try related.count(where: expression.matches)
+            if quantifier.holds(over: matches, of: related.count) {
+                result.append(session)
+            }
         }
+        return result
     }
 
     /// Windows whose panes satisfy a quantified filter.
     public func windows(
         _ quantifier: RelationQuantifier,
         ofPanes expression: FilterExpr<Pane>
-    ) -> [Window] {
-        fromIncarnation(windows).filter { window in
+    ) throws(RegexMatchError) -> [Window] {
+        var result: [Window] = []
+        for window in fromIncarnation(windows) {
             let related = panes(of: window)
-            return quantifier.holds(
-                over: related.count(where: expression.matches),
-                of: related.count
-            )
+            let matches = try related.count(where: expression.matches)
+            if quantifier.holds(over: matches, of: related.count) {
+                result.append(window)
+            }
         }
+        return result
     }
 
     /// Panes whose window matches — the to-one direction, where a quantifier
     /// would say nothing.
-    public func panes(inWindow expression: FilterExpr<Window>) -> [Pane] {
-        let matching = Set(fromIncarnation(windows).filter(expression).map(\.id))
+    public func panes(
+        inWindow expression: FilterExpr<Window>
+    ) throws(RegexMatchError) -> [Pane] {
+        let matching = Set(try fromIncarnation(windows).filter(expression).map(\.id))
         return fromIncarnation(panes).filter { matching.contains($0.windowID) }
     }
 
     /// Panes whose session matches.
-    public func panes(inSession expression: FilterExpr<Session>) -> [Pane] {
-        let matching = Set(fromIncarnation(sessions).filter(expression).map(\.id))
+    public func panes(
+        inSession expression: FilterExpr<Session>
+    ) throws(RegexMatchError) -> [Pane] {
+        let matching = Set(try fromIncarnation(sessions).filter(expression).map(\.id))
         let windowIDs = Set(
             fromIncarnation(windowLinks).lazy.filter { matching.contains($0.sessionID) }.map(
                 \.windowID
@@ -202,8 +212,10 @@ extension Snapshot {
     }
 
     /// Windows whose session matches.
-    public func windows(inSession expression: FilterExpr<Session>) -> [Window] {
-        let matching = Set(fromIncarnation(sessions).filter(expression).map(\.id))
+    public func windows(
+        inSession expression: FilterExpr<Session>
+    ) throws(RegexMatchError) -> [Window] {
+        let matching = Set(try fromIncarnation(sessions).filter(expression).map(\.id))
         let linked = Set(
             fromIncarnation(windowLinks).lazy.filter { matching.contains($0.sessionID) }.map(
                 \.windowID
@@ -214,8 +226,12 @@ extension Snapshot {
 }
 
 extension Sequence {
-    fileprivate func count(where predicate: (Element) -> Bool) -> Int {
-        reduce(0) { predicate($1) ? $0 + 1 : $0 }
+    fileprivate func count(
+        where predicate: (Element) throws(RegexMatchError) -> Bool
+    ) throws(RegexMatchError) -> Int {
+        var result = 0
+        for element in self where try predicate(element) { result += 1 }
+        return result
     }
 }
 
@@ -239,17 +255,23 @@ public struct RelationQuery<Related: Filterable>: Sendable, Hashable, Codable {
 
 extension Snapshot {
     /// Sessions whose panes satisfy a quantified filter.
-    public func sessions(ofPanes query: RelationQuery<Pane>) -> [Session] {
-        sessions(query.quantifier, ofPanes: query.expression)
+    public func sessions(
+        ofPanes query: RelationQuery<Pane>
+    ) throws(RegexMatchError) -> [Session] {
+        try sessions(query.quantifier, ofPanes: query.expression)
     }
 
     /// Sessions whose windows satisfy a quantified filter.
-    public func sessions(ofWindows query: RelationQuery<Window>) -> [Session] {
-        sessions(query.quantifier, ofWindows: query.expression)
+    public func sessions(
+        ofWindows query: RelationQuery<Window>
+    ) throws(RegexMatchError) -> [Session] {
+        try sessions(query.quantifier, ofWindows: query.expression)
     }
 
     /// Windows whose panes satisfy a quantified filter.
-    public func windows(ofPanes query: RelationQuery<Pane>) -> [Window] {
-        windows(query.quantifier, ofPanes: query.expression)
+    public func windows(
+        ofPanes query: RelationQuery<Pane>
+    ) throws(RegexMatchError) -> [Window] {
+        try windows(query.quantifier, ofPanes: query.expression)
     }
 }

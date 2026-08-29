@@ -84,12 +84,12 @@ struct FilterExprTests {
         let paneID = try FilterExpr<Pane>.where(\.id, .equals(pane.id))
         let paneIDs = try FilterExpr<Pane>.where(\.id, .isIn([pane.id]))
 
-        #expect(sessionID.matches(session))
-        #expect(clientSessionID.matches(client))
-        #expect(windowID.matches(window))
-        #expect(paneWindowID.matches(pane))
-        #expect(paneID.matches(pane))
-        #expect(paneIDs.matches(pane))
+        #expect(try sessionID.matches(session))
+        #expect(try clientSessionID.matches(client))
+        #expect(try windowID.matches(window))
+        #expect(try paneWindowID.matches(pane))
+        #expect(try paneID.matches(pane))
+        #expect(try paneIDs.matches(pane))
     }
 
     @Test("case-insensitive matching is a distinct operator, not a default")
@@ -105,19 +105,27 @@ struct FilterExprTests {
 
     @Test("a regular expression travels as pattern and flags")
     func regularExpressionTravelsAsData() throws {
+        let pattern = try RegexPattern(
+            "^n?vim$",
+            options: [.caseInsensitive]
+        )
         let expression = try FilterExpr<Pane>.where(
             \.currentCommand,
-            .matches("^n?vim$", caseInsensitive: true)
+            .matches(pattern)
         )
         guard case let .comparison(_, operation) = expression,
-            case let .matches(pattern, caseInsensitive) = operation
+            case let .matches(traveled) = operation
         else {
             Issue.record("expected a regular-expression comparison")
             return
         }
-        #expect(pattern == "^n?vim$")
-        #expect(caseInsensitive)
-        #expect(panes.filter(expression).map(\.id) == ["%0", "%2", "%3"])
+        #expect(traveled == pattern)
+        let decoded = try JSONDecoder().decode(
+            FilterExpr<Pane>.self,
+            from: JSONEncoder().encode(expression)
+        )
+        #expect(decoded == expression)
+        #expect(try panes.filter(decoded).map(\.id) == ["%0", "%2", "%3"])
     }
 
     @Test("conjunction, disjunction, and negation compose")
@@ -125,9 +133,9 @@ struct FilterExprTests {
         let active = try FilterExpr<Pane>.where(\.isActive, .equals(true))
         let vimish = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
 
-        #expect(panes.filter(.and([active, vimish])).map(\.id) == ["%0"])
-        #expect(panes.filter(.or([active, vimish])).map(\.id) == ["%0", "%2"])
-        #expect(panes.filter(.not(vimish)).map(\.id) == ["%1", "%3"])
+        #expect(try panes.filter(.and([active, vimish])).map(\.id) == ["%0"])
+        #expect(try panes.filter(.or([active, vimish])).map(\.id) == ["%0", "%2"])
+        #expect(try panes.filter(.not(vimish)).map(\.id) == ["%1", "%3"])
     }
 
     @Test("an expression round-trips through JSON without a key path")
@@ -139,7 +147,7 @@ struct FilterExprTests {
         let data = try JSONEncoder().encode(expression)
         let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
         #expect(decoded == expression)
-        #expect(panes.filter(decoded).map(\.id) == ["%2"])
+        #expect(try panes.filter(decoded).map(\.id) == ["%2"])
     }
 
     @Test("validation rejects dynamically impossible comparisons")
@@ -147,10 +155,6 @@ struct FilterExprTests {
         let expressions: [FilterExpr<Pane>] = [
             .comparison(field: "pane.index", operation: .contains("3")),
             .comparison(field: "pane.active", operation: .equals(.text("true"))),
-            .comparison(
-                field: "pane.command",
-                operation: .matches(pattern: "[", caseInsensitive: false)
-            ),
         ]
 
         for expression in expressions {
@@ -165,10 +169,10 @@ struct FilterExprTests {
         let one = try panes.exactlyOne(FilterExpr.where(\.currentCommand, .equals("zsh")))
         #expect(one.id == "%1")
 
-        #expect(throws: CardinalityError.noMatch) {
+        #expect(throws: FilterSelectionError.cardinality(.noMatch)) {
             try panes.exactlyOne(FilterExpr.where(\.currentCommand, .equals("emacs")))
         }
-        #expect(throws: CardinalityError.multipleMatches(count: 2)) {
+        #expect(throws: FilterSelectionError.cardinality(.multipleMatches(count: 2))) {
             try panes.exactlyOne(FilterExpr.where(\.currentCommand, .isIn(["nvim", "vim"])))
         }
     }
@@ -176,8 +180,26 @@ struct FilterExprTests {
     @Test("oneOrNil treats absence as an answer and ambiguity as an error")
     func oneOrNilOnlyThrowsOnAmbiguity() throws {
         #expect(try panes.oneOrNil(FilterExpr.where(\.currentCommand, .equals("emacs"))) == nil)
-        #expect(throws: CardinalityError.multipleMatches(count: 2)) {
+        #expect(throws: FilterSelectionError.cardinality(.multipleMatches(count: 2))) {
             try panes.oneOrNil(FilterExpr.where(\.currentCommand, .isIn(["nvim", "vim"])))
+        }
+    }
+
+    @Test("pattern work limits propagate through filter evaluation")
+    func patternWorkLimitsPropagate() throws {
+        let members = String(repeating: "a", count: 4_000)
+        let expression = try FilterExpr<Pane>.where(
+            \.currentCommand,
+            .matches(try RegexPattern("[\(members)]"))
+        )
+        let input = makePane(command: String(repeating: "z", count: 4_000))
+
+        #expect(
+            throws: RegexMatchError.workLimitExceeded(
+                maximum: RegexPattern.defaultMaximumWork
+            )
+        ) {
+            try expression.matches(input)
         }
     }
 
@@ -212,10 +234,10 @@ struct FilterExprTests {
         let insensitive = try FilterExpr<Pane>.where(
             \.currentCommand, .caseInsensitiveContains("vim")
         )
-        #expect(panes.filter(insensitive).map(\.id) == ["%0", "%2", "%3"])
+        #expect(try panes.filter(insensitive).map(\.id) == ["%0", "%2", "%3"])
 
         let sensitive = try FilterExpr<Pane>.where(\.currentCommand, .contains("vim"))
-        #expect(panes.filter(sensitive).map(\.id) == ["%0", "%2"])
+        #expect(try panes.filter(sensitive).map(\.id) == ["%0", "%2"])
     }
 
     @Test("case-insensitive containment round-trips as its own operator")
@@ -225,6 +247,6 @@ struct FilterExprTests {
         )
         let data = try JSONEncoder().encode(expression)
         let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
-        #expect(panes.filter(decoded).map(\.id) == ["%0", "%2", "%3"])
+        #expect(try panes.filter(decoded).map(\.id) == ["%0", "%2", "%3"])
     }
 }

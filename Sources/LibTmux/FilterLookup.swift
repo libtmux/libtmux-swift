@@ -34,8 +34,6 @@ public enum FilterLookup {
             try operation.validate(field: field.id, type: field.type)
         } catch .incompatibleOperation {
             throw .operatorNotSupported(suffix ?? "exact")
-        } catch .invalidRegularExpression {
-            throw .invalidRegularExpression(value)
         } catch {
             throw .unknownField(name)
         }
@@ -69,11 +67,22 @@ public enum FilterLookup {
             }
             return .isIn(literals)
         case "regex":
-            return .matches(pattern: value, caseInsensitive: false)
+            return try regex(value)
         case "iregex":
-            return .matches(pattern: value, caseInsensitive: true)
+            return try regex(value, options: [.caseInsensitive])
         case let other?:
             throw .unknownOperator(other)
+        }
+    }
+
+    private static func regex(
+        _ source: String,
+        options: RegexPattern.Options = []
+    ) throws(FilterLookupError) -> FilterOperation {
+        do {
+            return .matches(pattern: try RegexPattern(source, options: options))
+        } catch {
+            throw .invalidRegularExpression(source)
         }
     }
 

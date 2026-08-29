@@ -121,7 +121,7 @@ struct SnapshotRelationTests {
             \.name,
             .equals("destination")
         )
-        #expect(linked.panes(inSession: destination).map(\.id) == ["%0"])
+        #expect(try linked.panes(inSession: destination).map(\.id) == ["%0"])
     }
 
     @Test("session panes follow that session's window order")
@@ -227,21 +227,24 @@ struct SnapshotRelationTests {
             \.currentCommand,
             .equals("missing")
         )
-        #expect(mixed.sessions(.none, ofPanes: missingCommand).count == 3)
-        #expect(mixed.windows(.none, ofPanes: missingCommand).count == 2)
+        #expect(try mixed.sessions(.none, ofPanes: missingCommand).count == 3)
+        #expect(try mixed.windows(.none, ofPanes: missingCommand).count == 2)
 
         let localWindows = try FilterExpr<Window>.where(\.name, .equals("w"))
-        #expect(mixed.panes(inWindow: localWindows).count == 4)
+        #expect(try mixed.panes(inWindow: localWindows).count == 4)
 
         let editors = try FilterExpr<Session>.where(\.name, .equals("editors"))
-        #expect(mixed.panes(inSession: editors).map(\.id) == ["%0", "%1"])
-        #expect(mixed.windows(inSession: editors).map(\.id) == ["@0"])
+        #expect(try mixed.panes(inSession: editors).map(\.id) == ["%0", "%1"])
+        #expect(try mixed.windows(inSession: editors).map(\.id) == ["@0"])
     }
 
     @Test("some matches when at least one relation does")
     func someMatchesWhenAtLeastOneDoes() throws {
         let vimish = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
-        #expect(snapshot.sessions(.some, ofPanes: vimish).map(\.name) == ["editors", "mixed"])
+        #expect(
+            try snapshot.sessions(.some, ofPanes: vimish).map(\.name)
+                == ["editors", "mixed"]
+        )
     }
 
     @Test("every is vacuously true for an object with no relations")
@@ -249,27 +252,33 @@ struct SnapshotRelationTests {
         let vimish = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
         // `bare` has no panes, so every one of them matches — the same reading
         // `allSatisfy` has on an empty collection.
-        #expect(snapshot.sessions(.every, ofPanes: vimish).map(\.name) == ["editors", "bare"])
+        #expect(
+            try snapshot.sessions(.every, ofPanes: vimish).map(\.name)
+                == ["editors", "bare"]
+        )
     }
 
     @Test("none matches when no relation does, including having none")
     func noneMatchesWhenNoRelationDoes() throws {
         let shell = try FilterExpr<Pane>.where(\.currentCommand, .equals("zsh"))
-        #expect(snapshot.sessions(.none, ofPanes: shell).map(\.name) == ["editors", "bare"])
+        #expect(
+            try snapshot.sessions(.none, ofPanes: shell).map(\.name)
+                == ["editors", "bare"]
+        )
     }
 
     @Test("the to-one direction takes a filter, not a quantifier")
     func toOneDirectionTakesAFilter() throws {
         let mixed = try FilterExpr<Session>.where(\.name, .equals("mixed"))
-        #expect(snapshot.panes(inSession: mixed).map(\.id) == ["%2", "%3"])
-        #expect(snapshot.windows(inSession: mixed).map(\.id) == ["@1"])
+        #expect(try snapshot.panes(inSession: mixed).map(\.id) == ["%2", "%3"])
+        #expect(try snapshot.windows(inSession: mixed).map(\.id) == ["@1"])
     }
 
     @Test("windows quantify over their own panes")
     func windowsQuantifyOverTheirPanes() throws {
         let vimish = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
-        #expect(snapshot.windows(.every, ofPanes: vimish).map(\.id) == ["@0"])
-        #expect(snapshot.windows(.some, ofPanes: vimish).map(\.id) == ["@0", "@1"])
+        #expect(try snapshot.windows(.every, ofPanes: vimish).map(\.id) == ["@0"])
+        #expect(try snapshot.windows(.some, ofPanes: vimish).map(\.id) == ["@0", "@1"])
     }
 
     @Test("a snapshot round-trips through JSON")

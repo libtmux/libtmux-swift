@@ -63,7 +63,7 @@ extension TmuxTools {
         if let filter = try arguments.document("filter") {
             let expression = try JSONDecoder().decode(FilterExpr<Window>.self, from: filter)
             try validateFilter(expression, argument: "filter")
-            selected = snapshot.windows.filter(expression)
+            selected = try snapshot.windows.filter(expression)
         } else {
             selected = snapshot.windows
         }
@@ -81,7 +81,7 @@ extension TmuxTools {
         if let filter = try arguments.document("filter") {
             let expression = try JSONDecoder().decode(FilterExpr<Pane>.self, from: filter)
             try validateFilter(expression, argument: "filter")
-            selected = panes.filter(expression)
+            selected = try panes.filter(expression)
         } else {
             selected = panes
         }
@@ -150,7 +150,7 @@ extension TmuxTools {
         if let filter = try arguments.document("filter") {
             let predicate = try JSONDecoder().decode(FilterExpr<Pane>.self, from: filter)
             try validateFilter(predicate, argument: "filter")
-            panes = panes.filter(predicate)
+            panes = try panes.filter(predicate)
         }
 
         var matches: [PaneMatch] = []
@@ -339,11 +339,6 @@ private func validateFilter<Root: Filterable>(
         throw ToolError.wrongArgumentType(
             argument,
             expected: "a filter whose operator and values match \(field)'s \(type.rawValue) type"
-        )
-    } catch FilterValidationError.invalidRegularExpression(let field, _) {
-        throw ToolError.wrongArgumentType(
-            argument,
-            expected: "a filter with a usable regular expression for \(field)"
         )
     }
 }

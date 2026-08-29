@@ -41,15 +41,19 @@ public enum FilterValidationError: Error, Sendable, Hashable {
         type: FilterSchema.ValueType,
         operation: FilterOperation
     )
-    case invalidRegularExpression(field: String, pattern: String)
+}
+
+/// Why selecting one result from a filter failed.
+public enum FilterSelectionError: Error, Sendable, Hashable {
+    case matching(RegexMatchError)
+    case cardinality(CardinalityError)
 }
 
 /// How a filter compares one field.
 ///
 /// Written as a wire value rather than a closure, so an expression can be
 /// stored, sent, inspected, and later compiled to a tmux `-f` predicate.
-/// A regular expression travels as its pattern and flags; compiling one is the
-/// evaluator's business and never crosses a boundary.
+/// A regular expression travels in compiled, bounded form.
 public enum FilterOperation: Sendable, Hashable, Codable {
     case equals(FilterValue)
     case caseInsensitiveEquals(String)
@@ -58,7 +62,7 @@ public enum FilterOperation: Sendable, Hashable, Codable {
     case hasPrefix(String)
     case hasSuffix(String)
     case isIn([FilterValue])
-    case matches(pattern: String, caseInsensitive: Bool)
+    case matches(pattern: RegexPattern)
 }
 
 /// A typed operator. The `Value` it is built for is the projected type of the
@@ -103,13 +107,8 @@ public struct FilterOperator<Value>: Sendable {
         Self(.isIn(values.map(FilterValue.text)))
     }
 
-    /// Pattern and flags, never a compiled `Regex`: the expression has to stay
-    /// `Codable`, and the dialect is decided where it is evaluated.
-    public static func matches(
-        _ pattern: String,
-        caseInsensitive: Bool = false
-    ) -> Self where Value == String {
-        Self(.matches(pattern: pattern, caseInsensitive: caseInsensitive))
+    public static func matches(_ pattern: RegexPattern) -> Self where Value == String {
+        Self(.matches(pattern: pattern))
     }
 
     // MARK: Typed identifiers
@@ -192,19 +191,25 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
     ///
     /// Evaluated against a value already in hand. Matching never reaches tmux,
     /// so iterating results cannot spawn a process.
-    public func matches(_ root: Root) -> Bool {
+    public func matches(_ root: Root) throws(RegexMatchError) -> Bool {
         switch self {
         case let .comparison(fieldID, operation):
             guard let value = Root.filterValue(fieldID, of: root) else {
                 return false
             }
-            return operation.matches(value)
+            return try operation.matches(value)
         case let .and(children):
-            return children.allSatisfy { $0.matches(root) }
+            for child in children {
+                if try !child.matches(root) { return false }
+            }
+            return true
         case let .or(children):
-            return children.contains { $0.matches(root) }
+            for child in children {
+                if try child.matches(root) { return true }
+            }
+            return false
         case let .not(child):
-            return !child.matches(root)
+            return try !child.matches(root)
         }
     }
 
@@ -243,22 +248,14 @@ extension FilterOperation {
             guard type == .text else {
                 throw .incompatibleOperation(field: field, type: type, operation: self)
             }
-        case let .matches(pattern, caseInsensitive):
+        case .matches:
             guard type == .text else {
                 throw .incompatibleOperation(field: field, type: type, operation: self)
-            }
-            do {
-                _ = try NSRegularExpression(
-                    pattern: pattern,
-                    options: caseInsensitive ? [.caseInsensitive] : []
-                )
-            } catch {
-                throw .invalidRegularExpression(field: field, pattern: pattern)
             }
         }
     }
 
-    func matches(_ value: FilterValue) -> Bool {
+    func matches(_ value: FilterValue) throws(RegexMatchError) -> Bool {
         switch self {
         case let .equals(expected):
             return value == expected
@@ -279,14 +276,9 @@ extension FilterOperation {
             return text.hasSuffix(expected)
         case let .isIn(expected):
             return expected.contains(value)
-        case let .matches(pattern, caseInsensitive):
+        case let .matches(pattern):
             guard case let .text(text) = value else { return false }
-            return text.range(
-                of: pattern,
-                options: caseInsensitive
-                    ? [.regularExpression, .caseInsensitive]
-                    : [.regularExpression]
-            ) != nil
+            return try pattern.containsMatch(in: text)
         }
     }
 }
@@ -308,8 +300,14 @@ extension Sequence where Element: Filterable {
     ///
     /// Returns a plain array: ordered, replayable, and free of any live
     /// connection to tmux.
-    public func filter(_ expression: FilterExpr<Element>) -> [Element] {
-        filter { expression.matches($0) }
+    public func filter(
+        _ expression: FilterExpr<Element>
+    ) throws(RegexMatchError) -> [Element] {
+        var result: [Element] = []
+        for element in self where try expression.matches(element) {
+            result.append(element)
+        }
+        return result
     }
 
     /// The one element the filter matches.
@@ -318,12 +316,17 @@ extension Sequence where Element: Filterable {
     /// that meant to address one object needs to know which mistake it made.
     public func exactlyOne(
         _ expression: FilterExpr<Element>
-    ) throws(CardinalityError) -> Element {
-        let matches = filter(expression)
+    ) throws(FilterSelectionError) -> Element {
+        let matches: [Element]
+        do {
+            matches = try filter(expression)
+        } catch {
+            throw .matching(error)
+        }
         switch matches.count {
-        case 0: throw .noMatch
+        case 0: throw .cardinality(.noMatch)
         case 1: return matches[0]
-        default: throw .multipleMatches(count: matches.count)
+        default: throw .cardinality(.multipleMatches(count: matches.count))
         }
     }
 
@@ -332,12 +335,17 @@ extension Sequence where Element: Filterable {
     /// Only ambiguity is an error here; absence is an ordinary answer.
     public func oneOrNil(
         _ expression: FilterExpr<Element>
-    ) throws(CardinalityError) -> Element? {
-        let matches = filter(expression)
+    ) throws(FilterSelectionError) -> Element? {
+        let matches: [Element]
+        do {
+            matches = try filter(expression)
+        } catch {
+            throw .matching(error)
+        }
         switch matches.count {
         case 0: return nil
         case 1: return matches[0]
-        default: throw .multipleMatches(count: matches.count)
+        default: throw .cardinality(.multipleMatches(count: matches.count))
         }
     }
 }
