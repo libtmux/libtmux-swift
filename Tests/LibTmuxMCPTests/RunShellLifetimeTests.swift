@@ -334,7 +334,7 @@ struct RunShellLifetimeTests {
     @Test("a completed run is captured before the next prompt")
     func completedRunIsCapturedBeforePrompt() async throws {
         try await withTmuxServer { fixture in
-            let transport = DelayedRunShellWaitTransport()
+            let transport = GatedRunShellWaitTransport()
             let server = Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
@@ -356,20 +356,61 @@ struct RunShellLifetimeTests {
                 }
             )
 
-            let result = try await TmuxTools(server: server, tier: .mutating).call(
-                ToolCall(
-                    name: "run_shell",
-                    arguments: .object([
-                        "pane": .string(WireReferenceCodec.processLocal.reference(to: pane)),
-                        "command": .string("printf 'prompt-safe\\n'"),
-                        "max_lines": .number(1),
-                        "timeout": .number(5),
-                    ])
-                )
-            ).decode(RunShellResult.self)
+            let tool = Task {
+                try await TmuxTools(server: server, tier: .mutating).call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(WireReferenceCodec.processLocal.reference(to: pane)),
+                            "command": .string("printf 'prompt-safe\\n'"),
+                            "max_lines": .number(1),
+                            "timeout": .number(5),
+                        ])
+                    )
+                ).decode(RunShellResult.self)
+            }
+            let watchdog = Task {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+                tool.cancel()
+                await transport.finish()
+            }
 
-            #expect(result.output == ["prompt-safe"])
-            #expect(!result.linesMissed)
+            do {
+                await transport.waitUntilHoldingDoneReply()
+                #expect(
+                    try await waitUntil {
+                        try await server.capture(pane).contains { $0.contains("prompt-safe") }
+                    }
+                )
+                await transport.releaseDoneReply()
+
+                let toolResult = await tool.result
+
+                var boundaryIterator = await transport.boundaryEvents().makeAsyncIterator()
+                var boundaryEvents: [RunShellBoundaryEvent] = []
+                while let event = await boundaryIterator.next() {
+                    boundaryEvents.append(event)
+                    if event == .releaseSignal { break }
+                }
+                #expect(boundaryEvents.first == .capture)
+                #expect(boundaryEvents.contains(.releaseSignal))
+
+                let result = try toolResult.get()
+                #expect(result.output == ["prompt-safe"])
+                #expect(!result.linesMissed)
+            } catch {
+                tool.cancel()
+                await transport.finish()
+                watchdog.cancel()
+                await watchdog.value
+                _ = await tool.result
+                throw error
+            }
+
+            watchdog.cancel()
+            await transport.finish()
+            await watchdog.value
         }
     }
 
@@ -707,28 +748,95 @@ private actor FailingRunShellWaitTransport: ProcessTransport {
     }
 }
 
-private actor DelayedRunShellWaitTransport: ProcessTransport {
+private enum RunShellBoundaryEvent: Sendable, Equatable {
+    case capture
+    case releaseSignal
+}
+
+private actor GatedRunShellWaitTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
+    private let held: AsyncStream<Void>
+    private let heldWitness: AsyncStream<Void>.Continuation
+    private let releases: AsyncStream<Void>
+    private let releaseWitness: AsyncStream<Void>.Continuation
+    private let boundaries: AsyncStream<RunShellBoundaryEvent>
+    private let boundaryWitness: AsyncStream<RunShellBoundaryEvent>.Continuation
+    private var doneReplyReleased = false
+
+    init() {
+        let (held, heldWitness) = AsyncStream.makeStream(
+            of: Void.self,
+            bufferingPolicy: .bufferingOldest(1)
+        )
+        let (releases, releaseWitness) = AsyncStream.makeStream(
+            of: Void.self,
+            bufferingPolicy: .bufferingOldest(1)
+        )
+        let (boundaries, boundaryWitness) = AsyncStream.makeStream(
+            of: RunShellBoundaryEvent.self,
+            bufferingPolicy: .unbounded
+        )
+        self.held = held
+        self.heldWitness = heldWitness
+        self.releases = releases
+        self.releaseWitness = releaseWitness
+        self.boundaries = boundaries
+        self.boundaryWitness = boundaryWitness
+    }
+
+    func waitUntilHoldingDoneReply() async {
+        var iterator = held.makeAsyncIterator()
+        _ = await iterator.next()
+    }
+
+    func releaseDoneReply() {
+        releaseWitness.yield()
+        releaseWitness.finish()
+    }
+
+    func boundaryEvents() -> AsyncStream<RunShellBoundaryEvent> {
+        boundaries
+    }
+
+    func finish() {
+        heldWitness.finish()
+        releaseWitness.finish()
+        boundaryWitness.finish()
+    }
 
     func run(
         executable: String,
         arguments: [String],
         environment: [String: String]
     ) async throws(TmuxError) -> TmuxReply {
+        let isDoneWait =
+            arguments.contains("wait-for")
+            && arguments.contains { $0.contains("libtmux-mcp-done-") }
+        if doneReplyReleased,
+            arguments.contains(where: { $0.contains("capture-pane") })
+        {
+            boundaryWitness.yield(.capture)
+        }
+        if doneReplyReleased,
+            arguments.contains("wait-for"),
+            arguments.contains("-S"),
+            arguments.contains(where: { $0.contains("libtmux-mcp-release-") })
+        {
+            boundaryWitness.yield(.releaseSignal)
+        }
         let reply = try await underlying.run(
             executable: executable,
             arguments: arguments,
             environment: environment
         )
-        if arguments.contains("wait-for"),
-            arguments.contains(where: { $0.contains("libtmux-mcp-done-") })
-        {
-            do {
-                try await Task.sleep(for: .milliseconds(200))
-            } catch {
-                throw .cancelled
-            }
+        guard isDoneWait else { return reply }
+        heldWitness.yield()
+        heldWitness.finish()
+        var releaseIterator = releases.makeAsyncIterator()
+        guard await releaseIterator.next() != nil, !Task.isCancelled else {
+            throw .cancelled
         }
+        doneReplyReleased = true
         return reply
     }
 }
