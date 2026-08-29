@@ -41,68 +41,62 @@ public struct MCPService: Sendable {
         _ lines: AsyncStream<String>,
         write: @escaping @Sendable (String) async -> Void
     ) async {
+        let writeUntilFailure: @Sendable (String) async -> Bool = { line in
+            await write(line)
+            return true
+        }
+        await serveUntilWriteFails(lines, write: writeUntilFailure)
+    }
+
+    /// Reads requests until input ends, cancellation arrives, or `write` fails.
+    ///
+    /// A `false` result closes active requests and drops queued output. A
+    /// successful writer preserves the normal end-of-input drain.
+    public func serveUntilWriteFails(
+        _ lines: AsyncStream<String>,
+        write: @escaping @Sendable (String) async -> Bool
+    ) async {
         let registry = RequestRegistry()
         let outbound = OrderedOutbound(capacity: maximumInFlightRequests)
         await withTaskCancellationHandler {
-            await withDiscardingTaskGroup { outputGroup in
-                outputGroup.addTask {
+            await withTaskGroup(of: ServiceEvent.self) { tasks in
+                tasks.addTask {
+                    await readRequests(lines, registry: registry, outbound: outbound)
+                    return .inputEnded
+                }
+                tasks.addTask {
                     while !Task.isCancelled, let message = await outbound.next() {
-                        await write(message)
+                        guard await write(message) else { return .writerFailed }
                         await outbound.didWrite()
                     }
+                    return .outputEnded
                 }
-                await withDiscardingTaskGroup { requestGroup in
-                    for await line in lines {
-                        if Task.isCancelled { break }
-                        // Cancellation arrives as a notification, so it is read before
-                        // anything that would answer: it has no id of its own to reply
-                        // to, and it must overtake the request it cancels.
-                        if let cancelled = MCPRequestHandler.cancelledRequestID(in: line) {
-                            await registry.cancel(cancelled)
-                            continue
-                        }
-                        guard let identifier = MCPRequestHandler.requestID(in: line) else {
-                            if let response = await handler.respond(to: line),
-                                !(await outbound.enqueue(response))
-                            {
-                                break
-                            }
-                            continue
-                        }
-                        guard
-                            let work = await registry.start(
-                                identifier,
-                                maximum: maximumInFlightRequests,
-                                operation: {
-                                    await handler.respond(
-                                        to: line,
-                                        emit: { _ = await outbound.offer($0) }
-                                    )
-                                }
-                            )
-                        else {
-                            if let response = handler.capacityFailure(
-                                id: identifier,
-                                maximum: maximumInFlightRequests
-                            ), !(await outbound.enqueue(response)) {
-                                break
-                            }
-                            continue
-                        }
-                        requestGroup.addTask {
-                            let answer = await withTaskCancellationHandler {
-                                await work.value
-                            } onCancel: {
-                                work.cancel()
-                            }
-                            if !Task.isCancelled, let answer {
-                                _ = await outbound.writeAndWait(answer)
-                            }
-                            await registry.finish(identifier)
-                        }
+
+                var inputEnded = false
+                while let event = await tasks.next() {
+                    if Task.isCancelled {
+                        await registry.close()
+                        await outbound.cancel()
+                        tasks.cancelAll()
+                        return
+                    }
+                    switch event {
+                    case .inputEnded:
+                        inputEnded = true
+                        await outbound.finish()
+                    case .outputEnded:
+                        if inputEnded { return }
+                        await registry.close()
+                        await outbound.cancel()
+                        tasks.cancelAll()
+                        return
+                    case .writerFailed:
+                        await registry.close()
+                        await outbound.cancel()
+                        tasks.cancelAll()
+                        return
                     }
                 }
-                await outbound.finish()
             }
             if Task.isCancelled {
                 await registry.close()
@@ -115,6 +109,70 @@ public struct MCPService: Sendable {
             }
         }
     }
+
+    private func readRequests(
+        _ lines: AsyncStream<String>,
+        registry: RequestRegistry,
+        outbound: OrderedOutbound
+    ) async {
+        await withDiscardingTaskGroup { requestGroup in
+            for await line in lines {
+                if Task.isCancelled { break }
+                // Cancellation arrives as a notification, so it is read before
+                // anything that would answer: it has no id of its own to reply
+                // to, and it must overtake the request it cancels.
+                if let cancelled = MCPRequestHandler.cancelledRequestID(in: line) {
+                    await registry.cancel(cancelled)
+                    continue
+                }
+                guard let identifier = MCPRequestHandler.requestID(in: line) else {
+                    if let response = await handler.respond(to: line),
+                        !(await outbound.enqueue(response))
+                    {
+                        break
+                    }
+                    continue
+                }
+                guard
+                    let work = await registry.start(
+                        identifier,
+                        maximum: maximumInFlightRequests,
+                        operation: {
+                            await handler.respond(
+                                to: line,
+                                emit: { _ = await outbound.offer($0) }
+                            )
+                        }
+                    )
+                else {
+                    if let response = handler.capacityFailure(
+                        id: identifier,
+                        maximum: maximumInFlightRequests
+                    ), !(await outbound.enqueue(response)) {
+                        break
+                    }
+                    continue
+                }
+                requestGroup.addTask {
+                    let answer = await withTaskCancellationHandler {
+                        await work.value
+                    } onCancel: {
+                        work.cancel()
+                    }
+                    if !Task.isCancelled, let answer {
+                        _ = await outbound.writeAndWait(answer)
+                    }
+                    await registry.finish(identifier)
+                }
+            }
+        }
+    }
+}
+
+private enum ServiceEvent: Sendable {
+    case inputEnded
+    case outputEnded
+    case writerFailed
 }
 
 /// Tracks what is in flight so a cancellation can reach it.

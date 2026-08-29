@@ -7,6 +7,31 @@ import TmuxFixture
 
 @Suite("MCP service lifecycle", .timeLimit(.minutes(1)))
 struct MCPServiceLifecycleTests {
+    @Test("writer failure ends service before input ends")
+    func writerFailureEndsUnfinishedInput() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/writer-failure-unstarted"
+        )
+        let service = MCPService(
+            handler: MCPRequestHandler(tools: TmuxTools(server: server))
+        )
+        let (lines, continuation) = AsyncStream<String>.makeStream()
+        let completion = ServiceCompletion()
+        let serving = Task {
+            await service.serveUntilWriteFails(lines) { _ in false }
+            await completion.record()
+        }
+
+        continuation.yield(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#)
+        let stopped = try await waitUntil(within: .seconds(1)) {
+            await completion.returned
+        }
+        continuation.finish()
+        await serving.value
+
+        #expect(stopped)
+    }
+
     @Test("cancelling the service cancels active request work")
     func serviceCancellationReachesRequests() async throws {
         try await withTmuxServer { server in
@@ -115,6 +140,14 @@ struct MCPServiceLifecycleTests {
             #expect(inputCrossedBlockedWrite)
             #expect(await output.responses(withID: "wait").isEmpty)
         }
+    }
+}
+
+private actor ServiceCompletion {
+    private(set) var returned = false
+
+    func record() {
+        returned = true
     }
 }
 
