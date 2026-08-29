@@ -155,7 +155,7 @@ struct CountingTmux {
         try """
         #!/bin/sh
         printf 'x' >>'\(spawns.path)'
-        printf '.\\n' >>'\(submissions.path)'
+        printf '%s\\n' "$*" >>'\(submissions.path)'
         case " $* " in
             *' -C '*)
                 # A control client is handed its first command as argv and every
@@ -200,6 +200,13 @@ struct CountingTmux {
     var roundTrips: Int {
         guard let data = try? Data(contentsOf: submissions) else { return 0 }
         return data.count { $0 == UInt8(ascii: "\n") }
+    }
+
+    func commandCount(_ command: String) -> Int {
+        guard let contents = try? String(contentsOf: submissions, encoding: .utf8) else {
+            return 0
+        }
+        return contents.split(separator: "\n").count { $0.contains(command) }
     }
 }
 
@@ -384,8 +391,8 @@ if asMarkdown {
     // Only the right column is measured. Polling's cost is a function of how
     // fast the machine gets round the loop — three runs here saw 31, 35 and 37
     // processes — and a table checked for currency cannot carry a number that
-    // moves. What does not move is the point being made: waiting on events
-    // costs the same whether the wait is two seconds or two minutes.
+    // moves. The control connection keeps process count fixed, but its quiet
+    // liveness round trips still grow with the length of the wait.
     let waiting = try await measureWaiting(quietFor: .seconds(2))
     print("<!-- section: waiting -->")
     print("| Waiting for a line that has not been printed yet | Polling | waitForOutput |")
@@ -394,8 +401,11 @@ if asMarkdown {
         "| pane captures taken | one per tick, for as long as the wait lasts "
             + "| \(waiting.awaited.output) |")
     print(
+        "| quiet liveness | checked by every capture "
+            + "| one in-band target check per second |")
+    print(
         "| tmux processes spent | one per capture "
-            + "| \(waiting.awaited.processes), however long it waits |")
+            + "| \(waiting.awaited.processes); quiet checks reuse the connection |")
     exit(0)
 }
 
@@ -575,7 +585,7 @@ func measureWaiting(quietFor delay: Duration) async throws
             elapsed: elapsed,
             processes: counting.processes,
             roundTrips: counting.roundTrips,
-            output: counted(1, "capture", "captures")
+            output: counted(counting.commandCount("capture-pane"), "capture", "captures")
         )
     }
 

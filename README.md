@@ -270,9 +270,9 @@ that check.
 | sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 7 round trips |
 | sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 5 round trips |
 | the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 5 round trips |
-| new-window five times, each its own command | 12 processes, 12 round trips | 1 process, 13 round trips |
+| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 8 round trips |
 | the same five as one command list | 3 processes, 3 round trips | 1 process, 4 round trips |
-| new-window then split, read back | 6 processes, 6 round trips | 1 process, 7 round trips |
+| new-window then split, read back | 5 processes, 5 round trips | 1 process, 6 round trips |
 
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |

@@ -11,8 +11,10 @@ wait built from commands alone has to re-read the pane on a timer, and every
 tick costs a tmux process whether or not anything happened.
 
 A control connection is told instead. `%output` arrives as the pane writes,
-and `%subscription-changed` arrives when a format's value changes. Both are
-free while nothing is happening, which is most of the time.
+and `%subscription-changed` arrives when a format's value changes. A bare
+notification stream is free while nothing is happening. `waitForOutput` also
+checks its target once per quiet second so removing a silent pane ends the
+wait instead of looking like a timeout.
 
 ## Pick the cheapest one that answers the question
 
@@ -152,8 +154,9 @@ this is for:
 
 | Waiting for a line that has not been printed yet | Polling | waitForOutput |
 | --- | --- | --- |
-| pane captures taken | one per tick, for as long as the wait lasts | 1 capture |
-| tmux processes spent | one per capture | 3, however long it waits |
+| pane captures taken | one per tick, for as long as the wait lasts | 5 captures |
+| quiet liveness | checked by every capture | one in-band target check per second |
+| tmux processes spent | one per capture | 9; quiet checks reuse the connection |
 
 <!-- waiting-matrix:end -->
 
@@ -164,9 +167,10 @@ a claim worth writing down.
 
 What does not move is the point: polling re-reads the pane to find out whether
 anything happened, so its cost is set by how long the wait lasts.
-`waitForOutput` is told, and captures once, when there is something to read.
-Wait ten seconds instead of two and the left column grows fivefold while the
-right one does not move.
+`waitForOutput` is told and captures only at entry and after output. Its quiet
+liveness checks reuse the control process, so waiting longer does not create
+more processes or captures, but it does spend one additional in-band round
+trip per second.
 
 ## Topics
 
