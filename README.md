@@ -40,9 +40,9 @@ harness, a dashboard, an agent that needs somewhere to run things — and you wa
 tmux's own vocabulary rather than a wrapper around shelling out.
 
 **Yes, if** you care that `Session`, `Window`, `Pane`, and `Client` are
-`Sendable` and `Codable` values, that every call states what it throws, and that
-the package builds under Swift 6 language mode with complete strict concurrency
-and no unsafe flags.
+`Sendable` and `Codable` values, that core tmux I/O reports `TmuxError`
+explicitly, and that the package builds under Swift 6 language mode with
+complete strict concurrency and no unsafe flags.
 
 **Not yet, if** you need a stable API. Every release so far is an alpha and
 names are still moving — see [Project status](#project-status).
@@ -52,7 +52,7 @@ not draw one.
 
 ## Products
 
-Four things ship from this one package. Take only what you need — the core has
+Five things ship from this one package. Take only what you need — the core has
 one dependency, and the YAML reader is behind a trait so you do not pay for it
 unless you ask.
 
@@ -60,8 +60,9 @@ unless you ask.
 | --- | --- | --- | --- |
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
-| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
+| **[`TmuxTestSupport`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks; imported as `TmuxFixture`. | `LibTmux` |
 
 Each has its own README with an install snippet, a usage example, and what it
 does and does not cover.
@@ -619,8 +620,8 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 
 | Path | What is in it |
 | --- | --- |
-| [`Sources/`][sources] | The four products |
-| [`Tests/`][tests] | The suite, and the fixture every suite provisions servers through |
+| [`Sources/`][sources] | The four runtime products |
+| [`Tests/`][tests] | The suite, and the `TmuxTestSupport` product every suite provisions servers through |
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
 | [`Parity/`][parity] | What Python libtmux exposes, recorded, and what this port does about each of it |
@@ -691,6 +692,7 @@ MIT. See [LICENSE](LICENSE).
 [p-ws]: Sources/TmuxWorkspace/
 [p-mcp]: Sources/LibTmuxMCP/
 [p-server]: Sources/libtmux-mcp/
+[p-test]: Tests/TmuxFixture/
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md

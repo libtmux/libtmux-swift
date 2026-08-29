@@ -90,7 +90,8 @@ let package = Package(
         .target(
             name: "TmuxFixture",
             dependencies: ["LibTmux"],
-            path: "Tests/TmuxFixture"
+            path: "Tests/TmuxFixture",
+            exclude: ["README.md"]
         ),
         .testTarget(
             name: "LibTmuxTests",

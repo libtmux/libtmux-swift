@@ -4,16 +4,13 @@ What has been exercised, and what has not.
 
 ## Overview
 
-The package builds for Linux. macOS is written but blocked upstream, and
-supports the tmux
-releases 3.2a through 3.7b.
+The package builds and runs its real-server suite on Linux and macOS. It
+supports tmux releases 3.2a through 3.7b.
 
 The test suite runs against real tmux, one private server and socket per case.
 Every supported release is exercised on Linux, individually and concurrently.
-
-On macOS the package is supported but the suite has not yet been run there, so
-Darwin-specific behaviour — the `/private/tmp` symlink, Homebrew's keg-only
-libraries, the shorter socket address — is handled but unverified.
+The macOS lane exercises both ends of the supported range, 3.2a and 3.7b, with
+Xcode's toolchain and Homebrew's keg-only libraries.
 
 ``Server/version()`` reports which tmux a server runs, and ``TmuxVersion``
 orders releases the way tmux issues them — including the point release's
