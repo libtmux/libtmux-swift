@@ -184,6 +184,10 @@ extension Server {
             return try await withThrowingTaskGroup(
                 of: ControlOutcome<Result>.self
             ) { group in
+                defer {
+                    group.cancelAll()
+                    try? execution.send(signal: .terminate, toProcessGroup: true)
+                }
                 group.addTask {
                     var input = ControlLineInput()
                     for try await chunk in execution.standardOutput {
@@ -198,24 +202,22 @@ extension Server {
                     await control.finish()
                     return .streamEnded
                 }
+                try await control.waitUntilAttached()
                 group.addTask {
                     defer { Task { await control.finish() } }
                     return .body(try await body(control))
                 }
 
-                var result: Result?
                 while let outcome = try await group.next() {
-                    if case let .body(value) = outcome {
-                        result = value
-                        break
+                    switch outcome {
+                    case let .body(value):
+                        return value
+                    case .streamEnded:
+                        group.cancelAll()
+                        throw TmuxError.connectionClosed
                     }
                 }
-                group.cancelAll()
-                try? execution.send(signal: .terminate, toProcessGroup: true)
-                // Reached only if the reader finished before the body did,
-                // which means tmux went away underneath it.
-                guard let result else { throw TmuxError.connectionClosed }
-                return result
+                throw TmuxError.connectionClosed
             }
         }
         return outcome.closureResult

@@ -216,7 +216,8 @@ public actor ControlSession {
     /// tmux answers the attach itself with a block, before any command is sent.
     /// Sending before it arrives would hand a command that block instead of its
     /// own reply, shifting every later answer by one.
-    private func waitUntilAttached() async throws(TmuxError) {
+    func waitUntilAttached() async throws(TmuxError) {
+        if let closure { throw closure }
         guard !isAttached else { return }
         let id = nextAttachWaiterID
         nextAttachWaiterID &+= 1
@@ -258,6 +259,17 @@ public actor ControlSession {
         switch event {
         case let .reply(reply):
             guard isAttached else {
+                guard !reply.isError else {
+                    let replyText = reply.lines.joined(separator: "\n")
+                    finish(
+                        throwing: TmuxError.invocationFailed(
+                            reason:
+                                replyText.isEmpty
+                                ? "tmux rejected the control-mode attachment" : replyText
+                        )
+                    )
+                    return
+                }
                 isAttached = true
                 let waiters = attachWaiters
                 attachWaiters = []
