@@ -25,15 +25,11 @@ private func emitInput(
 ) -> Bool {
     switch event {
     case let .line(line):
-        switch continuation.yield(line) {
-        case .enqueued: return true
-        case .dropped:
-            note("stdin queue exceeded \(queuedRequestLines) request lines; closing input")
+        guard AsyncStreamBackpressure.enqueue(line, to: continuation) else {
             continuation.finish()
             return false
-        case .terminated: return false
-        @unknown default: return false
         }
+        return true
     case .oversized:
         note(
             "discarded a request above "
