@@ -1,6 +1,14 @@
 import Foundation
 import LibTmux
 
+/// One `run_shell` per pane at a time.
+///
+/// Shared by every ``TmuxTools`` in the process, because the README and the
+/// embedding example both build one at the point of use: an instance property
+/// would give two requests two coordinators and let both drive the same pane.
+/// Keyed by pane and daemon incarnation, so a reused pane id on a replacement
+/// server is a different pane. The exclusion is process-local — a second
+/// process embedding these tools is not held by it.
 actor PaneRunCoordinator {
     private struct Key: Sendable, Hashable {
         let pane: PaneID
