@@ -49,8 +49,8 @@ A program that opens connections should choose:
 signal(SIGPIPE, SIG_IGN)
 ```
 
-With SIGPIPE ignored, the write reports `EPIPE` instead, and the connection
-reports ``TmuxError/connectionClosed`` as it does for every other way of losing
-tmux. This package's own test suite makes exactly this call, which is how the
-behaviour above is known: without it, roughly one full run in ten was ended by
-a signal rather than by a failing case.
+With SIGPIPE ignored, the write reports `EPIPE` instead. An in-flight command
+reports ``TmuxError/connectionClosed``; a later call that never entered the
+write queue reports ``TmuxError/requestNotSubmitted``. This package's own test
+suite ignores SIGPIPE; without that, roughly one full run in ten ended by a
+signal rather than by a failing case.

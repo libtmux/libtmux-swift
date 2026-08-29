@@ -68,14 +68,14 @@ struct ClientTests {
         }
     }
 
-    @Test("a send after the server is provably gone still says connectionClosed")
-    func writeToADeadConnectionReportsClosure() async throws {
+    @Test("a send after the server is gone says it was not submitted")
+    func writeToADeadConnectionWasNotSubmitted() async throws {
         try await withTmuxServer { server in
-            _ = await #expect(throws: TmuxError.connectionClosed) {
+            _ = await #expect(throws: TmuxError.requestNotSubmitted) {
                 try await server.withControlMode(attachingTo: "bootstrap") { control in
                     _ = try? await control.send(TmuxCommand("kill-server"))
-                    // Waiting until the server is provably gone leaves the
-                    // send only one way to fail: in the write.
+                    // The connection has already observed its closure, so a
+                    // later command cannot have entered its write queue.
                     _ = try await waitUntil { try await !server.isRunning() }
                     _ = try await control.send(
                         TmuxCommand("display-message", ["-p", "unreachable"])

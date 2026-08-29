@@ -5,8 +5,16 @@
 /// read the diagnostic tmux wrote. This type covers the cases where no usable
 /// reply exists at all.
 public enum TmuxError: Error, Sendable, Hashable {
-    /// tmux could not be started: it is missing, not executable, or the
-    /// endpoint is unusable.
+    /// The tmux client process was never started, so the requested command
+    /// cannot have reached a daemon.
+    case processLaunchFailed(reason: String)
+
+    /// A control connection closed before the command was enqueued. Retrying
+    /// cannot duplicate the requested action because tmux never received it.
+    case requestNotSubmitted
+
+    /// No usable reply was obtained after submission. Unless a narrower error
+    /// says otherwise, the action may have reached tmux.
     case invocationFailed(reason: String)
 
     /// The endpoint is not addressable. A UNIX socket path has a hard length

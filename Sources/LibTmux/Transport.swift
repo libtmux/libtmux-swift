@@ -95,7 +95,7 @@ struct SubprocessTransport: OutputLimitedProcessTransport {
         var resolved: [Subprocess.Environment.Key: String] = [:]
         for (key, value) in environment {
             guard let environmentKey = Subprocess.Environment.Key(rawValue: key) else {
-                throw .invocationFailed(reason: "invalid environment key \(key)")
+                throw .processLaunchFailed(reason: "invalid environment key \(key)")
             }
             resolved[environmentKey] = value
         }
@@ -126,6 +126,12 @@ struct SubprocessTransport: OutputLimitedProcessTransport {
             throw .invocationFailed(
                 reason: "tmux output exceeded \(perStreamOutputLimit) bytes per stream"
             )
+        } catch let error as SubprocessError
+            where error.code == .spawnFailed
+            || error.code == .executableNotFound
+            || error.code == .failedToChangeWorkingDirectory
+        {
+            throw .processLaunchFailed(reason: String(describing: error))
         } catch {
             if error is CancellationError || Task.isCancelled {
                 throw .cancelled

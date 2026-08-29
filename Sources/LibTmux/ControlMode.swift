@@ -127,19 +127,26 @@ public actor ControlSession {
     ///   - commands: how many commands that line carries, which is how many
     ///     blocks tmux may answer it with.
     func send(line: String, commands: Int = 1) async throws -> ControlReply {
-        if let closure { throw closure }
-        try await waitUntilAttached()
-        // Checked again: waiting for the attach suspends, and the connection
-        // can end while it does.
-        if let closure { throw closure }
+        try await requireReadyForSubmission()
         return try await enqueue(line: line, completion: .counted(commands: commands))
     }
 
     func sendFenced(line: String, marker: String) async throws -> ControlReply {
-        if let closure { throw closure }
-        try await waitUntilAttached()
-        if let closure { throw closure }
+        try await requireReadyForSubmission()
         return try await enqueue(line: line, completion: .fenced(marker: marker))
+    }
+
+    private func requireReadyForSubmission() async throws {
+        guard closure == nil else { throw TmuxError.requestNotSubmitted }
+        do {
+            try await waitUntilAttached()
+        } catch {
+            if Task.isCancelled { throw TmuxError.cancelled }
+            throw TmuxError.requestNotSubmitted
+        }
+        // Waiting for attach suspends, so the connection can close before the
+        // command is enqueued even when it was open at entry.
+        guard closure == nil else { throw TmuxError.requestNotSubmitted }
     }
 
     private func enqueue(

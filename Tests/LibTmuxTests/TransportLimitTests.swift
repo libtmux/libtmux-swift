@@ -110,6 +110,25 @@ struct TransportLimitTests {
             #expect(try await server.isRunning())
         }
     }
+
+    @Test("a client that never starts is distinguishable from an ambiguous failure")
+    func launchFailureIsDefinite() async throws {
+        try await withTmuxServer { fixture in
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: "/libtmux-swift-test/missing-tmux"
+            )
+            do {
+                _ = try await server.version()
+                Issue.record("the missing executable started")
+            } catch let error as TmuxError {
+                guard case .processLaunchFailed = error else {
+                    Issue.record("unexpected error: \(error)")
+                    return
+                }
+            }
+        }
+    }
 }
 
 private struct FixedReplyTransport: ProcessTransport {
