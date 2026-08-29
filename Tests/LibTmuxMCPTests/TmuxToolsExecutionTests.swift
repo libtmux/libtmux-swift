@@ -276,7 +276,7 @@ extension TmuxToolsTests {
             let result = try outcome.decode(RunShellResult.self)
             #expect(!result.timedOut)
             #expect(result.exitStatus == 7)
-            #expect(!(await tools.paneRuns.isHeld(pane)))
+            #expect(!(await TmuxTools.paneRuns.isHeld(pane)))
         }
     }
 

@@ -15,7 +15,7 @@ extension TmuxTools {
         let started = ContinuousClock.now
         let deadline = started.advanced(by: timeout)
 
-        if await paneRuns.isHeld(pane),
+        if await Self.paneRuns.isHeld(pane),
             try await server.formatGlobal("#{pane_dead}", for: pane) == "1"
         {
             throw ToolError.refusedForSafety("pane \(pane.id.rawValue) has exited")
@@ -65,7 +65,7 @@ extension TmuxTools {
                 started: started
             )
             if finished {
-                await paneRuns.release(pane)
+                await Self.paneRuns.release(pane)
             } else {
                 schedulePaneRunCleanup(
                     cleanup,
@@ -78,10 +78,10 @@ extension TmuxTools {
         } catch {
             switch lifetime {
             case .preDispatch:
-                await paneRuns.release(pane)
+                await Self.paneRuns.release(pane)
             case .submitting(let cleanup):
                 if Self.definitelyDidNotDispatch(error) {
-                    await paneRuns.release(pane)
+                    await Self.paneRuns.release(pane)
                 } else {
                     await abandonRunShell(cleanup, in: pane, waitForCompletion: true)
                 }
@@ -281,7 +281,6 @@ extension TmuxTools {
         waitForCompletion: Bool,
         releaseWhenReady: Bool
     ) {
-        let paneRuns = paneRuns
         let server = server
         Task {
             if waitForCompletion {
@@ -293,13 +292,13 @@ extension TmuxTools {
                         releaseWhenComplete: releaseWhenReady
                     )
                 }
-                await paneRuns.release(pane)
+                await Self.paneRuns.release(pane)
             } else {
                 try? await server.using(.direct) { server in
                     if releaseWhenReady { try await server.signal(cleanup.releaseChannel) }
                     await Self.clearRunShellOptions(cleanup, pane: pane, server: server)
                 }
-                await paneRuns.release(pane)
+                await Self.paneRuns.release(pane)
             }
         }
     }
@@ -345,11 +344,10 @@ extension TmuxTools {
     }
 
     private func acquirePaneRun(_ pane: Pane, within timeout: Duration) async -> Bool {
-        let coordinator = paneRuns
         return await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 do {
-                    try await coordinator.acquire(pane)
+                    try await Self.paneRuns.acquire(pane)
                     return true
                 } catch {
                     return false
@@ -368,7 +366,7 @@ extension TmuxTools {
 
             group.cancelAll()
             while let acquired = await group.next() {
-                if acquired { await coordinator.release(pane) }
+                if acquired { await Self.paneRuns.release(pane) }
             }
             return false
         }

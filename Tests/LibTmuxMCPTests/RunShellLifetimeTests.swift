@@ -70,7 +70,7 @@ struct RunShellLifetimeTests {
                     )
                 )
             }
-            #expect(!(await tools.paneRuns.isHeld(pane)))
+            #expect(!(await TmuxTools.paneRuns.isHeld(pane)))
         }
     }
 
@@ -100,7 +100,7 @@ struct RunShellLifetimeTests {
             }
             #expect(
                 try await waitUntil {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
         }
@@ -146,7 +146,7 @@ struct RunShellLifetimeTests {
                     await transport.waitFailureCount >= 2
                 }
             )
-            #expect(await tools.paneRuns.isHeld(pane))
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
             await #expect(throws: ToolError.self) {
                 try await tools.call(
                     ToolCall(
@@ -163,7 +163,7 @@ struct RunShellLifetimeTests {
             try await fixture.signal(release)
             #expect(
                 try await waitUntil {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
         }
@@ -208,14 +208,14 @@ struct RunShellLifetimeTests {
             )
 
             let releasedWhileRunning = try await waitUntil(within: .seconds(1)) {
-                !(await tools.paneRuns.isHeld(pane))
+                !(await TmuxTools.paneRuns.isHeld(pane))
             }
             #expect(!releasedWhileRunning)
 
             try await fixture.signal(release)
             #expect(
                 try await waitUntil {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
         }
@@ -247,12 +247,12 @@ struct RunShellLifetimeTests {
                     )
                 )
             }
-            #expect(await tools.paneRuns.isHeld(pane))
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
 
             try await fixture.kill(pane)
             #expect(
                 try await waitUntil(within: .seconds(2)) {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
         }
@@ -288,11 +288,11 @@ struct RunShellLifetimeTests {
                     await transport.waitFailureCount >= 2
                 }
             )
-            #expect(await tools.paneRuns.isHeld(pane))
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
             await transport.departEndpoint()
             #expect(
                 try await waitUntil(within: .seconds(5)) {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
             try await fixture.signal("never")
@@ -325,7 +325,7 @@ struct RunShellLifetimeTests {
             }
             #expect(
                 try await waitUntil {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
         }
@@ -448,7 +448,7 @@ struct RunShellLifetimeTests {
             try await fixture.signal(release)
             #expect(
                 try await waitUntil {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
 
@@ -531,7 +531,7 @@ struct RunShellLifetimeTests {
                 _ = try await first.value
             }
 
-            #expect(await tools.paneRuns.isHeld(pane))
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
             await #expect(throws: ToolError.self) {
                 try await tools.call(
                     ToolCall(
@@ -548,7 +548,7 @@ struct RunShellLifetimeTests {
             try await fixture.signal(release)
             #expect(
                 try await waitUntil {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
         }
@@ -587,7 +587,7 @@ struct RunShellLifetimeTests {
                 _ = try await first.value
             }
 
-            #expect(await tools.paneRuns.isHeld(pane))
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
             await #expect(throws: ToolError.self) {
                 try await tools.call(
                     ToolCall(
@@ -604,7 +604,7 @@ struct RunShellLifetimeTests {
             try await server.signal(release)
             #expect(
                 try await waitUntil {
-                    !(await tools.paneRuns.isHeld(pane))
+                    !(await TmuxTools.paneRuns.isHeld(pane))
                 }
             )
 

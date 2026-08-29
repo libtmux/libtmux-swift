@@ -9,7 +9,9 @@ import TmuxWorkspace
 /// data and the tool evaluates it here, rather than the client asking for
 /// everything and filtering at home.
 public struct TmuxTools: Sendable {
-    private static let sharedPaneRuns = PaneRunCoordinator()
+    /// The one `run_shell` lock. See ``PaneRunCoordinator`` for why it is not
+    /// per-instance; `Self.` at every use site is the reminder.
+    static let paneRuns = PaneRunCoordinator()
 
     let server: Server
     /// The authority shared by tool listing and invocation.
@@ -23,7 +25,6 @@ public struct TmuxTools: Sendable {
     /// mistake cheap and repeatable instead of terminal.
     public let waitCeiling: Duration
     let caller: CallerIdentity?
-    let paneRuns: PaneRunCoordinator
 
     /// Creates a read-only tool set unless a higher tier is selected.
     public init(
@@ -51,7 +52,6 @@ public struct TmuxTools: Sendable {
         self.authority = authority
         self.waitCeiling = max(.zero, waitCeiling)
         self.caller = caller
-        self.paneRuns = Self.sharedPaneRuns
     }
 
     /// The tools visible under this server's authority.
