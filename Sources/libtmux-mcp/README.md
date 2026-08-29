@@ -49,7 +49,11 @@ socket through the first `tmux` on `PATH`, with a 120-second wait ceiling.
 Useful when a client is misbehaving and you want to know which side is wrong:
 
 ```console
-$ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | .build/debug/libtmux-mcp
+$ printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"shell","version":"1"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+    | .build/debug/libtmux-mcp
 ```
 
 Anything the server wants to tell a human goes to stderr, because stdout is the
