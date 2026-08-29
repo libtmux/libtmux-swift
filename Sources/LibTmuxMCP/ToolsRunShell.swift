@@ -197,6 +197,7 @@ extension TmuxTools {
                 by: Self.runShellCaptureSettleTimeout
             )
             let output: RunShellOutput
+            var settle = Self.firstSettleDelay
             while true {
                 do {
                     let capture = try await server.captureTailThroughCursor(
@@ -234,7 +235,8 @@ extension TmuxTools {
                     )
                 }
                 do {
-                    try await Task.sleep(for: .milliseconds(10))
+                    try await Task.sleep(for: settle)
+                    settle = Self.nextSettleDelay(after: settle)
                 } catch {
                     throw TmuxError.cancelled
                 }
@@ -469,6 +471,19 @@ extension TmuxTools {
     }
 
     private static let runShellCaptureSettleTimeout = Duration.seconds(1)
+    static let firstSettleDelay = Duration.milliseconds(10)
+    static let longestSettleDelay = Duration.milliseconds(160)
+
+    /// Doubles the wait between looks for the end marker, up to a ceiling.
+    ///
+    /// tmux parses the pane's bytes in its own event loop, and `wait-for`
+    /// arrives on a separate connection, so the marker can be a moment behind
+    /// the command that fired it. Nearly every run finds it on the first look;
+    /// one that does not was costing a tmux process every ten milliseconds for
+    /// as long as it took.
+    static func nextSettleDelay(after previous: Duration) -> Duration {
+        min(previous * 2, longestSettleDelay)
+    }
 
     private static func markerRows(_ marker: String, width: Int) -> [String] {
         let characters = Array(marker)

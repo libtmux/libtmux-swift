@@ -868,4 +868,20 @@ private actor WithheldRunShellReplyTransport: ProcessTransport {
             $0.contains("send-keys") && $0.contains("libtmux-mcp-done-")
         }
     }
+    @Test("the settle between looks doubles to a ceiling")
+    func settleDelayBacksOff() {
+        var delay = TmuxTools.firstSettleDelay
+        var looks = 1
+        var elapsed = Duration.zero
+        while elapsed < .seconds(1) {
+            elapsed += delay
+            delay = TmuxTools.nextSettleDelay(after: delay)
+            looks += 1
+        }
+        // A fixed ten milliseconds spent a hundred tmux processes covering the
+        // same second.
+        #expect(looks <= 12)
+        #expect(delay == TmuxTools.longestSettleDelay)
+    }
+
 }
