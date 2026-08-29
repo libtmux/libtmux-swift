@@ -23,6 +23,25 @@ $ export PATH="$(mise where swift)/usr/bin:$PATH"
 
 `Scripts/update_mode_matrix.py` reads `$SWIFT` for the same reason.
 
+SwiftPM compiles with one job per core, and the suite starts a tmux server per
+case on top of that, so a full run makes the machine it is running on unusable
+for anything else. Half the cores leaves it responsive and costs little, because
+these builds are not compile-bound:
+
+```console
+$ swift build --jobs 5 --force-resolved-versions
+```
+
+Hosted CI gets a runner to itself and should keep the default; this is for a
+machine someone is also working on. Serial tests are worth pairing with it —
+they keep a loaded machine from being the reason a timing case fails — and one
+lock file keeps two runs from overlapping:
+
+```console
+$ nice -n 10 flock /tmp/libtmux-swift-test/.swift.lock \
+    swift test --jobs 5 --no-parallel --force-resolved-versions
+```
+
 That the default configuration builds is its own check, because the trait-on
 test below covers a different graph:
 
