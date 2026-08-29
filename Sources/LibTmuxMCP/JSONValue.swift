@@ -60,8 +60,8 @@ public enum JSONValue: Codable, Sendable, Hashable {
     }
 
     public var intValue: Int? {
-        guard case let .number(value) = self, value == value.rounded() else { return nil }
-        return Int(value)
+        guard case let .number(value) = self else { return nil }
+        return Int(exactly: value)
     }
 
     public var doubleValue: Double? {

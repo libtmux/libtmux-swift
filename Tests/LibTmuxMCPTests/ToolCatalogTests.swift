@@ -113,6 +113,29 @@ struct ToolCatalogTests {
         }
     }
 
+    @Test("integer arguments reject fractions and values outside Int")
+    func integerArgumentsMustFitExactly() throws {
+        let definition = try #require(TmuxTools.byName["capture_pane"])
+        for value in [1.5, 1e300] {
+            let arguments = try Arguments(
+                ToolCall(
+                    name: "capture_pane",
+                    arguments: .object([
+                        "pane": .string("pane-ref"), "max_lines": .number(value),
+                    ])
+                ),
+                for: definition
+            )
+            #expect(
+                throws: ToolError.wrongArgumentType(
+                    "max_lines", expected: "a whole number"
+                )
+            ) {
+                try arguments.integer("max_lines", or: 200)
+            }
+        }
+    }
+
     @Test("timeout arguments reject nonfinite numbers")
     func timeoutArgumentsMustBeFinite() throws {
         let definition = try #require(TmuxTools.byName["run_shell"])
