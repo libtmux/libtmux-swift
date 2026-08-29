@@ -171,6 +171,27 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("a failed build removes the exact session it created")
+    func failedBuildRollsBackItsSession() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "rollback",
+                windows: [
+                    WindowPlan(
+                        layout: "not-a-tmux-layout",
+                        panes: [PanePlan(), PanePlan()]
+                    )
+                ]
+            )
+
+            await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(workspace, on: server)
+            }
+            let sessions = try await server.sessions()
+            #expect(sessions.allSatisfy { $0.name != "rollback" })
+        }
+    }
+
     @Test("a command that declines enter is typed but not run")
     func declinedEnterIsTypedNotRun() async throws {
         try await withTmuxServer { server in

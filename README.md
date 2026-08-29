@@ -399,7 +399,9 @@ let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
 Building refuses rather than adopting a session that already has the name: two
-callers building the same workspace should not silently share one.
+callers building the same workspace should not silently share one. A later
+failure removes the exact session this build created; a rollback failure
+reports both errors.
 
 JSON needs no trait, because tmuxp's keys decode straight into these types.
 Reading the YAML that tmuxp files are usually written in needs a parser, which
