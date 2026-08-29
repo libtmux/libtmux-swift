@@ -21,8 +21,21 @@ let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vi
 let matching = try await server.panes().filter(expression)
 ```
 
-`exactlyOne(_:)` distinguishes "nothing matched" from "several matched", because
-a caller addressing one object needs to know which mistake it made.
+Regular-expression filters carry a compiled ``RegexPattern`` rather than an
+unchecked string:
+
+```swift
+let editors = try RegexPattern("^(n?vim|hx)$", options: [.caseInsensitive])
+let expression = try FilterExpr<Pane>.where(\.currentCommand, .matches(editors))
+let matching = try await server.panes().filter(expression)
+```
+
+The bounded dialect rejects lookaround and backreferences. Evaluation throws a
+``RegexMatchError`` if its aggregate work budget is exhausted; it never turns a
+safety refusal into `false`.
+
+`exactlyOne(_:)` distinguishes matching failures, no match, and several matches
+through ``FilterSelectionError``.
 
 Matching happens over values already in hand, so iterating results never spawns
 tmux.

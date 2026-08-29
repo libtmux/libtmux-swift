@@ -68,6 +68,7 @@ command explains itself on standard error — so
 - <doc:Waiting>
 - ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
 - ``OutputWait``
+- ``OutputWaitError``
 - ``Server/wait(for:)``
 - ``Server/signal(_:)``
 
@@ -94,6 +95,13 @@ command explains itself on standard error — so
 - ``FilterSchema``
 - ``FilterLookup``
 - ``CardinalityError``
+- ``FilterSelectionError``
+
+### Bounded pattern matching
+
+- ``RegexPattern``
+- ``RegexCompileError``
+- ``RegexMatchError``
 
 ### Choosing a mode
 

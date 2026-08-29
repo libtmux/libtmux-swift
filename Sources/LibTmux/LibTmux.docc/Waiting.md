@@ -63,12 +63,19 @@ daemon printing `ready`, a dev server someone else started, a build you
 attached to:
 
 ```swift
+let ready = try RegexPattern("Listening on")
+let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
 let waited = try await server.waitForOutput(
     in: pane,
-    matching: ["Listening on"],
-    stoppingAt: ["EADDRINUSE", "error"]
+    matching: [ready],
+    stoppingAt: [failed]
 )
 ```
+
+Compile patterns before starting the wait. ``RegexPattern`` supports a bounded
+dialect, rejects lookaround and backreferences, and refuses oversized input or
+matching that exhausts its work budget. Those refusals surface through
+``OutputWaitError`` rather than becoming a false non-match.
 
 Pass `stops` whenever a failure marker exists. A build that fails after five
 seconds should end the wait then, rather than holding it open for the rest of
@@ -178,6 +185,8 @@ trip per second.
 
 - ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
 - ``OutputWait``
+- ``OutputWaitError``
+- ``RegexPattern``
 
 ### Watching a pane
 

@@ -570,12 +570,13 @@ func measureWaiting(quietFor delay: Duration) async throws
 
     let awaited = try await withBenchServer { server, counting in
         guard let pane = try await server.panes().first else { throw BenchError.noPane }
+        let pattern = try RegexPattern(marker)
         try counting.reset()
         let announcing = announce(server, pane)
         let elapsed = try await clock.measure {
             _ = try await server.waitForOutput(
                 in: pane,
-                matching: [marker],
+                matching: [pattern],
                 requiringFreshOutput: true,
                 timeout: .seconds(30)
             )

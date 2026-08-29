@@ -56,7 +56,7 @@ enum Prompts {
                 + "started to reach a known state.",
             arguments: [
                 ("pane", "The pane it is running in.", true),
-                ("ready", "Text that means it is ready.", false),
+                ("ready", "A bounded regular expression that means it is ready.", false),
             ]
         ) { arguments in
             let pane = arguments["pane"] ?? "%1"
@@ -65,7 +65,7 @@ enum Prompts {
                 Something you did not start is running in pane \(pane). Wait for it:
 
                 1. `wait_for_output(pane: "\(pane)", patterns: [\(quoted(ready))], \
-                stops: ["error", "EADDRINUSE", "FAILED"])`
+                stops: ["error", "EADDRINUSE", "FAILED"], case_insensitive: true)`
 
                    The `stops` matter more than the pattern. A process that fails \
                 after five seconds should end the wait then, not hold it for the \

@@ -349,10 +349,12 @@ wait as the pane writes, and the matching runs against the rendered grid. A
 small liveness check detects a pane removed while it is quiet:
 
 ```swift
+let ready = try RegexPattern("Listening on")
+let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
 let waited = try await server.waitForOutput(
     in: pane,
-    matching: ["Listening on"],
-    stoppingAt: ["EADDRINUSE", "error"]
+    matching: [ready],
+    stoppingAt: [failed]
 )
 ```
 

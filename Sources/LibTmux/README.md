@@ -34,8 +34,9 @@ actor the value shares.
 | `Mutations.swift`, `Navigation.swift` | Creating, splitting, renaming, selecting |
 | `Options.swift`, `Environment.swift` | tmux options, hooks, and its two environments |
 | `Filter*.swift` | `FilterExpr`, the filter that encodes and travels |
+| `Regex*.swift` | Bounded pattern syntax, compilation, and matching |
 | `TmuxMode.swift`, `ControlMode.swift` | Direct and connected, and the switch between |
-| `Wait.swift` | `wait-for` channels |
+| `Wait.swift`, `WaitForOutput.swift` | Channels and event-driven pane output waits |
 | `TmuxVersion.swift` | What the server runs, compared properly |
 
 ## Documentation
