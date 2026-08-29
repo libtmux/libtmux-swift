@@ -90,7 +90,12 @@ extension TmuxToolsTests {
     @Test("run_shell bounds output before collecting it")
     func runShellBoundsOutputAtTheSource() async throws {
         try await withTmuxServer { server in
-            _ = try await server.setOption("history-limit", to: "6000")
+            let history = try await server.setOption(
+                "history-limit",
+                to: "6000",
+                scope: .globalSession
+            )
+            #expect(history.isSuccess, Comment(rawValue: history.errorText))
             let existing = Set(try await server.panes().map(\.id))
             _ = try await server.newSession(named: "bounded-run-shell")
             let pane = try #require(
@@ -113,6 +118,10 @@ extension TmuxToolsTests {
             )
             let current = try #require(
                 try await boundedServer.panes().first { $0.id == pane.id }
+            )
+            #expect(
+                try await boundedServer.formatGlobal("#{history_limit}", for: current)
+                    == "6000"
             )
             let filler = String(repeating: "x", count: 57)
             let outcome = try await TmuxTools(server: boundedServer, tier: .mutating).call(
@@ -145,12 +154,18 @@ extension TmuxToolsTests {
     @Test("run_shell preserves output when scrollback is full")
     func runShellPreservesOutputAtFullHistory() async throws {
         try await withTmuxServer { server in
-            _ = try await server.setOption("history-limit", to: "20")
+            let history = try await server.setOption(
+                "history-limit",
+                to: "20",
+                scope: .globalSession
+            )
+            #expect(history.isSuccess, Comment(rawValue: history.errorText))
             let existing = Set(try await server.panes().map(\.id))
             _ = try await server.newSession(named: "full-history-run-shell")
             let pane = try #require(
                 try await server.panes().first { !existing.contains($0.id) }
             )
+            #expect(try await server.formatGlobal("#{history_limit}", for: pane) == "20")
             let reset = "libtmux-test-run-shell-reset-\(UUID().uuidString)"
             try await server.run(
                 "stty -echo; printf '\\033c'; "

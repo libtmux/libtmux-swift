@@ -120,7 +120,12 @@ struct PaneOutputBoundaryTests {
     @Test("pane tools bound history before collecting it")
     func paneToolsBoundHistoryAtTheSource() async throws {
         try await withTmuxServer { fixture in
-            _ = try await fixture.setOption("history-limit", to: "6000")
+            let history = try await fixture.setOption(
+                "history-limit",
+                to: "6000",
+                scope: .globalSession
+            )
+            #expect(history.isSuccess, Comment(rawValue: history.errorText))
             let existing = Set(try await fixture.panes().map(\.id))
             _ = try await fixture.newSession(named: "bounded-capture")
             let pane = try #require(
@@ -161,6 +166,10 @@ struct PaneOutputBoundaryTests {
             )
             let current = try #require(
                 try await server.panes().first { $0.id == pane.id }
+            )
+            #expect(
+                try await server.formatGlobal("#{history_limit}", for: current)
+                    == "6000"
             )
             let result = try await TmuxTools(server: server).call(
                 ToolCall(
