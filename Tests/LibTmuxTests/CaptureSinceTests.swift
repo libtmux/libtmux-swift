@@ -136,7 +136,7 @@ struct CaptureSinceTests {
                 sourceLinesPerChunk: 16,
                 maximumChunks: 8,
                 perStreamOutputLimit: 1_048_576
-            ) { rows, _ in
+            ) { rows in
                 visited.append(contentsOf: rows)
                 return false
             }
@@ -172,7 +172,7 @@ struct CaptureSinceTests {
                 sourceLinesPerChunk: 4,
                 maximumChunks: 8,
                 perStreamOutputLimit: 1_048_576
-            ) { rows, _ in
+            ) { rows in
                 visited.append(contentsOf: rows)
                 return false
             }

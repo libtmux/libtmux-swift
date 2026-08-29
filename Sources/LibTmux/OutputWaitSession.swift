@@ -524,17 +524,14 @@ struct OutputWaitSession: Sendable {
                 sourceLinesPerChunk: Self.waitCaptureLines,
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
-            ) { rows, alternateScreen in
+            ) { rows in
                 guard ContinuousClock.now < deadline else {
                     deadlineReached = true
                     return true
                 }
-                // Painted rows still reach the tail, so a caller can see what
-                // the pane shows, but they are not output and cannot match.
-                tail = Array((tail + rows).suffix(tailLimit))
-                guard !alternateScreen else { return false }
                 let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
+                tail = Array((tail + arrived).suffix(tailLimit))
                 do {
                     output = try answer(arrived, tail, false)
                     if output != nil {
