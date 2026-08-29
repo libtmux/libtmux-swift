@@ -309,6 +309,15 @@ struct WatchTests {
             // this suite beside it.
             #expect(answered.seconds < 10)
 
+            let stopped = try await server.waitForOutput(
+                in: pane,
+                stoppingAt: [try RegexPattern("stale-marker")],
+                timeout: .milliseconds(200)
+            )
+            #expect(stopped.outcome == .stopped)
+            #expect(stopped.matchedAtEntry)
+            #expect(!stopped.sawNewOutput)
+
             let result = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("stale-marker")],

@@ -22,13 +22,9 @@ public struct OutputWait: Sendable, Hashable, Codable {
     /// ``Outcome/timedOut`` means the pane was quiet — usually the command
     /// never ran, which no change of pattern will fix.
     public let sawNewOutput: Bool
-    /// The pattern was already on screen when the wait began.
-    ///
-    /// Set alongside ``Outcome/matched`` when the condition held on arrival and
-    /// nothing was waited for, and alongside ``Outcome/timedOut`` when
-    /// `requireFresh` made the wait look past it. Either way it separates "it
-    /// happened before you asked" from "it never happened" — opposite problems
-    /// that a bare timeout reports identically.
+    /// A match or stop condition was already on screen when the wait began.
+    /// It accompanies an immediate match or stop, or the later outcome when
+    /// `requireFresh` made the wait look past it.
     public let matchedAtEntry: Bool
     /// The last lines that arrived, newest last, for reading when the pattern
     /// was wrong.
@@ -76,12 +72,9 @@ extension Server {
     /// pane is quiet so removing it ends the wait instead of looking like a
     /// timeout.
     ///
-    /// The condition is checked before it is blocked on. A pattern already on
-    /// screen returns at once, with ``OutputWait/matchedAtEntry`` set, because
-    /// "wait until the server is listening" is answered by a server that is
-    /// already listening. Pass `requiringFreshOutput` for the other reading:
-    /// re-running a command whose output looks identical, where only a new
-    /// occurrence counts.
+    /// The conditions are checked before they are blocked on. A match or stop
+    /// already on screen returns at once, with ``OutputWait/matchedAtEntry``
+    /// set. Pass `requiringFreshOutput` when only a new occurrence counts.
     ///
     /// - Parameters:
     ///   - pane: the pane to watch.
@@ -122,12 +115,13 @@ extension Server {
             () async throws(OutputWaitError) -> [String] in
             try await outputWaitTmux { try await waitLookbackRows(in: pane) }
         }
-        let alreadyShowing = try firstMatchingRow(
+        let entryMatch = try firstEntryOutputMatch(
             in: entryRows,
             patterns: patterns,
+            stops: stops,
             budget: matchBudget
         )
-        let wasAlreadyShowing = alreadyShowing != nil
+        let wasAlreadyShowing = entryMatch != nil
 
         let answer: @Sendable ([String], [String]) throws(OutputWaitError) -> OutputWait? = {
             arrived, tail in
@@ -194,17 +188,11 @@ extension Server {
         // Answered up front rather than inferred from a timeout: "already on
         // screen" and "never happened" look identical afterwards, and only one
         // of them is fixed by waiting longer.
-        if let alreadyShowing, !requireFresh {
-            let row = entryRows[alreadyShowing]
-            let hit = try firstOutputPatternMatch(
-                in: row,
-                patterns: patterns,
-                budget: matchBudget
-            )
+        if let entryMatch, !requireFresh {
             return OutputWait(
-                outcome: .matched,
-                matched: hit.map { patterns[$0].source },
-                matchedIndex: hit,
+                outcome: entryMatch.outcome,
+                matched: entryMatch.matched,
+                matchedIndex: entryMatch.matchedIndex,
                 sawNewOutput: false,
                 matchedAtEntry: true,
                 tail: Array(entryRows.suffix(keptTail)),
@@ -616,17 +604,35 @@ func firstOutputPatternMatch(
     return nil
 }
 
-private func firstMatchingRow(
+private func firstEntryOutputMatch(
     in rows: [String],
     patterns: [RegexPattern],
+    stops: [RegexPattern],
     budget: RegexMatchBudget
-) throws(OutputWaitError) -> Int? {
-    for (index, row) in rows.enumerated() {
-        if try firstOutputPatternMatch(in: row, patterns: patterns, budget: budget) != nil {
-            return index
+) throws(OutputWaitError) -> EntryOutputMatch? {
+    for row in rows {
+        if let index = try firstOutputPatternMatch(in: row, patterns: stops, budget: budget) {
+            return EntryOutputMatch(
+                outcome: .stopped,
+                matched: stops[index].source,
+                matchedIndex: index
+            )
+        }
+        if let index = try firstOutputPatternMatch(in: row, patterns: patterns, budget: budget) {
+            return EntryOutputMatch(
+                outcome: .matched,
+                matched: patterns[index].source,
+                matchedIndex: index
+            )
         }
     }
     return nil
+}
+
+private struct EntryOutputMatch {
+    let outcome: OutputWait.Outcome
+    let matched: String
+    let matchedIndex: Int
 }
 
 private func outputWaitTmux<Result>(
