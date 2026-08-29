@@ -129,11 +129,20 @@ public enum RelationQuantifier: String, Sendable, Hashable, Codable {
     /// No related object matches. An object with no relations satisfies this.
     case none
 
-    func holds(over matchCount: Int, of total: Int) -> Bool {
+    func holds<Element>(
+        over elements: [Element],
+        matching predicate: (Element) throws(RegexMatchError) -> Bool
+    ) throws(RegexMatchError) -> Bool {
         switch self {
-        case .some: matchCount > 0
-        case .every: matchCount == total
-        case .none: matchCount == 0
+        case .some:
+            for element in elements where try predicate(element) { return true }
+            return false
+        case .every:
+            for element in elements where try !predicate(element) { return false }
+            return true
+        case .none:
+            for element in elements where try predicate(element) { return false }
+            return true
         }
     }
 }
@@ -161,10 +170,12 @@ extension Snapshot {
         var result: [Session] = []
         for session in fromIncarnation(sessions) {
             let related = panes(of: session)
-            let matches = try related.count { (pane: Pane) throws(RegexMatchError) in
-                try expression.matches(pane, budget: regexBudget)
-            }
-            if quantifier.holds(over: matches, of: related.count) {
+            if try quantifier.holds(
+                over: related,
+                matching: { (pane: Pane) throws(RegexMatchError) in
+                    try expression.matches(pane, budget: regexBudget)
+                }
+            ) {
                 result.append(session)
             }
         }
@@ -191,10 +202,12 @@ extension Snapshot {
         var result: [Session] = []
         for session in fromIncarnation(sessions) {
             let related = windows(of: session)
-            let matches = try related.count { (window: Window) throws(RegexMatchError) in
-                try expression.matches(window, budget: regexBudget)
-            }
-            if quantifier.holds(over: matches, of: related.count) {
+            if try quantifier.holds(
+                over: related,
+                matching: { (window: Window) throws(RegexMatchError) in
+                    try expression.matches(window, budget: regexBudget)
+                }
+            ) {
                 result.append(session)
             }
         }
@@ -221,10 +234,12 @@ extension Snapshot {
         var result: [Window] = []
         for window in fromIncarnation(windows) {
             let related = panes(of: window)
-            let matches = try related.count { (pane: Pane) throws(RegexMatchError) in
-                try expression.matches(pane, budget: regexBudget)
-            }
-            if quantifier.holds(over: matches, of: related.count) {
+            if try quantifier.holds(
+                over: related,
+                matching: { (pane: Pane) throws(RegexMatchError) in
+                    try expression.matches(pane, budget: regexBudget)
+                }
+            ) {
                 result.append(window)
             }
         }
@@ -264,16 +279,6 @@ extension Snapshot {
             )
         )
         return fromIncarnation(windows).filter { linked.contains($0.id) }
-    }
-}
-
-extension Sequence {
-    fileprivate func count(
-        where predicate: (Element) throws(RegexMatchError) -> Bool
-    ) throws(RegexMatchError) -> Int {
-        var result = 0
-        for element in self where try predicate(element) { result += 1 }
-        return result
     }
 }
 

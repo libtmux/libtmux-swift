@@ -281,6 +281,81 @@ struct SnapshotRelationTests {
         #expect(try snapshot.windows(.some, ofPanes: vimish).map(\.id) == ["@0", "@1"])
     }
 
+    @Test("some stops after its first related match")
+    func someStopsAfterItsFirstRelatedMatch() throws {
+        let related = Snapshot(
+            incarnation: fixtureIncarnation,
+            sessions: [session("$0", "owner")],
+            windows: [window("@0")],
+            windowLinks: [link("@0", session: "$0")],
+            panes: [
+                pane("%0", window: "@0", command: "z"),
+                pane("%1", window: "@0", command: "aaaa"),
+            ],
+            clients: []
+        )
+        let pattern = try RegexPattern("z$")
+        let expression = try FilterExpr<Pane>.where(\.currentCommand, .matches(pattern))
+        #expect(try !pattern.containsMatch(in: "aaaa", maximumWork: 20))
+
+        let matches = try related.sessions(
+            .some,
+            ofPanes: expression,
+            regexBudget: try RegexMatchBudget(maximum: 20)
+        )
+
+        #expect(matches.map(\.id) == ["$0"])
+    }
+
+    @Test("every stops after its first related mismatch")
+    func everyStopsAfterItsFirstRelatedMismatch() throws {
+        let related = Snapshot(
+            incarnation: fixtureIncarnation,
+            sessions: [session("$0", "owner")],
+            windows: [window("@0", name: "aaaa"), window("@1", name: "aaaa")],
+            windowLinks: [link("@0", session: "$0"), link("@1", session: "$0")],
+            panes: [],
+            clients: []
+        )
+        let pattern = try RegexPattern("z$")
+        let expression = try FilterExpr<Window>.where(\.name, .matches(pattern))
+        #expect(try !pattern.containsMatch(in: "aaaa", maximumWork: 20))
+
+        let matches = try related.sessions(
+            .every,
+            ofWindows: expression,
+            regexBudget: try RegexMatchBudget(maximum: 20)
+        )
+
+        #expect(matches.isEmpty)
+    }
+
+    @Test("none stops after its first related match")
+    func noneStopsAfterItsFirstRelatedMatch() throws {
+        let related = Snapshot(
+            incarnation: fixtureIncarnation,
+            sessions: [session("$0", "owner")],
+            windows: [window("@0")],
+            windowLinks: [link("@0", session: "$0")],
+            panes: [
+                pane("%0", window: "@0", command: "z"),
+                pane("%1", window: "@0", command: "aaaa"),
+            ],
+            clients: []
+        )
+        let pattern = try RegexPattern("z$")
+        let expression = try FilterExpr<Pane>.where(\.currentCommand, .matches(pattern))
+        #expect(try !pattern.containsMatch(in: "aaaa", maximumWork: 20))
+
+        let matches = try related.windows(
+            .none,
+            ofPanes: expression,
+            regexBudget: try RegexMatchBudget(maximum: 20)
+        )
+
+        #expect(matches.isEmpty)
+    }
+
     @Test("relation matching shares work across owners")
     func relationMatchingSharesWorkAcrossOwners() throws {
         let related = Snapshot(
