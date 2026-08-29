@@ -3,6 +3,14 @@ import TmuxFixture
 
 @testable import LibTmux
 
+private actor ControlSendResult {
+    private(set) var value: Result<ControlReply, TmuxError>?
+
+    func record(_ value: Result<ControlReply, TmuxError>) {
+        self.value = value
+    }
+}
+
 @Suite("control mode concurrency", .timeLimit(.minutes(1)))
 struct ControlModeConcurrencyTests {
     @Test("concurrent sends each receive their own reply")
@@ -35,6 +43,64 @@ struct ControlModeConcurrencyTests {
                 }
             }
         }
+    }
+
+    @Test("cancelling a submitted command preserves later reply attribution")
+    func cancelledSendPreservesNextReply() async throws {
+        let (writes, writeWitness) = AsyncStream.makeStream(of: [UInt8].self)
+        let control = ControlSession(write: { writeWitness.yield($0) })
+        await control.consume("%begin 1 1 0")
+        await control.consume("%end 1 1 0")
+
+        let firstResult = ControlSendResult()
+        let first = Task {
+            do {
+                let reply = try await control.send(
+                    TmuxCommand("display-message", ["-p", "first-command"])
+                )
+                await firstResult.record(.success(reply))
+            } catch let error as TmuxError {
+                await firstResult.record(.failure(error))
+            } catch {
+                Issue.record("unexpected send error: \(error)")
+            }
+        }
+        var writeIterator = writes.makeAsyncIterator()
+        let firstWrite = await writeIterator.next()
+        #expect(
+            firstWrite.map { String(decoding: $0, as: UTF8.self) }
+                == "display-message -p first-command\n"
+        )
+
+        first.cancel()
+        let cancelledPromptly = try await waitUntil(within: .seconds(1)) {
+            await firstResult.value != nil
+        }
+        #expect(cancelledPromptly)
+
+        let second = Task {
+            try await control.send(
+                TmuxCommand("display-message", ["-p", "second-command"])
+            )
+        }
+        let secondWrite = await writeIterator.next()
+        #expect(
+            secondWrite.map { String(decoding: $0, as: UTF8.self) }
+                == "display-message -p second-command\n"
+        )
+
+        await control.consume("%begin 1 2 1")
+        await control.consume("first-reply")
+        await control.consume("%end 1 2 1")
+        await control.consume("%begin 1 3 1")
+        await control.consume("second-reply")
+        await control.consume("%end 1 3 1")
+
+        _ = try await waitUntil(within: .seconds(1)) {
+            await firstResult.value != nil
+        }
+        #expect(await firstResult.value == .failure(.cancelled))
+        #expect(try await second.value.lines == ["second-reply"])
     }
 
     @Test("hook replies do not answer the next command")

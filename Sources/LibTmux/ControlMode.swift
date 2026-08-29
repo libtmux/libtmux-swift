@@ -19,11 +19,14 @@ private struct SubmittedLine {
         case fenced(marker: String)
     }
 
+    let id: UInt64
     let completion: Completion
     var collected: [ControlReply] = []
     var completionError: TmuxError?
     var answered = false
-    let continuation: CheckedContinuation<Result<ControlReply, TmuxError>, Never>
+    /// Nil once cancellation has answered the caller. The line stays queued
+    /// until tmux's reply is drained, preserving every later reply's position.
+    var continuation: CheckedContinuation<Result<ControlReply, TmuxError>, Never>?
 
     mutating func consume(_ reply: ControlReply) {
         switch completion {
@@ -70,6 +73,7 @@ public actor ControlSession {
     private let write: @Sendable ([UInt8]) async throws -> Void
     private var parser = ControlProtocolParser()
     private var pending: [SubmittedLine] = []
+    private var nextSubmissionID: UInt64 = 0
     private var attachWaiters: [CheckedContinuation<Result<Void, TmuxError>, Never>] = []
     private var lastWrite: Task<Void, Never>?
     private var isAttached = false
@@ -166,31 +170,44 @@ public actor ControlSession {
         line: String,
         completion: SubmittedLine.Completion
     ) async throws(TmuxError) -> ControlReply {
-        let result: Result<ControlReply, TmuxError> = await withCheckedContinuation {
-            continuation in
-            // Registered before the write, because the reply can arrive while
-            // the write is still suspended and a reply with nobody waiting is
-            // discarded.
-            pending.append(
-                SubmittedLine(completion: completion, continuation: continuation)
-            )
-            let write = self.write
-            // Chained to the previous send: the queue is ordered by who
-            // entered the actor, and the writes have to reach tmux in that
-            // same order or a reply lands on the wrong waiter.
-            let previous = lastWrite
-            lastWrite = Task { [line] in
-                await previous?.value
-                do {
-                    try await write(Array("\(line)\n".utf8))
-                } catch {
-                    // A failed write means the connection is gone, and the
-                    // transport's word for it — `Broken pipe` — is not one this
-                    // library promises. Otherwise the error a caller sees
-                    // depends on whether the write or the read noticed first.
-                    self.failOldestWaiter(TmuxError.connectionClosed)
+        let id = nextSubmissionID
+        nextSubmissionID &+= 1
+        let result: Result<ControlReply, TmuxError> = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: .failure(.cancelled))
+                    return
+                }
+                // Registered before the write, because the reply can arrive while
+                // the write is still suspended and a reply with nobody waiting is
+                // discarded.
+                pending.append(
+                    SubmittedLine(
+                        id: id,
+                        completion: completion,
+                        continuation: continuation
+                    )
+                )
+                let write = self.write
+                // Chained to the previous send: the queue is ordered by who
+                // entered the actor, and the writes have to reach tmux in that
+                // same order or a reply lands on the wrong waiter.
+                let previous = lastWrite
+                lastWrite = Task { [line] in
+                    await previous?.value
+                    do {
+                        try await write(Array("\(line)\n".utf8))
+                    } catch {
+                        // A failed write means the connection is gone, and the
+                        // transport's word for it — `Broken pipe` — is not one this
+                        // library promises. Otherwise the error a caller sees
+                        // depends on whether the write or the read noticed first.
+                        self.failOldestWaiter(TmuxError.connectionClosed)
+                    }
                 }
             }
+        } onCancel: {
+            Task { await self.cancelSubmission(id) }
         }
         return try result.get()
     }
@@ -208,7 +225,15 @@ public actor ControlSession {
 
     private func failOldestWaiter(_ error: TmuxError) {
         guard !pending.isEmpty else { return }
-        pending.removeFirst().continuation.resume(returning: .failure(error))
+        pending.removeFirst().continuation?.resume(returning: .failure(error))
+    }
+
+    private func cancelSubmission(_ id: UInt64) {
+        guard let index = pending.firstIndex(where: { $0.id == id }),
+            let continuation = pending[index].continuation
+        else { return }
+        pending[index].continuation = nil
+        continuation.resume(returning: .failure(.cancelled))
     }
 
     /// Consumes one line of the server's output.
@@ -232,10 +257,11 @@ public actor ControlSession {
             pending[0].consume(reply)
             guard pending[0].answered else { return }
             let answered = pending.removeFirst()
+            guard let continuation = answered.continuation else { return }
             if let error = answered.completionError {
-                answered.continuation.resume(returning: .failure(error))
+                continuation.resume(returning: .failure(error))
             } else {
-                answered.continuation.resume(returning: .success(answered.reply))
+                continuation.resume(returning: .success(answered.reply))
             }
         case let .notification(notification):
             broadcast.yield(notification)
@@ -264,7 +290,7 @@ public actor ControlSession {
         let waiters = pending
         pending = []
         for waiter in waiters {
-            waiter.continuation.resume(returning: .failure(reason))
+            waiter.continuation?.resume(returning: .failure(reason))
         }
         let attaching = attachWaiters
         attachWaiters = []
