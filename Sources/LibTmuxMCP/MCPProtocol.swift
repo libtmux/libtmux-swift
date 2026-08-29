@@ -50,10 +50,12 @@ public struct MCPRequestHandler: Sendable {
     /// Unparseable input is ignored rather than answered, because a reply needs
     /// an id to carry and a malformed line has none to quote back.
     ///
-    /// - Parameter emit: where a notification sent *before* the answer goes —
-    ///   progress, while a long call is still running. Writing them is the
-    ///   caller's job because they share the one stdout the answer uses, and
-    ///   two writers there would interleave.
+    /// - Parameters:
+    ///   - line: one JSON-RPC request without its trailing newline.
+    ///   - emit: where a notification sent *before* the answer goes — progress,
+    ///     while a long call is still running. Writing them is the caller's job
+    ///     because they share the one stdout the answer uses, and two writers
+    ///     there would interleave.
     public func respond(
         to line: String,
         emit: @escaping @Sendable (String) async -> Void = { _ in }

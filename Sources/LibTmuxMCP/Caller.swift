@@ -10,7 +10,7 @@ import LibTmux
 public struct CallerIdentity: Sendable, Hashable, Codable {
     /// From `TMUX_PANE`, which tmux sets in every process it starts.
     public let paneID: PaneID?
-    /// From `TMUX`, in the same spelling ``Session/id`` uses.
+    /// From `TMUX`, in the same `$…` spelling as a session id.
     public let sessionID: SessionID?
     public let socketPath: String?
     /// The surrounding server's process id. This, rather than the socket path,

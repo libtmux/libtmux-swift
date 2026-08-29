@@ -183,10 +183,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: |
           set -euo pipefail
-          swift package generate-documentation --target LibTmux 2>&1 | tee docs.log
-          if grep -q 'warning:' docs.log; then
+          : > docs.log
+          for target in LibTmux TmuxWorkspace LibTmuxMCP; do
+            swift package generate-documentation --target "$target" 2>&1 | tee -a docs.log
+          done
+          if rg -q 'warning:' docs.log; then
             echo "::error::DocC reported warnings"
-            grep -A3 'warning:' docs.log
+            rg -A3 'warning:' docs.log
             exit 1
           fi
 

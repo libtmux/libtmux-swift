@@ -130,6 +130,14 @@ error rather than a note:
 $ swift package generate-documentation --target LibTmux
 ```
 
+```console
+$ swift package generate-documentation --target TmuxWorkspace
+```
+
+```console
+$ swift package generate-documentation --target LibTmuxMCP
+```
+
 Python under `Scripts/` is held to the ruff configuration beside it, in
 `Scripts/.ruff.toml`. CI pins the action version deliberately — 0.16.3 broke a
 lane on an unrelated commit:
