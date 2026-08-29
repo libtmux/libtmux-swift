@@ -19,6 +19,17 @@ private actor ControlWriteLog {
     }
 }
 
+private actor FailingSecondControlWriter {
+    private(set) var lines: [String] = []
+
+    func write(_ bytes: [UInt8]) throws {
+        lines.append(String(decoding: bytes, as: UTF8.self))
+        if lines.count == 2 {
+            throw TmuxError.connectionClosed
+        }
+    }
+}
+
 @Suite("control mode concurrency", .timeLimit(.minutes(1)))
 struct ControlModeConcurrencyTests {
     @Test("concurrent sends each receive their own reply")
@@ -158,6 +169,73 @@ struct ControlModeConcurrencyTests {
         await control.consume("after-attach-reply")
         await control.consume("%end 1 2 1")
         #expect(try await second.value.lines == ["after-attach-reply"])
+    }
+
+    @Test("a later write failure cannot shift an earlier reply")
+    func laterWriteFailureDoesNotShiftEarlierReply() async throws {
+        let writer = FailingSecondControlWriter()
+        let control = ControlSession(write: { try await writer.write($0) })
+        await control.consume("%begin 1 1 0")
+        await control.consume("%end 1 1 0")
+
+        let firstResult = ControlSendResult()
+        let first = Task {
+            do {
+                let reply = try await control.send(
+                    TmuxCommand("display-message", ["-p", "first-command"])
+                )
+                await firstResult.record(.success(reply))
+            } catch let error as TmuxError {
+                await firstResult.record(.failure(error))
+            } catch {
+                Issue.record("unexpected first send error: \(error)")
+            }
+        }
+        let wroteFirst = try await waitUntil(within: .seconds(1)) {
+            await writer.lines.count == 1
+        }
+        #expect(wroteFirst)
+
+        let secondResult = ControlSendResult()
+        let second = Task {
+            do {
+                let reply = try await control.send(
+                    TmuxCommand("display-message", ["-p", "second-command"])
+                )
+                await secondResult.record(.success(reply))
+            } catch let error as TmuxError {
+                await secondResult.record(.failure(error))
+            } catch {
+                Issue.record("unexpected second send error: \(error)")
+            }
+        }
+        let attemptedSecond = try await waitUntil(within: .seconds(1)) {
+            await writer.lines.count == 2
+        }
+        #expect(attemptedSecond)
+        #expect(
+            await writer.lines == [
+                "display-message -p first-command\n",
+                "display-message -p second-command\n",
+            ]
+        )
+        let failedFirst = try await waitUntil(within: .seconds(1)) {
+            await firstResult.value != nil
+        }
+        #expect(failedFirst)
+
+        await control.consume("%begin 1 2 1")
+        await control.consume("first-reply")
+        await control.consume("%end 1 2 1")
+
+        let answeredSecond = try await waitUntil(within: .seconds(1)) {
+            await secondResult.value != nil
+        }
+        #expect(answeredSecond)
+        #expect(await firstResult.value == .failure(.connectionClosed))
+        #expect(await secondResult.value == .failure(.connectionClosed))
+        await first.value
+        await second.value
     }
 
     @Test("hook replies do not answer the next command")

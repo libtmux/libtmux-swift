@@ -195,6 +195,7 @@ public actor ControlSession {
                 let previous = lastWrite
                 lastWrite = Task { [line] in
                     await previous?.value
+                    guard self.closure == nil else { return }
                     do {
                         try await write(Array("\(line)\n".utf8))
                     } catch {
@@ -202,7 +203,7 @@ public actor ControlSession {
                         // transport's word for it — `Broken pipe` — is not one this
                         // library promises. Otherwise the error a caller sees
                         // depends on whether the write or the read noticed first.
-                        self.failOldestWaiter(TmuxError.connectionClosed)
+                        self.finish(throwing: TmuxError.connectionClosed)
                     }
                 }
             }
@@ -236,11 +237,6 @@ public actor ControlSession {
     private func cancelAttachWaiter(_ id: UInt64) {
         guard let index = attachWaiters.firstIndex(where: { $0.id == id }) else { return }
         attachWaiters.remove(at: index).continuation.resume(returning: .failure(.cancelled))
-    }
-
-    private func failOldestWaiter(_ error: TmuxError) {
-        guard !pending.isEmpty else { return }
-        pending.removeFirst().continuation?.resume(returning: .failure(error))
     }
 
     private func cancelSubmission(_ id: UInt64) {
