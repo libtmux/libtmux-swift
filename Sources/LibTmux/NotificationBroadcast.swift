@@ -1,7 +1,40 @@
 import Foundation
 
 /// One observer's control notifications with finite pending storage.
-public typealias ControlNotificationStream = AsyncThrowingStream<ControlNotification, any Error>
+public struct ControlNotificationStream: AsyncSequence, Sendable {
+    typealias Continuation = Base.Continuation
+
+    typealias Base = AsyncThrowingStream<ControlNotification, any Error>
+    private let base: Base
+
+    init(
+        bufferingPolicy: Continuation.BufferingPolicy = .unbounded,
+        _ build: (Continuation) -> Void
+    ) {
+        self.base = Base(bufferingPolicy: bufferingPolicy, build)
+    }
+
+    public func makeAsyncIterator() -> Iterator {
+        Iterator(base.makeAsyncIterator())
+    }
+
+    /// Iterates notifications with `TmuxError` as the failure type.
+    public struct Iterator: AsyncIteratorProtocol {
+        private var base: Base.Iterator
+
+        fileprivate init(_ base: Base.Iterator) {
+            self.base = base
+        }
+
+        public mutating func next() async throws(TmuxError) -> ControlNotification? {
+            do {
+                return try await base.next()
+            } catch {
+                throw normalizedTmuxError(error)
+            }
+        }
+    }
+}
 
 /// Hands every observer its own copy of a connection's notifications.
 ///
@@ -38,7 +71,7 @@ final class NotificationBroadcast: Sendable {
     /// A stream carrying every notification from here on, preceded by the
     /// backlog if this is the first observer.
     func subscribe() -> ControlNotificationStream {
-        AsyncThrowingStream(bufferingPolicy: .bufferingOldest(limit)) { continuation in
+        ControlNotificationStream(bufferingPolicy: .bufferingOldest(limit)) { continuation in
             var overflowed = false
             let registration: Int? = withLock {
                 if let backlog = state.backlog {

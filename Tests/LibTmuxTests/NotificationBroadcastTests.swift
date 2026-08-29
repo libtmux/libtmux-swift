@@ -23,6 +23,13 @@ struct NotificationBroadcastTests {
         return seen
     }
 
+    private static func first(
+        _ notifications: ControlNotificationStream
+    ) async throws(TmuxError) -> ControlNotification? {
+        for try await notification in notifications { return notification }
+        return nil
+    }
+
     @Test("every observer receives every notification, rather than a share")
     func observersDoNotDivideNotifications() async throws {
         let broadcast = NotificationBroadcast()
@@ -83,6 +90,18 @@ struct NotificationBroadcastTests {
         #expect(try await observer.next()?.arguments == "@2")
         await #expect(throws: TmuxError.notificationBufferOverflow(limit: 2)) {
             try await observer.next()
+        }
+    }
+
+    @Test("the public iterator preserves its typed notification failure")
+    func iteratorFailureIsTyped() async {
+        let failure = TmuxError.notificationBufferOverflow(limit: 1)
+        let notifications = ControlNotificationStream { continuation in
+            continuation.finish(throwing: failure)
+        }
+
+        await #expect(throws: failure) {
+            try await Self.first(notifications)
         }
     }
 
