@@ -393,19 +393,19 @@ if asMarkdown {
     // processes — and a table checked for currency cannot carry a number that
     // moves. The control connection keeps process count fixed, but its quiet
     // liveness round trips still grow with the length of the wait.
-    let waiting = try await measureWaiting(quietFor: .seconds(2))
+    let waiting = try await stableWaitingMeasurement(quietSeconds: 2)
     print("<!-- section: waiting -->")
     print("| Waiting for a line that has not been printed yet | Polling | waitForOutput |")
     print("| --- | --- | --- |")
     print(
         "| pane captures taken | one per tick, for as long as the wait lasts "
-            + "| \(waiting.awaited.output) |")
+            + "| \(waiting.output) |")
     print(
         "| quiet liveness | checked by every capture "
             + "| one in-band target check per second |")
     print(
         "| tmux processes spent | one per capture "
-            + "| \(waiting.awaited.processes); quiet checks reuse the connection |")
+            + "| \(waiting.processes); quiet checks reuse the connection |")
     exit(0)
 }
 
@@ -529,50 +529,22 @@ func measureNoticing() async throws -> (polled: Measurement, streamed: Measureme
 /// `waitForOutput` exists for and the one the noticing table above does not
 /// cover: there the line is already on screen when the first capture runs, so
 /// polling never has to tick.
-func measureWaiting(quietFor delay: Duration) async throws
-    -> (polled: Measurement, awaited: Measurement)
-{
+func measureWaiting(quietSeconds: Int) async throws -> Measurement {
     let marker = "listening-marker"
     let clock = ContinuousClock()
-
-    /// Prints the marker after `delay`, the way a daemon coming up does.
-    @Sendable func announce(_ server: Server, _ pane: Pane) -> Task<Void, Never> {
-        Task {
-            try? await Task.sleep(for: delay)
-            try? await server.run("echo \(marker)", in: pane)
-        }
-    }
-
-    let polled = try await withBenchServer { server, counting in
-        guard let pane = try await server.panes().first else { throw BenchError.noPane }
-        try counting.reset()
-        var ticks = 0
-        let announcing = announce(server, pane)
-        let elapsed = try await clock.measure {
-            while true {
-                ticks += 1
-                if try await server.capture(pane).contains(where: {
-                    $0.contains(marker)
-                }) {
-                    break
-                }
-                try await Task.sleep(for: .milliseconds(50))
-            }
-        }
-        announcing.cancel()
-        return Measurement(
-            elapsed: elapsed,
-            processes: counting.processes,
-            roundTrips: counting.roundTrips,
-            output: counted(ticks, "capture", "captures")
-        )
-    }
-
-    let awaited = try await withBenchServer { server, counting in
+    return try await withBenchServer { server, counting in
         guard let pane = try await server.panes().first else { throw BenchError.noPane }
         let pattern = try RegexPattern(marker)
+        try await server.run(
+            "marker='\(marker)'; stty -echo; \(server.shellInvocation) wait-for -S ready",
+            in: pane
+        )
+        try await server.wait(for: "ready")
+        try await server.run(
+            "sleep \(quietSeconds); printf '%s\\n' \"$marker\"; sleep 30",
+            in: pane
+        )
         try counting.reset()
-        let announcing = announce(server, pane)
         let elapsed = try await clock.measure {
             _ = try await server.waitForOutput(
                 in: pane,
@@ -581,7 +553,6 @@ func measureWaiting(quietFor delay: Duration) async throws
                 timeout: .seconds(30)
             )
         }
-        announcing.cancel()
         return Measurement(
             elapsed: elapsed,
             processes: counting.processes,
@@ -589,8 +560,18 @@ func measureWaiting(quietFor delay: Duration) async throws
             output: counted(counting.commandCount("capture-pane"), "capture", "captures")
         )
     }
+}
 
-    return (polled, awaited)
+func stableWaitingMeasurement(quietSeconds: Int) async throws -> Measurement {
+    var runs: [Measurement] = []
+    for _ in 0..<5 {
+        runs.append(try await measureWaiting(quietSeconds: quietSeconds))
+    }
+    let processCounts = Set(runs.map(\.processes))
+    precondition(processCounts.count == 1, "waiting spawned \(processCounts.sorted())")
+    let captureCounts = Set(runs.map(\.output))
+    precondition(captureCounts.count == 1, "waiting captured \(captureCounts.sorted())")
+    return runs[0]
 }
 
 enum BenchError: Error {
