@@ -93,10 +93,12 @@ struct FormatCondition: Sendable, Hashable {
         Self(text: "#{==:#{\(field)},\(value)}")
     }
 
-    /// Every condition at once.
+    /// Every condition at once, nested two at a time.
     ///
-    /// tmux finds a conditional's comma by skipping balanced `#{}`, so an
-    /// operand that is itself a condition needs no further quoting.
+    /// tmux gained an n-ary `#{&&:}` in 3.6; below that it is binary, so the
+    /// nesting is what reaches the 3.2a floor. It finds the comma by skipping
+    /// balanced `#{}`, so an operand that is itself a condition needs no
+    /// further quoting.
     static func all(_ first: Self, _ rest: Self...) -> Self {
         guard let innermost = rest.last else { return first }
         return ([first] + rest.dropLast()).reversed().reduce(innermost) {
