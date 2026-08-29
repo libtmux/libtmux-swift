@@ -362,17 +362,24 @@ struct CaptureSinceTests {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)
             let started = try await server.capture(pane, since: nil)
+            let settled = "quiet-pane-settled-\(UUID().uuidString)"
             let ready = "quiet-pane-ready-\(UUID().uuidString)"
             let release = "quiet-pane-release-\(UUID().uuidString)"
             try await server.run(
-                "printf 'settled\\n'; "
+                "printf '\(settled)\\n'; "
                     + "\(server.shellInvocation) wait-for -S \(ready); "
                     + "\(server.shellInvocation) wait-for \(release); "
                     + "printf 'released-too-early\\n'",
                 in: pane
             )
             try await server.wait(for: ready)
-            let caught = try await settle(server, pane, from: started.cursor)
+            var caught = IncrementalCapture(lines: [], cursor: started.cursor)
+            for _ in 0..<40 {
+                caught = try await server.capture(pane, since: caught.cursor)
+                if caught.lines.contains(settled) { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            try #require(caught.lines.contains(settled))
 
             let quiet = try await server.capture(pane, since: caught.cursor)
             // The whole point: watching something that is not happening costs
