@@ -1,3 +1,47 @@
+import Foundation
+
+struct ControlLineInput: Sendable {
+    enum Event: Sendable, Hashable {
+        case line(String)
+        case failure(TmuxError)
+    }
+
+    static let maximumBytes = 2_000_000
+    private var framer = BoundedLineFramer(maximumBytes: maximumBytes)
+
+    mutating func append(_ data: Data) -> [Event] {
+        map(framer.append(data))
+    }
+
+    mutating func finish() -> [Event] {
+        guard framer.bufferedBytes == 0 else {
+            _ = framer.finish()
+            return [
+                .failure(
+                    .invocationFailed(reason: "control protocol ended with an incomplete line")
+                )
+            ]
+        }
+        return []
+    }
+
+    private func map(_ events: [BoundedLineFramer.Event]) -> [Event] {
+        events.map { event in
+            switch event {
+            case let .line(line): .line(line)
+            case .oversized:
+                .failure(
+                    .invocationFailed(
+                        reason: "control protocol line exceeds \(Self.maximumBytes) bytes"
+                    )
+                )
+            case .invalidUTF8:
+                .failure(.invocationFailed(reason: "control protocol line is not UTF-8"))
+            }
+        }
+    }
+}
+
 /// One thing a control-mode server can say.
 enum ControlEvent: Sendable, Hashable {
     /// A command's reply, bracketed by `%begin`/`%end` in the stream.

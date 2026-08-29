@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import LibTmux
@@ -31,6 +32,44 @@ private func parse(_ stream: String) -> [ControlEvent] {
 
 @Suite("control-mode protocol")
 struct ControlProtocolTests {
+    @Test("control input has a finite line and encoding boundary")
+    func controlInputIsBounded() {
+        var oversized = ControlLineInput()
+        #expect(
+            oversized.append(
+                Data(repeating: 0x61, count: ControlLineInput.maximumBytes + 1)
+            )
+                == [
+                    .failure(
+                        .invocationFailed(
+                            reason:
+                                "control protocol line exceeds "
+                                + "\(ControlLineInput.maximumBytes) bytes"
+                        )
+                    )
+                ]
+        )
+
+        var invalid = ControlLineInput()
+        #expect(
+            invalid.append(Data([0xFF, 0x0A]))
+                == [.failure(.invocationFailed(reason: "control protocol line is not UTF-8"))]
+        )
+
+        var incomplete = ControlLineInput()
+        #expect(incomplete.append(Data("partial".utf8)).isEmpty)
+        #expect(
+            incomplete.finish()
+                == [
+                    .failure(
+                        .invocationFailed(
+                            reason: "control protocol ended with an incomplete line"
+                        )
+                    )
+                ]
+        )
+    }
+
     @Test("a captured session parses into its replies, notifications, and exit")
     func capturedSessionParses() {
         let events = parse(capturedStream)

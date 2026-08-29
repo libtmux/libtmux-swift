@@ -1,3 +1,4 @@
+import Foundation
 import Subprocess
 
 #if canImport(System)
@@ -488,18 +489,15 @@ extension Server {
                 of: ControlOutcome<Result>.self
             ) { group in
                 group.addTask {
-                    var line: [UInt8] = []
+                    var input = ControlLineInput()
                     for try await chunk in execution.standardOutput {
-                        for byte in chunk.withUnsafeBytes({ Array($0) }) {
-                            if byte == UInt8(ascii: "\n") {
-                                await control.consume(
-                                    String(decoding: line, as: UTF8.self)
-                                )
-                                line.removeAll(keepingCapacity: true)
-                            } else {
-                                line.append(byte)
-                            }
+                        let data = chunk.withUnsafeBytes { Data($0) }
+                        for event in input.append(data) {
+                            try await consumeControlInput(event, with: control)
                         }
+                    }
+                    for event in input.finish() {
+                        try await consumeControlInput(event, with: control)
                     }
                     await control.finish()
                     return .streamEnded
@@ -525,6 +523,19 @@ extension Server {
             }
         }
         return outcome.closureResult
+    }
+}
+
+private func consumeControlInput(
+    _ event: ControlLineInput.Event,
+    with control: ControlSession
+) async throws(TmuxError) {
+    switch event {
+    case let .line(line):
+        await control.consume(line)
+    case let .failure(error):
+        await control.finish(throwing: error)
+        throw error
     }
 }
 
