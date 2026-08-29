@@ -174,14 +174,14 @@ extension Server {
 
         let arguments =
             ["-u", "-C"] + endpoint.addressArguments
-            + ["attach-session", "-t", session]
+            + ["attach-session", "-E", "-t", session]
 
         let outcome = try await Subprocess.run(
             Subprocess.Configuration(
                 executable: .path(FilePath(tmuxExecutablePath)),
                 arguments: Arguments(arguments),
                 environment: .custom(
-                    TmuxProcessEnvironment.variables().reduce(into: [:]) {
+                    TmuxProcessEnvironment.controlAttachmentVariables().reduce(into: [:]) {
                         keys, variable in
                         keys[Subprocess.Environment.Key(rawValue: variable.key)!] =
                             variable.value

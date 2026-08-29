@@ -25,8 +25,7 @@ struct ModeProbeTests {
                 try await server.sessions()
             }
 
-            // Same sessions, same order, same ids — including a name whose
-            // non-ASCII bytes have to survive the connection's `LC_ALL=C`.
+            // Same sessions, same order, same ids, including non-ASCII bytes.
             #expect(connected.map(\.id) == direct.map(\.id))
             #expect(connected.map(\.name) == direct.map(\.name))
             #expect(direct.contains { $0.name == "béta ✓" })

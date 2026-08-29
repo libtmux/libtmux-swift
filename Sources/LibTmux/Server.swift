@@ -377,10 +377,8 @@ actor ServerRuntime {
         // the lifetime of a tmux process.
         let transport = self.transport
         let executable = tmuxExecutable
-        // `-u` forces UTF-8 regardless of locale. Without it, `LC_ALL=C` makes
-        // tmux rewrite any non-ASCII byte in a format — including the record
-        // separator — to `_`, which is itself legal in a session name, so a
-        // listing would silently split on the wrong character.
+        // `-u` keeps format bytes in UTF-8 without changing the environment a
+        // newly started daemon passes to panes.
         let arguments = ["-u"] + endpoint.addressArguments + rawArguments
         return try await transport.run(
             executable: executable,

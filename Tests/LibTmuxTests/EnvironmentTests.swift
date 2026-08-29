@@ -5,6 +5,35 @@ import TmuxFixture
 
 @Suite("environment", .timeLimit(.minutes(1)))
 struct EnvironmentTests {
+    @Test("tmux clients inherit the caller's environment unchanged")
+    func processEnvironmentIsInherited() {
+        let caller = [
+            "LC_ALL": "fr_FR.UTF-8",
+            "LIBTMUX_SENTINEL": "kept",
+            "PATH": "/usr/bin:/bin",
+            "TMUX_TMPDIR": "/tmp/libtmux-swift-test/named",
+        ]
+
+        #expect(TmuxProcessEnvironment.variables(readingFrom: caller) == caller)
+
+        var nested = caller
+        nested["TMUX"] = "/tmp/libtmux-swift-test/outer,1,0"
+        nested["TMUX_PANE"] = "%7"
+        #expect(TmuxProcessEnvironment.controlAttachmentVariables(readingFrom: nested) == caller)
+    }
+
+    @Test("opening control mode does not rewrite the session environment")
+    func controlAttachmentPreservesSessionEnvironment() async throws {
+        try await withTmuxServer { server in
+            let scope = EnvironmentScope.session("bootstrap")
+            try await server.setEnvironment("DISPLAY", to: "preserved", in: scope)
+
+            try await server.withControlMode(attachingTo: "bootstrap") { _ in }
+
+            #expect(try await server.environmentValue("DISPLAY", in: scope) == "preserved")
+        }
+    }
+
     @Test("a variable set in a session is read back from it")
     func sessionVariableRoundTrips() async throws {
         try await withTmuxServer { server in
