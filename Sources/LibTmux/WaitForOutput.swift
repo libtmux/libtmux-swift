@@ -123,8 +123,7 @@ extension Server {
         )
         let wasAlreadyShowing = entryMatch != nil
 
-        let answer: @Sendable ([String], [String]) throws(OutputWaitError) -> OutputWait? = {
-            arrived, tail in
+        let answer: OutputWaitAnswer = { arrived, tail, outputEvent in
             for line in arrived {
                 if let hit = try firstOutputPatternMatch(
                     in: line,
@@ -166,7 +165,14 @@ extension Server {
                     )
                 }
             }
-            return nil
+            guard outputEvent, patterns.isEmpty else { return nil }
+            return OutputWait(
+                outcome: .matched,
+                sawNewOutput: true,
+                matchedAtEntry: wasAlreadyShowing,
+                tail: Array(tail.suffix(keptTail)),
+                seconds: Self.elapsed(since: started)
+            )
         }
 
         let caughtAtEntry = try await retryingStaleOutputRead(until: deadline) {
@@ -177,6 +183,7 @@ extension Server {
                 newest: [],
                 sawNewOutput: false,
                 tailLimit: keptTail,
+                outputEvent: false,
                 answer: answer
             )
         }
@@ -285,7 +292,7 @@ extension Server {
         sawNewOutput: Bool,
         tailLimit: Int,
         remaining: Duration,
-        answer: @escaping @Sendable ([String], [String]) throws(OutputWaitError) -> OutputWait?
+        answer: @escaping OutputWaitAnswer
     ) async throws(OutputWaitError) -> OutputWaitCycle {
         let owner = self
         return try await withOutputWaitErrorMapping {
@@ -337,7 +344,9 @@ extension Server {
                         let wake = await doorbell.wait()
                         if wake == .output { try await Task.sleep(for: .milliseconds(25)) }
 
-                        if wake == .output || wake == .inspect || wake == .reattach {
+                        if wake == .output || wake == .scan || wake == .inspect
+                            || wake == .reattach
+                        {
                             do {
                                 let scan = try await server.scanWaitOutput(
                                     in: pane,
@@ -345,6 +354,7 @@ extension Server {
                                     newest: newest,
                                     sawNewOutput: sawNewOutput,
                                     tailLimit: tailLimit,
+                                    outputEvent: wake == .output,
                                     answer: answer
                                 )
                                 cursor = scan.cursor
@@ -363,7 +373,7 @@ extension Server {
                         }
 
                         switch wake {
-                        case .output: continue
+                        case .output, .scan: continue
                         case .inspect:
                             guard let current = try await owner.waitAttachment(for: pane) else {
                                 return .finished(.paneClosed, newest, sawNewOutput)
@@ -438,7 +448,8 @@ extension Server {
         newest: [String],
         sawNewOutput: Bool,
         tailLimit: Int,
-        answer: ([String], [String]) throws(OutputWaitError) -> OutputWait?
+        outputEvent: Bool,
+        answer: OutputWaitAnswer
     ) async throws(OutputWaitError) -> WaitCaptureScan {
         var tail = newest
         var sawOutput = sawNewOutput
@@ -456,7 +467,7 @@ extension Server {
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
                 do {
-                    output = try answer(arrived, tail)
+                    output = try answer(arrived, tail, false)
                 } catch let error as OutputWaitError {
                     answerError = error
                 } catch {
@@ -478,7 +489,11 @@ extension Server {
             }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
-            output = try answer(arrived, tail)
+            output = try answer(arrived, tail, false)
+        }
+        if outputEvent {
+            sawOutput = true
+            if output == nil { output = try answer([], tail, true) }
         }
         return WaitCaptureScan(
             cursor: scan.cursor,
@@ -552,8 +567,12 @@ private struct WaitCaptureScan: Sendable {
     let output: OutputWait?
 }
 
+private typealias OutputWaitAnswer =
+    @Sendable ([String], [String], Bool) throws(OutputWaitError) -> OutputWait?
+
 enum WaitWake: Sendable, Hashable {
     case output
+    case scan
     case inspect
     case reattach
     case paneClosed
@@ -568,7 +587,7 @@ actor WaitDoorbell {
     private var waiter: CheckedContinuation<WaitWake, Never>?
 
     init(primed: Bool = false) {
-        pending = primed ? [.output] : []
+        pending = primed ? [.scan] : []
     }
 
     func ring(_ event: WaitWake) {
