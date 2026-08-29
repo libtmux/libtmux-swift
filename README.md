@@ -424,6 +424,9 @@ $ swift build --product libtmux-mcp
 Point a client at the built binary. It takes no flags — which tmux it talks to
 is environment, so a client config is where you say so:
 
+The server starts read-only. This example explicitly enables tools that create
+and change tmux state:
+
 ```json
 {
   "mcpServers": {
@@ -443,7 +446,7 @@ is environment, so a client config is where you say so:
 | `LIBTMUX_SOCKET` | `default` | The socket *name*, in tmux's own socket directory |
 | `LIBTMUX_SOCKET_PATH` | — | A socket *path*, when a name will not do |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
-| `LIBTMUX_SAFETY` | `mutating` | The highest tier of tool served: `readonly`, `mutating`, `destructive` |
+| `LIBTMUX_SAFETY` | `readonly` | The highest tier of tool served: `readonly`, `mutating`, `destructive` |
 | `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The ceiling every wait is clamped to, itself capped at 300 |
 
 All are optional. Anything the server wants to tell a human goes to stderr,

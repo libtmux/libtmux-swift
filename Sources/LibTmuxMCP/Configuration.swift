@@ -45,7 +45,7 @@ public struct ServerConfiguration: Sendable, Hashable {
                 self.tier = .readonly
             }
         } else {
-            self.tier = .mutating
+            self.tier = .readonly
         }
 
         let rawCeiling = environment["LIBTMUX_MCP_WAIT_MAX_SECONDS"]

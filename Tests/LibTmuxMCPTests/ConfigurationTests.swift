@@ -9,13 +9,13 @@ import Testing
 /// by nature — nobody sees a flag that was not accepted.
 @Suite("configuration")
 struct ConfigurationTests {
-    @Test("with nothing set it serves the default socket at the mutating tier")
+    @Test("with nothing set it serves the default socket read-only")
     func defaultsAreTheOnesDocumented() {
         let configuration = ServerConfiguration(environment: [:])
         #expect(configuration.socketName == "default")
         #expect(configuration.socketPath == nil)
         #expect(configuration.tmuxExecutable == "tmux")
-        #expect(configuration.tier == .mutating)
+        #expect(configuration.tier == .readonly)
         #expect(configuration.waitCeiling == .seconds(120))
         #expect(configuration.warnings.isEmpty)
     }
