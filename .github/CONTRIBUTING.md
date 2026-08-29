@@ -215,6 +215,13 @@ Every `exact:` pin in the documentation names the version the package claims:
 $ python3 Scripts/check_version.py
 ```
 
+Every symbol `CHANGELOG.md` names on a type this package declares still exists
+on it:
+
+```console
+$ python3 Scripts/check_changelog_symbols.py
+```
+
 The generated tables still match what the benchmark measures:
 
 ```console

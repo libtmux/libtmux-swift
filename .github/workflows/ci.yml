@@ -179,6 +179,12 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_version.py
 
+      # A changelog entry leads with an identifier, which is what makes it go
+      # stale silently: a renamed symbol still reads fine on the page.
+      - name: Check every changelog symbol resolves
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_changelog_symbols.py
+
       - name: Build documentation
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: |
