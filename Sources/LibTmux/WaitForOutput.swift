@@ -248,6 +248,17 @@ extension Server {
             } catch let error {
                 if case .matching = error { throw error }
                 if case .tmux(.cancelled) = error { throw error }
+                if case .tmux(.staleServerValue) = error,
+                    ContinuousClock.now >= deadline
+                {
+                    return OutputWait(
+                        outcome: .timedOut,
+                        sawNewOutput: sawNewOutput,
+                        matchedAtEntry: wasAlreadyShowing,
+                        tail: Array(newest.suffix(keptTail)),
+                        seconds: Self.elapsed(since: started)
+                    )
+                }
                 guard ContinuousClock.now < deadline else { throw error }
                 guard
                     let current = try await withOutputWaitErrorMapping({
