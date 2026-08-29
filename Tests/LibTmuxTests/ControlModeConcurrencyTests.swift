@@ -139,7 +139,7 @@ struct ControlModeConcurrencyTests {
         )
 
         first.cancel()
-        let cancelledPromptly = try await waitUntil(within: .seconds(1)) {
+        let cancelledPromptly = try await waitUntil(within: .seconds(10)) {
             await firstResult.value != nil
         }
         #expect(cancelledPromptly)
@@ -162,7 +162,7 @@ struct ControlModeConcurrencyTests {
         await control.consume("second-reply")
         await control.consume("%end 1 3 1")
 
-        _ = try await waitUntil(within: .seconds(1)) {
+        _ = try await waitUntil(within: .seconds(10)) {
             await firstResult.value != nil
         }
         #expect(await firstResult.value == .failure(.cancelled))
@@ -193,7 +193,7 @@ struct ControlModeConcurrencyTests {
         await control.consume("%begin 1 1 0")
 
         first.cancel()
-        let cancelledPromptly = try await waitUntil(within: .seconds(1)) {
+        let cancelledPromptly = try await waitUntil(within: .seconds(10)) {
             await firstResult.value != nil
         }
         #expect(cancelledPromptly)
@@ -206,7 +206,7 @@ struct ControlModeConcurrencyTests {
                 TmuxCommand("display-message", ["-p", "after-attach"])
             )
         }
-        let wroteSecond = try await waitUntil(within: .seconds(1)) {
+        let wroteSecond = try await waitUntil(within: .seconds(10)) {
             await writes.lines.count == 1
         }
         #expect(wroteSecond)

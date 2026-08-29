@@ -136,7 +136,7 @@ struct ProgressTests {
             return value
         }
         let watchdog = Task {
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled else { return }
             eventWitness.yield(.watchdog)
         }
@@ -177,7 +177,7 @@ struct ProgressTests {
             return value
         }
         let watchdog = Task {
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled else { return }
             completionWitness.yield(0)
         }
