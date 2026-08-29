@@ -126,7 +126,7 @@ extension TmuxToolsTests {
 
     @Test("a raw pane id is refused by targeted reads")
     func rawPaneIDIsRefused() async throws {
-        try await withTmuxServer { server in
+        _ = try await withTmuxServer { server in
             await #expect(throws: ToolError.self) {
                 try await TmuxTools(server: server).call(
                     ToolCall(

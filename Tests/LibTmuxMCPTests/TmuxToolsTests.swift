@@ -25,7 +25,7 @@ private func resourceJSON(_ resource: JSONValue) throws -> JSONValue {
 struct TmuxToolsTests {
     @Test("an unknown tool is refused by name")
     func unknownToolIsRefused() async throws {
-        try await withTmuxServer { server in
+        _ = try await withTmuxServer { server in
             await #expect(throws: ToolError.unknownTool("teleport")) {
                 try await TmuxTools(server: server).call(ToolCall(name: "teleport"))
             }
@@ -151,7 +151,7 @@ struct TmuxToolsTests {
 
     @Test("a raw format target is refused")
     func rawFormatTargetIsRefused() async throws {
-        try await withTmuxServer { server in
+        _ = try await withTmuxServer { server in
             await #expect(throws: ToolError.self) {
                 try await TmuxTools(server: server).call(
                     ToolCall(

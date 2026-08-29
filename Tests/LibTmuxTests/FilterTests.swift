@@ -194,10 +194,10 @@ struct FilterExprTests {
         let insensitive = try FilterExpr<Pane>.where(
             \.currentCommand, .caseInsensitiveContains("vim")
         )
-        #expect(try panes.filter(insensitive).map(\.id) == ["%0", "%2", "%3"])
+        #expect(panes.filter(insensitive).map(\.id) == ["%0", "%2", "%3"])
 
         let sensitive = try FilterExpr<Pane>.where(\.currentCommand, .contains("vim"))
-        #expect(try panes.filter(sensitive).map(\.id) == ["%0", "%2"])
+        #expect(panes.filter(sensitive).map(\.id) == ["%0", "%2"])
     }
 
     @Test("case-insensitive containment round-trips as its own operator")
@@ -207,6 +207,6 @@ struct FilterExprTests {
         )
         let data = try JSONEncoder().encode(expression)
         let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
-        #expect(try panes.filter(decoded).map(\.id) == ["%0", "%2", "%3"])
+        #expect(panes.filter(decoded).map(\.id) == ["%0", "%2", "%3"])
     }
 }

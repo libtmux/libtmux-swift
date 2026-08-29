@@ -34,7 +34,7 @@ struct DiscoveryTests {
         defer { try? FileManager.default.removeItem(atPath: directory) }
         // tmux leaves the file behind when it exits, so a listing of the
         // directory is a listing of sockets rather than of servers.
-        FileManager.default.createFile(atPath: "\(directory)/dead", contents: Data())
+        _ = FileManager.default.createFile(atPath: "\(directory)/dead", contents: Data())
 
         let found = await TmuxServers.discover(
             in: [directory],
