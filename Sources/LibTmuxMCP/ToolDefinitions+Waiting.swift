@@ -34,7 +34,7 @@ extension TmuxTools {
                 """,
             tier: .readonly,
             arguments: [
-                paneReadTarget,
+                paneTarget,
                 ToolArgument(
                     name: "patterns",
                     summary:
@@ -112,7 +112,7 @@ extension TmuxTools {
                     summary: "A tmux format, such as #{pane_current_command}.",
                     isRequired: true
                 ),
-                paneReadTarget,
+                paneTarget,
                 paneWindowLink,
                 ToolArgument(
                     name: "matching",

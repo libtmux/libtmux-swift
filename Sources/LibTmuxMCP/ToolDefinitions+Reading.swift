@@ -100,7 +100,7 @@ extension TmuxTools {
             tier: .readonly,
             isIdempotent: true,
             arguments: [
-                paneReadTarget,
+                paneTarget,
                 ToolArgument(
                     name: "history",
                     summary: "Include the scrollback from its start, not just the visible rows.",
@@ -149,7 +149,7 @@ extension TmuxTools {
                 """,
             tier: .readonly,
             arguments: [
-                paneReadTarget,
+                paneTarget,
                 ToolArgument(
                     name: "cursor",
                     summary:

@@ -23,14 +23,6 @@ extension TmuxTools {
         isRequired: true
     )
 
-    static let paneReadTarget = ToolArgument(
-        name: "pane",
-        summary:
-            "A pane ref returned by list_panes or snapshot. Re-list after this MCP "
-            + "process restarts.",
-        isRequired: true
-    )
-
     static let paneWindowLink = ToolArgument(
         name: "window_link",
         summary: "Exact linkRef from list_windows. Required only when the pane has several links."
