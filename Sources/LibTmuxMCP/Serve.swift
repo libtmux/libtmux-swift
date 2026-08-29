@@ -115,7 +115,7 @@ public struct MCPService: Sendable {
         registry: RequestRegistry,
         outbound: OrderedOutbound
     ) async {
-        await withDiscardingTaskGroup { requestGroup in
+        await withTaskGroup(of: Void.self) { requestGroup in
             for await line in lines {
                 if Task.isCancelled { break }
                 // Cancellation arrives as a notification, so it is read before
