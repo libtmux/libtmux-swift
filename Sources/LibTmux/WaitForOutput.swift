@@ -21,6 +21,15 @@ public struct OutputWait: Sendable, Hashable, Codable {
         case expiredWhileReading
         /// The pane went away, so nothing more can arrive.
         case paneClosed
+        /// A pager, editor, or other full-screen program owned the pane, so
+        /// matching was suppressed for as long as it did.
+        ///
+        /// tmux fills that grid without adding to history, so what a capture
+        /// returns is the program's paint rather than anything the pane
+        /// printed — matching it reports text that was never written. Read the
+        /// screen with ``Server/capture(_:lines:)`` instead of retrying: a
+        /// different pattern does not change what the wait is allowed to see.
+        case alternateScreen
     }
 
     public let outcome: Outcome

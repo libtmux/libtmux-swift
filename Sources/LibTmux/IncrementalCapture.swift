@@ -152,4 +152,7 @@ package struct ForwardCaptureResult: Sendable, Hashable {
     package let restarted: Bool
     package let droppedLines: Int
     package let hasMore: Bool
+    /// The rows came from the grid a full-screen program paints, which tmux
+    /// keeps out of history, so they were not printed by the pane.
+    package let alternateScreen: Bool
 }

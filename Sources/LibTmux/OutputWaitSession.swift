@@ -40,15 +40,30 @@ struct OutputWaitSession: Sendable {
                 seconds: Self.elapsed(since: started)
             )
         }
-        var cursor = entryRead.cursor
         let entryRows = entryRead.rows
-        let entryMatch = try firstEntryOutputMatch(
-            in: entryRows,
-            patterns: patterns,
-            stops: stops,
-            budget: matchBudget
+        var progress = WaitProgress(
+            cursor: entryRead.cursor,
+            tail: [],
+            sawNewOutput: false,
+            alternateScreen: entryRead.alternateScreen
         )
+        let entryMatch =
+            entryRead.alternateScreen
+            ? nil
+            : try firstEntryOutputMatch(
+                in: entryRows,
+                patterns: patterns,
+                stops: stops,
+                budget: matchBudget
+            )
         let wasAlreadyShowing = entryMatch != nil
+
+        // A deadline that spent any of itself on the alternate screen says
+        // nothing about the pattern, because matching was suppressed while it
+        // did. Reporting `timedOut` would send a caller to change the pattern.
+        func expired() -> OutputWait.Outcome {
+            progress.alternateScreen ? .alternateScreen : .timedOut
+        }
 
         // Every answer past this point shares these three fields, which the
         // entry read has now fixed for the rest of the wait.
@@ -118,7 +133,7 @@ struct OutputWaitSession: Sendable {
             return ending(.matched, sawNewOutput: true, tail: tail)
         }
 
-        let entryCursor = cursor
+        let entryCursor = progress.cursor
         let caughtAtEntryRace = await raceWaitOperation(
             until: deadline,
             classifyingCompletionWith: { $0.operationCompletion }
@@ -143,13 +158,18 @@ struct OutputWaitSession: Sendable {
         guard let caughtAtEntry = try settled(caughtAtEntryRace) else {
             return ending(.expiredWhileReading)
         }
-        cursor = caughtAtEntry.cursor
-        var sawNewOutput = caughtAtEntry.sawNewOutput
-        var newest = caughtAtEntry.tail
+        progress.cursor = caughtAtEntry.cursor
+        progress.sawNewOutput = caughtAtEntry.sawNewOutput
+        progress.tail = caughtAtEntry.tail
+        progress.alternateScreen = progress.alternateScreen || caughtAtEntry.alternateScreen
         if let output = caughtAtEntry.output { return output }
 
         if caughtAtEntry.deadlineReached {
-            return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
+            return ending(
+                expired(),
+                sawNewOutput: progress.sawNewOutput,
+                tail: progress.tail
+            )
         }
 
         while ContinuousClock.now < deadline {
@@ -157,10 +177,18 @@ struct OutputWaitSession: Sendable {
                 try await self.waitAttachment(using: self.server, for: pane)
             }
             guard let living = try settled(attachmentRace) else {
-                return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
+                return ending(
+                    expired(),
+                    sawNewOutput: progress.sawNewOutput,
+                    tail: progress.tail
+                )
             }
             guard let attachment = living else {
-                return ending(.paneClosed, sawNewOutput: sawNewOutput, tail: newest)
+                return ending(
+                    .paneClosed,
+                    sawNewOutput: progress.sawNewOutput,
+                    tail: progress.tail
+                )
             }
             let remaining = ContinuousClock.now.duration(to: deadline)
             let cycle: OutputWaitCycle
@@ -168,9 +196,7 @@ struct OutputWaitSession: Sendable {
                 cycle = try await waitForOutputCycle(
                     pane: pane,
                     attachment: attachment,
-                    cursor: cursor,
-                    newest: newest,
-                    sawNewOutput: sawNewOutput,
+                    progress: progress,
                     tailLimit: keptTail,
                     remaining: remaining,
                     deadline: deadline,
@@ -182,17 +208,29 @@ struct OutputWaitSession: Sendable {
                 if case .tmux(.staleServerValue) = error,
                     ContinuousClock.now >= deadline
                 {
-                    return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
+                    return ending(
+                        expired(),
+                        sawNewOutput: progress.sawNewOutput,
+                        tail: progress.tail
+                    )
                 }
                 guard ContinuousClock.now < deadline else { throw error }
                 let currentRace = await raceOrdinaryWaitOperation(until: deadline) {
                     try await self.waitAttachment(using: self.server, for: pane)
                 }
                 guard let stillLiving = try settled(currentRace) else {
-                    return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
+                    return ending(
+                        expired(),
+                        sawNewOutput: progress.sawNewOutput,
+                        tail: progress.tail
+                    )
                 }
                 guard let current = stillLiving else {
-                    return ending(.paneClosed, sawNewOutput: sawNewOutput, tail: newest)
+                    return ending(
+                        .paneClosed,
+                        sawNewOutput: progress.sawNewOutput,
+                        tail: progress.tail
+                    )
                 }
                 guard current != attachment else {
                     if case .tmux(.staleServerValue) = error { continue }
@@ -202,16 +240,18 @@ struct OutputWaitSession: Sendable {
             }
             switch cycle {
             case let .answered(output): return output
-            case let .reattach(next, lines, sawOutput):
-                cursor = next
-                newest = lines
-                sawNewOutput = sawOutput
-            case let .finished(outcome, lines, sawOutput):
-                return ending(outcome, sawNewOutput: sawOutput, tail: lines)
+            case let .reattach(next): progress = next
+            case let .finished(outcome, reached):
+                progress = reached
+                return ending(
+                    outcome == .timedOut ? expired() : outcome,
+                    sawNewOutput: reached.sawNewOutput,
+                    tail: reached.tail
+                )
             }
         }
 
-        return ending(.timedOut, sawNewOutput: sawNewOutput, tail: newest)
+        return ending(expired(), sawNewOutput: progress.sawNewOutput, tail: progress.tail)
     }
 
     /// The value a race produced, or `nil` when the deadline won — which every
@@ -229,9 +269,7 @@ struct OutputWaitSession: Sendable {
     private func waitForOutputCycle(
         pane: Pane,
         attachment: PaneAttachment,
-        cursor: CaptureCursor,
-        newest: [String],
-        sawNewOutput: Bool,
+        progress: WaitProgress,
         tailLimit: Int,
         remaining: Duration,
         deadline: ContinuousClock.Instant,
@@ -288,9 +326,7 @@ struct OutputWaitSession: Sendable {
                         }
                     }
 
-                    var cursor = cursor
-                    var newest = newest
-                    var sawNewOutput = sawNewOutput
+                    var progress = progress
                     while true {
                         // No settling delay before the scan: tmux queues
                         // `%output` and parses those same bytes into the grid
@@ -303,9 +339,9 @@ struct OutputWaitSession: Sendable {
                         if wake == .output || wake == .scan || wake == .inspect
                             || wake == .reattach
                         {
-                            let scanCursor = cursor
-                            let scanTail = newest
-                            let scanSawOutput = sawNewOutput
+                            let scanCursor = progress.cursor
+                            let scanTail = progress.tail
+                            let scanSawOutput = progress.sawNewOutput
                             let scanOutputEvent = wake == .output
                             let scanRace = await raceWaitOperation(
                                 until: deadline,
@@ -325,11 +361,13 @@ struct OutputWaitSession: Sendable {
                             }
                             switch scanRace {
                             case let .completed(scan):
-                                cursor = scan.cursor
-                                sawNewOutput = scan.sawNewOutput
-                                newest = scan.tail
+                                progress.cursor = scan.cursor
+                                progress.sawNewOutput = scan.sawNewOutput
+                                progress.tail = scan.tail
+                                progress.alternateScreen =
+                                    progress.alternateScreen || scan.alternateScreen
                                 if scan.deadlineReached {
-                                    return .finished(.timedOut, newest, sawNewOutput)
+                                    return .finished(.timedOut, progress)
                                 }
                                 if let output = scan.output {
                                     group.cancelAll()
@@ -343,18 +381,18 @@ struct OutputWaitSession: Sendable {
                                 }
                                 switch currentRace {
                                 case .completed(nil):
-                                    return .finished(.paneClosed, newest, sawNewOutput)
+                                    return .finished(.paneClosed, progress)
                                 case .completed:
                                     throw error
                                 case let .failed(readError):
                                     throw readError
                                 case .timedOut:
-                                    return .finished(.timedOut, newest, sawNewOutput)
+                                    return .finished(.timedOut, progress)
                                 case .cancelled:
                                     throw OutputWaitError.tmux(.cancelled)
                                 }
                             case .timedOut:
-                                return .finished(.timedOut, newest, sawNewOutput)
+                                return .finished(.timedOut, progress)
                             case .cancelled:
                                 throw OutputWaitError.tmux(.cancelled)
                             }
@@ -368,14 +406,14 @@ struct OutputWaitSession: Sendable {
                             }
                             switch currentRace {
                             case .completed(nil):
-                                return .finished(.paneClosed, newest, sawNewOutput)
+                                return .finished(.paneClosed, progress)
                             case let .completed(current?):
                                 guard current == attachment else {
-                                    return .reattach(cursor, newest, sawNewOutput)
+                                    return .reattach(progress)
                                 }
                             case let .failed(error): throw error
                             case .timedOut:
-                                return .finished(.timedOut, newest, sawNewOutput)
+                                return .finished(.timedOut, progress)
                             case .cancelled:
                                 throw OutputWaitError.tmux(.cancelled)
                             }
@@ -385,19 +423,19 @@ struct OutputWaitSession: Sendable {
                             }
                             switch currentRace {
                             case .completed(nil):
-                                return .finished(.paneClosed, newest, sawNewOutput)
+                                return .finished(.paneClosed, progress)
                             case .completed:
-                                return .reattach(cursor, newest, sawNewOutput)
+                                return .reattach(progress)
                             case let .failed(error): throw error
                             case .timedOut:
-                                return .finished(.timedOut, newest, sawNewOutput)
+                                return .finished(.timedOut, progress)
                             case .cancelled:
                                 throw OutputWaitError.tmux(.cancelled)
                             }
                         case .paneClosed:
-                            return .finished(.paneClosed, newest, sawNewOutput)
+                            return .finished(.paneClosed, progress)
                         case .timedOut:
-                            return .finished(.timedOut, newest, sawNewOutput)
+                            return .finished(.timedOut, progress)
                         case let .failed(error): throw error
                         }
                     }
@@ -490,14 +528,17 @@ struct OutputWaitSession: Sendable {
                 sourceLinesPerChunk: Self.waitCaptureLines,
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
-            ) { rows in
+            ) { rows, alternateScreen in
                 guard ContinuousClock.now < deadline else {
                     deadlineReached = true
                     return true
                 }
+                // Painted rows still reach the tail, so a caller can see what
+                // the pane shows, but they are not output and cannot match.
+                tail = Array((tail + rows).suffix(tailLimit))
+                guard !alternateScreen else { return false }
                 let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
-                tail = Array((tail + arrived).suffix(tailLimit))
                 do {
                     output = try answer(arrived, tail, false)
                     if output != nil {
@@ -522,7 +563,8 @@ struct OutputWaitSession: Sendable {
                 output: nil,
                 answerSelectedAt: nil,
                 hasMore: false,
-                deadlineReached: true
+                deadlineReached: true,
+                alternateScreen: scan.alternateScreen
             )
         }
         func terminal(failure: OutputWaitError? = nil) -> WaitScanTerminal {
@@ -540,7 +582,8 @@ struct OutputWaitSession: Sendable {
                 output: output,
                 answerSelectedAt: answerSelectedAt,
                 hasMore: scan.hasMore,
-                deadlineReached: false
+                deadlineReached: false,
+                alternateScreen: scan.alternateScreen
             )
         }
         let forwardFailure =
@@ -552,7 +595,7 @@ struct OutputWaitSession: Sendable {
         case .timedOut: return timedOut()
         case .pending: break
         }
-        if scan.restarted {
+        if scan.restarted, !scan.alternateScreen {
             let arrived: [String]
             do {
                 arrived = try await waitLookbackRows(using: server, in: pane).filter { !$0.isEmpty }
@@ -578,7 +621,7 @@ struct OutputWaitSession: Sendable {
             case .pending: break
             }
         }
-        if outputEvent {
+        if outputEvent, !scan.alternateScreen {
             sawOutput = true
             if output == nil {
                 do {
@@ -605,7 +648,8 @@ struct OutputWaitSession: Sendable {
             output: output,
             answerSelectedAt: answerSelectedAt,
             hasMore: scan.hasMore,
-            deadlineReached: false
+            deadlineReached: false,
+            alternateScreen: scan.alternateScreen
         )
     }
 
@@ -638,10 +682,19 @@ private struct PaneAttachment: Sendable, Hashable {
     let windowID: WindowID
 }
 
+/// What one turn of a wait carries forward: where reading stopped, what it has
+/// seen, and whether a full-screen program owned the pane while it looked.
+private struct WaitProgress: Sendable {
+    var cursor: CaptureCursor
+    var tail: [String]
+    var sawNewOutput: Bool
+    var alternateScreen: Bool
+}
+
 private enum OutputWaitCycle: Sendable {
     case answered(OutputWait)
-    case reattach(CaptureCursor, [String], Bool)
-    case finished(OutputWait.Outcome, [String], Bool)
+    case reattach(WaitProgress)
+    case finished(OutputWait.Outcome, WaitProgress)
 }
 
 enum WaitDeadlineRace<Value: Sendable>: Sendable {
@@ -752,6 +805,7 @@ private struct WaitCaptureScan: Sendable {
     let answerSelectedAt: ContinuousClock.Instant?
     let hasMore: Bool
     let deadlineReached: Bool
+    let alternateScreen: Bool
 
     var operationCompletion: WaitOperationCompletion {
         guard let answerSelectedAt else { return .ordinary }

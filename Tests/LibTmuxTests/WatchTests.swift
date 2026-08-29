@@ -610,6 +610,37 @@ struct WatchTests {
         }
     }
 
+    @Test("a pane painting under the alternate screen is not printing output")
+    func alternateScreenPaintIsNotOutput() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            // `smcup` directly rather than through a pager, so the case needs
+            // nothing installed and leaves on a byte rather than a keystroke.
+            try await server.run(#"printf '\033[?1049h'; printf 'painted-marker\n'"#, in: pane)
+            try await Task.sleep(for: .milliseconds(400))
+
+            let painted = try await server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("painted-marker")],
+                timeout: .milliseconds(800)
+            )
+            #expect(painted.outcome == .alternateScreen)
+            #expect(!painted.matchedAtEntry)
+            #expect(!painted.sawNewOutput)
+
+            // Leaving restores the grid that accumulates history, so the wait
+            // that follows matches again: the suppression never latches.
+            try await server.run(#"printf '\033[?1049l'"#, in: pane)
+            try await server.run("printf 'printed-marker\\n'", in: pane)
+            let printed = try await server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("printed-marker")],
+                timeout: .seconds(5)
+            )
+            #expect(printed.outcome == .matched)
+        }
+    }
+
     @Test("text already on screen answers at once, or is waited past on request")
     func staleTextDoesNotMatch() async throws {
         try await withTmuxServer { server in

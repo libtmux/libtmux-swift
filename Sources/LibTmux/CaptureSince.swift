@@ -14,6 +14,7 @@ private struct IncrementalPaneState {
 struct EntryCapture: Sendable {
     let rows: [String]
     let cursor: CaptureCursor
+    let alternateScreen: Bool
 }
 
 extension Server {
@@ -72,7 +73,7 @@ extension Server {
         sourceLinesPerChunk: Int,
         maximumChunks: Int,
         perStreamOutputLimit: Int,
-        _ visit: ([String]) -> Bool
+        _ visit: (_ rows: [String], _ alternateScreen: Bool) -> Bool
     ) async throws(TmuxError) -> ForwardCaptureResult {
         guard sourceLinesPerChunk > 1 else {
             throw .invocationFailed(reason: "a forward capture chunk needs at least two lines")
@@ -104,7 +105,8 @@ extension Server {
                         linesMissed: reset.linesMissed,
                         restarted: reset.restarted,
                         droppedLines: reset.droppedLines,
-                        hasMore: false
+                        hasMore: false,
+                        alternateScreen: state.alternateScreen
                     )
                 }
                 guard
@@ -126,7 +128,8 @@ extension Server {
                         linesMissed: true,
                         restarted: false,
                         droppedLines: 0,
-                        hasMore: false
+                        hasMore: false,
+                        alternateScreen: state.alternateScreen
                     )
                 }
 
@@ -165,14 +168,15 @@ extension Server {
                 previousCursor = nextCursor
                 remainingAttempts = Self.incrementalCaptureAttempts
                 completedChunks += 1
-                let stopped = visit(rows)
+                let stopped = visit(rows, state.alternateScreen)
                 let hasMore = end != state.absoluteCursorRow
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
                     linesMissed: false,
                     restarted: false,
                     droppedLines: 0,
-                    hasMore: hasMore
+                    hasMore: hasMore,
+                    alternateScreen: state.alternateScreen
                 )
                 if stopped || !hasMore || completedChunks == maximumChunks {
                     return result
@@ -418,7 +422,8 @@ extension Server {
                 anchor: state.absoluteCursorRow,
                 rawRows: Array(rows.suffix(CaptureCursor.maximumCheckpointRows + 1)),
                 fallback: nil
-            )
+            ),
+            alternateScreen: state.alternateScreen
         )
     }
 
