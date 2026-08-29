@@ -1,13 +1,12 @@
 /// One tmux command, as argv.
 ///
-/// Arguments are passed to the process untouched — no shell ever sees them — so
-/// a window name containing a space, a quote, a semicolon, or a newline needs
-/// no escaping and cannot change what runs.
+/// No shell sees the arguments. tmux still reads a trailing `;` as a command
+/// separator; spell a literal trailing semicolon as `\;`.
 public struct TmuxCommand: Sendable, Hashable {
     /// The tmux command, as tmux spells it — `new-session`, `list-panes`.
     public let name: String
     /// Its arguments, one element each. Never a joined string: a value holding
-    /// a space is data, and only a shell would think otherwise.
+    /// a space is data.
     public let arguments: [String]
     public init(_ name: String, _ arguments: [String] = []) {
         self.name = name

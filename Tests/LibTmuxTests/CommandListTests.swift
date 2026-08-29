@@ -16,6 +16,20 @@ struct CommandListTests {
         )
     }
 
+    @Test("an escaped separator stays data over a connection")
+    func escapedSeparatorStaysDataOverAConnection() async throws {
+        try await withTmuxServer { server in
+            let command = TmuxCommand("display-message", ["-p", #"\;"#])
+            let direct = try await server.run(command)
+            let connected = try await server.using(.connected(to: "bootstrap")) {
+                try await $0.run(command)
+            }
+
+            #expect(direct.text == ";\n")
+            #expect(connected == direct)
+        }
+    }
+
     @Test("chaining builds a value and leaves the original alone")
     func chainingBuildsAValue() {
         let base = TmuxCommandList([TmuxCommand("list-sessions")])

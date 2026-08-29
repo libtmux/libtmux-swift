@@ -41,9 +41,8 @@ public struct TmuxCommandList: Sendable, Hashable, ExpressibleByArrayLiteral {
 
     /// The argv for the whole list.
     ///
-    /// The separator is its own argument. A `;` inside a command's arguments is
-    /// therefore data, not punctuation — no shell or tmux parser ever sees the
-    /// two as the same thing.
+    /// The separator is its own argument. An embedded `;` is data; tmux reads a
+    /// trailing one as a separator unless it is escaped as `\;`.
     var argumentVector: [String] {
         var arguments: [String] = []
         for (index, command) in commands.enumerated() {

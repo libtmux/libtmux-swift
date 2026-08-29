@@ -65,12 +65,10 @@ extension ControlSession {
             return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
         }
         try requireSingleLine(rawArguments)
-        // A list arrives as its commands with `;` between them, and the
-        // separator has to stay punctuation. Quoting it the way an argument is
-        // quoted would make it a literal, and tmux would read a whole list as
-        // one command with a `;` in the middle of it — running the first and
-        // silently dropping the rest.
-        let commands = rawArguments.split(separator: TmuxCommandList.separator)
+        let commands = splitTmuxArgumentCommands(rawArguments)
+        guard !commands.isEmpty else {
+            return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
+        }
         let line =
             commands
             .map { $0.map(tmuxQuoted).joined(separator: " ") }
@@ -109,4 +107,26 @@ extension ControlSession {
             exitCode: reply.isError ? 1 : 0
         )
     }
+}
+
+private func splitTmuxArgumentCommands(_ arguments: [String]) -> [[String]] {
+    // tmux's argv parser makes a trailing `;` structural and `\;` literal.
+    // Recreate that result before quoting the control command line.
+    var commands: [[String]] = [[]]
+    for argument in arguments {
+        guard argument.hasSuffix(TmuxCommandList.separator) else {
+            commands[commands.endIndex - 1].append(argument)
+            continue
+        }
+
+        var prefix = String(argument.dropLast())
+        if prefix.hasSuffix("\\") {
+            prefix.removeLast()
+            commands[commands.endIndex - 1].append(prefix + TmuxCommandList.separator)
+        } else {
+            if !prefix.isEmpty { commands[commands.endIndex - 1].append(prefix) }
+            commands.append([])
+        }
+    }
+    return commands.filter { !$0.isEmpty }
 }
