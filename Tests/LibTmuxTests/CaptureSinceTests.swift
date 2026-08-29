@@ -25,6 +25,23 @@ struct CaptureSinceTests {
         return latest
     }
 
+    @Test("incremental capture bounds pane output at the transport")
+    func incrementalCaptureIsSourceBounded() async throws {
+        try await withTmuxServer { fixture in
+            let transport = IncrementalCaptureRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try await bootstrapPane(server)
+
+            _ = try await server.capture(pane, since: nil)
+
+            #expect(await transport.captureLimits == [1_048_576])
+        }
+    }
+
     @Test("the first read marks the place rather than dumping the backlog")
     func firstReadStartsWatching() async throws {
         try await withTmuxServer { server in
@@ -144,5 +161,40 @@ struct CaptureSinceTests {
             #expect(after.restarted)
             #expect(after.lines.isEmpty)
         }
+    }
+}
+
+private actor IncrementalCaptureRecordingTransport: OutputLimitedProcessTransport {
+    private let underlying = SubprocessTransport()
+    private(set) var captureLimits: [Int] = []
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String]
+    ) async throws(TmuxError) -> TmuxReply {
+        try await run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            perStreamOutputLimit: .max
+        )
+    }
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        if arguments.contains(where: { $0.contains("capture-pane") }) {
+            captureLimits.append(perStreamOutputLimit)
+        }
+        return try await underlying.run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
     }
 }

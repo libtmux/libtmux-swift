@@ -110,6 +110,8 @@ extension Server {
     /// Pass `nil` to start: the first read establishes where the pane is
     /// without returning its backlog, so a watcher begins at "from now on"
     /// rather than with a screenful of history.
+    /// The source read is capped at 1 MiB; a wider result fails instead of
+    /// allocating output the line limit would later discard.
     ///
     /// - Parameters:
     ///   - pane: the pane to read.
@@ -124,7 +126,7 @@ extension Server {
             pane,
             since: cursor,
             limit: limit,
-            perStreamOutputLimit: nil
+            perStreamOutputLimit: Self.incrementalCaptureOutputLimit
         )
     }
 
@@ -149,8 +151,11 @@ extension Server {
         _ pane: Pane,
         since cursor: CaptureCursor?,
         limit: Int,
-        perStreamOutputLimit: Int?
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> IncrementalCapture {
+        guard limit >= 0 else {
+            throw .invocationFailed(reason: "an incremental capture limit cannot be negative")
+        }
         // The same printable separator the projections use: tmux strips the
         // actual control characters out of a format's output, so a real record
         // separator would arrive having silently joined the fields together.
@@ -188,19 +193,14 @@ extension Server {
             // Nothing to compare against, so this establishes the mark rather
             // than answering with a backlog nobody asked for.
             let restarted = cursor != nil
-            let tail: String?
-            if let perStreamOutputLimit {
-                tail = try await captureTail(
-                    pane,
-                    startingAt: .line(cursorRow),
-                    endingAt: cursorRow,
-                    bounds: bounds,
-                    maximumLines: 1,
-                    perStreamOutputLimit: perStreamOutputLimit
-                ).lines.first
-            } else {
-                tail = try await row(cursorRow, of: pane)
-            }
+            let tail = try await captureTail(
+                pane,
+                startingAt: .line(cursorRow),
+                endingAt: cursorRow,
+                bounds: bounds,
+                maximumLines: 1,
+                perStreamOutputLimit: perStreamOutputLimit
+            ).lines.first
             return IncrementalCapture(
                 lines: [],
                 cursor: CaptureCursor(
@@ -225,26 +225,26 @@ extension Server {
         let oldest = -history
         let linesMissed = start < oldest
         let earliest = max(start, oldest)
-        var sourceDropped = 0
-        var rows: [String]
-        if let perStreamOutputLimit {
-            let (sourceLimit, limitOverflowed) = limit.addingReportingOverflow(1)
-            guard !limitOverflowed else {
+        let sourceLimit: Int
+        if limit == .max {
+            sourceLimit = .max
+        } else {
+            let (incremented, overflowed) = limit.addingReportingOverflow(1)
+            guard !overflowed else {
                 throw TmuxError.invocationFailed(reason: "pane capture size overflowed")
             }
-            let bounded = try await captureTail(
-                pane,
-                startingAt: .line(earliest),
-                endingAt: cursorRow,
-                bounds: bounds,
-                maximumLines: sourceLimit,
-                perStreamOutputLimit: perStreamOutputLimit
-            )
-            rows = bounded.lines
-            sourceDropped = bounded.droppedLines
-        } else {
-            rows = try await capture(pane, startingAt: .line(earliest))
+            sourceLimit = incremented
         }
+        let bounded = try await captureTail(
+            pane,
+            startingAt: .line(earliest),
+            endingAt: cursorRow,
+            bounds: bounds,
+            maximumLines: sourceLimit,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        var rows = bounded.lines
+        let sourceDropped = bounded.droppedLines
         if let tail = cursor.tail, rows.first == tail { rows.removeFirst() }
         // tmux pads the visible region with blank rows below the cursor; they
         // are not output and reporting them would be reporting the shape of the
@@ -272,7 +272,5 @@ extension Server {
         )
     }
 
-    private func row(_ row: Int, of pane: Pane) async throws(TmuxError) -> String? {
-        try await capture(pane, startingAt: .line(row)).first
-    }
+    private static let incrementalCaptureOutputLimit = 1_048_576
 }
