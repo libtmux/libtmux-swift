@@ -67,7 +67,8 @@ extension TmuxTools {
         )
         let link = try await windowLink(
             for: pane, matching: try arguments.optionalString("window_link"))
-        let format = try arguments.string("format")
+        let format = try ToolPattern.checkedFormat(
+            try arguments.string("format"), argument: "format")
         let caseInsensitive = try arguments.bool("case_insensitive", or: false)
         let matching = try arguments.optionalString("matching").map {
             try ToolPattern.compile(

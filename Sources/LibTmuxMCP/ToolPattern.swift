@@ -73,3 +73,21 @@ enum ToolPattern {
         .refusedForSafety("bounded matching for \(argument) could not finish: \(error)")
     }
 }
+
+extension ToolPattern {
+    /// Refuses a format that would run a shell command.
+    ///
+    /// `read_format` and `watch_format` answer questions and are offered at
+    /// the readonly tier, which promises nothing on the server changes. tmux
+    /// runs `#(command)` in any format it expands, so a template arriving from
+    /// a client reaches a shell that the tier says it cannot.
+    static func checkedFormat(_ template: String, argument: String) throws -> String {
+        guard !tmuxFormatRequestsShellJob(template) else {
+            throw ToolError.refusedForSafety(
+                "\(argument) runs a shell command with #(...), which this tool does not "
+                    + "allow. Double the # to read it as text, or use run_shell."
+            )
+        }
+        return template
+    }
+}

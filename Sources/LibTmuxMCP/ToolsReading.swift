@@ -245,7 +245,8 @@ extension TmuxTools {
     }
 
     func readFormat(_ arguments: Arguments) async throws -> ToolOutcome {
-        let template = try arguments.string("template")
+        let template = try ToolPattern.checkedFormat(
+            try arguments.string("template"), argument: "template")
         guard let target = try arguments.optionalString("target") else {
             return .init(FormatResult(value: try await server.format(template)))
         }

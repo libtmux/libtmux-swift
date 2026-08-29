@@ -399,4 +399,18 @@ private actor FailingCallerProbeTransport: ProcessTransport {
             perStreamOutputLimit: perStreamOutputLimit
         )
     }
+    @Test("a readonly format tool refuses to run a shell command")
+    func readonlyFormatToolsRefuseShellJobs() throws {
+        // tmux runs `#(...)` in any format it expands, so a template arriving
+        // from a client would reach a shell from a tier that promises reads.
+        for template in ["#(id)", "###(id)", "pre#(id)post"] {
+            #expect(throws: ToolError.self) {
+                try ToolPattern.checkedFormat(template, argument: "template")
+            }
+        }
+        for template in ["#{pane_dead}", "##(id)", "#{?#{a},x,y}"] {
+            #expect(try ToolPattern.checkedFormat(template, argument: "template") == template)
+        }
+    }
+
 }

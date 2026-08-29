@@ -255,7 +255,9 @@ extension TmuxTools {
                 model — `#{pane_dead}` or `#{window_bell_flag}`. \
                 A stale target ref is refused; re-list after this MCP process restarts. \
                 With no target, null means tmux returned no server-level value, while \
-                an empty field is `""`.
+                an empty field is `""`. \
+                A template running a shell command with `#(...)` is refused: double \
+                the `#` to read it as text, or use `run_shell`.
                 """,
             tier: .readonly,
             isIdempotent: true,

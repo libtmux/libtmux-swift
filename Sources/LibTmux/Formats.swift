@@ -108,6 +108,29 @@ struct FormatCondition: Sendable, Hashable {
     }
 }
 
+/// Whether a format template asks tmux to run a shell command.
+///
+/// `#(command)` in a format is a job: tmux runs `command` and substitutes its
+/// output. That is part of the format language, and correct for a caller that
+/// wrote the template. It is arbitrary execution for one that only passed it
+/// along, so a server accepting a template from elsewhere refuses these rather
+/// than running them.
+///
+/// `##` is tmux's own escape for a literal `#`, so a run of them decides:
+/// `##(` is text and `###(` is a job again.
+package func tmuxFormatRequestsShellJob(_ template: String) -> Bool {
+    var hashes = 0
+    for character in template {
+        if character == "#" {
+            hashes += 1
+        } else {
+            if character == "(", hashes.isMultiple(of: 2) == false { return true }
+            hashes = 0
+        }
+    }
+    return false
+}
+
 /// Escapes text used as a direct tmux format comparison operand.
 func tmuxFormatComparisonOperand(_ value: String) -> String {
     var escaped = ""
@@ -215,6 +238,10 @@ extension Server {
     /// Ask for as many fields as you like in one template, separated by
     /// whatever the value cannot contain — a newline is the one separator to
     /// avoid, since a connection reads commands by line and refuses one.
+    ///
+    /// > Warning: tmux runs `#(command)` in a template and substitutes its
+    /// > output, so a template is executable. Write it, or double the `#` in
+    /// > anything that reaches one from elsewhere.
     ///
     /// - Returns: what tmux printed, minus the newline it ends every answer
     ///   with, or `nil` when `target` no longer resolves.

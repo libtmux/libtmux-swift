@@ -112,7 +112,9 @@ extension TmuxTools {
             arguments: [
                 ToolArgument(
                     name: "format",
-                    summary: "A tmux format, such as #{pane_current_command}.",
+                    summary:
+                        "A tmux format, such as #{pane_current_command}. One running a "
+                        + "shell command with #(...) is refused.",
                     isRequired: true
                 ),
                 paneTarget,
