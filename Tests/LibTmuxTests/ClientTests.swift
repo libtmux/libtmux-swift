@@ -23,15 +23,14 @@ struct ClientTests {
                     #expect(client.isControlMode)
 
                     try await server.detach(client)
-
-                    var after = try await server.clients()
-                    for _ in 0..<100 where !after.isEmpty {
-                        try await Task.sleep(for: .milliseconds(20))
-                        after = try await server.clients()
-                    }
-                    #expect(after.isEmpty)
                 }
             }
+            var after = try await server.clients()
+            for _ in 0..<100 where !after.isEmpty {
+                try await Task.sleep(for: .milliseconds(20))
+                after = try await server.clients()
+            }
+            #expect(after.isEmpty)
             // Detaching a client leaves the server and its sessions alone.
             let running = try await server.isRunning()
             #expect(running)
@@ -56,14 +55,15 @@ struct ClientTests {
                     #expect(!clients.isEmpty)
 
                     try await server.detachClients(from: session)
-                    var after = try await server.clients()
-                    for _ in 0..<100 where !after.isEmpty {
-                        try await Task.sleep(for: .milliseconds(20))
-                        after = try await server.clients()
-                    }
-                    #expect(after.isEmpty)
                 }
             }
+
+            var after = try await server.clients()
+            for _ in 0..<100 where !after.isEmpty {
+                try await Task.sleep(for: .milliseconds(20))
+                after = try await server.clients()
+            }
+            #expect(after.isEmpty)
 
             // Detaching nobody is also success, so teardown need not list first.
             try await server.detachClients(from: session)
@@ -72,20 +72,15 @@ struct ClientTests {
         }
     }
 
-    @Test("a send after the server is gone says it was not submitted")
-    func writeToADeadConnectionWasNotSubmitted() async throws {
-        try await withTmuxServer { server in
-            _ = await #expect(throws: TmuxError.requestNotSubmitted) {
-                try await server.withControlMode(attachingTo: "bootstrap") { control in
-                    _ = try? await control.send(TmuxCommand("kill-server"))
-                    // The connection has already observed its closure, so a
-                    // later command cannot have entered its write queue.
-                    _ = try await waitUntil { try await !server.isRunning() }
-                    _ = try await control.send(
-                        TmuxCommand("display-message", ["-p", "unreachable"])
-                    )
-                }
-            }
+    @Test("a send after closure says it was not submitted")
+    func writeToClosedConnectionWasNotSubmitted() async {
+        let control = ControlSession(write: { _ in })
+        await control.finish(throwing: TmuxError.connectionClosed)
+
+        await #expect(throws: TmuxError.requestNotSubmitted) {
+            _ = try await control.send(
+                TmuxCommand("display-message", ["-p", "unreachable"])
+            )
         }
     }
 

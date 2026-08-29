@@ -149,6 +149,9 @@ extension Server {
     /// returns, the session is closed and the child is reaped before this call
     /// does.
     ///
+    /// Connection loss cancels `body`; teardown still waits for code that
+    /// ignores cancellation.
+    ///
     /// - Parameters:
     ///   - session: the session to attach to. Control mode reports `%output`
     ///     only for a session it is attached to, so a connection with no
@@ -212,14 +215,16 @@ extension Server {
                     return .body(try await body(control))
                 }
 
-                var streamEnded = false
                 while let outcome = try await group.next() {
                     switch outcome {
                     case let .body(value):
-                        if streamEnded { throw TmuxError.connectionClosed }
                         return value
                     case .streamEnded:
-                        streamEnded = true
+                        group.cancelAll()
+                        do {
+                            while try await group.next() != nil {}
+                        } catch {}
+                        throw TmuxError.connectionClosed
                     }
                 }
                 throw TmuxError.connectionClosed
