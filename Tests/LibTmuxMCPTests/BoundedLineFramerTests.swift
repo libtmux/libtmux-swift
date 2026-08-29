@@ -1,4 +1,5 @@
 import Foundation
+import LibTmux
 import Testing
 
 @testable import LibTmuxMCP
