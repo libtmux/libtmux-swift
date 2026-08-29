@@ -85,6 +85,6 @@ extension TmuxTools {
         try await guardForCaller()
             .checkServer(override: try arguments.bool("confirm_self", or: false))
         try await server.killServer(expecting: incarnation)
-        return .init(Killed(ref: reference, kind: "server", id: server.tmuxExecutable))
+        return .init(Killed(ref: reference, kind: "server", id: String(incarnation.processID)))
     }
 }

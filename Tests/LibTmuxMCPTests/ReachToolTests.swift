@@ -228,6 +228,28 @@ struct ReachToolTests {
         }
     }
 
+    @Test("kill_server identifies the daemon it killed")
+    func killServerIdentifiesKilledDaemon() async throws {
+        try await withTmuxServer { server in
+            let incarnation = try #require(try await server.incarnation())
+            let outcome = try await TmuxTools(
+                server: server,
+                tier: .destructive,
+                caller: nil
+            ).call(
+                ToolCall(
+                    name: "kill_server",
+                    arguments: .object([
+                        "server_ref": .string(try await serverRef(server))
+                    ])
+                )
+            )
+            let killed = try outcome.decode(Killed.self)
+
+            #expect(killed.id == String(incarnation.processID))
+        }
+    }
+
     @Test("hooks can be read and are deliberately not writable")
     func hooksAreReadOnly() async throws {
         try await withTmuxServer { server in
