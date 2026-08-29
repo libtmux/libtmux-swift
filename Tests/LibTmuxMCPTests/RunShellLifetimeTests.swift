@@ -129,6 +129,58 @@ struct RunShellLifetimeTests {
         }
     }
 
+    @Test("stale cleanup captures cannot release a pane that is still running")
+    func staleCleanupCapturesKeepPaneLease() async throws {
+        try await withTmuxServer { fixture in
+            let transport = FailingRunShellWaitTransport(
+                failures: 1,
+                staleCaptureFailures: 3
+            )
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server, tier: .mutating)
+            let release = "libtmux-test-run-shell-release-\(UUID().uuidString)"
+
+            await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
+                try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(
+                                WireReferenceCodec.processLocal.reference(to: pane)
+                            ),
+                            "command": .string(
+                                "\(server.shellInvocation) wait-for \(release)"
+                            ),
+                            "timeout": .number(20),
+                        ])
+                    )
+                )
+            }
+            #expect(
+                try await waitUntil(within: .seconds(2)) {
+                    await transport.staleCaptureFailureCount == 3
+                }
+            )
+
+            let releasedWhileRunning = try await waitUntil(within: .seconds(1)) {
+                !(await tools.paneRuns.isHeld(pane))
+            }
+            #expect(!releasedWhileRunning)
+
+            try await fixture.signal(release)
+            #expect(
+                try await waitUntil {
+                    !(await tools.paneRuns.isHeld(pane))
+                }
+            )
+        }
+    }
+
     @Test("server departure ends pending cleanup")
     func serverDepartureEndsPendingCleanup() async throws {
         try await withTmuxServer { fixture in
@@ -454,11 +506,14 @@ private actor RunShellCaptureTransport: OutputLimitedProcessTransport {
 private actor FailingRunShellWaitTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private let failureLimit: Int
+    private let staleCaptureFailureLimit: Int
     private(set) var waitFailureCount = 0
+    private(set) var staleCaptureFailureCount = 0
     private var endpointDeparted = false
 
-    init(failures: Int = 1) {
+    init(failures: Int = 1, staleCaptureFailures: Int = 0) {
         self.failureLimit = failures
+        self.staleCaptureFailureLimit = staleCaptureFailures
     }
 
     func departEndpoint() {
@@ -482,6 +537,13 @@ private actor FailingRunShellWaitTransport: ProcessTransport {
         if waitFailureCount < failureLimit, isRunShellWait {
             waitFailureCount += 1
             throw .invocationFailed(reason: "wait failed")
+        }
+        if waitFailureCount > 0,
+            staleCaptureFailureCount < staleCaptureFailureLimit,
+            arguments.contains(where: { $0.contains("capture-pane") })
+        {
+            staleCaptureFailureCount += 1
+            throw .staleServerValue
         }
         return try await underlying.run(
             executable: executable,
