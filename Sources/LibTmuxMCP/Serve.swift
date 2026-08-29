@@ -118,15 +118,18 @@ public struct MCPService: Sendable {
         await withTaskGroup(of: Void.self) { requestGroup in
             for await line in lines {
                 if Task.isCancelled { break }
+                let decoded = MCPRequestHandler.decodeRequest(line)
                 // Cancellation arrives as a notification, so it is read before
                 // anything that would answer: it has no id of its own to reply
                 // to, and it must overtake the request it cancels.
-                if let cancelled = MCPRequestHandler.cancelledRequestID(in: line) {
+                if case let .request(request) = decoded,
+                    let cancelled = request.cancelledRequestID
+                {
                     await registry.cancel(cancelled)
                     continue
                 }
-                guard let identifier = MCPRequestHandler.requestID(in: line) else {
-                    if let response = await handler.respond(to: line),
+                guard case let .request(request) = decoded, let identifier = request.id else {
+                    if let response = await handler.respond(to: decoded),
                         !(await outbound.enqueue(response))
                     {
                         break
@@ -139,7 +142,7 @@ public struct MCPService: Sendable {
                         maximum: maximumInFlightRequests,
                         operation: {
                             await handler.respond(
-                                to: line,
+                                to: decoded,
                                 emit: { _ = await outbound.offer($0) }
                             )
                         }
@@ -232,13 +235,5 @@ private actor RequestRegistry {
         entry.state = .completed
         entries[id] = entry
         return answer
-    }
-}
-
-extension MCPRequestHandler {
-    /// The id a request will be answered under, for tracking it while it runs.
-    static func requestID(in line: String) -> JSONValue? {
-        guard case let .request(request) = decodeRequest(line) else { return nil }
-        return request.id
     }
 }

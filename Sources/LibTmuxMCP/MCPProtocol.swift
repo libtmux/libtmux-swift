@@ -1,62 +1,8 @@
 import Foundation
 import LibTmux
 
-// The JSON-RPC half of `libtmux-mcp`, kept here rather than in the executable
-// because top-level code in an executable target cannot be imported and so
-// cannot be tested.
-
-/// One validated JSON-RPC request, as far as this server reads them.
-struct MCPRequest: Sendable {
-    /// Absent on a notification.
-    let id: JSONValue?
-    let method: String
-    let params: JSONValue?
-
-    init?(_ value: JSONValue) {
-        guard case let .object(members) = value,
-            members["jsonrpc"] == .string("2.0"),
-            case let .string(method)? = members["method"],
-            Self.validID(members["id"]),
-            Self.validParams(members["params"])
-        else { return nil }
-        self.id = members["id"]
-        self.method = method
-        self.params = members["params"]
-    }
-
-    private static func validID(_ id: JSONValue?) -> Bool {
-        guard let id else { return true }
-        switch id {
-        case .integer, .unsignedInteger, .string: return true
-        case .null, .bool, .number, .array, .object: return false
-        }
-    }
-
-    private static func validParams(_ params: JSONValue?) -> Bool {
-        guard let params else { return true }
-        switch params {
-        case .object: return true
-        default: return false
-        }
-    }
-}
-
-enum MCPRequestDecoding {
-    case request(MCPRequest)
-    case malformedJSON
-    case invalidRequest
-    case oversized
-}
-
-package enum MCPInput {
-    package static func requestLine(for event: BoundedLineFramer.Event) -> String {
-        switch event {
-        case let .line(line): line
-        case .oversized: "null"
-        case .invalidUTF8: "{"
-        }
-    }
-}
+// JSON-RPC handling lives in the library target because executable top-level
+// code cannot be imported and tested.
 
 /// Answers MCP requests, one line at a time, without touching a file
 /// descriptor.
@@ -102,8 +48,15 @@ public struct MCPRequestHandler: Sendable {
         to line: String,
         emit: @escaping @Sendable (String) async -> Void = { _ in }
     ) async -> String? {
+        await respond(to: Self.decodeRequest(line), emit: emit)
+    }
+
+    func respond(
+        to decoded: MCPRequestDecoding,
+        emit: @escaping @Sendable (String) async -> Void = { _ in }
+    ) async -> String? {
         let request: MCPRequest
-        switch Self.decodeRequest(line) {
+        switch decoded {
         case let .request(decoded):
             request = decoded
         case .malformedJSON:
@@ -277,26 +230,6 @@ public struct MCPRequestHandler: Sendable {
         default:
             return failure(id: id, code: -32601, message: "no method \(request.method)")
         }
-    }
-
-    /// Whether a line is a notification — something to act on with no reply.
-    ///
-    /// `notifications/cancelled` is the one that matters: it is how a client
-    /// says it has stopped waiting, and the only way a wait already in flight
-    /// can be stopped early.
-    static func cancelledRequestID(in line: String) -> JSONValue? {
-        guard case let .request(request) = decodeRequest(line), request.id == nil,
-            request.method == "notifications/cancelled"
-        else { return nil }
-        return request.params?["requestId"]
-    }
-
-    static func decodeRequest(_ line: String) -> MCPRequestDecoding {
-        guard line.utf8.count <= maximumRequestBytes else { return .oversized }
-        guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(line.utf8))
-        else { return .malformedJSON }
-        guard let request = MCPRequest(value) else { return .invalidRequest }
-        return .request(request)
     }
 
     static func negotiated(_ requested: String?) -> String {
