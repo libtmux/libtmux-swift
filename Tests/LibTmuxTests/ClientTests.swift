@@ -23,6 +23,7 @@ struct ClientTests {
                     #expect(client.isControlMode)
 
                     try await server.detach(client)
+                    try await Task.sleep(for: .seconds(20))
                 }
             }
             var after = try await server.clients()
@@ -55,6 +56,7 @@ struct ClientTests {
                     #expect(!clients.isEmpty)
 
                     try await server.detachClients(from: session)
+                    try await Task.sleep(for: .seconds(20))
                 }
             }
 
