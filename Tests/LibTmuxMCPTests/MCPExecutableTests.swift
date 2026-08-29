@@ -11,6 +11,39 @@ import Testing
 struct MCPExecutableTests {
     @Test("the executable responds while standard input remains open")
     func executableReadsAvailableInput() throws {
+        let (process, input, output) = try launchExecutable()
+        defer { stop(process, input: input) }
+
+        try writePing(1, to: input)
+        let first = try #require(
+            readLine(from: output.fileHandleForReading, within: .seconds(1))
+        )
+        #expect(first.contains(#""id":1"#))
+    }
+
+    @Test("the executable survives a broken pipe signal")
+    func executableIgnoresSIGPIPE() async throws {
+        let (process, input, output) = try launchExecutable()
+        defer { stop(process, input: input) }
+
+        try writePing(1, to: input)
+        _ = try #require(
+            readLine(from: output.fileHandleForReading, within: .seconds(1))
+        )
+
+        #expect(kill(process.processIdentifier, SIGPIPE) == 0)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(process.isRunning)
+        guard process.isRunning else { return }
+
+        try writePing(2, to: input)
+        let second = try #require(
+            readLine(from: output.fileHandleForReading, within: .seconds(1))
+        )
+        #expect(second.contains(#""id":2"#))
+    }
+
+    private func launchExecutable() throws -> (Process, Pipe, Pipe) {
         let binary = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -30,19 +63,21 @@ struct MCPExecutableTests {
         environment["LIBTMUX_SOCKET_PATH"] = "/tmp/libtmux-swift-test/stdio-unstarted"
         process.environment = environment
         try process.run()
-        defer {
-            try? input.fileHandleForWriting.close()
-            if process.isRunning { process.terminate() }
-            process.waitUntilExit()
-        }
+        return (process, input, output)
+    }
 
+    private func stop(_ process: Process, input: Pipe) {
+        try? input.fileHandleForWriting.close()
+        if process.isRunning { process.terminate() }
+        process.waitUntilExit()
+    }
+
+    private func writePing(_ identifier: Int, to input: Pipe) throws {
         try input.fileHandleForWriting.write(
-            contentsOf: Data(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.utf8 + [10])
+            contentsOf: Data(
+                #"{"jsonrpc":"2.0","id":\#(identifier),"method":"ping"}"#.utf8 + [10]
+            )
         )
-        let first = try #require(
-            readLine(from: output.fileHandleForReading, within: .seconds(1))
-        )
-        #expect(first.contains(#""id":1"#))
     }
 
     private func readLine(

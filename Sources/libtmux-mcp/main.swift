@@ -8,6 +8,8 @@ import LibTmuxMCP
     import Glibc
 #endif
 
+_ = signal(SIGPIPE, SIG_IGN)
+
 /// An MCP server over stdio.
 ///
 /// Speaks JSON-RPC 2.0 on stdin and stdout, one message per line. Anything the
