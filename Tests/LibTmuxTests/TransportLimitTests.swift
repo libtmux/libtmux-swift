@@ -71,6 +71,29 @@ struct TransportLimitTests {
             )
         }
     }
+
+    @Test("a replacement daemon cannot receive an isolated command")
+    func replacementCannotReceiveIsolatedCommand() async throws {
+        try await withTmuxServer { server in
+            let stale = try #require(try await server.incarnation())
+            _ = try await server.run(TmuxCommand("kill-server"))
+            _ = try await server.run(
+                TmuxCommand("new-session", ["-d", "-s", "replacement"])
+            )
+
+            await #expect(throws: TmuxError.serverRestarted) {
+                try await server.runIsolated(
+                    TmuxCommand("set-option", ["-g", "@isolated-guard", "ran"]),
+                    expecting: stale,
+                    perStreamOutputLimit: 128
+                )
+            }
+            let option = try await server.run(
+                TmuxCommand("show-options", ["-gv", "@isolated-guard"])
+            )
+            #expect(!option.isSuccess)
+        }
+    }
 }
 
 private struct FixedReplyTransport: ProcessTransport {
