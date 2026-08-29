@@ -153,6 +153,22 @@ struct MCPProtocolTests {
         #expect(try object(reply)["error"]?["code"] == .number(-32602))
     }
 
+    @Test(
+        "tools/call requires an arguments object",
+        arguments: ["[]", "true", #""x""#]
+    )
+    func toolCallArgumentsNeedAnObject(_ arguments: String) async throws {
+        let reply = try #require(
+            await handler().respond(
+                to: #"""
+                    {"jsonrpc":"2.0","id":1,"method":"tools/call",
+                    "params":{"name":"describe_filters","arguments":\#(arguments)}}
+                    """#.replacingOccurrences(of: "\n", with: "")
+            )
+        )
+        #expect(try object(reply)["error"]?["code"] == .number(-32602))
+    }
+
     @Test("encoded tool responses have a wire limit")
     func toolResponsesAreBoundedAfterJSONEscaping() throws {
         let outcome = ToolOutcome(

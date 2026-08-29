@@ -170,7 +170,11 @@ public struct MCPRequestHandler: Sendable {
                 )
             }
             guard let call = Self.toolCall(request.params) else {
-                return failure(id: id, code: -32602, message: "tools/call needs a tool name")
+                return failure(
+                    id: id,
+                    code: -32602,
+                    message: "tools/call needs a tool name and object arguments"
+                )
             }
             do {
                 let outcome = try await tools.call(
@@ -411,6 +415,8 @@ public struct MCPRequestHandler: Sendable {
     /// correctly they were sent.
     static func toolCall(_ params: JSONValue?) -> ToolCall? {
         guard let name = params?["name"]?.stringValue else { return nil }
-        return ToolCall(name: name, arguments: params?["arguments"] ?? .object([:]))
+        let arguments = params?["arguments"] ?? .object([:])
+        guard arguments.objectValue != nil else { return nil }
+        return ToolCall(name: name, arguments: arguments)
     }
 }

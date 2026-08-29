@@ -59,6 +59,20 @@ struct ToolCatalogTests {
         }
     }
 
+    @Test(
+        "tool arguments must be an object before declarations are read",
+        arguments: [JSONValue.array([]), .bool(true), .string("x")]
+    )
+    func toolArgumentsMustBeObjects(_ value: JSONValue) throws {
+        let expected = ToolError.wrongArgumentType("arguments", expected: "an object")
+        for name in ["describe_filters", "read_format"] {
+            let definition = try #require(TmuxTools.byName[name])
+            #expect(throws: expected) {
+                try Arguments(ToolCall(name: name, arguments: value), for: definition)
+            }
+        }
+    }
+
     @Test("a value outside an argument's enum is refused with the choices")
     func valueOutsideEnumIsRefused() throws {
         let definition = try #require(TmuxTools.byName["split_pane"])

@@ -245,8 +245,11 @@ struct Arguments {
     private let tool: ToolDefinition
 
     init(_ call: ToolCall, for tool: ToolDefinition) throws {
+        guard let values = call.arguments.objectValue else {
+            throw ToolError.wrongArgumentType("arguments", expected: "an object")
+        }
         self.tool = tool
-        self.values = call.arguments.objectValue ?? [:]
+        self.values = values
 
         let declared = Set(tool.arguments.map(\.name))
         let unknown = values.keys.filter { !declared.contains($0) }.sorted()
