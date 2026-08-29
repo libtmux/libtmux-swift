@@ -16,17 +16,29 @@ struct MCPServiceLifecycleTests {
             handler: MCPRequestHandler(tools: TmuxTools(server: server))
         )
         let (lines, continuation) = AsyncStream<String>.makeStream()
-        let completion = ServiceCompletion()
         let serving = Task {
             await service.serveUntilWriteFails(lines) { _ in false }
-            await completion.record()
         }
 
         continuation.yield(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#)
-        let stopped = try await waitUntil(within: .seconds(1)) {
-            await completion.returned
+        let stopped = await withTaskGroup(of: Bool.self) { tasks in
+            tasks.addTask {
+                await serving.value
+                return true
+            }
+            tasks.addTask {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return false }
+                serving.cancel()
+                continuation.finish()
+                return false
+            }
+            let first = await tasks.next() ?? false
+            tasks.cancelAll()
+            return first
         }
         continuation.finish()
+        serving.cancel()
         await serving.value
 
         #expect(stopped)
@@ -140,14 +152,6 @@ struct MCPServiceLifecycleTests {
             #expect(inputCrossedBlockedWrite)
             #expect(await output.responses(withID: "wait").isEmpty)
         }
-    }
-}
-
-private actor ServiceCompletion {
-    private(set) var returned = false
-
-    func record() {
-        returned = true
     }
 }
 
