@@ -86,25 +86,49 @@ public struct MCPService: Sendable {
 
 /// Tracks what is in flight so a cancellation can reach it.
 private actor RequestRegistry {
-    private var tasks: [JSONValue: Task<String?, Never>] = [:]
+    private enum State {
+        case running
+        case completed
+        case cancelled
+    }
+
+    private struct Entry {
+        let task: Task<String?, Never>
+        var state: State
+    }
+
+    private var entries: [JSONValue: Entry] = [:]
 
     func start(
         _ id: JSONValue,
         maximum: Int,
         operation: @escaping @Sendable () async -> String?
     ) -> Task<String?, Never>? {
-        guard tasks[id] == nil, tasks.count < maximum else { return nil }
-        let task = Task { await operation() }
-        tasks[id] = task
+        guard entries[id] == nil, entries.count < maximum else { return nil }
+        let task = Task {
+            let answer = await operation()
+            return acceptCompletion(answer, for: id)
+        }
+        entries[id] = Entry(task: task, state: .running)
         return task
     }
 
     func finish(_ id: JSONValue) {
-        tasks[id] = nil
+        entries[id] = nil
     }
 
     func cancel(_ id: JSONValue) {
-        tasks[id]?.cancel()
+        guard var entry = entries[id], case .running = entry.state else { return }
+        entry.state = .cancelled
+        entries[id] = entry
+        entry.task.cancel()
+    }
+
+    private func acceptCompletion(_ answer: String?, for id: JSONValue) -> String? {
+        guard var entry = entries[id], case .running = entry.state else { return nil }
+        entry.state = .completed
+        entries[id] = entry
+        return answer
     }
 }
 

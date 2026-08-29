@@ -167,7 +167,7 @@ struct MCPServeTests {
         }
     }
 
-    @Test("a cancelled request stops rather than running out its timeout")
+    @Test("a cancelled request stops without sending an answer")
     func cancellationStopsAWait() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
@@ -199,6 +199,7 @@ struct MCPServeTests {
             // A wait the client stopped caring about must not run to its
             // deadline, even when cancellation is the very next input line.
             #expect(elapsed < .seconds(2))
+            #expect(await answers.order.isEmpty)
         }
     }
 
