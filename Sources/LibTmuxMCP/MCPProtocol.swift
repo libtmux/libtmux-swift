@@ -226,6 +226,14 @@ public struct MCPRequestHandler: Sendable {
         ])
     }
 
+    func capacityFailure(id: JSONValue, maximum: Int) -> String? {
+        failure(
+            id: id,
+            code: -32000,
+            message: "server already has \(maximum) requests in flight"
+        )
+    }
+
     private func encode(_ body: [String: JSONValue]) -> String? {
         guard let data = try? encoder.encode(body) else { return nil }
         return String(decoding: data, as: UTF8.self)

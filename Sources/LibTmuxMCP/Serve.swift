@@ -8,10 +8,20 @@ import LibTmux
 /// cancellation that would end it. Serving them one at a time makes the
 /// server's slowest tool its latency for everything.
 public struct MCPService: Sendable {
+    static let defaultMaximumInFlightRequests = 64
+
     private let handler: MCPRequestHandler
+    private let maximumInFlightRequests: Int
 
     public init(handler: MCPRequestHandler) {
         self.handler = handler
+        self.maximumInFlightRequests = Self.defaultMaximumInFlightRequests
+    }
+
+    init(handler: MCPRequestHandler, maximumInFlightRequests: Int) {
+        precondition(maximumInFlightRequests > 0)
+        self.handler = handler
+        self.maximumInFlightRequests = maximumInFlightRequests
     }
 
     /// Reads requests from `lines` and writes each answer through `write`.
@@ -30,7 +40,7 @@ public struct MCPService: Sendable {
         write: @escaping @Sendable (String) async -> Void
     ) async {
         let registry = RequestRegistry()
-        await withTaskGroup(of: Void.self) { group in
+        await withDiscardingTaskGroup { group in
             for await line in lines {
                 // Cancellation arrives as a notification, so it is read before
                 // anything that would answer: it has no id of its own to reply
@@ -39,22 +49,32 @@ public struct MCPService: Sendable {
                     await registry.cancel(cancelled)
                     continue
                 }
-                let identifier = MCPRequestHandler.requestID(in: line)
-                let work = Task {
-                    // Progress goes out through the same serialised writer the
-                    // answer will use, so the two cannot interleave.
-                    await handler.respond(to: line, emit: write)
+                guard let identifier = MCPRequestHandler.requestID(in: line) else {
+                    continue
                 }
-                if let identifier {
-                    // Register before reading another line, which may be the
-                    // notification that cancels this request.
-                    await registry.register(identifier, work)
+                guard
+                    let work = await registry.start(
+                        identifier,
+                        maximum: maximumInFlightRequests,
+                        operation: {
+                            // Progress and answers share the serialised writer,
+                            // so the two cannot interleave.
+                            await handler.respond(to: line, emit: write)
+                        }
+                    )
+                else {
+                    if let response = handler.capacityFailure(
+                        id: identifier,
+                        maximum: maximumInFlightRequests
+                    ) {
+                        await write(response)
+                    }
+                    continue
                 }
                 group.addTask {
                     let answer = await work.value
-                    if let identifier { await registry.finish(identifier) }
-                    guard let answer else { return }
-                    await write(answer)
+                    if let answer { await write(answer) }
+                    await registry.finish(identifier)
                 }
             }
         }
@@ -65,8 +85,15 @@ public struct MCPService: Sendable {
 private actor RequestRegistry {
     private var tasks: [JSONValue: Task<String?, Never>] = [:]
 
-    func register(_ id: JSONValue, _ task: Task<String?, Never>) {
+    func start(
+        _ id: JSONValue,
+        maximum: Int,
+        operation: @escaping @Sendable () async -> String?
+    ) -> Task<String?, Never>? {
+        guard tasks[id] == nil, tasks.count < maximum else { return nil }
+        let task = Task { await operation() }
         tasks[id] = task
+        return task
     }
 
     func finish(_ id: JSONValue) {
@@ -75,7 +102,6 @@ private actor RequestRegistry {
 
     func cancel(_ id: JSONValue) {
         tasks[id]?.cancel()
-        tasks[id] = nil
     }
 }
 

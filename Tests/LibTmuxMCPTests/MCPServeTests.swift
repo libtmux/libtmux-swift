@@ -202,6 +202,71 @@ struct MCPServeTests {
         }
     }
 
+    @Test("request capacity refuses excess work without blocking cancellation")
+    func requestCapacityIsBounded() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
+            let service = MCPService(
+                handler: MCPRequestHandler(tools: TmuxTools(server: server)),
+                maximumInFlightRequests: 1
+            )
+            let answers = Answers()
+            let started = ContinuousClock.now
+            let lines = AsyncStream<String> { continuation in
+                continuation.yield(
+                    #"""
+                    {"jsonrpc":"2.0","id":"wait","method":"tools/call","params":
+                    {"name":"wait_for_output","arguments":{"pane":"\#(paneRef)",
+                    "patterns":["never-arrives"],"timeout":4}}}
+                    """#.replacingOccurrences(of: "\n", with: "")
+                )
+                continuation.yield(
+                    #"{"jsonrpc":"2.0","id":"excess","method":"ping"}"#
+                )
+                continuation.yield(
+                    #"""
+                    {"jsonrpc":"2.0","method":"notifications/cancelled",
+                    "params":{"requestId":"wait"}}
+                    """#.replacingOccurrences(of: "\n", with: "")
+                )
+                continuation.finish()
+            }
+            await service.serve(lines) { await answers.record($0) }
+
+            let replies = try await answers.order.map(object)
+            let excess = try #require(replies.first { $0["id"] == .string("excess") })
+            #expect(excess["error"]?["code"] == .number(-32000))
+            #expect(ContinuousClock.now - started < .seconds(2))
+        }
+    }
+
+    @Test("request capacity includes responses waiting to be written")
+    func requestCapacityIncludesWrites() async throws {
+        let server = try Server(socketPath: "/tmp/libtmux-swift-test/unstarted")
+        let service = MCPService(
+            handler: MCPRequestHandler(tools: TmuxTools(server: server)),
+            maximumInFlightRequests: 1
+        )
+        let answers = Answers()
+        let (lines, continuation) = AsyncStream<String>.makeStream()
+        continuation.yield(#"{"jsonrpc":"2.0","id":"first","method":"ping"}"#)
+        await service.serve(lines) { line in
+            if line.contains(#""id":"first""#) {
+                continuation.yield(
+                    #"{"jsonrpc":"2.0","id":"second","method":"ping"}"#
+                )
+                continuation.finish()
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            await answers.record(line)
+        }
+
+        let replies = try await answers.order.map(object)
+        let second = try #require(replies.first { $0["id"] == .string("second") })
+        #expect(second["error"]?["code"] == .number(-32000))
+    }
+
     private actor Answers {
         private(set) var order: [String] = []
         func record(_ line: String) { order.append(line) }
