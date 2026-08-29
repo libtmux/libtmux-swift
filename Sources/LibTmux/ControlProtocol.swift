@@ -178,7 +178,7 @@ struct ControlProtocolParser: Sendable {
             guard let metadata = blockMetadata(rest) else {
                 return .protocolViolation("malformed %begin metadata")
             }
-            if let last = lastBlockNumber, metadata.number <= last {
+            if let last = lastBlockNumber, !blockNumberAdvances(metadata.number, past: last) {
                 return .protocolViolation(
                     "block \(metadata.number) did not advance past \(last)"
                 )
@@ -226,6 +226,17 @@ private struct BlockMetadata: Sendable, Hashable {
     let flags: Int
 
     var isControlCommand: Bool { flags != 0 }
+}
+
+/// Whether one block number follows another.
+///
+/// tmux stamps the number from a `u_int` counter shared by every client, so it
+/// advances by an unpredictable step and wraps at 2^32. Comparing the wrapped
+/// difference accepts the wrap — invisible to tmux, which never reads the
+/// number back — while still rejecting a repeat or a rewind.
+private func blockNumberAdvances(_ number: Int, past last: Int) -> Bool {
+    let step = UInt32(truncatingIfNeeded: number) &- UInt32(truncatingIfNeeded: last)
+    return step != 0 && step < UInt32(1) << 31
 }
 
 private func blockMetadata(_ arguments: String) -> BlockMetadata? {

@@ -274,4 +274,17 @@ struct ControlProtocolTests {
         }
         #expect(reason.contains("did not advance"))
     }
+
+    @Test("the block counter may wrap without ending the connection")
+    func wrappedBlockNumbersStillAdvance() {
+        let events = parse(
+            """
+            %begin 1 4294967295 1
+            %end 1 4294967295 1
+            %begin 1 0 1
+            %end 1 0 1
+            """
+        )
+        #expect(events.compactMap { if case .reply = $0 { true } else { nil } }.count == 2)
+    }
 }
