@@ -146,8 +146,9 @@ lane on an unrelated commit:
 $ ruff check Scripts/
 ```
 
-Every documented example is compiled, and the floor keeps the number that
-actually run from sliding:
+Every documented example maps to consumer source, and the floor keeps its
+live-test call sites from sliding. The trait-on test later compiles and runs
+that package:
 
 ```console
 $ python3 Scripts/check_examples.py --min-executed 36
@@ -226,10 +227,11 @@ reaches the library the way a reader does: through the products, with no
 cannot and still pass, which is the thing that split is there to prevent.
 
 Every example is a function, so a test in `Examples/Tests/` calling it by name
-is what makes it *executed*. That is worth more than compiling: a renamed call
+marks it for the live suite. That is worth more than compiling: a renamed call
 stops the build either way, but a call that kept its name and changed its answer
-is only caught by running it. The check reports the split, so the number that
-run is a fact rather than a claim, and `--min-executed` keeps it from sliding.
+is only caught by running it. The check reports those call sites and
+`--min-executed` keeps the count from sliding; the Examples test run proves the
+code actually executes.
 
 Edit the example, never the block on the page, then run the check:
 

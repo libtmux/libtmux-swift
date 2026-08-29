@@ -8,7 +8,8 @@ fails the build when a documented block appears in no file below.
 
 ```console
 $ python3 Scripts/check_examples.py --min-executed 36
-40 documented examples, each compiled; 36 of them run against a real tmux
+40 documented examples mapped to consumer sources
+36 have live-test call sites
 ```
 
 ## Why this is its own package
@@ -46,11 +47,12 @@ new unit, so a block spanning two functions matches neither. `main.swift` has
 no function to name, so it takes the name of the directory it builds —
 `QuickStart`.
 
-A unit counts as **executed** when a test under `Tests/` names it: by calling
-`unit(...)`, or for an executable by naming `"QuickStart"` as a string and
-spawning it. Compiling catches a call that was renamed; only running catches
-one that kept its name and began answering something else. `--min-executed`
-keeps that number from sliding.
+A unit has a **live-test call site** when a test under `Tests/` names it: by
+calling `unit(...)`, or for an executable by naming `"QuickStart"` as a string
+and spawning it. This static check does not invoke Swift. Compiling catches a
+call that was renamed; only running catches one that kept its name and began
+answering something else. `--min-executed` keeps the call-site count from
+sliding.
 
 ## What is checked, and what is not
 
@@ -86,7 +88,7 @@ Edit the code here, never the block on the page, then bring the check across:
 $ python3 Scripts/check_examples.py
 ```
 
-Run them for real, which is what the executed half of that count means:
+Compile and run them for real:
 
 ```console
 $ swift test --package-path Examples

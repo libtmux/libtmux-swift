@@ -156,7 +156,7 @@ jobs:
       # longer builds fails the job below. This checks the other half: that the
       # examples on the page are the ones in the package, rather than copies
       # that drifted — and that the number of them actually run has not slid.
-      - name: Check documented examples are compiled
+      - name: Check documented examples are mapped
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_examples.py --min-executed 36
 

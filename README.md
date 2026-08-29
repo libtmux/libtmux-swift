@@ -596,11 +596,13 @@ executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-40 documented examples, each compiled; 36 of them run against a real tmux
+40 documented examples mapped to consumer sources
+36 have live-test call sites
 ```
 
-That check fails if a fence here has no example behind it, so what you read
-above is what the compiler accepted and, mostly, what tmux actually did.
+That check fails if a fence here has no example behind it. The Examples test
+run is what compiles those sources and exercises the 36 live call sites; CI
+runs both gates.
 [`Examples/README.md`](Examples/) says how a fence is matched, and what the
 check cannot see.
 

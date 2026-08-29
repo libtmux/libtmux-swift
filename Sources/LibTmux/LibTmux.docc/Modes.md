@@ -18,10 +18,9 @@ Concurrency is not on this list because it is not this library's to offer:
 `async let` over a connected server pipelines commands, and over a direct one
 spawns processes side by side, without either being a setting.
 
-Only the third dial is restricted, and the compiler is what restricts it —
-``ControlSession`` exists only inside the scope that opened a connection, so a
-`%output` reader against a server that has none does not compile rather than
-failing at runtime. The other two combine freely: a command list over a
+Only the third dial needs a live connection. ``ControlSession`` is handed out
+inside the scope that opened one; retaining it does not keep the process alive,
+and later calls fail. The other two combine freely: a command list over a
 connection costs one process for any number of commands.
 
 ## The modes

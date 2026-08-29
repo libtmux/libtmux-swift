@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""Require every documented Swift example to compile, and say how many run.
+"""Map every documented Swift example to consumer code and live-test call sites.
 
 A README snippet is prose until something builds it. An example can name a
 package identity SwiftPM does not use, or compile with a warning, and a reader
 cannot tell either from the page.
 
-`Examples/` is a package of its own that depends on this one, so everything in
-it is compiled by `swift build --package-path Examples` and compiled the way a
-reader compiles it: through the products, with no `@testable`. This checks that
-each ```swift block in the README and the DocC catalogue appears there, rather
+`Examples/` is a package of its own that depends on this one, so
+`swift test --package-path Examples` compiles it the way a reader does: through
+the products, with no `@testable`. This script does not invoke Swift. It checks
+that each ```swift block in the README and DocC catalogue appears there rather
 than being a copy that drifted away from it.
 
-Compiling is not the whole claim. A call that was renamed stops the build, but
-one that quietly began answering something else does not. Every example lives in
-a function, so an example is *executed* when a test in `Examples/Tests/` calls
-that function by name — which is a fact about the tree rather than a claim in a
-comment.
+Every example lives in a function, so a call from `Examples/Tests/` identifies
+the examples the live suite reaches. Running that suite is what proves they
+compile and execute.
 
     python3 Scripts/check_examples.py
     python3 Scripts/check_examples.py --min-executed <count>
@@ -100,22 +98,21 @@ def units() -> dict[str, list[str]]:
 def called() -> set[str]:
     """Every name a test reaches for, by call or by string.
 
-    A function is executed when a test calls it; an executable is executed when
-    a test spawns it, and a spawned binary is named by a string rather than by
-    an identifier.
+    A function has a live-test call site when a test calls it; an executable
+    has one when a test names and spawns it.
     """
     text = "\n".join(p.read_text() for p in TESTS.rglob("*.swift"))
     return set(re.findall(r"\b(\w+)\s*\(", text)) | set(re.findall(r'"(\w+)"', text))
 
 
 def main() -> int:
-    """Report any documented example the package does not compile."""
+    """Report any documented example absent from the consumer package."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--min-executed",
         type=int,
         default=0,
-        help="fail unless at least this many documented examples are executed",
+        help="fail unless this many examples have live-test call sites",
     )
     arguments = parser.parse_args()
 
@@ -143,7 +140,7 @@ def main() -> int:
     if missing:
         print(
             f"{sum(len(b) for b in missing.values())} documented example(s) that "
-            f"no file in {EXAMPLES.relative_to(ROOT)} compiles:",
+            f"no file in {EXAMPLES.relative_to(ROOT)} contains:",
             file=sys.stderr,
         )
         for document, blocks in missing.items():
@@ -158,13 +155,12 @@ def main() -> int:
         )
         return 1
 
-    print(
-        f"{total} documented examples, each compiled; "
-        f"{executed} of them run against a real tmux"
-    )
+    print(f"{total} documented examples mapped to consumer sources")
+    print(f"{executed} have live-test call sites")
     if executed < arguments.min_executed:
         print(
-            f"expected at least {arguments.min_executed} executed, found {executed}",
+            f"expected at least {arguments.min_executed} live-test call sites, "
+            f"found {executed}",
             file=sys.stderr,
         )
         return 1
