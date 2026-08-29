@@ -9,7 +9,6 @@ public struct TmuxCommand: Sendable, Hashable {
     /// Its arguments, one element each. Never a joined string: a value holding
     /// a space is data, and only a shell would think otherwise.
     public let arguments: [String]
-
     public init(_ name: String, _ arguments: [String] = []) {
         self.name = name
         self.arguments = arguments
@@ -18,6 +17,11 @@ public struct TmuxCommand: Sendable, Hashable {
     /// The command's own argv, without the endpoint tmux is addressed with.
     var argumentVector: [String] {
         [name] + arguments
+    }
+
+    /// A command argument that tmux will parse as another command.
+    var parsedString: String {
+        argumentVector.map(tmuxQuoted).joined(separator: " ")
     }
 }
 

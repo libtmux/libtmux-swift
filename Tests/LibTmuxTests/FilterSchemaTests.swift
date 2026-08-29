@@ -3,6 +3,13 @@ import Testing
 
 @testable import LibTmux
 
+private let schemaIncarnation = ServerIncarnation(
+    endpoint: .socketPath("/tmp/libtmux-swift-test/schema-fixture"),
+    socketPath: "/tmp/libtmux-swift-test/schema-fixture",
+    processID: 1,
+    startedAt: 1
+)
+
 private let pane = Pane(
     id: "%0",
     index: 3,
@@ -12,7 +19,7 @@ private let pane = Pane(
     currentCommand: "nvim",
     currentPath: "/src",
     windowID: "@1",
-    sessionID: "$2"
+    incarnation: schemaIncarnation
 )
 
 @Suite("filter schema")
@@ -33,7 +40,8 @@ struct FilterSchemaTests {
                     field.id,
                     of: Session(
                         id: "$0", name: "n", windowCount: 1,
-                        isAttached: false, createdAt: 0
+                        isAttached: false, createdAt: 0,
+                        incarnation: schemaIncarnation
                     )
                 ) != nil
             )
@@ -58,7 +66,7 @@ struct FilterSchemaTests {
         let data = try JSONEncoder().encode(FilterSchema.current)
         let decoded = try JSONDecoder().decode(FilterSchema.self, from: data)
         #expect(decoded == FilterSchema.current)
-        #expect(decoded.schemaVersion == FilterSchema.version)
+        #expect(decoded.schemaVersion == 2)
         #expect(decoded.models.map(\.name) == ["session", "window", "pane", "client"])
     }
 

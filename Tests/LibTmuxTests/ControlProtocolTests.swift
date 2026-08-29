@@ -41,6 +41,7 @@ struct ControlProtocolTests {
             return
         }
         #expect(attach.number == 347)
+        #expect(!attach.isControlCommand)
         #expect(attach.lines.isEmpty)
         #expect(!attach.isError)
 
@@ -63,6 +64,7 @@ struct ControlProtocolTests {
         // Attribution is the whole point: a `;` list merges output, this does
         // not.
         #expect(replies.map(\.number) == [347, 352, 353, 354, 355])
+        #expect(replies.map(\.isControlCommand) == [false, true, true, true, true])
         #expect(replies[1].lines == ["boot"])
         #expect(replies[2].lines == ["ok"])
     }
@@ -112,6 +114,35 @@ struct ControlProtocolTests {
         #expect(reply.lines == ["%output %0 not really a notification", "plain"])
     }
 
+    @Test("guard-looking output stays inside its block")
+    func outputResemblingBlockGuardsStaysInItsBlock() {
+        let events = parse(
+            """
+            %begin 1 1 1
+            %begin 1 10 1
+            %end literal
+            %end 1 10 1
+            %end 1 1 1 trailing
+            plain
+            %end 1 1 1
+            """
+        )
+        #expect(events.count == 1)
+        guard case let .reply(reply) = events.first else {
+            Issue.record("expected one reply")
+            return
+        }
+        #expect(
+            reply.lines == [
+                "%begin 1 10 1",
+                "%end literal",
+                "%end 1 10 1",
+                "%end 1 1 1 trailing",
+                "plain",
+            ]
+        )
+    }
+
     @Test("a notification outside a block is an event")
     func notificationOutsideABlockIsAnEvent() {
         let events = parse("%output %0 hello\n%window-add @2")
@@ -136,5 +167,27 @@ struct ControlProtocolTests {
         #expect(parser.isInsideBlock)
         _ = parser.consume("%end 1 9 1")
         #expect(!parser.isInsideBlock)
+    }
+
+    @Test(
+        "malformed and unmatched block guards are violations",
+        arguments: [
+            "%begin broken",
+            "%begin 1 9",
+            "%end 1 9 1",
+            "%error 1 9 1",
+        ]
+    )
+    func invalidBlockGuardsFailClosed(_ stream: String) {
+        let events = parse(stream)
+        guard events.count == 1 else {
+            Issue.record("expected one protocol violation")
+            return
+        }
+        guard case let .protocolViolation(reason) = events[0] else {
+            Issue.record("expected a protocol violation")
+            return
+        }
+        #expect(!reason.isEmpty)
     }
 }

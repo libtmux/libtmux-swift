@@ -142,7 +142,7 @@ struct MCPServeTests {
                 continuation.yield(
                     #"""
                     {"jsonrpc":"2.0","id":"slow","method":"tools/call","params":
-                    {"name":"wait_for_output","arguments":{"pane":"\#(pane.id)",
+                    {"name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
                     "patterns":["never-arrives"],"timeout":4}}}
                     """#.replacingOccurrences(of: "\n", with: "")
                 )
@@ -172,7 +172,7 @@ struct MCPServeTests {
                 continuation.yield(
                     #"""
                     {"jsonrpc":"2.0","id":"wait","method":"tools/call","params":
-                    {"name":"wait_for_output","arguments":{"pane":"\#(pane.id)",
+                    {"name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
                     "patterns":["never-arrives"],"timeout":60}}}
                     """#.replacingOccurrences(of: "\n", with: "")
                 )

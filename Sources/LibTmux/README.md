@@ -30,7 +30,7 @@ actor the value shares.
 | --- | --- |
 | `Server.swift`, `Endpoint.swift` | Addressing a server, and the listings |
 | `Session.swift`, `Window.swift`, `Pane.swift` | The model, as values |
-| `Snapshot.swift` | One consistent picture, with the relationships resolved |
+| `Snapshot.swift` | A bounded aggregate, with the relationships resolved |
 | `Mutations.swift`, `Navigation.swift` | Creating, splitting, renaming, selecting |
 | `Options.swift`, `Environment.swift` | tmux options, hooks, and its two environments |
 | `Filter*.swift` | `FilterExpr`, the filter that encodes and travels |

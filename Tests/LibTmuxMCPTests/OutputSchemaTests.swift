@@ -99,12 +99,12 @@ struct OutputSchemaTests {
             )
             try await check(
                 "capture_pane",
-                .object(["pane": .string(pane.id)]),
+                .object(["pane": .string(pane.id.rawValue)]),
                 on: tools
             )
             try await check(
                 "capture_since",
-                .object(["pane": .string(pane.id)]),
+                .object(["pane": .string(pane.id.rawValue)]),
                 on: tools
             )
             try await check(
@@ -138,7 +138,7 @@ struct OutputSchemaTests {
             try await check(
                 "wait_for_output",
                 .object([
-                    "pane": .string(pane.id),
+                    "pane": .string(pane.id.rawValue),
                     "patterns": .array([.string("never-arrives")]),
                     "require_fresh": .bool(true),
                     "timeout": .number(1),
@@ -148,7 +148,7 @@ struct OutputSchemaTests {
             try await check(
                 "watch_format",
                 .object([
-                    "pane": .string(pane.id),
+                    "pane": .string(pane.id.rawValue),
                     "format": .string("#{pane_dead}"),
                     "matching": .string("never-matches"),
                     "timeout": .number(1),
@@ -173,16 +173,17 @@ struct OutputSchemaTests {
         try await withTmuxServer { server in
             let tools = TmuxTools(server: server, tier: .destructive, caller: nil)
             let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
 
             try await check(
                 "send_keys",
-                .object(["pane": .string(pane.id), "keys": .array([.string("Escape")])]),
+                .object(["pane": .string(pane.id.rawValue), "keys": .array([.string("Escape")])]),
                 on: tools
             )
             try await check(
                 "run_shell",
                 .object([
-                    "pane": .string(pane.id),
+                    "pane": .string(pane.id.rawValue),
                     "command": .string("printf 'schema\\n'"),
                     "timeout": .number(20),
                 ]),
@@ -219,35 +220,39 @@ struct OutputSchemaTests {
             )
             try await check(
                 "paste_text",
-                .object(["pane": .string(pane.id), "text": .string("pasted")]),
+                .object(["pane": .string(pane.id.rawValue), "text": .string("pasted")]),
                 on: tools
             )
             try await check(
                 "rename",
-                .object(["target": .string(pane.sessionID), "name": .string("renamed")]),
+                .object(["target": .string(session.id.rawValue), "name": .string("renamed")]),
                 on: tools
             )
-            try await check("select", .object(["target": .string(pane.id)]), on: tools)
+            try await check("select", .object(["target": .string(pane.id.rawValue)]), on: tools)
             try await check(
                 "resize_pane",
-                .object(["pane": .string(pane.id), "height": .number(10)]),
+                .object(["pane": .string(pane.id.rawValue), "height": .number(10)]),
                 on: tools
             )
             try await check(
                 "select_layout",
                 .object([
-                    "target": .string(pane.windowID), "layout": .string("even-vertical"),
+                    "target": .string(pane.windowID.rawValue), "layout": .string("even-vertical"),
                 ]),
                 on: tools
             )
             try await check(
                 "respawn_pane",
-                .object(["pane": .string(pane.id)]),
+                .object(["pane": .string(pane.id.rawValue)]),
                 on: tools
             )
 
             let extra = try await server.split(pane)
-            try await check("kill_pane", .object(["pane": .string(extra.id)]), on: tools)
+            try await check(
+                "kill_pane",
+                .object(["pane": .string(extra.id.rawValue)]),
+                on: tools
+            )
         }
     }
 

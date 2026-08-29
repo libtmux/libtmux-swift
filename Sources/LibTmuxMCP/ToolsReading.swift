@@ -19,8 +19,8 @@ extension TmuxTools {
                 sessionCount: sessions.count,
                 safetyTier: tier,
                 waitCeilingSeconds: Double(waitCeiling.components.seconds),
-                callerPane: guardState.ownPane,
-                callerSession: guardState.isSameServer ? caller?.sessionID : nil,
+                callerPane: guardState.ownPane?.rawValue,
+                callerSession: guardState.isSameServer ? caller?.sessionID?.rawValue : nil,
                 capabilities: ServerDescription.Capabilities(
                     formatSubscriptions: true,
                     pushOutput: true,
@@ -45,6 +45,7 @@ extension TmuxTools {
         // A relation filter needs the related objects in hand, so this is the
         // one listing that reads a whole snapshot.
         let query = try JSONDecoder().decode(RelationQuery<Pane>.self, from: relation)
+        try validateFilter(query.expression, argument: "pane_relation")
         let sessions = try await server.snapshot().sessions(ofPanes: query)
         return .listing("sessions", project(sessions, keeping: fields))
     }
@@ -56,6 +57,7 @@ extension TmuxTools {
             return .listing("windows", project(windows, keeping: fields))
         }
         let expression = try JSONDecoder().decode(FilterExpr<Window>.self, from: filter)
+        try validateFilter(expression, argument: "filter")
         return .listing("windows", project(windows.filter(expression), keeping: fields))
     }
 
@@ -65,13 +67,14 @@ extension TmuxTools {
         let selected: [Pane]
         if let filter = try arguments.document("filter") {
             let expression = try JSONDecoder().decode(FilterExpr<Pane>.self, from: filter)
+            try validateFilter(expression, argument: "filter")
             selected = panes.filter(expression)
         } else {
             selected = panes
         }
         // Which row is the caller's own pane, so "which pane am I in?" needs no
         // second call and killing the wrong one needs no second thought.
-        let own = await guardForCaller().ownPane
+        let own = await guardForCaller().ownPane?.rawValue
         return .listing("panes", project(selected, keeping: fields, markingCaller: own))
     }
 
@@ -88,7 +91,7 @@ extension TmuxTools {
         let kept = rows.suffix(max(1, maxLines))
         return .init(
             CaptureResult(
-                pane: pane.id,
+                pane: pane.id.rawValue,
                 lines: Array(kept),
                 // The end of a pane is almost always the part that matters, so
                 // a cap drops the oldest rather than refusing to answer.
@@ -109,6 +112,7 @@ extension TmuxTools {
         var panes = try await server.panes()
         if let filter = try arguments.document("filter") {
             let predicate = try JSONDecoder().decode(FilterExpr<Pane>.self, from: filter)
+            try validateFilter(predicate, argument: "filter")
             panes = panes.filter(predicate)
         }
 
@@ -134,7 +138,7 @@ extension TmuxTools {
                     truncated = true
                     break
                 }
-                matches.append(PaneMatch(pane: pane.id, line: offset + 1, text: line))
+                matches.append(PaneMatch(pane: pane.id.rawValue, line: offset + 1, text: line))
             }
         }
         return .init(
@@ -187,6 +191,20 @@ extension TmuxTools {
     }
 }
 
+private func validateFilter<Root: Filterable>(
+    _ expression: FilterExpr<Root>,
+    argument: String
+) throws {
+    do {
+        try expression.validate()
+    } catch FilterValidationError.unknownField(let field) {
+        throw ToolError.wrongArgumentType(
+            argument,
+            expected: "a filter using known field ids; \(field) is unknown"
+        )
+    }
+}
+
 /// A compiled search pattern, so an unusable one is reported when it is given
 /// rather than quietly matching nothing on every line.
 struct MatchExpression {
@@ -235,7 +253,7 @@ extension TmuxTools {
         )
         return .init(
             CaptureSinceResult(
-                pane: pane.id,
+                pane: pane.id.rawValue,
                 lines: read.lines,
                 cursor: encoded,
                 linesMissed: read.linesMissed,

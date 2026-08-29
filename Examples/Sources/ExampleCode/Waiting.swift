@@ -23,7 +23,10 @@ public func watchingAFormat(_ server: Server, pane: Pane) async throws -> String
     }
 }
 
-public func waitingOnOutput(_ server: Server, pane: Pane) async throws -> OutputWait {
+public func waitingOnOutput(
+    _ server: Server,
+    pane: Pane
+) async throws -> OutputWait {
     let waited = try await server.waitForOutput(
         in: pane,
         matching: ["Listening on"],

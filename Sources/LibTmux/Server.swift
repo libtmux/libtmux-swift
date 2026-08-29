@@ -127,30 +127,45 @@ public struct Server: Sendable, Hashable {
         try await list(
             TmuxCommand("list-sessions", ["-F", Session.projection.template]),
             projection: Session.projection,
-            row: Session.init(row:)
+            row: { Session(row: $0, endpoint: endpoint) }
         )
     }
 
     /// Every window on this server, in tmux's own order.
     ///
-    /// A window linked into more than one session appears once per session,
-    /// carrying the same ``Window/id`` — that repetition is tmux's model, not
-    /// a duplicate.
+    /// A window linked into more than one session appears once here. Use
+    /// ``windowLinks()`` for each session-local appearance.
     public func windows() async throws(TmuxError) -> [Window] {
+        var seen: Set<WindowID> = []
+        return try await windowListingRows().compactMap { row in
+            seen.insert(row.window.id).inserted ? row.window : nil
+        }
+    }
+
+    /// Every session-local link to a window, in tmux's own order.
+    public func windowLinks() async throws(TmuxError) -> [WindowLink] {
+        try await windowListingRows().map(\.link)
+    }
+
+    private func windowListingRows() async throws(TmuxError) -> [WindowListingRow] {
         try await list(
-            TmuxCommand("list-windows", ["-a", "-F", Window.projection.template]),
-            projection: Window.projection,
-            row: Window.init(row:)
+            TmuxCommand("list-windows", ["-a", "-F", WindowListingRow.projection.template]),
+            projection: WindowListingRow.projection,
+            row: { WindowListingRow(row: $0, endpoint: endpoint) }
         )
     }
 
-    /// Every pane on this server, in tmux's own order.
+    /// Every pane on this server, in tmux's own order. A pane whose window has
+    /// several session links appears once.
     public func panes() async throws(TmuxError) -> [Pane] {
-        try await list(
+        var seen: Set<PaneID> = []
+        return try await list(
             TmuxCommand("list-panes", ["-a", "-F", Pane.projection.template]),
             projection: Pane.projection,
-            row: Pane.init(row:)
-        )
+            row: { Pane(row: $0, endpoint: endpoint) }
+        ).compactMap { pane in
+            seen.insert(pane.id).inserted ? pane : nil
+        }
     }
 
     /// Every client attached to this server.
@@ -158,31 +173,36 @@ public struct Server: Sendable, Hashable {
         try await list(
             TmuxCommand("list-clients", ["-F", Client.projection.template]),
             projection: Client.projection,
-            row: Client.init(row:)
+            row: { Client(row: $0, endpoint: endpoint) }
         )
     }
 
-    /// Reads every object on this server as one consistent picture.
+    /// Reads every object from one daemon incarnation.
     ///
     /// The listings are separate tmux commands, so the server's identity is
     /// read before and after them. If a daemon died and a replacement bound the
-    /// same socket in between, the reads describe two different servers and
-    /// this throws ``TmuxError/serverRestarted`` rather than returning a
-    /// picture that never existed. A partial snapshot is never returned.
+    /// same socket in between, this throws ``TmuxError/serverRestarted``.
+    /// Another client can still mutate the same daemon between listings.
     public func snapshot() async throws(TmuxError) -> Snapshot {
-        let before = try await serverProcessID()
+        let before = try await incarnation()
         let sessions = try await sessions()
-        let windows = try await windows()
+        let windowRows = try await windowListingRows()
+        var seen: Set<WindowID> = []
+        let windows = windowRows.compactMap { row in
+            seen.insert(row.window.id).inserted ? row.window : nil
+        }
+        let windowLinks = windowRows.map(\.link)
         let panes = try await panes()
         let clients = try await clients()
-        let after = try await serverProcessID()
+        let after = try await incarnation()
         guard let before, let after, before == after else {
             throw .serverRestarted
         }
         return Snapshot(
-            serverProcessID: before,
+            incarnation: before,
             sessions: sessions,
             windows: windows,
+            windowLinks: windowLinks,
             panes: panes,
             clients: clients
         )
@@ -193,11 +213,25 @@ public struct Server: Sendable, Hashable {
     /// A restart changes it, which is what lets a multi-command capture prove
     /// it came from one server.
     public func serverProcessID() async throws(TmuxError) -> Int? {
+        try await incarnation()?.processID
+    }
+
+    /// The running daemon at this endpoint, or `nil` if none is listening.
+    public func incarnation() async throws(TmuxError) -> ServerIncarnation? {
+        let projection = FormatProjection(ServerIncarnation.projectionFields)
         let reply = try await run(
-            rawArguments: TmuxCommand("display-message", ["-p", "#{pid}"]).argumentVector
+            rawArguments: TmuxCommand("display-message", ["-p", projection.template])
+                .argumentVector
         )
         guard reply.isSuccess else { return nil }
-        return Int(reply.text.trimmingCharacters(in: .whitespacesAndNewlines))
+        do {
+            guard let row = try projection.decode(reply.standardOutput).first else {
+                return nil
+            }
+            return ServerIncarnation(row: row, endpoint: endpoint)
+        } catch {
+            throw .decodingFailed(error)
+        }
     }
 
     /// Runs a listing and decodes it.

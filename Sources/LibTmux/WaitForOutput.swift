@@ -55,7 +55,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
 }
 
 extension Server {
-    /// Waits until a pane prints something, without polling for it.
+    /// Waits until a pane prints something, driven by tmux output events.
     ///
     /// tmux has no hook that fires on pane output, so a wait that only has
     /// commands to work with must re-read the pane on a timer. A control
@@ -66,7 +66,9 @@ extension Server {
     /// doorbell rather than as text. Each burst wakes one capture, and the
     /// matching runs against the rendered grid, which is the same text a
     /// person reads. That keeps the accuracy of a capture and pays for it only
-    /// when something actually happened.
+    /// when something actually happened. A small liveness probe runs while the
+    /// pane is quiet so removing it ends the wait instead of looking like a
+    /// timeout.
     ///
     /// The condition is checked before it is blocked on. A pattern already on
     /// screen returns at once, with ``OutputWait/matchedAtEntry`` set, because
@@ -98,36 +100,66 @@ extension Server {
     ) async throws -> OutputWait {
         let matchers = try patterns.map(RegularExpression.init(pattern:))
         let stoppers = try stops.map(RegularExpression.init(pattern:))
-
-        guard let session = try await format("#{session_name}", for: pane) else {
-            return OutputWait(
-                outcome: .paneClosed,
-                sawNewOutput: false,
-                tail: [],
-                seconds: 0
-            )
-        }
-
         let started = ContinuousClock.now
-        // What the pane already showed. Matching only against rows that are
-        // not in here is what makes re-running a command whose output looks
-        // identical work: the wait ends on a fresh line, not on the one still
-        // on screen from last time.
+        let deadline = started.advanced(by: timeout)
+        let keptTail = max(0, tailLimit)
+
+        // Establish an absolute cursor before reading the entry screen. A
+        // second cursor read below catches anything that arrived between the
+        // two, so opening the event connection cannot create a blind spot.
+        var incremental = try await capture(pane, since: nil)
         let entryRows = try await capture(pane, startingAt: Self.waitLookback)
-        let entry = Set(entryRows)
-        // Answered up front rather than inferred from a timeout: "already on
-        // screen" and "never happened" look identical afterwards, and only one
-        // of them is fixed by waiting longer.
         let alreadyShowing = entryRows.firstIndex { row in
             matchers.contains { $0.matches(row) }
         }
-        // The condition is checked before blocking on it, which is what any
-        // other wait on a predicate does. "Wait until the server is listening"
-        // is answered by a server that is already listening, and holding the
-        // caller for the rest of the timeout to say so is the expensive way to
-        // return a fact that was true on arrival. `requireFresh` is for the
-        // other reading — re-running a command whose output looks identical,
-        // where only a new occurrence counts.
+        let wasAlreadyShowing = alreadyShowing != nil
+
+        let answer: @Sendable ([String], [String]) -> OutputWait? = { arrived, tail in
+            for line in arrived {
+                if let hit = stoppers.firstIndex(where: { $0.matches(line) }) {
+                    return OutputWait(
+                        outcome: .stopped,
+                        matched: stops[hit],
+                        matchedIndex: hit,
+                        sawNewOutput: true,
+                        matchedAtEntry: wasAlreadyShowing,
+                        tail: Array(tail.suffix(keptTail)),
+                        seconds: Self.elapsed(since: started)
+                    )
+                }
+                guard !matchers.isEmpty else { continue }
+                if let hit = matchers.firstIndex(where: { $0.matches(line) }) {
+                    return OutputWait(
+                        outcome: .matched,
+                        matched: patterns[hit],
+                        matchedIndex: hit,
+                        sawNewOutput: true,
+                        matchedAtEntry: wasAlreadyShowing,
+                        tail: Array(tail.suffix(keptTail)),
+                        seconds: Self.elapsed(since: started)
+                    )
+                }
+            }
+            guard matchers.isEmpty, !arrived.isEmpty else { return nil }
+            return OutputWait(
+                outcome: .matched,
+                sawNewOutput: true,
+                matchedAtEntry: wasAlreadyShowing,
+                tail: Array(tail.suffix(keptTail)),
+                seconds: Self.elapsed(since: started)
+            )
+        }
+
+        let caughtAtEntry = try await capture(pane, since: incremental.cursor, limit: .max)
+        incremental = caughtAtEntry
+        let arrivedAtEntry = try await outputRows(after: caughtAtEntry, in: pane)
+        var sawNewOutput = !arrivedAtEntry.isEmpty
+        var newest = Array(arrivedAtEntry.suffix(keptTail))
+        if let answer = answer(arrivedAtEntry, newest) { return answer }
+
+        // Answered up front rather than inferred from a timeout: "already on
+        // screen" and "never happened" look identical afterwards, and only one
+        // of them is fixed by waiting longer.
         if let alreadyShowing, !requireFresh {
             let row = entryRows[alreadyShowing]
             let hit = matchers.firstIndex { $0.matches(row) }
@@ -137,133 +169,222 @@ extension Server {
                 matchedIndex: hit,
                 sawNewOutput: false,
                 matchedAtEntry: true,
-                tail: Array(entryRows.suffix(tailLimit)),
+                tail: Array(entryRows.suffix(keptTail)),
                 seconds: Self.elapsed(since: started)
             )
         }
-        let wasAlreadyShowing = alreadyShowing != nil
 
-        return try await connected(attachingTo: session) { server, control in
-            // Primed, so the first thing the loop does is capture. Opening the
-            // connection takes long enough that a caller acting immediately
-            // after this call starts can finish before `%output` is being
-            // delivered — and that output never arrives again. One capture up
-            // front covers the window between the entry snapshot and a live
-            // connection; everything after it is event-driven.
-            let doorbell = Doorbell(primed: true)
-            let paneID = pane.id
-
-            // A pane that dies stops producing %output, so without this the
-            // wait would run to the deadline having already lost its subject.
-            try? await control.watch(
-                FormatSubscription(
-                    name: "libtmux-wait-dead",
-                    scope: .pane(paneID),
-                    format: "#{pane_dead}"
+        while ContinuousClock.now < deadline {
+            guard let attachment = try await waitAttachment(for: pane) else {
+                return OutputWait(
+                    outcome: .paneClosed,
+                    sawNewOutput: sawNewOutput,
+                    matchedAtEntry: wasAlreadyShowing,
+                    tail: Array(newest.suffix(keptTail)),
+                    seconds: Self.elapsed(since: started)
                 )
-            )
-
-            return try await withThrowingTaskGroup(of: OutputWait?.self) { group in
-                group.addTask {
-                    for await notification in control.notifications {
-                        switch notification.name {
-                        case "output"
-                        where notification.arguments.hasPrefix("\(paneID) "):
-                            await doorbell.ring()
-                        case "subscription-changed":
-                            guard let change = SubscriptionChange(notification),
-                                change.name == "libtmux-wait-dead",
-                                change.value == "1"
-                            else { continue }
-                            await doorbell.close()
-                        default:
-                            continue
-                        }
-                    }
-                    await doorbell.close()
-                    return nil
-                }
-                group.addTask {
-                    try await Task.sleep(for: timeout)
-                    await doorbell.close()
-                    return nil
-                }
-                group.addTask {
-                    var seen = entry
-                    var newest: [String] = []
-                    while await doorbell.wait() {
-                        // %output arrives per write, which for a typed line is
-                        // one notification per character. Coalescing the burst
-                        // is what keeps this cheaper than polling rather than
-                        // far more expensive.
-                        try await Task.sleep(for: .milliseconds(25))
-                        let rows = try await server.capture(
-                            pane,
-                            startingAt: Self.waitLookback
-                        )
-                        let arrived = rows.filter { !$0.isEmpty && !seen.contains($0) }
-                        guard !arrived.isEmpty else { continue }
-                        seen.formUnion(arrived)
-                        newest.append(contentsOf: arrived)
-
-                        for line in arrived {
-                            if let hit = stoppers.firstIndex(where: { $0.matches(line) }) {
-                                return OutputWait(
-                                    outcome: .stopped,
-                                    matched: stops[hit],
-                                    matchedIndex: hit,
-                                    sawNewOutput: true,
-                                    matchedAtEntry: wasAlreadyShowing,
-                                    tail: Array(newest.suffix(tailLimit)),
-                                    seconds: Self.elapsed(since: started)
-                                )
-                            }
-                            guard !matchers.isEmpty else { continue }
-                            if let hit = matchers.firstIndex(where: { $0.matches(line) }) {
-                                return OutputWait(
-                                    outcome: .matched,
-                                    matched: patterns[hit],
-                                    matchedIndex: hit,
-                                    sawNewOutput: true,
-                                    matchedAtEntry: wasAlreadyShowing,
-                                    tail: Array(newest.suffix(tailLimit)),
-                                    seconds: Self.elapsed(since: started)
-                                )
-                            }
-                        }
-                        if matchers.isEmpty {
-                            return OutputWait(
-                                outcome: .matched,
-                                sawNewOutput: true,
-                                matchedAtEntry: wasAlreadyShowing,
-                                tail: Array(newest.suffix(tailLimit)),
-                                seconds: Self.elapsed(since: started)
-                            )
-                        }
-                    }
-                    let alive = try? await server.format("#{pane_dead}", for: pane)
+            }
+            let remaining = ContinuousClock.now.duration(to: deadline)
+            let cycle: OutputWaitCycle
+            do {
+                cycle = try await waitForOutputCycle(
+                    pane: pane,
+                    attachment: attachment,
+                    cursor: incremental.cursor,
+                    newest: newest,
+                    sawNewOutput: sawNewOutput,
+                    tailLimit: keptTail,
+                    remaining: remaining,
+                    answer: answer
+                )
+            } catch let error as TmuxError {
+                guard ContinuousClock.now < deadline else { throw error }
+                guard let current = try await waitAttachment(for: pane) else {
                     return OutputWait(
-                        outcome: alive == "1" ? .paneClosed : .timedOut,
-                        sawNewOutput: !newest.isEmpty,
+                        outcome: .paneClosed,
+                        sawNewOutput: sawNewOutput,
                         matchedAtEntry: wasAlreadyShowing,
-                        tail: Array(newest.suffix(tailLimit)),
+                        tail: newest,
                         seconds: Self.elapsed(since: started)
                     )
                 }
+                guard current != attachment else { throw error }
+                continue
+            }
+            switch cycle {
+            case let .answered(output): return output
+            case let .reattach(cursor, lines, sawOutput):
+                incremental = IncrementalCapture(lines: [], cursor: cursor)
+                newest = lines
+                sawNewOutput = sawOutput
+            case let .finished(outcome, lines, sawOutput):
+                return OutputWait(
+                    outcome: outcome,
+                    sawNewOutput: sawOutput,
+                    matchedAtEntry: wasAlreadyShowing,
+                    tail: Array(lines.suffix(keptTail)),
+                    seconds: Self.elapsed(since: started)
+                )
+            }
+        }
 
-                var answer: OutputWait?
-                while let outcome = try await group.next() {
-                    if let outcome {
-                        answer = outcome
-                        break
+        let closed = try await waitAttachment(for: pane) == nil
+        return OutputWait(
+            outcome: closed ? .paneClosed : .timedOut,
+            sawNewOutput: sawNewOutput,
+            matchedAtEntry: wasAlreadyShowing,
+            tail: Array(newest.suffix(keptTail)),
+            seconds: Self.elapsed(since: started)
+        )
+    }
+
+    private func waitForOutputCycle(
+        pane: Pane,
+        attachment: PaneAttachment,
+        cursor: CaptureCursor,
+        newest: [String],
+        sawNewOutput: Bool,
+        tailLimit: Int,
+        remaining: Duration,
+        answer: @escaping @Sendable ([String], [String]) -> OutputWait?
+    ) async throws -> OutputWaitCycle {
+        let owner = self
+        return try await connected(attachingTo: attachment.sessionID.rawValue) {
+            server, control in
+            let doorbell = WaitDoorbell(primed: true)
+            return try await withThrowingTaskGroup(of: Void.self) { group in
+                defer { group.cancelAll() }
+                group.addTask {
+                    for await notification in control.notifications {
+                        if notification.name == "output",
+                            notification.arguments.hasPrefix("\(pane.id.rawValue) ")
+                        {
+                            await doorbell.ring(.output)
+                        } else if Self.topologyNotifications.contains(notification.name) {
+                            await doorbell.ring(.inspect)
+                        }
+                    }
+                    await doorbell.ring(.connectionClosed)
+                }
+                group.addTask {
+                    try? await Task.sleep(for: remaining)
+                    guard !Task.isCancelled else { return }
+                    await doorbell.ring(.timedOut)
+                }
+                group.addTask {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled else { return }
+                        do {
+                            guard let current = try await owner.waitAttachment(for: pane) else {
+                                await doorbell.ring(.paneClosed)
+                                return
+                            }
+                            if current != attachment {
+                                await doorbell.ring(.reattach)
+                                return
+                            }
+                        } catch let error as TmuxError {
+                            await doorbell.ring(.failed(error))
+                            return
+                        }
                     }
                 }
-                group.cancelAll()
-                guard let answer else { throw TmuxError.connectionClosed }
-                return answer
+
+                var cursor = cursor
+                var newest = newest
+                var sawNewOutput = sawNewOutput
+                while true {
+                    let wake = await doorbell.wait()
+                    if wake == .output { try await Task.sleep(for: .milliseconds(25)) }
+
+                    if wake == .output || wake == .inspect || wake == .reattach {
+                        do {
+                            let delta = try await server.capture(pane, since: cursor, limit: .max)
+                            cursor = delta.cursor
+                            let arrived = try await server.outputRows(after: delta, in: pane)
+                            sawNewOutput = sawNewOutput || !arrived.isEmpty
+                            newest = Array((newest + arrived).suffix(tailLimit))
+                            if let output = answer(arrived, newest) {
+                                group.cancelAll()
+                                return .answered(output)
+                            }
+                        } catch let error as TmuxError {
+                            guard try await owner.waitAttachment(for: pane) != nil else {
+                                return .finished(.paneClosed, newest, sawNewOutput)
+                            }
+                            throw error
+                        }
+                    }
+
+                    switch wake {
+                    case .output: continue
+                    case .inspect:
+                        guard let current = try await owner.waitAttachment(for: pane) else {
+                            return .finished(.paneClosed, newest, sawNewOutput)
+                        }
+                        guard current == attachment else {
+                            return .reattach(cursor, newest, sawNewOutput)
+                        }
+                    case .reattach, .connectionClosed:
+                        guard try await owner.waitAttachment(for: pane) != nil else {
+                            return .finished(.paneClosed, newest, sawNewOutput)
+                        }
+                        return .reattach(cursor, newest, sawNewOutput)
+                    case .paneClosed:
+                        return .finished(.paneClosed, newest, sawNewOutput)
+                    case .timedOut:
+                        let closed = try await owner.waitAttachment(for: pane) == nil
+                        return .finished(
+                            closed ? .paneClosed : .timedOut,
+                            newest,
+                            sawNewOutput
+                        )
+                    case let .failed(error): throw error
+                    }
+                }
             }
         }
     }
+
+    private func waitAttachment(for pane: Pane) async throws(TmuxError) -> PaneAttachment? {
+        let separator = String(FormatProjection.separator)
+        guard
+            let value = try await formatGlobal(
+                "#{session_id}\(separator)#{window_id}\(separator)#{pane_id}"
+                    + "\(separator)#{pane_dead}",
+                for: pane
+            )
+        else { return nil }
+        let fields = value.components(separatedBy: separator)
+        guard fields.count == 4 else {
+            throw .invocationFailed(reason: "tmux returned an incomplete pane attachment")
+        }
+        if fields[3] == "1" { return nil }
+        guard fields[2] == pane.id.rawValue,
+            let sessionID = SessionID(rawValue: fields[0]),
+            let windowID = WindowID(rawValue: fields[1])
+        else {
+            throw .invocationFailed(reason: "tmux returned an invalid pane attachment")
+        }
+        return PaneAttachment(sessionID: sessionID, windowID: windowID)
+    }
+
+    private func outputRows(
+        after capture: IncrementalCapture,
+        in pane: Pane
+    ) async throws(TmuxError) -> [String] {
+        let rows =
+            capture.restarted
+            ? try await self.capture(pane, startingAt: Self.waitLookback)
+            : capture.lines
+        return rows.filter { !$0.isEmpty }
+    }
+
+    private static let topologyNotifications: Set<String> = [
+        "layout-change", "session-window-changed", "unlinked-window-add",
+        "unlinked-window-close", "window-add", "window-close", "window-pane-changed",
+    ]
 
     /// How far above the visible region a wait reads.
     ///
@@ -282,47 +403,49 @@ extension Server {
     }
 }
 
-/// Coalesces a burst of notifications into one wakeup.
-///
-/// A ring while nothing is waiting is remembered, so work that finishes
-/// between two waits is not missed. Closing releases the waiter for good,
-/// which is how a deadline or a dead pane ends the loop rather than a flag
-/// checked between iterations.
-actor Doorbell {
-    private var isRung: Bool
-    private var isClosed = false
-    private var waiter: CheckedContinuation<Bool, Never>?
+private struct PaneAttachment: Sendable, Hashable {
+    let sessionID: SessionID
+    let windowID: WindowID
+}
+
+private enum OutputWaitCycle: Sendable {
+    case answered(OutputWait)
+    case reattach(CaptureCursor, [String], Bool)
+    case finished(OutputWait.Outcome, [String], Bool)
+}
+
+private enum WaitWake: Sendable, Hashable {
+    case output
+    case inspect
+    case reattach
+    case paneClosed
+    case timedOut
+    case connectionClosed
+    case failed(TmuxError)
+}
+
+/// Coalesces bursts without discarding terminal or topology events behind them.
+private actor WaitDoorbell {
+    private var pending: [WaitWake]
+    private var waiter: CheckedContinuation<WaitWake, Never>?
 
     init(primed: Bool = false) {
-        isRung = primed
+        pending = primed ? [.output] : []
     }
 
-    func ring() {
-        guard !isClosed else { return }
+    func ring(_ event: WaitWake) {
         if let waiter {
             self.waiter = nil
-            waiter.resume(returning: true)
-        } else {
-            isRung = true
+            waiter.resume(returning: event)
+        } else if !pending.contains(event) {
+            pending.append(event)
         }
     }
 
-    func close() {
-        isClosed = true
-        if let waiter {
-            self.waiter = nil
-            waiter.resume(returning: false)
+    func wait() async -> WaitWake {
+        if !pending.isEmpty {
+            return pending.removeFirst()
         }
-    }
-
-    /// Suspends until the next ring. `false` means the doorbell closed and no
-    /// further ring can arrive.
-    func wait() async -> Bool {
-        if isRung, !isClosed {
-            isRung = false
-            return true
-        }
-        if isClosed { return false }
         return await withCheckedContinuation { continuation in
             waiter = continuation
         }

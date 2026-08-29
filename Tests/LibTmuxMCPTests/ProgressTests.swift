@@ -29,7 +29,7 @@ struct ProgressTests {
             _ = await handler.respond(
                 to: #"""
                     {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id)",
+                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
                     "patterns":["never-arrives"],"require_fresh":true,"timeout":6},
                     "_meta":{"progressToken":"tok"}}}
                     """#.replacingOccurrences(of: "\n", with: ""),
@@ -73,7 +73,7 @@ struct ProgressTests {
             _ = await handler.respond(
                 to: #"""
                     {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id)",
+                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
                     "patterns":["never-arrives"],"require_fresh":true,"timeout":4}}}
                     """#.replacingOccurrences(of: "\n", with: ""),
                 emit: { await emitted.record($0) }
@@ -97,7 +97,7 @@ struct ProgressTests {
                 continuation.yield(
                     #"""
                     {"jsonrpc":"2.0","id":"w","method":"tools/call","params":{
-                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id)",
+                    "name":"wait_for_output","arguments":{"pane":"\#(pane.id.rawValue)",
                     "patterns":["never-arrives"],"require_fresh":true,"timeout":5},
                     "_meta":{"progressToken":7}}}
                     """#.replacingOccurrences(of: "\n", with: "")

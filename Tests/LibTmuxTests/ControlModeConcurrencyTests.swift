@@ -36,4 +36,63 @@ struct ControlModeConcurrencyTests {
             }
         }
     }
+
+    @Test("hook replies do not answer the next command")
+    func hookRepliesAreDrained() async throws {
+        try await withTmuxServer { server in
+            let started = "control-hook-started"
+            let release = "control-hook-release"
+            let set = try await server.setHook(
+                "after-display-message",
+                to: "wait-for -S \(started) ; wait-for \(release) ; "
+                    + "display-message -p hook-output"
+            )
+            #expect(set.isSuccess, Comment(rawValue: set.errorText))
+
+            try await server.withControlMode(attachingTo: "bootstrap") { control in
+                let first = Task {
+                    try await control.send(
+                        TmuxCommand("display-message", ["-p", "first-reply"])
+                    )
+                }
+                _ = try await server.run(TmuxCommand("wait-for", [started]))
+                let next = Task {
+                    try await control.send(
+                        TmuxCommand("display-message", ["-p", "next-reply"])
+                    )
+                }
+                _ = try await server.run(TmuxCommand("wait-for", ["-S", release]))
+
+                #expect(try await first.value.lines == ["first-reply"])
+                #expect(try await next.value.lines == ["next-reply"])
+            }
+        }
+    }
+
+    @Test("protocol-looking command output stays in its reply")
+    func protocolLookingOutputStaysInItsReply() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            try await server.respawn(
+                pane,
+                running: ["sh", "-c", "printf '%s\\n' '%end literal'; sleep 5"]
+            )
+            let printed = try await waitUntil {
+                try await server.capture(pane).contains("%end literal")
+            }
+            #expect(printed)
+
+            try await server.withControlMode(attachingTo: "bootstrap") { control in
+                let first = try await control.send(
+                    TmuxCommand("capture-pane", ["-p", "-t", pane.id.rawValue])
+                )
+                #expect(first.lines.contains("%end literal"))
+
+                let next = try await control.send(
+                    TmuxCommand("display-message", ["-p", "still-open"])
+                )
+                #expect(next.lines == ["still-open"])
+            }
+        }
+    }
 }

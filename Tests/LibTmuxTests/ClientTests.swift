@@ -43,8 +43,25 @@ struct ClientTests {
         try await withTmuxServer { server in
             let sessions = try await server.sessions()
             let session = try #require(sessions.first)
-            // No clients attached: tmux accepts the request regardless, which
-            // keeps teardown code from having to check first.
+
+            try await server.withControlMode(attachingTo: session.id.rawValue) { _ in
+                var clients = try await server.clients()
+                for _ in 0..<100 where clients.isEmpty {
+                    try await Task.sleep(for: .milliseconds(20))
+                    clients = try await server.clients()
+                }
+                #expect(!clients.isEmpty)
+
+                try await server.detachClients(from: session)
+                var after = try await server.clients()
+                for _ in 0..<100 where !after.isEmpty {
+                    try await Task.sleep(for: .milliseconds(20))
+                    after = try await server.clients()
+                }
+                #expect(after.isEmpty)
+            }
+
+            // Detaching nobody is also success, so teardown need not list first.
             try await server.detachClients(from: session)
             let running = try await server.isRunning()
             #expect(running)

@@ -11,26 +11,41 @@ import Foundation
 extension Server {
     // MARK: Choosing what is active
 
-    public func select(_ window: Window) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("select-window", ["-t", window.id]))
+    public func select(_ link: WindowLink) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("select-window", ["-t", link.target]),
+            guardedBy: [.windowLink(link)]
+        )
     }
 
     public func select(_ pane: Pane) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("select-pane", ["-t", pane.id]))
+        try await expectSuccess(
+            TmuxCommand("select-pane", ["-t", pane.id.rawValue]),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     /// Moves to the next window of a session, wrapping at the end.
     public func selectNextWindow(in session: Session) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("next-window", ["-t", session.id]))
+        try await expectSuccess(
+            TmuxCommand("next-window", ["-t", session.id.rawValue]),
+            guardedBy: [.session(session)]
+        )
     }
 
     public func selectPreviousWindow(in session: Session) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("previous-window", ["-t", session.id]))
+        try await expectSuccess(
+            TmuxCommand("previous-window", ["-t", session.id.rawValue]),
+            guardedBy: [.session(session)]
+        )
     }
 
     /// Returns to the window that was active before the current one.
     public func selectLastWindow(in session: Session) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("last-window", ["-t", session.id]))
+        try await expectSuccess(
+            TmuxCommand("last-window", ["-t", session.id.rawValue]),
+            guardedBy: [.session(session)]
+        )
     }
 
     /// Returns to the pane that was active before the current one.
@@ -39,22 +54,27 @@ extension Server {
     /// ``select(_:)-(Pane)`` moved away from, not a history to walk back
     /// through.
     public func selectLastPane(in window: Window) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("last-pane", ["-t", window.id]))
+        try await expectSuccess(
+            TmuxCommand("last-pane", ["-t", window.id.rawValue]),
+            guardedBy: [.window(window)]
+        )
     }
 
     // MARK: Rearranging
 
-    /// Swaps two windows' positions. Their ids do not change, so values you
-    /// already hold stay valid — only their indices move.
-    public func swap(_ window: Window, with other: Window) async throws(TmuxError) {
+    /// Swaps two window appearances. Their underlying window ids do not
+    /// change, but both links move to new indices.
+    public func swap(_ link: WindowLink, with other: WindowLink) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("swap-window", ["-s", window.id, "-t", other.id])
+            TmuxCommand("swap-window", ["-s", link.target, "-t", other.target]),
+            guardedBy: [.windowLink(link), .windowLink(other)]
         )
     }
 
     public func swap(_ pane: Pane, with other: Pane) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("swap-pane", ["-s", pane.id, "-t", other.id])
+            TmuxCommand("swap-pane", ["-s", pane.id.rawValue, "-t", other.id.rawValue]),
+            guardedBy: [.pane(pane), .pane(other)]
         )
     }
 
@@ -74,39 +94,48 @@ extension Server {
         upward: Bool = true
     ) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("rotate-window", [upward ? "-U" : "-D", "-t", window.id])
+            TmuxCommand("rotate-window", [upward ? "-U" : "-D", "-t", window.id.rawValue]),
+            guardedBy: [.window(window)]
         )
     }
 
     /// Cycles a window through tmux's preset layouts.
     public func nextLayout(_ window: Window) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("next-layout", ["-t", window.id]))
+        try await expectSuccess(
+            TmuxCommand("next-layout", ["-t", window.id.rawValue]),
+            guardedBy: [.window(window)]
+        )
     }
 
     public func previousLayout(_ window: Window) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("previous-layout", ["-t", window.id]))
+        try await expectSuccess(
+            TmuxCommand("previous-layout", ["-t", window.id.rawValue]),
+            guardedBy: [.window(window)]
+        )
     }
 
     /// Moves a pane out into a window of its own, and returns that window.
     public func breakPane(
         _ pane: Pane,
+        from source: WindowLink,
         named name: String? = nil
     ) async throws(TmuxError) -> Window {
-        var arguments = ["-d", "-P", "-F", "#{window_id}", "-s", pane.id]
+        _ = try expectedIncarnation([pane.incarnation, source.incarnation])
+        guard pane.windowID == source.windowID else { throw .staleServerValue }
+        let target = "\(source.target).\(pane.id.rawValue)"
+        var arguments = ["-d", "-P", "-F", "#{window_id}", "-s", target]
         if let name { arguments += ["-n", name] }
-        let id = try await identifier(from: TmuxCommand("break-pane", arguments))
-        guard var window = try await windows().first(where: { $0.id == id }) else {
-            throw .serverRestarted
-        }
+        let id = try await identifier(
+            from: TmuxCommand("break-pane", arguments),
+            guardedBy: [.pane(pane), .windowLink(source)]
+        )
+        var window = try await requireWindow(id, incarnation: pane.incarnation)
         // Some releases ignore `-n` here and name the window after whatever is
         // running in it. Comparing the result rather than the version means
         // this corrects itself wherever the behaviour differs.
         if let name, window.name != name {
             try await rename(window, to: name)
-            guard let renamed = try await windows().first(where: { $0.id == id })
-            else {
-                throw .serverRestarted
-            }
+            let renamed = try await requireWindow(id, incarnation: pane.incarnation)
             window = renamed
         }
         return window
@@ -123,17 +152,23 @@ extension Server {
         direction: PaneDirection = .below,
         size: PaneSize? = nil
     ) async throws(TmuxError) {
-        var arguments = ["-s", pane.id, "-t", window.id]
+        var arguments = ["-s", pane.id.rawValue, "-t", window.id.rawValue]
         arguments += direction.flags
         if let size { arguments += ["-l", size.argument] }
-        try await expectSuccess(TmuxCommand("join-pane", arguments))
+        try await expectSuccess(
+            TmuxCommand("join-pane", arguments),
+            guardedBy: [.pane(pane), .window(window)]
+        )
     }
 
     // MARK: Pane contents
 
     /// Clears a pane's visible screen and its scrollback.
     public func clearHistory(_ pane: Pane) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("clear-history", ["-t", pane.id]))
+        try await expectSuccess(
+            TmuxCommand("clear-history", ["-t", pane.id.rawValue]),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     /// Sets a pane's title. The title is only shown when tmux is configured to
@@ -143,7 +178,8 @@ extension Server {
         of pane: Pane
     ) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("select-pane", ["-t", pane.id, "-T", title])
+            TmuxCommand("select-pane", ["-t", pane.id.rawValue, "-T", title]),
+            guardedBy: [.pane(pane)]
         )
     }
 
@@ -248,9 +284,12 @@ extension Server {
         buffer name: String? = nil,
         into pane: Pane
     ) async throws(TmuxError) {
-        var arguments = ["-t", pane.id]
+        var arguments = ["-t", pane.id.rawValue]
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("paste-buffer", arguments))
+        try await expectSuccess(
+            TmuxCommand("paste-buffer", arguments),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     // MARK: Clients
@@ -259,22 +298,28 @@ extension Server {
     ///
     /// A server operation despite the name: it acts on a client the server
     /// already holds, so it needs no terminal of its own. The session the
-    /// client was viewing is untouched.
+    /// client was viewing is untouched. The daemon incarnation is guarded,
+    /// but tmux cannot atomically compare `client_pid`; this detaches whichever
+    /// current client has ``Client/name``.
     public func detach(_ client: Client) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("detach-client", ["-t", client.name])
+            TmuxCommand("detach-client", ["-t", client.name]),
+            guardedBy: [.client(client)]
         )
     }
 
     /// Detaches every client attached to a session.
     ///
-    /// Built from ``detach(_:)`` rather than `detach-client -s`, which needs a
-    /// current client to resolve its target and so fails from a process that
-    /// is not itself attached — exactly the caller this library serves.
-    /// Detaching nothing is success, so teardown need not check first.
+    /// The session target and detach run in one guarded tmux queue item, so a
+    /// client name cannot be reused between a listing and this operation.
+    /// Detaching nothing is success.
     public func detachClients(from session: Session) async throws(TmuxError) {
-        for client in try await clients() where client.sessionID == session.id {
-            try await detach(client)
+        let reply = try await runGuarded(
+            TmuxCommand("detach-client", ["-s", session.id.rawValue]),
+            by: [.session(session)]
+        )
+        guard reply.isSuccess || reply.errorText == "no current client" else {
+            throw .invocationFailed(reason: reply.errorText)
         }
     }
 
@@ -337,9 +382,12 @@ extension Server {
         running command: [String] = [],
         killingExisting: Bool = true
     ) async throws(TmuxError) {
-        var arguments = ["-t", pane.id]
+        var arguments = ["-t", pane.id.rawValue]
         if killingExisting { arguments.append("-k") }
-        try await expectSuccess(TmuxCommand("respawn-pane", arguments + command))
+        try await expectSuccess(
+            TmuxCommand("respawn-pane", arguments + command),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     public func respawn(
@@ -347,9 +395,12 @@ extension Server {
         running command: [String] = [],
         killingExisting: Bool = true
     ) async throws(TmuxError) {
-        var arguments = ["-t", window.id]
+        var arguments = ["-t", window.id.rawValue]
         if killingExisting { arguments.append("-k") }
-        try await expectSuccess(TmuxCommand("respawn-window", arguments + command))
+        try await expectSuccess(
+            TmuxCommand("respawn-window", arguments + command),
+            guardedBy: [.window(window)]
+        )
     }
 
     /// Copies everything a pane outputs to a shell command, or stops doing so
@@ -358,38 +409,90 @@ extension Server {
         _ pane: Pane,
         to command: String? = nil
     ) async throws(TmuxError) {
-        var arguments = ["-t", pane.id]
+        var arguments = ["-t", pane.id.rawValue]
         if let command { arguments.append(command) }
-        try await expectSuccess(TmuxCommand("pipe-pane", arguments))
+        try await expectSuccess(
+            TmuxCommand("pipe-pane", arguments),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     // MARK: Moving windows between sessions
 
-    /// Moves a window to another index, or into another session.
+    /// Moves one window appearance into another session.
     public func move(
-        _ window: Window,
-        to destination: String
-    ) async throws(TmuxError) {
-        try await expectSuccess(
-            TmuxCommand("move-window", ["-s", window.id, "-t", destination])
-        )
+        _ link: WindowLink,
+        to destination: Session
+    ) async throws(TmuxError) -> WindowLink {
+        try await transfer(link, into: destination, moving: true)
     }
 
     /// Links a window into another session. The same window then appears in
     /// both, sharing one id — which is tmux's model, not a copy.
     public func link(
-        _ window: Window,
+        _ source: WindowLink,
         into session: Session
-    ) async throws(TmuxError) {
-        try await expectSuccess(
-            TmuxCommand("link-window", ["-d", "-s", window.id, "-t", session.id])
-        )
+    ) async throws(TmuxError) -> WindowLink {
+        try await transfer(source, into: session, moving: false)
     }
 
     /// Removes one of a linked window's appearances. The window survives while
     /// any session still holds it.
-    public func unlink(_ window: Window) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("unlink-window", ["-t", window.id]))
+    public func unlink(_ link: WindowLink) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("unlink-window", ["-t", link.target]),
+            guardedBy: [.windowLink(link)]
+        )
+    }
+
+    private func transfer(
+        _ source: WindowLink,
+        into destination: Session,
+        moving: Bool
+    ) async throws(TmuxError) -> WindowLink {
+        let incarnation = try expectedIncarnation([
+            source.incarnation, destination.incarnation,
+        ])
+        guard !moving || source.sessionID != destination.id else {
+            throw .invocationFailed(reason: "move destination is the source session")
+        }
+        let commandName = moving ? "move-window" : "link-window"
+
+        for _ in 0..<64 {
+            let destinationLinks = try await windowLinks().filter {
+                $0.incarnation == incarnation && $0.sessionID == destination.id
+            }
+            let occupied = Set(destinationLinks.map(\.index))
+            var index = occupied.min() ?? 0
+            while occupied.contains(index) { index += 1 }
+
+            let reply = try await runGuarded(
+                TmuxCommand(
+                    commandName,
+                    [
+                        "-d", "-s", source.target, "-t",
+                        "\(destination.id.rawValue):\(index)",
+                    ]
+                ),
+                by: [.windowLink(source), .session(destination)]
+            )
+            if reply.isSuccess {
+                return WindowLink(
+                    sessionID: destination.id,
+                    windowID: source.windowID,
+                    index: index,
+                    isActive: false,
+                    incarnation: incarnation
+                )
+            }
+            guard
+                reply.errorText == "index in use: \(index)"
+                    || reply.errorText == "same index: \(index)"
+            else {
+                throw .invocationFailed(reason: reply.errorText)
+            }
+        }
+        throw .invocationFailed(reason: "could not reserve a destination window index")
     }
 
     // MARK: Options on one object
@@ -402,7 +505,8 @@ extension Server {
         of window: Window
     ) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("set-option", ["-w", "-t", window.id, name, value])
+            TmuxCommand("set-option", ["-w", "-t", window.id.rawValue, name, value]),
+            guardedBy: [.window(window)]
         )
     }
 
@@ -411,12 +515,42 @@ extension Server {
         _ name: String,
         of window: Window
     ) async throws(TmuxError) -> String? {
-        let reply = try await run(
-            TmuxCommand("show-options", ["-w", "-t", window.id, "-v", name])
+        let reply = try await runGuarded(
+            TmuxCommand("show-options", ["-w", "-t", window.id.rawValue, "-v", name]),
+            by: [.window(window)],
+            checkingTargets: false
         )
         guard reply.isSuccess else { return nil }
         var value = reply.text
         if value.hasSuffix("\n") { value.removeLast() }
         return value.isEmpty ? nil : value
+    }
+
+    package func paneOption(
+        _ name: String,
+        of pane: Pane
+    ) async throws(TmuxError) -> String? {
+        let reply = try await runGuarded(
+            TmuxCommand(
+                "show-options", ["-p", "-t", pane.id.rawValue, "-v", name]
+            ),
+            by: [.pane(pane)]
+        )
+        guard reply.isSuccess else { return nil }
+        var value = reply.text
+        if value.hasSuffix("\n") { value.removeLast() }
+        return value.isEmpty ? nil : value
+    }
+
+    package func unsetPaneOption(
+        _ name: String,
+        of pane: Pane
+    ) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand(
+                "set-option", ["-p", "-t", pane.id.rawValue, "-u", name]
+            ),
+            guardedBy: [.pane(pane)]
+        )
     }
 }

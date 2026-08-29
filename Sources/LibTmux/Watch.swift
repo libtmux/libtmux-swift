@@ -15,20 +15,20 @@ public struct FormatSubscription: Sendable, Hashable {
         /// The session the connection attached to.
         case attachedSession
         /// One pane, by id.
-        case pane(String)
+        case pane(PaneID)
         /// Every pane in the attached session, including ones opened later.
         case allPanes
         /// One window, by id.
-        case window(String)
+        case window(WindowID)
         /// Every window in the attached session, including ones opened later.
         case allWindows
 
         var wireForm: String {
             switch self {
             case .attachedSession: ""
-            case let .pane(id): id
+            case let .pane(id): id.rawValue
             case .allPanes: "%*"
-            case let .window(id): id
+            case let .window(id): id.rawValue
             case .allWindows: "@*"
             }
         }
@@ -58,21 +58,21 @@ public struct FormatSubscription: Sendable, Hashable {
 public struct SubscriptionChange: Sendable, Hashable, Codable {
     /// Which ``FormatSubscription`` this belongs to.
     public let name: String
-    public let sessionID: String
+    public let sessionID: SessionID
     /// Absent when the subscription's scope is a session.
-    public let windowID: String?
+    public let windowID: WindowID?
     public let windowIndex: Int?
     /// Absent when the subscription's scope is a session or a window.
-    public let paneID: String?
+    public let paneID: PaneID?
     /// What the format evaluates to now.
     public let value: String
 
     public init(
         name: String,
-        sessionID: String,
-        windowID: String? = nil,
+        sessionID: SessionID,
+        windowID: WindowID? = nil,
         windowIndex: Int? = nil,
-        paneID: String? = nil,
+        paneID: PaneID? = nil,
         value: String
     ) {
         self.name = name
@@ -98,16 +98,30 @@ public struct SubscriptionChange: Sendable, Hashable, Codable {
         guard let separator = fields.firstIndex(of: ":"), separator >= 5 else {
             return nil
         }
-        func optional(_ index: Int) -> String? {
+        func optionalID<ID: TmuxID>(_ index: Int, as _: ID.Type) -> ID?? {
             let field = String(fields[index])
-            return field == "-" ? nil : field
+            if field == "-" { return .some(nil) }
+            guard let id = ID(rawValue: field) else { return nil }
+            return .some(id)
         }
+        func optionalIndex(_ index: Int) -> Int?? {
+            let field = String(fields[index])
+            if field == "-" { return .some(nil) }
+            guard let value = Int(field), value >= 0 else { return nil }
+            return .some(value)
+        }
+        guard
+            let sessionID = SessionID(rawValue: String(fields[1])),
+            let windowID = optionalID(2, as: WindowID.self),
+            let windowIndex = optionalIndex(3),
+            let paneID = optionalID(4, as: PaneID.self)
+        else { return nil }
         self.init(
             name: String(fields[0]),
-            sessionID: String(fields[1]),
-            windowID: optional(2),
-            windowIndex: optional(3).flatMap(Int.init),
-            paneID: optional(4),
+            sessionID: sessionID,
+            windowID: windowID,
+            windowIndex: windowIndex,
+            paneID: paneID,
             value: fields[(separator + 1)...].joined(separator: " ")
         )
     }

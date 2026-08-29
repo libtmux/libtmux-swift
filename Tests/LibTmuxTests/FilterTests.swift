@@ -3,14 +3,20 @@ import Testing
 
 @testable import LibTmux
 
+private let filterIncarnation = ServerIncarnation(
+    endpoint: .socketPath("/tmp/libtmux-swift-test/filter-fixture"),
+    socketPath: "/tmp/libtmux-swift-test/filter-fixture",
+    processID: 1,
+    startedAt: 1
+)
+
 private func makePane(
-    id: String = "%0",
+    id: PaneID = "%0",
     index: Int = 0,
     command: String = "zsh",
     path: String = "/home/tony",
     isActive: Bool = true,
-    windowID: String = "@0",
-    sessionID: String = "$0"
+    windowID: WindowID = "@0"
 ) -> Pane {
     Pane(
         id: id,
@@ -21,7 +27,7 @@ private func makePane(
         currentCommand: command,
         currentPath: path,
         windowID: windowID,
-        sessionID: sessionID
+        incarnation: filterIncarnation
     )
 }
 
@@ -51,6 +57,39 @@ struct FilterExprTests {
             FilterExpr.where(\.currentCommand, .isIn(["nvim", "vim"]))
         )
         #expect(matched.map(\.id) == ["%0", "%2"])
+    }
+
+    @Test("typed ids build equality and membership filters")
+    func typedIDsBuildEqualityAndMembershipFilters() throws {
+        let session = Session(
+            id: "$7", name: "typed", windowCount: 1, isAttached: false,
+            createdAt: 0, incarnation: filterIncarnation
+        )
+        let window = Window(
+            id: "@4", name: "typed", paneCount: 1, width: 80, height: 24,
+            incarnation: filterIncarnation
+        )
+        let pane = makePane(id: "%9", windowID: window.id)
+        let client = Client(
+            name: "typed", tty: "", processID: 2, width: nil, height: nil,
+            isControlMode: true, sessionID: session.id, incarnation: filterIncarnation
+        )
+
+        let sessionID = try FilterExpr<Session>.where(\.id, .equals(session.id))
+        let clientSessionID = try FilterExpr<Client>.where(
+            \.sessionID, .isIn([session.id])
+        )
+        let windowID = try FilterExpr<Window>.where(\.id, .equals(window.id))
+        let paneWindowID = try FilterExpr<Pane>.where(\.windowID, .isIn([window.id]))
+        let paneID = try FilterExpr<Pane>.where(\.id, .equals(pane.id))
+        let paneIDs = try FilterExpr<Pane>.where(\.id, .isIn([pane.id]))
+
+        #expect(sessionID.matches(session))
+        #expect(clientSessionID.matches(client))
+        #expect(windowID.matches(window))
+        #expect(paneWindowID.matches(pane))
+        #expect(paneID.matches(pane))
+        #expect(paneIDs.matches(pane))
     }
 
     @Test("case-insensitive matching is a distinct operator, not a default")
@@ -135,7 +174,6 @@ struct FilterExprTests {
             ("pane.path", \Pane.currentPath),
             ("pane.active", \Pane.isActive),
             ("pane.windowID", \Pane.windowID),
-            ("pane.sessionID", \Pane.sessionID),
         ]
         let pane = makePane()
         for (expected, keyPath) in pairs {

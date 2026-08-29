@@ -13,15 +13,77 @@ extension TmuxTools {
         let command = try arguments.string("command")
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
         let maxLines = max(1, try arguments.integer("max_lines", or: 200))
-
-        // Unique per call: a channel is server-wide, and a name two calls
-        // shared would let one call's completion release the other's wait.
-        let channel = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
-        let statusOption = "@libtmux_mcp_status"
-        let before = Set(try await server.capture(pane))
         let started = ContinuousClock.now
+        let deadline = started.advanced(by: timeout)
 
-        // The status goes into a pane option rather than onto the screen: it is
+        if await paneRuns.isHeld(pane),
+            try await server.formatGlobal("#{pane_dead}", for: pane) == "1"
+        {
+            throw ToolError.refusedForSafety("pane \(pane.id.rawValue) has exited")
+        }
+
+        let acquired = await progress.whileRunning(
+            upTo: timeout,
+            describing: "waiting to run in \(pane.id.rawValue)"
+        ) {
+            await acquirePaneRun(pane, within: timeout)
+        }
+        guard acquired else {
+            if Task.isCancelled { throw TmuxError.cancelled }
+            throw ToolError.refusedForSafety(
+                "pane \(pane.id.rawValue) is still running an earlier run_shell call"
+            )
+        }
+        do {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else {
+                throw ToolError.refusedForSafety(
+                    "pane \(pane.id.rawValue) did not become available before the timeout"
+                )
+            }
+            let execution = try await runShell(
+                command,
+                in: pane,
+                timeout: ContinuousClock.now.duration(to: deadline),
+                enforcedTimeout: enforced,
+                maxLines: maxLines,
+                started: started,
+                progress: progress
+            )
+            if let cleanup = execution.cleanup {
+                let paneRuns = paneRuns
+                Task {
+                    await Self.finishTimedOutRun(
+                        cleanup,
+                        pane: pane,
+                        server: server
+                    )
+                    await paneRuns.release(pane)
+                }
+            } else {
+                await paneRuns.release(pane)
+            }
+            return execution.outcome
+        } catch {
+            await paneRuns.release(pane)
+            throw error
+        }
+    }
+
+    private func runShell(
+        _ command: String,
+        in pane: Pane,
+        timeout: Duration,
+        enforcedTimeout: Double,
+        maxLines: Int,
+        started: ContinuousClock.Instant,
+        progress: ProgressReporter
+    ) async throws -> RunShellExecution {
+        let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let channel = "libtmux-mcp-done-\(nonce)"
+        let statusOption = "@libtmux_mcp_status_\(nonce)"
+        let before = try await server.capture(pane, since: nil)
+        // The status goes into a unique pane option rather than onto the screen: it is
         // read back exactly, and the pane the user is looking at gains no line
         // of bookkeeping. The `;` separators fire whether the command passed or
         // failed, so a failing command cannot leave the wait deadlocked.
@@ -34,7 +96,8 @@ extension TmuxTools {
         let tmux = server.shellInvocation
         try await server.sendKeys(
             [
-                "\(command); \(tmux) set-option -p \(statusOption) $?; "
+                "\(command); \(tmux) set-option -p -t \(pane.id.rawValue) "
+                    + "\(statusOption) $?; "
                     + "\(tmux) wait-for -S \(channel)",
                 "Enter",
             ],
@@ -44,7 +107,7 @@ extension TmuxTools {
         let server = server
         let finished = await progress.whileRunning(
             upTo: timeout,
-            describing: "running in \(pane.id)"
+            describing: "running in \(pane.id.rawValue)"
         ) {
             await withTaskGroup(of: Bool.self) { group in
                 group.addTask { (try? await server.wait(for: channel)) != nil }
@@ -58,34 +121,122 @@ extension TmuxTools {
             }
         }
 
-        // Best effort: a command can end the pane it ran in — `exit` is the
-        // ordinary way — and the status and timing are still worth reporting
-        // when there is no longer a pane to read.
-        let after = (try? await server.capture(pane)) ?? []
-        let produced = after.filter { !$0.isEmpty && !before.contains($0) }
+        let after = try? await server.capture(pane, since: before.cursor, limit: .max)
+        let produced = after?.lines.filter { !$0.isEmpty } ?? []
         let kept = produced.suffix(maxLines)
         let status =
             finished
-            ? (try? await server.format("#{\(statusOption)}", for: pane))?
-                .flatMap(Int.init)
+            ? try await server.paneOption(statusOption, of: pane).flatMap(Int.init)
             : nil
         if finished {
-            _ = try? await server.run(
-                TmuxCommand("set-option", ["-p", "-t", pane.id, "-u", statusOption])
-            )
+            try? await server.unsetPaneOption(statusOption, of: pane)
+            guard status != nil else {
+                throw TmuxError.invocationFailed(
+                    reason: "run_shell completed without an exit status"
+                )
+            }
         }
 
-        return .init(
-            RunShellResult(
-                pane: pane.id,
-                exitStatus: status,
-                timedOut: !finished,
-                output: Array(kept),
-                droppedLines: produced.count - kept.count,
-                seconds: Self.elapsed(since: started),
-                effectiveTimeout: enforced
-            )
+        return RunShellExecution(
+            outcome: .init(
+                RunShellResult(
+                    pane: pane.id.rawValue,
+                    exitStatus: status,
+                    timedOut: !finished,
+                    output: Array(kept),
+                    droppedLines: produced.count - kept.count,
+                    seconds: Self.elapsed(since: started),
+                    effectiveTimeout: enforcedTimeout
+                )
+            ),
+            cleanup: finished
+                ? nil
+                : RunShellCleanup(
+                    channel: channel,
+                    statusOption: statusOption,
+                    cursor: before.cursor
+                )
         )
+    }
+
+    private func acquirePaneRun(_ pane: Pane, within timeout: Duration) async -> Bool {
+        let coordinator = paneRuns
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                do {
+                    try await coordinator.acquire(pane)
+                    return true
+                } catch {
+                    return false
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+
+            let first = await group.next() ?? false
+            if first {
+                group.cancelAll()
+                return true
+            }
+
+            group.cancelAll()
+            while let acquired = await group.next() {
+                if acquired { await coordinator.release(pane) }
+            }
+            return false
+        }
+    }
+
+    private static func finishTimedOutRun(
+        _ cleanup: RunShellCleanup,
+        pane: Pane,
+        server: Server
+    ) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { try? await server.wait(for: cleanup.channel) }
+            group.addTask {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled else { return }
+                    do {
+                        guard
+                            try await server.formatGlobal("#{pane_dead}", for: pane) != "1"
+                        else { return }
+                        let capture = try await server.capture(
+                            pane,
+                            since: cleanup.cursor,
+                            limit: 0
+                        )
+                        if capture.restarted { return }
+                    } catch let error as TmuxError {
+                        switch error {
+                        case .foreignServerValue, .serverRestarted, .staleServerValue:
+                            return
+                        default:
+                            continue
+                        }
+                    } catch {
+                        continue
+                    }
+                }
+            }
+            _ = await group.next()
+            group.cancelAll()
+        }
+        try? await server.unsetPaneOption(cleanup.statusOption, of: pane)
+    }
+
+    private struct RunShellExecution: Sendable {
+        let outcome: ToolOutcome
+        let cleanup: RunShellCleanup?
+    }
+
+    private struct RunShellCleanup: Sendable {
+        let channel: String
+        let statusOption: String
+        let cursor: CaptureCursor
     }
 
     func sendKeys(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -97,7 +248,7 @@ extension TmuxTools {
             to: pane,
             literally: try arguments.bool("literal", or: false)
         )
-        return .init(SentKeys(pane: pane.id, keys: keys))
+        return .init(SentKeys(pane: pane.id.rawValue, keys: keys))
     }
 
     func newSession(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -114,7 +265,7 @@ extension TmuxTools {
         let target = try arguments.string("target")
         guard
             let session = try await server.sessions().first(where: {
-                $0.id == target || $0.name == target
+                $0.id.rawValue == target || $0.name == target
             })
         else {
             throw ToolError.refusedForSafety(
@@ -195,12 +346,12 @@ extension TmuxTools {
         try await guardForCaller()
             .checkPane(pane.id, override: try arguments.bool("confirm_self", or: false))
         try await server.kill(pane)
-        return .init(Killed(kind: "pane", id: pane.id))
+        return .init(Killed(kind: "pane", id: pane.id.rawValue))
     }
 
     func killWindow(_ arguments: Arguments) async throws -> ToolOutcome {
         let target = try arguments.string("target")
-        guard let window = try await server.windows().first(where: { $0.id == target })
+        guard let window = try await server.windows().first(where: { $0.id.rawValue == target })
         else {
             throw ToolError.refusedForSafety("no window \(target) on this server")
         }
@@ -211,26 +362,104 @@ extension TmuxTools {
                 override: try arguments.bool("confirm_self", or: false)
             )
         try await server.kill(window)
-        return .init(Killed(kind: "window", id: window.id))
+        return .init(Killed(kind: "window", id: window.id.rawValue))
     }
 
     func killSession(_ arguments: Arguments) async throws -> ToolOutcome {
         let target = try arguments.string("target")
+        let snapshot = try await server.snapshot()
         guard
-            let session = try await server.sessions().first(where: {
-                $0.id == target || $0.name == target
+            let session = snapshot.sessions.first(where: {
+                $0.id.rawValue == target || $0.name == target
             })
         else {
             throw ToolError.refusedForSafety("no session \(target) on this server")
         }
-        try await guardForCaller()
-            .checkSession(
-                session.id,
-                panes: try await server.panes(),
-                override: try arguments.bool("confirm_self", or: false)
-            )
+        try CallerGuard(
+            identity: caller,
+            isSameServer: caller?.isOn(serverProcessID: snapshot.serverProcessID) ?? false
+        )
+        .checkSession(
+            session,
+            in: snapshot,
+            override: try arguments.bool("confirm_self", or: false)
+        )
         try await server.kill(session)
-        return .init(Killed(kind: "session", id: session.id))
+        return .init(Killed(kind: "session", id: session.id.rawValue))
+    }
+}
+
+actor PaneRunCoordinator {
+    private struct Key: Sendable, Hashable {
+        let pane: PaneID
+        let incarnation: ServerIncarnation
+
+        init(_ pane: Pane) {
+            self.pane = pane.id
+            self.incarnation = pane.incarnation
+        }
+    }
+
+    private struct Waiter {
+        let token: UUID
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private var held: Set<Key> = []
+    private var waiters: [Key: [Waiter]] = [:]
+
+    func isHeld(_ pane: Pane) -> Bool {
+        held.contains(Key(pane))
+    }
+
+    func acquire(_ pane: Pane) async throws {
+        let key = Key(pane)
+        try Task.checkCancellation()
+        if held.insert(key).inserted { return }
+
+        let token = UUID()
+        let granted = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(returning: false)
+                } else {
+                    waiters[key, default: []].append(
+                        Waiter(token: token, continuation: continuation)
+                    )
+                }
+            }
+        } onCancel: {
+            Task { await self.cancel(key, token: token) }
+        }
+        guard granted else { throw TmuxError.cancelled }
+        if Task.isCancelled {
+            release(key)
+            throw TmuxError.cancelled
+        }
+    }
+
+    func release(_ pane: Pane) {
+        release(Key(pane))
+    }
+
+    private func release(_ key: Key) {
+        guard var queued = waiters[key], !queued.isEmpty else {
+            waiters[key] = nil
+            held.remove(key)
+            return
+        }
+        let next = queued.removeFirst()
+        waiters[key] = queued.isEmpty ? nil : queued
+        next.continuation.resume(returning: true)
+    }
+
+    private func cancel(_ key: Key, token: UUID) {
+        guard var queued = waiters[key],
+            let index = queued.firstIndex(where: { $0.token == token })
+        else { return }
+        let waiter = queued.remove(at: index)
+        waiters[key] = queued.isEmpty ? nil : queued
+        waiter.continuation.resume(returning: false)
     }
 }
 
@@ -238,13 +467,13 @@ extension TmuxTools {
     func rename(_ arguments: Arguments) async throws -> ToolOutcome {
         let target = try arguments.string("target")
         let name = try arguments.string("name")
-        if let window = try await server.windows().first(where: { $0.id == target }) {
+        if let window = try await server.windows().first(where: { $0.id.rawValue == target }) {
             try await server.rename(window, to: name)
-            return .init(Renamed(kind: "window", id: window.id, name: name))
+            return .init(Renamed(kind: "window", id: window.id.rawValue, name: name))
         }
         guard
             let session = try await server.sessions().first(where: {
-                $0.id == target || $0.name == target
+                $0.id.rawValue == target || $0.name == target
             })
         else {
             throw ToolError.refusedForSafety(
@@ -252,21 +481,29 @@ extension TmuxTools {
             )
         }
         try await server.rename(session, to: name)
-        return .init(Renamed(kind: "session", id: session.id, name: name))
+        return .init(Renamed(kind: "session", id: session.id.rawValue, name: name))
     }
 
     func select(_ arguments: Arguments) async throws -> ToolOutcome {
         let target = try arguments.string("target")
-        if let pane = try await server.panes().first(where: { $0.id == target }) {
+        if let pane = try await server.panes().first(where: { $0.id.rawValue == target }) {
             try await server.select(pane)
-            return .init(Killed(kind: "pane", id: pane.id))
+            return .init(Killed(kind: "pane", id: pane.id.rawValue))
         }
-        guard let window = try await server.windows().first(where: { $0.id == target })
-        else {
+        let links = try await server.windowLinks()
+        let candidates = links.filter {
+            $0.target == target || $0.windowID.rawValue == target
+        }
+        guard candidates.count == 1, let link = candidates.first else {
+            if candidates.count > 1 {
+                throw ToolError.refusedForSafety(
+                    "window \(target) has several links; target one as $session:index"
+                )
+            }
             throw ToolError.refusedForSafety("no pane or window \(target) on this server")
         }
-        try await server.select(window)
-        return .init(Killed(kind: "window", id: window.id))
+        try await server.select(link)
+        return .init(Killed(kind: "window", id: link.windowID.rawValue))
     }
 
     func resizePane(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -277,25 +514,27 @@ extension TmuxTools {
             throw ToolError.missingArgument("width or height")
         }
         try await server.resize(pane, width: width, height: height)
-        let after = try await self.pane(pane.id)
-        return .init(Resized(pane: after.id, width: after.width, height: after.height))
+        let after = try await self.pane(pane.id.rawValue)
+        return .init(
+            Resized(pane: after.id.rawValue, width: after.width, height: after.height)
+        )
     }
 
     func selectLayout(_ arguments: Arguments) async throws -> ToolOutcome {
         let target = try arguments.string("target")
-        guard let window = try await server.windows().first(where: { $0.id == target })
+        guard let window = try await server.windows().first(where: { $0.id.rawValue == target })
         else {
             throw ToolError.refusedForSafety("no window \(target) on this server")
         }
         let layout = try arguments.string("layout")
         try await server.selectLayout(window, layout)
-        return .init(LaidOut(window: window.id, layout: layout))
+        return .init(LaidOut(window: window.id.rawValue, layout: layout))
     }
 
     func respawnPane(_ arguments: Arguments) async throws -> ToolOutcome {
         let pane = try await pane(try arguments.string("pane"))
         try await server.respawn(pane, running: try arguments.strings("command"))
-        return .init(Respawned(pane: pane.id))
+        return .init(Respawned(pane: pane.id.rawValue))
     }
 
     func pasteText(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -308,7 +547,7 @@ extension TmuxTools {
         try await server.setBuffer(text, named: buffer)
         defer { Task { try? await server.deleteBuffer(named: buffer) } }
         try await server.paste(buffer: buffer, into: pane)
-        return .init(Pasted(pane: pane.id, characters: text.count))
+        return .init(Pasted(pane: pane.id.rawValue, characters: text.count))
     }
 
     func setEnvironment(_ arguments: Arguments) async throws -> ToolOutcome {

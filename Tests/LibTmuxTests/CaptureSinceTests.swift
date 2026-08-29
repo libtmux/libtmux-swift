@@ -99,7 +99,34 @@ struct CaptureSinceTests {
             // Anchors are per pane; using one against another would report
             // rows that were never there.
             #expect(crossed.lines.isEmpty)
-            #expect(crossed.cursor.pane == other.id)
+            #expect(crossed.cursor.pane == other.id.rawValue)
+        }
+    }
+
+    @Test("a cursor from an earlier daemon starts over")
+    func cursorFromAnEarlierDaemonStartsOver() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let started = try await server.capture(pane, since: nil)
+            let staleIncarnation = ServerIncarnation(
+                endpoint: pane.incarnation.endpoint,
+                socketPath: pane.incarnation.socketPath,
+                processID: pane.incarnation.processID,
+                startedAt: pane.incarnation.startedAt + 1
+            )
+
+            let staleCursor = CaptureCursor(
+                pane: started.cursor.pane,
+                incarnation: staleIncarnation,
+                anchor: started.cursor.anchor,
+                tail: started.cursor.tail,
+                processID: started.cursor.processID
+            )
+
+            let crossed = try await server.capture(pane, since: staleCursor)
+            #expect(crossed.restarted)
+            #expect(crossed.lines.isEmpty)
+            #expect(crossed.cursor.incarnation == pane.incarnation)
         }
     }
 

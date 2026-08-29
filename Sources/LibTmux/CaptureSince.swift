@@ -8,6 +8,8 @@ import Foundation
 /// has arrived since.
 public struct CaptureCursor: Sendable, Hashable, Codable {
     let pane: String
+    /// The daemon whose pane history the cursor counted.
+    let incarnation: ServerIncarnation
     /// The absolute row the last read ended on, counted from the start of the
     /// pane's history rather than from the top of the screen. Screen-relative
     /// numbers move as content scrolls; this one does not.
@@ -20,6 +22,51 @@ public struct CaptureCursor: Sendable, Hashable, Codable {
     /// everything the cursor described, so this is what makes that detectable
     /// rather than silently reporting one program's output as another's.
     let processID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case pane, incarnation, anchor, tail, processID
+    }
+
+    init(
+        pane: String,
+        incarnation: ServerIncarnation,
+        anchor: Int,
+        tail: String?,
+        processID: String?
+    ) {
+        self.pane = pane
+        self.incarnation = incarnation
+        self.anchor = anchor
+        self.tail = tail
+        self.processID = processID
+    }
+}
+
+extension CaptureCursor {
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pane = try container.decode(String.self, forKey: .pane)
+        incarnation = try container.decode(ServerIncarnation.self, forKey: .incarnation)
+        anchor = try container.decode(Int.self, forKey: .anchor)
+        guard anchor >= 0 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .anchor,
+                in: container,
+                debugDescription: "a capture cursor anchor cannot be negative"
+            )
+        }
+        tail = try container.decodeIfPresent(String.self, forKey: .tail)
+        processID = try container.decodeIfPresent(String.self, forKey: .processID)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pane, forKey: .pane)
+        try container.encode(incarnation, forKey: .incarnation)
+        try container.encode(anchor, forKey: .anchor)
+        try container.encodeIfPresent(tail, forKey: .tail)
+        try container.encodeIfPresent(processID, forKey: .processID)
+    }
 }
 
 /// What a pane has said since a cursor was taken.
@@ -73,27 +120,30 @@ extension Server {
         // actual control characters out of a format's output, so a real record
         // separator would arrive having silently joined the fields together.
         let separator = String(FormatProjection.separator)
-        let state = try await format(
+        let state = try await formatGlobal(
             "#{history_size}\(separator)#{cursor_y}\(separator)#{pane_pid}",
             for: pane
         )
         guard let fields = state?.components(separatedBy: separator), fields.count >= 3,
             let history = Int(fields[0]), let cursorRow = Int(fields[1])
         else {
-            throw TmuxError.invocationFailed(reason: "pane \(pane.id) has gone")
+            throw TmuxError.invocationFailed(reason: "pane \(pane.id.rawValue) has gone")
         }
         let processID = fields[2]
         // The row the cursor is on, counted from the start of history.
         let now = history + cursorRow
 
-        guard let cursor, cursor.pane == pane.id, cursor.processID == processID else {
+        guard let cursor, cursor.pane == pane.id.rawValue,
+            cursor.incarnation == pane.incarnation, cursor.processID == processID
+        else {
             // Nothing to compare against, so this establishes the mark rather
             // than answering with a backlog nobody asked for.
             let restarted = cursor != nil
             return IncrementalCapture(
                 lines: [],
                 cursor: CaptureCursor(
-                    pane: pane.id,
+                    pane: pane.id.rawValue,
+                    incarnation: pane.incarnation,
                     anchor: now,
                     tail: try await lastRow(of: pane),
                     processID: processID
@@ -104,7 +154,12 @@ extension Server {
 
         // Reading from the anchor row itself, because it may have been
         // rewritten since — `tail` is what tells the two apart.
-        let start = cursor.anchor - history
+        let (start, anchorOverflowed) = cursor.anchor.subtractingReportingOverflow(history)
+        guard !anchorOverflowed else {
+            throw TmuxError.invocationFailed(
+                reason: "pane \(pane.id.rawValue) reported an invalid history size"
+            )
+        }
         let oldest = -history
         let linesMissed = start < oldest
         var rows = try await capture(pane, startingAt: .line(max(start, oldest)))
@@ -117,7 +172,8 @@ extension Server {
         return IncrementalCapture(
             lines: Array(rows.suffix(max(0, limit))),
             cursor: CaptureCursor(
-                pane: pane.id,
+                pane: pane.id.rawValue,
+                incarnation: pane.incarnation,
                 anchor: now,
                 tail: rows.last ?? cursor.tail,
                 processID: processID

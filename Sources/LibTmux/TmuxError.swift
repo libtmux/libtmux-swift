@@ -21,6 +21,12 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// prepared against.
     case serverRestarted
 
+    /// A value from another endpoint cannot target this server.
+    case foreignServerValue
+
+    /// A session-local target no longer names the object the value described.
+    case staleServerValue
+
     /// The task was cancelled. A cancelled request never reports an empty
     /// listing — that would be indistinguishable from a server with no
     /// sessions.

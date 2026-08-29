@@ -18,7 +18,7 @@ extension TmuxTools {
         let server = server
         let result = try await progress.whileRunning(
             upTo: timeout,
-            describing: "waiting on \(pane.id)"
+            describing: "waiting on \(pane.id.rawValue)"
         ) {
             try await server.waitForOutput(
                 in: pane,
@@ -37,24 +37,22 @@ extension TmuxTools {
     ) async throws -> ToolOutcome {
         let paneID = try arguments.string("pane")
         let pane = try await pane(paneID)
+        let link = try await windowLink(
+            for: pane, matching: try arguments.optionalString("window_link"))
         let format = try arguments.string("format")
         let matching = try arguments.optionalString("matching").map(MatchExpression.init)
         let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
-
-        guard let session = try await server.format("#{session_name}", for: pane) else {
-            throw ToolError.refusedForSafety("pane \(paneID) has gone")
-        }
 
         let started = ContinuousClock.now
         let outcome = try await progress.whileRunning(
             upTo: timeout,
             describing: "watching \(format) on \(paneID)"
         ) {
-            try await server.connected(attachingTo: session) { _, control in
+            try await server.connected(attachingTo: link.sessionID.rawValue) { _, control in
                 try await control.watch(
                     FormatSubscription(
                         name: "libtmux-mcp-watch",
-                        scope: .pane(paneID),
+                        scope: .pane(pane.id),
                         format: format
                     )
                 )
@@ -67,6 +65,11 @@ extension TmuxTools {
                         // asked for.
                         var isFirst = true
                         for await change in changes {
+                            guard change.sessionID == link.sessionID,
+                                change.windowID == link.windowID,
+                                change.windowIndex == link.index,
+                                change.paneID == pane.id
+                            else { continue }
                             guard let matching else {
                                 if isFirst {
                                     isFirst = false
@@ -95,7 +98,7 @@ extension TmuxTools {
             return .init(
                 FormatWatchResult(
                     outcome: "timedOut",
-                    value: try await server.format(format, for: pane),
+                    value: try await server.format(format, for: pane, through: link),
                     seconds: seconds,
                     effectiveTimeout: enforced
                 )

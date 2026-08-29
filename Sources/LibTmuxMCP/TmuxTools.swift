@@ -8,6 +8,8 @@ import LibTmux
 /// data and the tool evaluates it here, rather than the client asking for
 /// everything and filtering at home.
 public struct TmuxTools: Sendable {
+    private static let sharedPaneRuns = PaneRunCoordinator()
+
     let server: Server
     /// The highest tier a call may reach. Anything above it is hidden from
     /// `tools/list` as well as refused, so a client configured for reading is
@@ -21,6 +23,7 @@ public struct TmuxTools: Sendable {
     /// mistake cheap and repeatable instead of terminal.
     public let waitCeiling: Duration
     let caller: CallerIdentity?
+    let paneRuns: PaneRunCoordinator
 
     public init(
         server: Server,
@@ -32,6 +35,7 @@ public struct TmuxTools: Sendable {
         self.tier = tier
         self.waitCeiling = waitCeiling
         self.caller = caller
+        self.paneRuns = Self.sharedPaneRuns
     }
 
     /// The tools visible at this server's tier.
@@ -118,12 +122,41 @@ public struct TmuxTools: Sendable {
     /// Resolves a pane id to the pane, so a stale id fails with the id in the
     /// message rather than as an opaque tmux error three calls later.
     func pane(_ id: String) async throws -> Pane {
-        guard let found = try await server.panes().first(where: { $0.id == id }) else {
+        guard let found = try await server.panes().first(where: { $0.id.rawValue == id }) else {
             throw ToolError.refusedForSafety(
                 "no pane \(id) on this server. Call list_panes for what is there."
             )
         }
         return found
+    }
+
+    /// Resolves the exact window appearance used for pane-scoped waits.
+    func windowLink(for pane: Pane, matching requestedTarget: String?) async throws -> WindowLink {
+        let links = try await server.windowLinks()
+            .filter { $0.windowID == pane.windowID && $0.incarnation == pane.incarnation }
+            .sorted { $0.target < $1.target }
+        guard !links.isEmpty else {
+            throw ToolError.refusedForSafety("pane \(pane.id) has gone")
+        }
+
+        if let requestedTarget {
+            guard let link = links.first(where: { $0.target == requestedTarget }) else {
+                throw ToolError.refusedForSafety(
+                    "pane \(pane.id) has no window link \(requestedTarget)"
+                )
+            }
+            return link
+        }
+
+        if links.count == 1 { return links[0] }
+        let guardForCaller = await guardForCaller()
+        if guardForCaller.isSameServer, let sessionID = guardForCaller.identity?.sessionID {
+            let callerLinks = links.filter { $0.sessionID == sessionID }
+            if callerLinks.count == 1 { return callerLinks[0] }
+        }
+        throw ToolError.refusedForSafety(
+            "pane \(pane.id) has several window links; pass window_link as $session:index"
+        )
     }
 
     /// Whether the caller is on this server. One tmux command, so it is only

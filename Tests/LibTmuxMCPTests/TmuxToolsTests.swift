@@ -152,6 +152,36 @@ struct ToolCatalogTests {
 
 @Suite("tool safety", .timeLimit(.minutes(1)))
 struct ToolSafetyTests {
+    @Test("caller identity discards a malformed pane id from the environment")
+    func callerIdentityDiscardsAMalformedPaneID() throws {
+        let identity = try #require(
+            CallerIdentity.current(
+                environment: ["TMUX": "/tmp/s,1,2", "TMUX_PANE": "%03"]
+            )
+        )
+        #expect(identity.paneID == nil)
+        #expect(identity.sessionID == "$2")
+    }
+
+    @Test(
+        "caller identity decoding refuses malformed ids",
+        arguments: [("%01", "$2"), ("%2", "$02")]
+    )
+    func callerIdentityDecodingRefusesMalformedIDs(
+        _ paneID: String,
+        _ sessionID: String
+    ) throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "paneID": paneID,
+            "sessionID": sessionID,
+            "socketPath": NSNull(),
+            "serverProcessID": 1,
+        ])
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(CallerIdentity.self, from: data)
+        }
+    }
+
     @Test("a tool above the tier is hidden as well as refused")
     func toolsAboveTheTierAreHidden() async throws {
         try await withTmuxServer { server in
@@ -182,7 +212,7 @@ struct ToolSafetyTests {
                 try #require(try await server.panes().first)
             )
             _ = try await tools.call(
-                ToolCall(name: "kill_pane", arguments: .object(["pane": .string(pane.id)]))
+                ToolCall(name: "kill_pane", arguments: .object(["pane": .string(pane.id.rawValue)]))
             )
             #expect(try await server.panes().allSatisfy { $0.id != pane.id })
         }
@@ -192,11 +222,12 @@ struct ToolSafetyTests {
     func ownPaneIsRefusedWithoutConfirmation() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
             // Standing in for running inside this very pane, which a test
             // process is not.
             let identity = CallerIdentity(
                 paneID: pane.id,
-                sessionID: pane.sessionID,
+                sessionID: session.id,
                 socketPath: nil,
                 serverProcessID: try await server.serverProcessID()
             )
@@ -206,7 +237,7 @@ struct ToolSafetyTests {
                 try await tools.call(
                     ToolCall(
                         name: "kill_pane",
-                        arguments: .object(["pane": .string(pane.id)])
+                        arguments: .object(["pane": .string(pane.id.rawValue)])
                     )
                 )
             }
@@ -216,7 +247,7 @@ struct ToolSafetyTests {
                 ToolCall(
                     name: "kill_pane",
                     arguments: .object([
-                        "pane": .string(pane.id), "confirm_self": .bool(true),
+                        "pane": .string(pane.id.rawValue), "confirm_self": .bool(true),
                     ])
                 )
             )
@@ -227,9 +258,10 @@ struct ToolSafetyTests {
     func killingTheEnclosingWindowIsRefused() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
             let identity = CallerIdentity(
                 paneID: pane.id,
-                sessionID: pane.sessionID,
+                sessionID: session.id,
                 socketPath: nil,
                 serverProcessID: try await server.serverProcessID()
             )
@@ -238,7 +270,7 @@ struct ToolSafetyTests {
             // Guarding only the pane would leave two other ways to end the same
             // conversation by accident.
             for (tool, target) in [
-                ("kill_window", pane.windowID), ("kill_session", pane.sessionID),
+                ("kill_window", pane.windowID.rawValue), ("kill_session", session.id.rawValue),
             ] {
                 await #expect(throws: ToolError.self, "\(tool) killed the caller") {
                     try await tools.call(
@@ -255,7 +287,7 @@ struct ToolSafetyTests {
                 ToolCall(
                     name: "kill_window",
                     arguments: .object([
-                        "target": .string(pane.windowID),
+                        "target": .string(pane.windowID.rawValue),
                         "confirm_self": .bool(true),
                     ])
                 )
@@ -263,13 +295,45 @@ struct ToolSafetyTests {
         }
     }
 
+    @Test("a moved caller window is protected in its current session")
+    func movedCallerWindowIsProtectedInItsCurrentSession() async throws {
+        try await withTmuxServer { server in
+            let originalSession = try #require(try await server.sessions().first)
+            let pane = try #require(try await server.panes().first)
+            let source = try #require(
+                try await server.windowLinks().first { $0.windowID == pane.windowID }
+            )
+            _ = try await server.newWindow(in: originalSession, named: "kept")
+            let destination = try await server.newSession(named: "moved-caller")
+            _ = try await server.move(source, to: destination)
+            let identity = CallerIdentity(
+                paneID: pane.id,
+                sessionID: originalSession.id,
+                socketPath: nil,
+                serverProcessID: try await server.serverProcessID()
+            )
+            let tools = TmuxTools(server: server, tier: .destructive, caller: identity)
+
+            await #expect(throws: ToolError.self) {
+                try await tools.call(
+                    ToolCall(
+                        name: "kill_session",
+                        arguments: .object(["target": .string(destination.id.rawValue)])
+                    )
+                )
+            }
+            #expect(try await server.sessions().contains { $0.id == destination.id })
+        }
+    }
+
     @Test("a caller on another server is not mistaken for this one")
     func aCallerElsewhereIsNotGuardedAgainst() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
             let elsewhere = CallerIdentity(
                 paneID: pane.id,
-                sessionID: pane.sessionID,
+                sessionID: session.id,
                 socketPath: nil,
                 // Same pane id, different daemon: ids are only unique per
                 // server, so guarding on the id alone would refuse work on
@@ -278,7 +342,7 @@ struct ToolSafetyTests {
             )
             let tools = TmuxTools(server: server, tier: .destructive, caller: elsewhere)
             _ = try await tools.call(
-                ToolCall(name: "kill_pane", arguments: .object(["pane": .string(pane.id)]))
+                ToolCall(name: "kill_pane", arguments: .object(["pane": .string(pane.id.rawValue)]))
             )
         }
     }
@@ -345,7 +409,7 @@ struct TmuxToolsTests {
                     name: "read_format",
                     arguments: .object([
                         "template": .string("#{pane_tty}"),
-                        "target": .string(pane.id),
+                        "target": .string(pane.id.rawValue),
                     ])
                 )
             )
@@ -413,6 +477,64 @@ struct TmuxToolsTests {
         }
     }
 
+    @Test("unknown nested filter fields are refused")
+    func unknownNestedFilterFieldsAreRefused() async throws {
+        try await withTmuxServer { server in
+            let expression = FilterExpr<Pane>.not(
+                .and([
+                    .comparison(
+                        field: "pane.retired",
+                        operation: .equals(.flag(true))
+                    )
+                ])
+            )
+            let inlined = try JSONDecoder().decode(
+                JSONValue.self,
+                from: try JSONEncoder().encode(expression)
+            )
+            let relation = try JSONDecoder().decode(
+                JSONValue.self,
+                from: try JSONEncoder().encode(RelationQuery(.some, expression))
+            )
+            let calls = [
+                (
+                    ToolCall(name: "list_panes", arguments: .object(["filter": inlined])),
+                    "filter"
+                ),
+                (
+                    ToolCall(name: "list_windows", arguments: .object(["filter": inlined])),
+                    "filter"
+                ),
+                (
+                    ToolCall(
+                        name: "search_panes",
+                        arguments: .object(["pattern": .string("."), "filter": inlined])
+                    ),
+                    "filter"
+                ),
+                (
+                    ToolCall(
+                        name: "list_sessions",
+                        arguments: .object(["pane_relation": relation])
+                    ),
+                    "pane_relation"
+                ),
+            ]
+
+            for (call, argument) in calls {
+                await #expect(
+                    throws: ToolError.wrongArgumentType(
+                        argument,
+                        expected: "a filter using known field ids; pane.retired is unknown"
+                    ),
+                    "\(call.name) accepted an unknown nested field"
+                ) {
+                    try await TmuxTools(server: server).call(call)
+                }
+            }
+        }
+    }
+
     @Test("a client that does not speak Swift can learn the vocabulary")
     func clientCanLearnTheVocabulary() async throws {
         try await withTmuxServer { server in
@@ -460,7 +582,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "capture_pane",
                     arguments: .object([
-                        "pane": .string(pane.id), "max_lines": .number(2),
+                        "pane": .string(pane.id.rawValue), "max_lines": .number(2),
                     ])
                 )
             )
@@ -479,7 +601,7 @@ struct TmuxToolsTests {
             let started = try await tools.call(
                 ToolCall(
                     name: "capture_since",
-                    arguments: .object(["pane": .string(pane.id)])
+                    arguments: .object(["pane": .string(pane.id.rawValue)])
                 )
             ).decode(CaptureSinceResult.self)
             // Starting to watch is not the same as asking for the backlog.
@@ -493,7 +615,7 @@ struct TmuxToolsTests {
                     ToolCall(
                         name: "capture_since",
                         arguments: .object([
-                            "pane": .string(pane.id), "cursor": .string(caught.cursor),
+                            "pane": .string(pane.id.rawValue), "cursor": .string(caught.cursor),
                         ])
                     )
                 ).decode(CaptureSinceResult.self)
@@ -506,7 +628,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "capture_since",
                     arguments: .object([
-                        "pane": .string(pane.id), "cursor": .string(caught.cursor),
+                        "pane": .string(pane.id.rawValue), "cursor": .string(caught.cursor),
                     ])
                 )
             ).decode(CaptureSinceResult.self)
@@ -525,7 +647,44 @@ struct TmuxToolsTests {
                     ToolCall(
                         name: "capture_since",
                         arguments: .object([
-                            "pane": .string(pane.id), "cursor": .string("not-a-cursor"),
+                            "pane": .string(pane.id.rawValue), "cursor": .string("not-a-cursor"),
+                        ])
+                    )
+                )
+            }
+        }
+    }
+
+    @Test("a structurally impossible cursor is refused")
+    func impossibleCursorIsRefused() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let started = try await tools.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object(["pane": .string(pane.id.rawValue)])
+                )
+            ).decode(CaptureSinceResult.self)
+            var payload = try #require(
+                JSONSerialization.jsonObject(with: Data(started.cursor.utf8))
+                    as? [String: Any]
+            )
+            payload["anchor"] = -1
+            let impossible = try #require(
+                String(
+                    data: JSONSerialization.data(withJSONObject: payload),
+                    encoding: .utf8
+                )
+            )
+
+            await #expect(throws: ToolError.self) {
+                try await tools.call(
+                    ToolCall(
+                        name: "capture_since",
+                        arguments: .object([
+                            "pane": .string(pane.id.rawValue),
+                            "cursor": .string(impossible),
                         ])
                     )
                 )
@@ -566,7 +725,7 @@ struct TmuxToolsTests {
                 if !(found?.matches.isEmpty ?? true) { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
-            #expect(found?.matches.first?.pane == pane.id)
+            #expect(found?.matches.first?.pane == pane.id.rawValue)
         }
     }
 
@@ -626,7 +785,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
-                        "pane": .string(pane.id),
+                        "pane": .string(pane.id.rawValue),
                         "command": .string("printf 'shell-marker\\n'"),
                         "timeout": .number(20),
                     ])
@@ -655,7 +814,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
-                        "pane": .string(pane.id),
+                        "pane": .string(pane.id.rawValue),
                         "command": .string("/bin/echo path-independent"),
                         "timeout": .number(20),
                     ])
@@ -675,13 +834,283 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "run_shell",
                     arguments: .object([
-                        "pane": .string(pane.id),
+                        "pane": .string(pane.id.rawValue),
                         "command": .string("(exit 3)"),
                         "timeout": .number(20),
                     ])
                 )
             )
             #expect(try outcome.decode(RunShellResult.self).exitStatus == 3)
+        }
+    }
+
+    @Test("run_shell is pane-global when its window has several links")
+    func runShellDoesNotRequireAWindowLink() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.windowLinks().first)
+            let pane = try #require(
+                try await server.panes().first { $0.windowID == source.windowID }
+            )
+            let destination = try await server.newSession(named: "run-shell-destination")
+            _ = try await server.link(source, into: destination)
+            _ = try await server.link(source, into: destination)
+
+            let outcome = try await TmuxTools(server: server, caller: nil).call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("printf 'pane-global\\n'"),
+                        "timeout": .number(20),
+                    ])
+                )
+            )
+            let result = try outcome.decode(RunShellResult.self)
+            #expect(result.exitStatus == 0)
+            #expect(!result.timedOut)
+        }
+    }
+
+    @Test("run_shell reports an identical output occurrence")
+    func runShellReportsRepeatedOutput() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let command = "printf 'repeated-shell-output\\n'"
+            let echoOff = "libtmux-test-echo-off-\(UUID().uuidString)"
+            try await server.run(
+                "stty -echo; \(server.shellInvocation) wait-for -S \(echoOff)",
+                in: pane
+            )
+            try await server.wait(for: echoOff)
+            let seeded = "libtmux-test-seeded-\(UUID().uuidString)"
+            try await server.run(
+                "\(command); \(server.shellInvocation) wait-for -S \(seeded)",
+                in: pane
+            )
+            try await server.wait(for: seeded)
+
+            let outcome = try await TmuxTools(server: server).call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string(command),
+                        "timeout": .number(20),
+                    ])
+                )
+            )
+            let result = try outcome.decode(RunShellResult.self)
+            #expect(result.output.contains { $0.hasSuffix("repeated-shell-output") })
+        }
+    }
+
+    @Test("concurrent run_shell calls keep their own status")
+    func concurrentRunShellCallsKeepTheirStatus() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let results = try await withThrowingTaskGroup(of: (Int, Int?).self) { group in
+                for expected in 1...8 {
+                    group.addTask {
+                        let outcome = try await tools.call(
+                            ToolCall(
+                                name: "run_shell",
+                                arguments: .object([
+                                    "pane": .string(pane.id.rawValue),
+                                    "command": .string("(exit \(expected))"),
+                                    "timeout": .number(20),
+                                ])
+                            )
+                        )
+                        return (expected, try outcome.decode(RunShellResult.self).exitStatus)
+                    }
+                }
+                return try await group.reduce(into: []) { $0.append($1) }
+            }
+
+            for (expected, actual) in results {
+                #expect(actual == expected)
+            }
+        }
+    }
+
+    @Test("a timed-out run keeps later output separate")
+    func timedOutRunKeepsThePaneLease() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let first = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("sleep 1; printf 'first-run-finished\\n'"),
+                        "timeout": .number(0.1),
+                    ])
+                )
+            )
+            #expect(try first.decode(RunShellResult.self).timedOut)
+
+            let second = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("printf 'second-run-only\\n'"),
+                        "timeout": .number(5),
+                    ])
+                )
+            )
+            let result = try second.decode(RunShellResult.self)
+            #expect(result.exitStatus == 0)
+            #expect(result.output.contains { $0.hasSuffix("second-run-only") })
+            #expect(!result.output.contains { $0.hasSuffix("first-run-finished") })
+        }
+    }
+
+    @Test("separate tool values share one pane lease")
+    func paneLeaseIsSharedAcrossToolValues() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let firstTools = TmuxTools(server: server)
+            let first = try await firstTools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("sleep 2"),
+                        "timeout": .number(0.1),
+                    ])
+                )
+            )
+            #expect(try first.decode(RunShellResult.self).timedOut)
+
+            let secondTools = TmuxTools(server: server)
+            await #expect(throws: ToolError.self) {
+                try await secondTools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(pane.id.rawValue),
+                            "command": .string("printf 'must-not-run\n'"),
+                            "timeout": .number(0.2),
+                        ])
+                    )
+                )
+            }
+        }
+    }
+
+    @Test("respawning a pane releases its timed-out run")
+    func paneRespawnReleasesTimedOutRun() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let first = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("sleep 30"),
+                        "timeout": .number(0.1),
+                    ])
+                )
+            )
+            #expect(try first.decode(RunShellResult.self).timedOut)
+
+            try await server.respawn(pane)
+            let second = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("printf 'after-respawn\n'"),
+                        "timeout": .number(3),
+                    ])
+                )
+            )
+            let result = try second.decode(RunShellResult.self)
+            #expect(!result.timedOut)
+            #expect(result.output.contains { $0.hasSuffix("after-respawn") })
+        }
+    }
+
+    @Test("a retained dead pane releases its timed-out run")
+    func retainedDeadPaneReleasesTimedOutRun() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let window = try #require(
+                try await server.windows().first { $0.id == pane.windowID }
+            )
+            try await server.setOption("remain-on-exit", to: "on", of: window)
+            let tools = TmuxTools(server: server)
+            let first = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("exit"),
+                        "timeout": .number(0.1),
+                    ])
+                )
+            )
+            #expect(try first.decode(RunShellResult.self).timedOut)
+            #expect(
+                try await waitUntil {
+                    try await server.format("#{pane_dead}", addressing: pane.id.rawValue) == "1"
+                }
+            )
+
+            do {
+                _ = try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(pane.id.rawValue),
+                            "command": .string("printf 'dead-pane\n'"),
+                            "timeout": .number(0.2),
+                        ])
+                    )
+                )
+            } catch let error as ToolError {
+                if case let .refusedForSafety(reason) = error {
+                    #expect(!reason.contains("earlier run_shell"))
+                }
+            }
+        }
+    }
+
+    @Test("waiting for a busy pane is bounded")
+    func busyPaneWaitUsesTheRequestedTimeout() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let tools = TmuxTools(server: server)
+            let first = try await tools.call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "command": .string("sleep 2"),
+                        "timeout": .number(0.1),
+                    ])
+                )
+            )
+            #expect(try first.decode(RunShellResult.self).timedOut)
+
+            let started = ContinuousClock.now
+            await #expect(throws: ToolError.self) {
+                try await tools.call(
+                    ToolCall(
+                        name: "run_shell",
+                        arguments: .object([
+                            "pane": .string(pane.id.rawValue),
+                            "command": .string("printf 'must-not-run\\n'"),
+                            "timeout": .number(0.2),
+                        ])
+                    )
+                )
+            }
+            #expect(ContinuousClock.now - started < .seconds(1))
         }
     }
 
@@ -716,7 +1145,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "wait_for_output",
                     arguments: .object([
-                        "pane": .string(pane.id),
+                        "pane": .string(pane.id.rawValue),
                         "patterns": .array([.string("never-arrives")]),
                         // Far past the ceiling: clamped rather than refused, so
                         // an over-large ask still does something useful.
@@ -728,6 +1157,61 @@ struct TmuxToolsTests {
             #expect(waited.effectiveTimeout == 1)
             #expect(waited.outcome == "timedOut")
             #expect(!waited.sawNewOutput)
+        }
+    }
+
+    @Test("format watches require an exact link when a window appears more than once")
+    func linkedPaneWatchesRequireAnExactLink() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.windowLinks().first)
+            let pane = try #require(
+                try await server.panes().first { $0.windowID == source.windowID }
+            )
+            let destination = try await server.newSession(named: "wait-destination")
+            let destinationLink = try await server.link(source, into: destination)
+            let duplicate = try await server.link(source, into: destination)
+            let tools = TmuxTools(server: server, caller: nil)
+
+            await #expect(throws: ToolError.self) {
+                try await tools.windowLink(for: pane, matching: nil)
+            }
+            #expect(
+                try await tools.windowLink(for: pane, matching: destinationLink.target)
+                    == destinationLink
+            )
+            #expect(
+                try await tools.windowLink(for: pane, matching: duplicate.target)
+                    == duplicate
+            )
+            await #expect(throws: ToolError.self) {
+                try await tools.windowLink(for: pane, matching: destination.id.rawValue)
+            }
+        }
+    }
+
+    @Test("watch_format ignores another link's initial value")
+    func watchFormatFiltersDuplicateWindowLinks() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.windowLinks().first)
+            let pane = try #require(
+                try await server.panes().first { $0.windowID == source.windowID }
+            )
+            let destination = try await server.newSession(named: "watch-destination")
+            let exact = try await server.link(source, into: destination)
+            _ = try await server.link(source, into: destination)
+
+            let outcome = try await TmuxTools(server: server, caller: nil).call(
+                ToolCall(
+                    name: "watch_format",
+                    arguments: .object([
+                        "pane": .string(pane.id.rawValue),
+                        "window_link": .string(exact.target),
+                        "format": .string("#{window_index}:#{window_active}"),
+                        "timeout": .number(0.5),
+                    ])
+                )
+            )
+            #expect(try outcome.decode(FormatWatchResult.self).outcome == "timedOut")
         }
     }
 
@@ -743,7 +1227,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "wait_for_output",
                     arguments: .object([
-                        "pane": .string(pane.id),
+                        "pane": .string(pane.id.rawValue),
                         "patterns": .array([.string("already-listening")]),
                         "timeout": .number(30),
                     ])
@@ -770,7 +1254,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "wait_for_output",
                     arguments: .object([
-                        "pane": .string(pane.id),
+                        "pane": .string(pane.id.rawValue),
                         "patterns": .array([.string("already-listening")]),
                         "require_fresh": .bool(true),
                         "timeout": .number(1),
@@ -802,7 +1286,7 @@ struct TmuxToolsTests {
                 ToolCall(
                     name: "watch_format",
                     arguments: .object([
-                        "pane": .string(pane.id),
+                        "pane": .string(pane.id.rawValue),
                         "format": .string("#{pane_current_command}"),
                         "matching": .string("^sleep$"),
                         "timeout": .number(20),
@@ -895,7 +1379,7 @@ struct ReachToolTests {
                 ToolCall(
                     name: "paste_text",
                     arguments: .object([
-                        "pane": .string(pane.id), "text": .string("C-c Enter"),
+                        "pane": .string(pane.id.rawValue), "text": .string("C-c Enter"),
                     ])
                 )
             )
@@ -920,12 +1404,13 @@ struct ReachToolTests {
             let watching = try await tools.call(
                 ToolCall(
                     name: "capture_since",
-                    arguments: .object(["pane": .string(pane.id)])
+                    arguments: .object(["pane": .string(pane.id.rawValue)])
                 )
             ).decode(CaptureSinceResult.self)
 
             _ = try await tools.call(
-                ToolCall(name: "respawn_pane", arguments: .object(["pane": .string(pane.id)]))
+                ToolCall(
+                    name: "respawn_pane", arguments: .object(["pane": .string(pane.id.rawValue)]))
             )
             try await Task.sleep(for: .milliseconds(400))
 
@@ -937,7 +1422,7 @@ struct ReachToolTests {
                 ToolCall(
                     name: "capture_since",
                     arguments: .object([
-                        "pane": .string(pane.id), "cursor": .string(watching.cursor),
+                        "pane": .string(pane.id.rawValue), "cursor": .string(watching.cursor),
                     ])
                 )
             ).decode(CaptureSinceResult.self)
@@ -966,9 +1451,10 @@ struct ReachToolTests {
     func killServerIsGuarded() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
             let identity = CallerIdentity(
                 paneID: pane.id,
-                sessionID: pane.sessionID,
+                sessionID: session.id,
                 socketPath: nil,
                 serverProcessID: try await server.serverProcessID()
             )

@@ -16,10 +16,10 @@ struct TmuxResources: Sendable {
         entry(
             uri: "tmux://snapshot",
             name: "snapshot",
-            title: "Everything at once",
+            title: "Server snapshot",
             description:
-                "Every session, window, pane and client as one consistent read — "
-                + "the whole hierarchy without walking it.",
+                "Sessions, windows, panes and clients collected from separate listings, "
+                + "with relationships resolved in the returned value.",
             mimeType: "application/json"
         ),
         entry(
@@ -85,7 +85,7 @@ struct TmuxResources: Sendable {
             let snapshot = try await server.snapshot()
             guard
                 let session = snapshot.sessions.first(where: {
-                    $0.id == name || $0.name == name
+                    $0.id.rawValue == name || $0.name == name
                 })
             else { throw ToolError.unknownTool("no session \(name)") }
             return Self.json(uri, JSONValue.encoding(snapshot.windows(of: session)))
@@ -105,7 +105,7 @@ struct TmuxResources: Sendable {
     }
 
     private func requirePane(_ id: String) async throws -> Pane {
-        guard let pane = try await server.panes().first(where: { $0.id == id }) else {
+        guard let pane = try await server.panes().first(where: { $0.id.rawValue == id }) else {
             throw ToolError.unknownTool("no pane \(id)")
         }
         return pane

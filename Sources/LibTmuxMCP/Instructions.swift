@@ -18,14 +18,14 @@ enum Instructions {
     ) -> String {
         var sections = required(tier: tier, waitCeiling: waitCeiling)
 
-        // The caller's own pane is the one fact no tool call can re-derive: it
-        // is about this process, not about tmux.
+        // This belongs to the caller process, not to the server hierarchy.
         if let pane = caller?.paneID {
-            sections.append(
+            sections.insert(
                 """
                 You run inside tmux pane \(pane). Kill tools refuse it without \
                 confirm_self; list_panes marks it isCaller.
-                """
+                """,
+                at: min(1, sections.count)
             )
         }
 
@@ -46,12 +46,13 @@ enum Instructions {
         [
             """
             tmux through libtmux for Swift. Server > Session > Window > Pane. \
-            Target panes by id (%1): ids survive layout changes, indexes do not.
+            Target panes by %1. Target window appearances by $session:index.
             """,
 
             """
             TRIGGERS: tmux panes, windows, sessions; 'this terminal', 'send keys', \
-            'scrollback', 'copy mode'. Ids %1 @1 $1 are unambiguous.
+            'scrollback', 'copy mode'. Pane %1 and session $1 ids are unambiguous; \
+            @1 needs $session:index when its window is linked more than once.
             NOT FOR: browser tabs, editor splits (VS Code, Neovim), GUI windows \
             (i3, sway), Jupyter cells, login sessions. Ask once if genuinely unclear.
             """,
@@ -79,9 +80,10 @@ enum Instructions {
             """
             START WITH describe_server (tmux version, wait ceiling, which pane is \
             yours) and describe_filters (the vocabulary a `filter` may name).
-            ONE CALL, NOT FOUR: snapshot reads the whole hierarchy consistently; \
-            apply_workspace builds a session from one plan; run_commands batches and \
-            says which step failed. Pass `fields` when one field answers the question.
+            ONE CALL: snapshot reads the hierarchy in separate commands and reports \
+            daemon replacement; apply_workspace builds a session from one plan; \
+            run_commands batches and says which step failed. Pass `fields` when one \
+            field answers the question.
             """,
 
             """

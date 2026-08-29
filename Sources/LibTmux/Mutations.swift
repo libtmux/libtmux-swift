@@ -111,13 +111,23 @@ extension Server {
         startDirectory: String? = nil,
         windowName: String? = nil
     ) async throws(TmuxError) -> Session {
-        var arguments = ["-d", "-P", "-F", "#{session_id}", "-s", name]
+        var arguments = ["-d", "-P", "-F", Session.projection.template, "-s", name]
         if let windowName { arguments += ["-n", windowName] }
         if let startDirectory { arguments += ["-c", startDirectory] }
-        let id = try await identifier(
-            from: TmuxCommand("new-session", arguments)
-        )
-        return try await requireSession(id)
+        let reply = try await run(TmuxCommand("new-session", arguments))
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
+        }
+        let rows: [FormatRow]
+        do {
+            rows = try Session.projection.decode(reply.standardOutput)
+        } catch {
+            throw .decodingFailed(error)
+        }
+        guard rows.count == 1 else {
+            throw .invocationFailed(reason: "tmux printed \(rows.count) sessions")
+        }
+        return Session(row: rows[0], endpoint: endpoint)
     }
 
     /// Creates a window in a session, after the ones already there.
@@ -127,10 +137,11 @@ extension Server {
         startDirectory: String? = nil
     ) async throws(TmuxError) -> Window {
         try await newWindow(
-            target: session.id,
+            target: session.id.rawValue,
             placement: nil,
             named: name,
-            startDirectory: startDirectory
+            startDirectory: startDirectory,
+            guardedBy: [.session(session)]
         )
     }
 
@@ -138,21 +149,22 @@ extension Server {
     ///
     /// - Parameters:
     ///   - placement: which side of `neighbour` to take.
-    ///   - neighbour: the window to sit next to. Its session is the one the new
-    ///     window joins.
+    ///   - neighbour: the session-local window link to sit next to. Its session
+    ///     is the one the new window joins.
     ///   - name: what to call it. Left out, tmux names it after what runs in it.
     ///   - startDirectory: where the window's first pane starts.
     public func newWindow(
         _ placement: WindowPlacement,
-        _ neighbour: Window,
+        _ neighbour: WindowLink,
         named name: String? = nil,
         startDirectory: String? = nil
     ) async throws(TmuxError) -> Window {
         try await newWindow(
-            target: neighbour.id,
+            target: neighbour.target,
             placement: placement,
             named: name,
-            startDirectory: startDirectory
+            startDirectory: startDirectory,
+            guardedBy: [.windowLink(neighbour)]
         )
     }
 
@@ -160,14 +172,18 @@ extension Server {
         target: String,
         placement: WindowPlacement?,
         named name: String?,
-        startDirectory: String?
+        startDirectory: String?,
+        guardedBy values: [GuardedValue]
     ) async throws(TmuxError) -> Window {
         var arguments = ["-d", "-P", "-F", "#{window_id}", "-t", target]
         if let placement { arguments.append(placement.flag) }
         if let name { arguments += ["-n", name] }
         if let startDirectory { arguments += ["-c", startDirectory] }
-        let id = try await identifier(from: TmuxCommand("new-window", arguments))
-        return try await requireWindow(id)
+        let id = try await identifier(
+            from: TmuxCommand("new-window", arguments),
+            guardedBy: values
+        )
+        return try await requireWindow(id, incarnation: values[0].incarnation)
     }
 
     /// Splits a window's active pane, returning the pane that appeared.
@@ -189,10 +205,11 @@ extension Server {
         startDirectory: String? = nil
     ) async throws(TmuxError) -> Pane {
         try await split(
-            target: window.id,
+            target: window.id.rawValue,
             direction: direction,
             size: size,
-            startDirectory: startDirectory
+            startDirectory: startDirectory,
+            guardedBy: [.window(window)]
         )
     }
 
@@ -209,10 +226,11 @@ extension Server {
         startDirectory: String? = nil
     ) async throws(TmuxError) -> Pane {
         try await split(
-            target: pane.id,
+            target: pane.id.rawValue,
             direction: direction,
             size: size,
-            startDirectory: startDirectory
+            startDirectory: startDirectory,
+            guardedBy: [.pane(pane)]
         )
     }
 
@@ -220,27 +238,33 @@ extension Server {
         target: String,
         direction: PaneDirection,
         size: PaneSize?,
-        startDirectory: String?
+        startDirectory: String?,
+        guardedBy values: [GuardedValue]
     ) async throws(TmuxError) -> Pane {
         var arguments = ["-d", "-P", "-F", "#{pane_id}", "-t", target]
         arguments += direction.flags
         if let size { arguments += ["-l", size.argument] }
         if let startDirectory { arguments += ["-c", startDirectory] }
-        let id = try await identifier(from: TmuxCommand("split-window", arguments))
-        return try await requirePane(id)
+        let id = try await identifier(
+            from: TmuxCommand("split-window", arguments),
+            guardedBy: values
+        )
+        return try await requirePane(id, incarnation: values[0].incarnation)
     }
 
     // MARK: Changing
 
     public func rename(_ session: Session, to name: String) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("rename-session", ["-t", session.id, name])
+            TmuxCommand("rename-session", ["-t", session.id.rawValue, name]),
+            guardedBy: [.session(session)]
         )
     }
 
     public func rename(_ window: Window, to name: String) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("rename-window", ["-t", window.id, name])
+            TmuxCommand("rename-window", ["-t", window.id.rawValue, name]),
+            guardedBy: [.window(window)]
         )
     }
 
@@ -251,7 +275,8 @@ extension Server {
         _ layout: String
     ) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("select-layout", ["-t", window.id, layout])
+            TmuxCommand("select-layout", ["-t", window.id.rawValue, layout]),
+            guardedBy: [.window(window)]
         )
     }
 
@@ -264,11 +289,14 @@ extension Server {
         width: Int? = nil,
         height: Int? = nil
     ) async throws(TmuxError) {
-        var arguments = ["-t", pane.id]
+        var arguments = ["-t", pane.id.rawValue]
         if let width { arguments += ["-x", String(width)] }
         if let height { arguments += ["-y", String(height)] }
         guard arguments.count > 2 else { return }
-        try await expectSuccess(TmuxCommand("resize-pane", arguments))
+        try await expectSuccess(
+            TmuxCommand("resize-pane", arguments),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     /// Nudges a pane's boundary, leaving the rest of the layout to absorb it.
@@ -285,23 +313,33 @@ extension Server {
         try await expectSuccess(
             TmuxCommand(
                 "resize-pane",
-                ["-t", pane.id, direction.flag, String(cells)]
-            )
+                ["-t", pane.id.rawValue, direction.flag, String(cells)]
+            ),
+            guardedBy: [.pane(pane)]
         )
     }
 
     // MARK: Destroying
 
     public func kill(_ session: Session) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("kill-session", ["-t", session.id]))
+        try await expectSuccess(
+            TmuxCommand("kill-session", ["-t", session.id.rawValue]),
+            guardedBy: [.session(session)]
+        )
     }
 
     public func kill(_ window: Window) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("kill-window", ["-t", window.id]))
+        try await expectSuccess(
+            TmuxCommand("kill-window", ["-t", window.id.rawValue]),
+            guardedBy: [.window(window)]
+        )
     }
 
     public func kill(_ pane: Pane) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("kill-pane", ["-t", pane.id]))
+        try await expectSuccess(
+            TmuxCommand("kill-pane", ["-t", pane.id.rawValue]),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     // MARK: Talking to a pane
@@ -319,9 +357,12 @@ extension Server {
         to pane: Pane,
         literally: Bool = false
     ) async throws(TmuxError) {
-        var arguments = ["-t", pane.id]
+        var arguments = ["-t", pane.id.rawValue]
         if literally { arguments.append("-l") }
-        try await expectSuccess(TmuxCommand("send-keys", arguments + keys))
+        try await expectSuccess(
+            TmuxCommand("send-keys", arguments + keys),
+            guardedBy: [.pane(pane)]
+        )
     }
 
     /// Runs a shell command line in a pane, as if typed.
@@ -380,13 +421,17 @@ extension Server {
         _ pane: Pane,
         startingAt start: CaptureStart?
     ) async throws(TmuxError) -> [String] {
-        var arguments = ["-p", "-t", pane.id]
+        var arguments = ["-p", "-t", pane.id.rawValue]
         switch start {
         case .none: break
         case .start: arguments += ["-S", "-"]
         case let .line(row): arguments += ["-S", "\(row)"]
         }
-        let reply = try await run(TmuxCommand("capture-pane", arguments))
+        let reply = try await runGuarded(
+            TmuxCommand("capture-pane", arguments),
+            by: [.pane(pane)],
+            checkingTargets: false
+        )
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }
@@ -410,9 +455,15 @@ extension Server {
     // MARK: Reading one object back
 
     func identifier(
-        from command: TmuxCommand
+        from command: TmuxCommand,
+        guardedBy values: [GuardedValue]? = nil
     ) async throws(TmuxError) -> String {
-        let reply = try await run(command)
+        let reply: TmuxReply
+        if let values {
+            reply = try await runGuarded(command, by: values)
+        } else {
+            reply = try await run(command)
+        }
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }
@@ -423,22 +474,25 @@ extension Server {
         return id
     }
 
-    private func requireSession(_ id: String) async throws(TmuxError) -> Session {
-        guard let session = try await sessions().first(where: { $0.id == id }) else {
-            throw .serverRestarted
-        }
-        return session
-    }
-
-    private func requireWindow(_ id: String) async throws(TmuxError) -> Window {
-        guard let window = try await windows().first(where: { $0.id == id }) else {
+    func requireWindow(
+        _ id: String,
+        incarnation: ServerIncarnation? = nil
+    ) async throws(TmuxError) -> Window {
+        guard let window = try await windows().first(where: { $0.id.rawValue == id }),
+            incarnation == nil || window.incarnation == incarnation
+        else {
             throw .serverRestarted
         }
         return window
     }
 
-    private func requirePane(_ id: String) async throws(TmuxError) -> Pane {
-        guard let pane = try await panes().first(where: { $0.id == id }) else {
+    private func requirePane(
+        _ id: String,
+        incarnation: ServerIncarnation? = nil
+    ) async throws(TmuxError) -> Pane {
+        guard let pane = try await panes().first(where: { $0.id.rawValue == id }),
+            incarnation == nil || pane.incarnation == incarnation
+        else {
             throw .serverRestarted
         }
         return pane
@@ -446,6 +500,16 @@ extension Server {
 
     func expectSuccess(_ command: TmuxCommand) async throws(TmuxError) {
         let reply = try await run(command)
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
+        }
+    }
+
+    func expectSuccess(
+        _ command: TmuxCommand,
+        guardedBy values: [GuardedValue]
+    ) async throws(TmuxError) {
+        let reply = try await runGuarded(command, by: values)
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }

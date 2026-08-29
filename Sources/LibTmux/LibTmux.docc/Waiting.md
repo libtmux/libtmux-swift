@@ -111,8 +111,8 @@ misses words split across two notifications.
 
 So the stream is used as a doorbell. A burst of `%output` for the pane wakes
 one capture, and the matching runs against the rendered grid — the same text a
-person reads. That keeps a capture's accuracy and pays for it only when
-something actually happened.
+person reads. Captures therefore happen only after output; a separate low-rate
+liveness check is what distinguishes a removed pane from a quiet one.
 
 ## Reading the result
 
@@ -153,7 +153,7 @@ this is for:
 | Waiting for a line that has not been printed yet | Polling | waitForOutput |
 | --- | --- | --- |
 | pane captures taken | one per tick, for as long as the wait lasts | 1 capture |
-| tmux processes spent | one per capture | 4, however long it waits |
+| tmux processes spent | one per capture | 3, however long it waits |
 
 <!-- waiting-matrix:end -->
 

@@ -13,6 +13,7 @@ struct FormatField: Sendable, Hashable {
         /// terminal, so its dimensions are absent rather than zero.
         case optionalInteger
         case flag
+        case identifier(Character)
     }
 
     init(_ name: String, _ kind: Kind = .text) {
@@ -76,6 +77,17 @@ struct FormatProjection: Sendable, Hashable {
     }
 }
 
+/// Escapes text used as a direct tmux format comparison operand.
+func tmuxFormatComparisonOperand(_ value: String) -> String {
+    var escaped = ""
+    escaped.reserveCapacity(value.count)
+    for character in value {
+        if "#,}".contains(character) { escaped.append("#") }
+        escaped.append(character)
+    }
+    return escaped
+}
+
 enum FormatValue: Sendable, Hashable {
     case text(String)
     case integer(Int)
@@ -102,6 +114,9 @@ enum FormatValue: Sendable, Hashable {
             case "1": self = .flag(true)
             default: return nil
             }
+        case let .identifier(sigil):
+            guard isValidTmuxID(raw, sigil: sigil) else { return nil }
+            self = .text(raw)
         }
     }
 }
@@ -130,6 +145,13 @@ struct FormatRow: Sendable, Hashable {
         guard case let .flag(value) = values[field.name] else { return false }
         return value
     }
+
+    func identifier<ID: TmuxID>(_ field: FormatField, as _: ID.Type) -> ID {
+        guard let id = ID(rawValue: text(field)) else {
+            preconditionFailure("projection accepted an invalid \(ID.self)")
+        }
+        return id
+    }
 }
 
 /// Splits on newlines, dropping only the terminator tmux writes after the last
@@ -156,7 +178,7 @@ extension Server {
     /// one first:
     ///
     /// ```swift
-    /// let tty = try await server.format("#{pane_tty}", for: pane)
+    /// let tty = try await server.format("#{pane_tty}", for: pane, through: link)
     /// ```
     ///
     /// Ask for as many fields as you like in one template, separated by
@@ -169,25 +191,63 @@ extension Server {
         _ template: String,
         for session: Session
     ) async throws(TmuxError) -> String? {
-        try await format(template, addressing: session.id)
+        return try await format(
+            template,
+            addressing: session.id.rawValue,
+            probe: "#{session_id}",
+            expectedProbe: session.id.rawValue,
+            guardedBy: [.session(session)]
+        )
     }
 
-    /// Evaluates a tmux format against a window. See
+    /// Evaluates a tmux format against one session-local window link. See
     /// ``format(_:for:)-(String,Session)``.
     public func format(
         _ template: String,
-        for window: Window
+        for link: WindowLink
     ) async throws(TmuxError) -> String? {
-        try await format(template, addressing: window.id)
+        try await format(
+            template,
+            addressing: link.target,
+            probe: "#{session_id}:#{window_index}:#{window_id}",
+            expectedProbe:
+                "\(link.sessionID.rawValue):\(link.index):\(link.windowID.rawValue)",
+            guardedBy: [.windowLink(link)]
+        )
     }
 
-    /// Evaluates a tmux format against a pane. See
+    /// Evaluates a tmux format against a pane through one of its window links. See
     /// ``format(_:for:)-(String,Session)``.
     public func format(
+        _ template: String,
+        for pane: Pane,
+        through link: WindowLink
+    ) async throws(TmuxError) -> String? {
+        _ = try expectedIncarnation([pane.incarnation, link.incarnation])
+        guard pane.windowID == link.windowID else { throw .staleServerValue }
+        return try await format(
+            template,
+            addressing: "\(link.target).\(pane.id.rawValue)",
+            probe: "#{session_id}:#{window_index}:#{window_id}:#{pane_id}",
+            expectedProbe:
+                "\(link.sessionID.rawValue):\(link.index):\(link.windowID.rawValue):"
+                + pane.id.rawValue,
+            guardedBy: [.pane(pane), .windowLink(link)]
+        )
+    }
+
+    /// Evaluates a library-owned format whose fields are daemon-global for a pane.
+    package func formatGlobal(
         _ template: String,
         for pane: Pane
     ) async throws(TmuxError) -> String? {
-        try await format(template, addressing: pane.id)
+        try await format(
+            template,
+            addressing: pane.id.rawValue,
+            probe: "#{pane_id}",
+            expectedProbe: pane.id.rawValue,
+            guardedBy: [.pane(pane)]
+        )
     }
 
     /// Evaluates a tmux format against a target named by id.
@@ -202,11 +262,22 @@ extension Server {
         _ template: String,
         addressing target: String
     ) async throws(TmuxError) -> String? {
-        // The pane id is asked alongside the caller's template, because tmux
-        // answers a target that has gone exactly as it answers an empty field
-        // — nothing, on a zero exit — and a pane id is never empty for a
-        // target that resolves. Both travel in one command, so proving the
-        // target costs no round trip.
+        try await format(template, addressing: target, guardedBy: nil)
+    }
+
+    private func format(
+        _ template: String,
+        addressing target: String,
+        probe: String = "#{pane_id}",
+        expectedProbe: String? = nil,
+        guardedBy values: [GuardedValue]?
+    ) async throws(TmuxError) -> String? {
+        // A target probe is asked alongside the caller's template, because
+        // tmux answers a target that has gone exactly as it answers an empty
+        // field — nothing, on a zero exit. Typed targets also compare their
+        // full identity, so a stale session-local index cannot read the window
+        // that replaced it. Both travel in one command, so proving the target
+        // costs no round trip.
         //
         // Separated by the record separator rather than a newline, because a
         // connection takes a command *line*: a newline inside an argument ends
@@ -214,12 +285,16 @@ extension Server {
         // Only the first separator divides the two, so a value carrying one of
         // its own arrives whole.
         let probeSeparator = FormatProjection.separator
-        let reply = try await run(
-            rawArguments: TmuxCommand(
-                "display-message",
-                ["-p", "-t", target, "#{pane_id}\(probeSeparator)" + template]
-            ).argumentVector
+        let command = TmuxCommand(
+            "display-message",
+            ["-p", "-t", target, "\(probe)\(probeSeparator)" + template]
         )
+        let reply: TmuxReply
+        if let values {
+            reply = try await runGuarded(command, by: values, checkingTargets: false)
+        } else {
+            reply = try await run(rawArguments: command.argumentVector)
+        }
         guard reply.isSuccess else { return nil }
         var text = reply.text
         if text.hasSuffix("\n") { text.removeLast() }
@@ -228,7 +303,12 @@ extension Server {
             maxSplits: 1,
             omittingEmptySubsequences: false
         )
-        guard let probe = parts.first, !probe.isEmpty else { return nil }
+        guard let reportedProbe = parts.first else { return nil }
+        if let expectedProbe {
+            guard reportedProbe == Substring(expectedProbe) else { return nil }
+        } else if reportedProbe.isEmpty {
+            return nil
+        }
         return parts.count > 1 ? String(parts[1]) : ""
     }
 

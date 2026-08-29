@@ -1,14 +1,13 @@
-# Reading the whole server at once
+# Reading the server as one value
 
-A consistent picture, or none.
+A bounded aggregate with local relations.
 
 ## Overview
 
-A listing is one tmux command. Reading sessions, windows, panes, and clients
-separately means four, and a server can change between them.
-``Server/snapshot()`` reads all four and verifies they came from the same
-server, failing closed if a daemon died and a replacement bound the socket
-midway.
+A listing is one tmux command. ``Server/snapshot()`` runs separate listings for
+sessions, windows, panes, and clients, then returns them as one value. It reads
+the daemon incarnation before and after those listings and throws
+``TmuxError/serverRestarted`` if a replacement bound the socket midway.
 
 ```swift
 let snapshot = try await server.snapshot()
@@ -17,10 +16,10 @@ for window in snapshot.windows(of: session) {
 }
 ```
 
-Relations resolve inside the snapshot, so walking them cannot spawn tmux. A
-partial snapshot is never returned: if the reads disagree about which server
-answered them, ``TmuxError/serverRestarted`` is thrown instead of handing back a
-picture that never existed.
+Relations resolve inside the snapshot, so walking them cannot spawn tmux.
+Another client can still mutate the same daemon between listings, so a snapshot
+is not a tmux transaction and does not promise that every returned value
+existed together at one moment.
 
 ## Finding the server you are already inside
 

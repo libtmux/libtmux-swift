@@ -13,6 +13,9 @@ enum ControlEvent: Sendable, Hashable {
 
     /// The server closed the connection.
     case exited
+
+    /// The stream broke its own block framing.
+    case protocolViolation(String)
 }
 
 public struct ControlReply: Sendable, Hashable {
@@ -23,13 +26,24 @@ public struct ControlReply: Sendable, Hashable {
     /// What the command printed, one entry per line, with the block's own
     /// `%begin` and `%end` removed.
     public let lines: [String]
+    let isControlCommand: Bool
     /// tmux closed the block with `%error` rather than `%end`. The reason is in
     /// ``lines``, the same place a successful reply's output is.
     public let isError: Bool
 
     public init(number: Int, lines: [String], isError: Bool) {
+        self.init(
+            number: number,
+            lines: lines,
+            isControlCommand: false,
+            isError: isError
+        )
+    }
+
+    init(number: Int, lines: [String], isControlCommand: Bool, isError: Bool) {
         self.number = number
         self.lines = lines
+        self.isControlCommand = isControlCommand
         self.isError = isError
     }
 }
@@ -54,43 +68,59 @@ public struct ControlNotification: Sendable, Hashable {
 /// same start yields the same events, which is what makes the protocol testable
 /// without a live server.
 struct ControlProtocolParser: Sendable {
-    private var openBlock: (number: Int, lines: [String])?
+    private var openBlock: (metadata: BlockMetadata, lines: [String])?
 
     init() {}
 
     /// Consumes one line, returning an event if that line completed one.
     mutating func consume(_ line: String) -> ControlEvent? {
+        if var block = openBlock {
+            if line.hasPrefix("%") {
+                let (marker, rest) = splitOnFirstSpace(String(line.dropFirst()))
+                if (marker == "end" || marker == "error"),
+                    let metadata = blockMetadata(rest),
+                    metadata == block.metadata
+                {
+                    openBlock = nil
+                    return .reply(
+                        ControlReply(
+                            number: block.metadata.number,
+                            lines: block.lines,
+                            isControlCommand: block.metadata.isControlCommand,
+                            isError: marker == "error"
+                        )
+                    )
+                }
+            }
+            block.lines.append(line)
+            openBlock = block
+            return nil
+        }
+
         guard line.hasPrefix("%") else {
-            // Inside a block this is output; outside one tmux does not send
-            // bare lines, and inventing an event for one would be a guess.
-            openBlock?.lines.append(line)
+            // Outside a block tmux does not send bare lines, and inventing an
+            // event for one would be a guess.
             return nil
         }
 
         let (marker, rest) = splitOnFirstSpace(String(line.dropFirst()))
         switch marker {
         case "begin":
-            openBlock = (number: blockNumber(rest) ?? 0, lines: [])
+            guard let metadata = blockMetadata(rest) else {
+                return .protocolViolation("malformed %begin metadata")
+            }
+            openBlock = (metadata: metadata, lines: [])
             return nil
         case "end", "error":
-            guard let block = openBlock else { return nil }
-            openBlock = nil
-            return .reply(
-                ControlReply(
-                    number: block.number,
-                    lines: block.lines,
-                    isError: marker == "error"
-                )
+            guard let metadata = blockMetadata(rest) else {
+                return .protocolViolation("malformed %\(marker) metadata")
+            }
+            return .protocolViolation(
+                "unmatched %\(marker) for command \(metadata.number)"
             )
         case "exit":
             return .exited
         default:
-            // A notification can only arrive between blocks. Treating one as
-            // block output would silently corrupt a command's reply.
-            guard openBlock == nil else {
-                openBlock?.lines.append(line)
-                return nil
-            }
             return .notification(
                 ControlNotification(name: marker, arguments: rest)
             )
@@ -101,11 +131,25 @@ struct ControlProtocolParser: Sendable {
     public var isInsideBlock: Bool { openBlock != nil }
 }
 
-/// `%begin <timestamp> <number> <flags>` — the number is the second field.
-private func blockNumber(_ arguments: String) -> Int? {
+/// `%begin <timestamp> <number> <flags>`.
+private struct BlockMetadata: Sendable, Hashable {
+    let timestamp: Int
+    let number: Int
+    let flags: Int
+
+    var isControlCommand: Bool { flags != 0 }
+}
+
+private func blockMetadata(_ arguments: String) -> BlockMetadata? {
     let fields = arguments.split(separator: " ")
-    guard fields.count >= 2 else { return nil }
-    return Int(fields[1])
+    guard fields.count == 3,
+        let timestamp = Int(fields[0]),
+        let number = Int(fields[1]),
+        let flags = Int(fields[2])
+    else {
+        return nil
+    }
+    return BlockMetadata(timestamp: timestamp, number: number, flags: flags)
 }
 
 private func splitOnFirstSpace(_ line: String) -> (String, String) {

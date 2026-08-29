@@ -111,15 +111,16 @@ struct WaitingTests {
         try await withTmuxServer { server in
             let pane = try await onlyPane(server)
             let waited = try await withThrowingTaskGroup(of: OutputWait?.self) { group in
-                group.addTask { try await waitingOnOutput(server, pane: pane) }
+                group.addTask {
+                    try await waitingOnOutput(server, pane: pane)
+                }
                 group.addTask {
                     var round = 0
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .milliseconds(250))
                         round += 1
-                        // Numbered because a match must be a row that was not
-                        // already on screen, and repeating one identical line
-                        // would never once count as new.
+                        // Numbered so each attempt is visible in a failed test's
+                        // captured tail.
                         try? await server.run(
                             "printf '\\nListening on 80\\(round)\\n'",
                             in: pane

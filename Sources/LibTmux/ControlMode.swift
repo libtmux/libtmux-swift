@@ -14,13 +14,39 @@ import Subprocess
 /// as far as its first failure. Without this the surplus blocks outlive the
 /// call that caused them and answer whichever command asks next.
 private struct SubmittedLine {
-    let commands: Int
+    enum Completion {
+        case counted(commands: Int)
+        case fenced(marker: String)
+    }
+
+    let completion: Completion
     var collected: [ControlReply] = []
+    var completionError: TmuxError?
+    var answered = false
     let continuation: CheckedContinuation<ControlReply, any Error>
 
-    /// Whether tmux has said everything it is going to about this line.
-    var isAnswered: Bool {
-        collected.count >= commands || collected.contains(where: \.isError)
+    mutating func consume(_ reply: ControlReply) {
+        switch completion {
+        case let .counted(commands):
+            guard reply.isControlCommand else { return }
+            collected.append(reply)
+            answered = collected.count >= commands || reply.isError
+        case let .fenced(marker):
+            consumeFenced(reply, marker: marker)
+        }
+    }
+
+    private mutating func consumeFenced(_ reply: ControlReply, marker: String) {
+        guard reply.isControlCommand else { return }
+        collected.append(reply)
+        if reply.lines.contains(marker) {
+            answered = true
+            if reply.isError {
+                completionError = .invocationFailed(
+                    reason: "guarded request ended with an invalid control marker"
+                )
+            }
+        }
     }
 
     /// The blocks as the one reply the caller asked for. A process concatenates
@@ -106,12 +132,26 @@ public actor ControlSession {
         // Checked again: waiting for the attach suspends, and the connection
         // can end while it does.
         if let closure { throw closure }
+        return try await enqueue(line: line, completion: .counted(commands: commands))
+    }
+
+    func sendFenced(line: String, marker: String) async throws -> ControlReply {
+        if let closure { throw closure }
+        try await waitUntilAttached()
+        if let closure { throw closure }
+        return try await enqueue(line: line, completion: .fenced(marker: marker))
+    }
+
+    private func enqueue(
+        line: String,
+        completion: SubmittedLine.Completion
+    ) async throws -> ControlReply {
         return try await withCheckedThrowingContinuation { continuation in
             // Registered before the write, because the reply can arrive while
             // the write is still suspended and a reply with nobody waiting is
             // discarded.
             pending.append(
-                SubmittedLine(commands: commands, continuation: continuation)
+                SubmittedLine(completion: completion, continuation: continuation)
             )
             let writer = self.writer
             // Chained to the previous send: the queue is ordered by who
@@ -166,14 +206,24 @@ public actor ControlSession {
                 return
             }
             guard !pending.isEmpty else { return }
-            pending[0].collected.append(reply)
-            guard pending[0].isAnswered else { return }
+            pending[0].consume(reply)
+            guard pending[0].answered else { return }
             let answered = pending.removeFirst()
-            answered.continuation.resume(returning: answered.reply)
+            if let error = answered.completionError {
+                answered.continuation.resume(throwing: error)
+            } else {
+                answered.continuation.resume(returning: answered.reply)
+            }
         case let .notification(notification):
             broadcast.yield(notification)
         case .exited:
             finish(throwing: TmuxError.connectionClosed)
+        case let .protocolViolation(reason):
+            finish(
+                throwing: TmuxError.invocationFailed(
+                    reason: "control protocol violation: \(reason)"
+                )
+            )
         }
     }
 
@@ -185,6 +235,7 @@ public actor ControlSession {
     /// that owned it returned. A caller told its command was cancelled would
     /// reasonably retry; one told the connection closed knows to reopen it.
     func finish(throwing error: (any Error)? = nil) {
+        guard closure == nil else { return }
         let reason = error ?? TmuxError.connectionClosed
         closure = reason
         let waiters = pending
@@ -463,6 +514,31 @@ extension ControlSession {
 
         // A process ends its output with a newline; the connection reports
         // lines. Restore it, so both spellings decode to the same rows.
+        let bytes =
+            reply.lines.isEmpty
+            ? []
+            : Array((reply.lines.joined(separator: "\n") + "\n").utf8)
+        return TmuxReply(
+            standardOutput: reply.isError ? [] : bytes,
+            standardError: reply.isError ? bytes : [],
+            exitCode: reply.isError ? 1 : 0
+        )
+    }
+
+    func reply(to request: GuardedRequest) async throws(TmuxError) -> TmuxReply {
+        try requireSingleLine([request.controlLine])
+        let reply: ControlReply
+        do {
+            reply = try await sendFenced(
+                line: request.controlLine,
+                marker: request.fenceMarker
+            )
+        } catch let error as TmuxError {
+            throw error
+        } catch {
+            throw TmuxError.invocationFailed(reason: String(describing: error))
+        }
+
         let bytes =
             reply.lines.isEmpty
             ? []

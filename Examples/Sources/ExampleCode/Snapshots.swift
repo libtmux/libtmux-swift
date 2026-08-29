@@ -2,7 +2,7 @@
 
 import LibTmux
 
-public func walkOneConsistentPicture(
+public func walkOneSnapshot(
     _ server: Server,
     _ session: Session
 ) async throws -> Snapshot {

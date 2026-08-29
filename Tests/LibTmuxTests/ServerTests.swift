@@ -203,7 +203,7 @@ struct RealTmuxTests {
             let sessions = try await server.sessions()
             #expect(sessions.count == 1)
             #expect(sessions[0].name == "bootstrap")
-            #expect(sessions[0].id.hasPrefix("$"))
+            #expect(sessions[0].id.rawValue.hasPrefix("$"))
             #expect(sessions[0].windowCount >= 1)
             #expect(!sessions[0].isAttached)
         }
@@ -280,6 +280,7 @@ struct RealTmuxTests {
         try await withTmuxServer { server in
             let sessions = try await server.sessions()
             let windows = try await server.windows()
+            let links = try await server.windowLinks()
             let panes = try await server.panes()
 
             let session = try #require(sessions.first)
@@ -287,13 +288,14 @@ struct RealTmuxTests {
             #expect(panes.count == 1)
 
             let window = try #require(windows.first)
+            let link = try #require(links.first)
             let pane = try #require(panes.first)
-            #expect(window.id.hasPrefix("@"))
-            #expect(pane.id.hasPrefix("%"))
-            #expect(window.sessionID == session.id)
+            #expect(window.id.rawValue.hasPrefix("@"))
+            #expect(pane.id.rawValue.hasPrefix("%"))
+            #expect(link.sessionID == session.id)
+            #expect(link.windowID == window.id)
             #expect(pane.windowID == window.id)
-            #expect(pane.sessionID == session.id)
-            #expect(window.isActive)
+            #expect(link.isActive)
             #expect(pane.isActive)
             #expect(pane.width > 0)
             #expect(pane.height > 0)
@@ -316,6 +318,38 @@ struct RealTmuxTests {
             #expect(panes.allSatisfy { $0.windowID == window.id })
             #expect(Set(panes.map(\.id)).count == 2)
             #expect(panes.filter(\.isActive).count == 1)
+        }
+    }
+
+    @Test("linking a window does not duplicate daemon-global models")
+    func linkingAWindowDoesNotDuplicateDaemonGlobalModels() async throws {
+        try await withTmuxServer { server in
+            let bootstrapWindow = try #require(try await server.windows().first)
+            let created = try await server.run(
+                TmuxCommand("new-session", ["-d", "-s", "linked"])
+            )
+            #expect(created.isSuccess, Comment(rawValue: created.errorText))
+
+            let linked = try await server.run(
+                TmuxCommand(
+                    "link-window", ["-s", bootstrapWindow.id.rawValue, "-t", "linked:"])
+            )
+            #expect(linked.isSuccess, Comment(rawValue: linked.errorText))
+
+            let links = try await server.windowLinks().filter {
+                $0.windowID == bootstrapWindow.id
+            }
+            #expect(links.count == 2)
+
+            let windows = try await server.windows().filter {
+                $0.id == bootstrapWindow.id
+            }
+            #expect(windows.count == 1)
+
+            let panes = try await server.panes().filter {
+                $0.windowID == bootstrapWindow.id
+            }
+            #expect(panes.count == 1)
         }
     }
 

@@ -20,12 +20,20 @@ public protocol Filterable: Sendable {
 
     /// Reads the field an id names, or `nil` if this model has no such field.
     static func filterValue(_ id: String, of root: Self) -> FilterValue?
+
+    /// Whether an id is part of this model's current wire vocabulary.
+    static func isFilterFieldID(_ id: String) -> Bool
 }
 
 /// Why a filter could not be built.
 public enum QueryConstructionError: Error, Sendable, Hashable {
     /// The key path does not name a filterable field of this model.
     case unknownField
+}
+
+/// Why a decoded filter cannot be evaluated safely.
+public enum FilterValidationError: Error, Sendable, Hashable {
+    case unknownField(String)
 }
 
 /// How a filter compares one field.
@@ -96,6 +104,32 @@ public struct FilterOperator<Value>: Sendable {
         Self(.matches(pattern: pattern, caseInsensitive: caseInsensitive))
     }
 
+    // MARK: Typed identifiers
+
+    public static func equals(_ value: SessionID) -> Self where Value == SessionID {
+        Self(.equals(.text(value.rawValue)))
+    }
+
+    public static func isIn(_ values: [SessionID]) -> Self where Value == SessionID {
+        Self(.isIn(values.map { .text($0.rawValue) }))
+    }
+
+    public static func equals(_ value: WindowID) -> Self where Value == WindowID {
+        Self(.equals(.text(value.rawValue)))
+    }
+
+    public static func isIn(_ values: [WindowID]) -> Self where Value == WindowID {
+        Self(.isIn(values.map { .text($0.rawValue) }))
+    }
+
+    public static func equals(_ value: PaneID) -> Self where Value == PaneID {
+        Self(.equals(.text(value.rawValue)))
+    }
+
+    public static func isIn(_ values: [PaneID]) -> Self where Value == PaneID {
+        Self(.isIn(values.map { .text($0.rawValue) }))
+    }
+
     // MARK: Integer
 
     public static func equals(_ value: Int) -> Self where Value == Int {
@@ -157,6 +191,20 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
             return children.contains { $0.matches(root) }
         case let .not(child):
             return !child.matches(root)
+        }
+    }
+
+    /// Rejects field ids this build does not understand anywhere in the tree.
+    public func validate() throws(FilterValidationError) {
+        switch self {
+        case let .comparison(fieldID, _):
+            guard Root.isFilterFieldID(fieldID) else {
+                throw .unknownField(fieldID)
+            }
+        case let .and(children), let .or(children):
+            for child in children { try child.validate() }
+        case let .not(child):
+            try child.validate()
         }
     }
 }

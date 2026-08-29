@@ -44,14 +44,16 @@ struct ModeProbeTests {
             let session = try await server.newSession(named: "work")
 
             let window = try await server.connected(attachingTo: "bootstrap") { server, _ in
-                try await server.newWindow(in: session, named: "made-over-the-wire")
+                try await server.newWindow(in: session, named: "made-over-the-wire;")
             }
-            #expect(window.name == "made-over-the-wire")
+            #expect(window.name == "made-over-the-wire;")
+
+            try await server.rename(window, to: "renamed-direct;")
 
             // Visible to a plain process afterwards: the connection did the
             // work, not a copy of it.
             let windows = try await server.windows()
-            #expect(windows.contains { $0.id == window.id })
+            #expect(windows.contains { $0.id == window.id && $0.name == "renamed-direct;" })
         }
     }
 
@@ -101,7 +103,7 @@ struct ModeProbeTests {
             for index in 0..<4 {
                 list = list.then(
                     "new-window",
-                    ["-d", "-t", session.id, "-n", "listed\(index)"]
+                    ["-d", "-t", session.id.rawValue, "-n", "listed\(index)"]
                 )
             }
 
@@ -126,12 +128,15 @@ struct ModeProbeTests {
     func formatsCarryOverTheConnection() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let link = try #require(
+                try await server.windowLinks().first { $0.windowID == pane.windowID }
+            )
 
-            let direct = try await server.format("#{pane_tty}", for: pane)
+            let direct = try await server.format("#{pane_tty}", for: pane, through: link)
             let connected = try await server.connected(attachingTo: "bootstrap") {
                 server,
                 _ in
-                try await server.format("#{pane_tty}", for: pane)
+                try await server.format("#{pane_tty}", for: pane, through: link)
             }
             #expect(connected == direct)
             #expect(connected?.hasPrefix("/dev/") == true)

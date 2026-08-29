@@ -96,7 +96,8 @@ let scenarios: [Scenario] = [
             guard let session = try await server.sessions().first else { return "-" }
             var list = TmuxCommandList()
             for index in 0..<5 {
-                list = list.then("new-window", ["-d", "-t", session.id, "-n", "w\(index)"])
+                list = list.then(
+                    "new-window", ["-d", "-t", session.id.rawValue, "-n", "w\(index)"])
             }
             _ = try await server.run(list)
             return "\(try await server.windows().count) windows"
@@ -581,7 +582,10 @@ func measureWaiting(quietFor delay: Duration) async throws
     return (polled, awaited)
 }
 
-enum BenchError: Error { case noPane }
+enum BenchError: Error {
+    case noPane
+    case noWindowLink
+}
 
 // Five runs here too: a latency claim from one sample is an anecdote.
 var polledRuns: [Measurement] = []

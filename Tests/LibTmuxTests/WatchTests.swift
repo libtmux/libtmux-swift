@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -30,9 +31,8 @@ struct WatchTests {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(250))
                     round += 1
-                    // Numbered, because a match must be a row that was not
-                    // already on screen: repeating one identical line would
-                    // print forever and never once count as new.
+                    // Numbered so a failed wait's tail says how long the
+                    // printer was active.
                     try? await server.run("printf '\\n\(text) \(round)\\n'", in: pane)
                 }
                 return nil
@@ -166,6 +166,124 @@ struct WatchTests {
         }
     }
 
+    @Test("a repeated line on a multiply linked pane is fresh output")
+    func repeatedIdenticalLineIsFresh() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let source = try #require(
+                try await server.windowLinks().first { $0.windowID == pane.windowID }
+            )
+            let destination = try await server.newSession(named: "wait-destination")
+            _ = try await server.link(source, into: destination)
+            _ = try await server.link(source, into: destination)
+            let channel = "libtmux-test-echo-off-\(UUID().uuidString)"
+            try await server.run(
+                "stty -echo; \(server.shellInvocation) wait-for -S \(channel)",
+                in: pane
+            )
+            try await server.wait(for: channel)
+            let seeded = "libtmux-test-seeded-\(UUID().uuidString)"
+            try await server.run(
+                "printf 'same-marker\\n'; \(server.shellInvocation) wait-for -S \(seeded)",
+                in: pane
+            )
+            try await server.wait(for: seeded)
+
+            let result = try await withThrowingTaskGroup(of: OutputWait?.self) { group in
+                group.addTask {
+                    try await server.waitForOutput(
+                        in: pane,
+                        matching: ["^same-marker$"],
+                        requiringFreshOutput: true,
+                        timeout: .seconds(3)
+                    )
+                }
+                group.addTask {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        try? await server.run("printf '\\nsame-marker\\n'", in: pane)
+                    }
+                    return nil
+                }
+                var answer: OutputWait?
+                while let next = try await group.next() {
+                    if let next {
+                        answer = next
+                        break
+                    }
+                }
+                group.cancelAll()
+                return try #require(answer)
+            }
+
+            #expect(result.outcome == .matched)
+            #expect(result.matched == "^same-marker$")
+            #expect(result.sawNewOutput)
+        }
+    }
+
+    @Test("removing a pane ends its wait")
+    func removedPaneEndsItsWait() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            _ = try await server.split(pane)
+
+            let result = try await withThrowingTaskGroup(of: OutputWait?.self) { group in
+                group.addTask {
+                    try await server.waitForOutput(
+                        in: pane,
+                        matching: ["never-appears"],
+                        timeout: .seconds(5)
+                    )
+                }
+                group.addTask {
+                    try await Task.sleep(for: .milliseconds(500))
+                    try await server.kill(pane)
+                    return nil
+                }
+                var answer: OutputWait?
+                while let next = try await group.next() {
+                    if let next {
+                        answer = next
+                        break
+                    }
+                }
+                group.cancelAll()
+                return try #require(answer)
+            }
+
+            #expect(result.outcome == .paneClosed)
+            #expect(result.seconds < 4)
+        }
+    }
+
+    @Test("output from a pane respawn ends an established wait")
+    func respawnedPaneOutputIsNotLost() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let command = TmuxCommand(
+                "respawn-pane",
+                [
+                    "-k", "-t", pane.id.rawValue,
+                    "printf 'after-respawn\\n'; exec sleep 30",
+                ]
+            ).parsedString
+            let hook = try await server.setHook("client-attached", to: command)
+            #expect(hook.isSuccess)
+
+            let result = try await server.waitForOutput(
+                in: pane,
+                matching: ["^after-respawn$"],
+                requiringFreshOutput: true,
+                timeout: .seconds(3)
+            )
+
+            #expect(result.outcome == .matched)
+            #expect(result.matched == "^after-respawn$")
+            #expect(result.sawNewOutput)
+        }
+    }
+
     @Test("a subscription reports the foreground command changing")
     func subscriptionReportsCommandChange() async throws {
         try await withTmuxServer { server in
@@ -227,6 +345,23 @@ struct WatchTests {
         #expect(change.windowIndex == nil)
         #expect(change.paneID == nil)
         #expect(change.value == "main/1")
+    }
+
+    @Test(
+        "malformed subscription fields are refused",
+        arguments: [
+            "cmd $01 @1 2 %3 : value",
+            "cmd $0 @01 2 %3 : value",
+            "cmd $0 @1 two %3 : value",
+            "cmd $0 @1 2 %03 : value",
+        ]
+    )
+    func malformedSubscriptionFieldsAreRefused(_ arguments: String) {
+        #expect(
+            SubscriptionChange(
+                ControlNotification(name: "subscription-changed", arguments: arguments)
+            ) == nil
+        )
     }
 
     @Test("any other notification is not a subscription change")

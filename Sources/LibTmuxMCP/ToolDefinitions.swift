@@ -21,6 +21,11 @@ extension TmuxTools {
         isRequired: true
     )
 
+    private static let paneWindowLink = ToolArgument(
+        name: "window_link",
+        summary: "Exact $session:index link. Required only when the pane has several links."
+    )
+
     private static let fields = ToolArgument(
         name: "fields",
         summary:
@@ -192,15 +197,15 @@ extension TmuxTools {
         ),
         ToolDefinition(
             name: "snapshot",
-            title: "Read the whole hierarchy at once",
+            title: "Read the server as one value",
             summary:
-                "Every session, window, pane and client as one consistent picture.",
+                "Sessions, windows, panes and clients collected from separate listings.",
             detail: """
-                One call instead of walking the hierarchy level by level, and the \
-                only read that proves what it returns existed together: the server's \
-                identity is checked before and after, so a daemon that died and was \
-                replaced mid-read is reported rather than described. Prefer this \
-                whenever you want more than one level.
+                One tool call instead of walking the hierarchy level by level. The \
+                daemon identity is checked before and after the listings, so a daemon \
+                replacement is reported. Another client can mutate the same daemon \
+                between listings, so the result is not a tmux transaction. Prefer \
+                this whenever you want more than one level.
                 """,
             tier: .readonly,
             isIdempotent: true
@@ -486,13 +491,13 @@ extension TmuxTools {
             name: "wait_for_output",
             title: "Wait for a pane to print something",
             summary:
-                "Blocks until a pane prints matching text, driven by tmux events "
-                + "rather than by polling.",
+                "Blocks until a pane prints matching text, with tmux output events "
+                + "driving each capture.",
             detail: """
                 For output you did not author: a daemon printing `ready`, a dev server \
                 someone else started, a build you attached to. tmux pushes pane output \
-                over a control connection, so a quiet pane costs nothing while this \
-                waits.
+                over a control connection. A low-rate liveness check detects a pane \
+                removed while it is quiet.
 
                 Omit `patterns` to wait for any new output at all — the right choice \
                 when what will be printed is not known. Always pass `stops` when a \
@@ -586,6 +591,7 @@ extension TmuxTools {
                     isRequired: true
                 ),
                 paneTarget,
+                paneWindowLink,
                 ToolArgument(
                     name: "matching",
                     summary:
@@ -843,7 +849,12 @@ extension TmuxTools {
                 """,
             tier: .mutating,
             isIdempotent: true,
-            arguments: [target("The pane or window id to make active.")],
+            arguments: [
+                target(
+                    "A pane id (%1) or exact window link ($session:index). A window id "
+                        + "(@1) works only when it has one link."
+                )
+            ],
             outputSchema: Schema.object(
                 ["kind": Schema.string, "id": Schema.string],
                 required: ["kind", "id"]

@@ -10,15 +10,20 @@ struct MutationTests {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "made", windowName: "first")
             #expect(session.name == "made")
-            #expect(session.id.hasPrefix("$"))
+            #expect(session.id.rawValue.hasPrefix("$"))
 
             let window = try await server.newWindow(in: session, named: "second")
             #expect(window.name == "second")
-            #expect(window.sessionID == session.id)
+            let link = try #require(
+                try await server.windowLinks().first {
+                    $0.windowID == window.id && $0.sessionID == session.id
+                }
+            )
+            #expect(link.windowID == window.id)
 
             let pane = try await server.splitWindow(window)
             #expect(pane.windowID == window.id)
-            #expect(pane.id.hasPrefix("%"))
+            #expect(pane.id.rawValue.hasPrefix("%"))
         }
     }
 
@@ -82,21 +87,43 @@ struct MutationTests {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "place")
             let anchor = try await server.newWindow(in: session, named: "anchor")
-            _ = try await server.newWindow(.after, anchor, named: "after")
-            _ = try await server.newWindow(.before, anchor, named: "before")
+            let anchorLink = try #require(
+                try await server.windowLinks().first { $0.windowID == anchor.id }
+            )
+            _ = try await server.newWindow(.after, anchorLink, named: "after")
+            _ = try await server.newWindow(.before, anchorLink, named: "before")
 
             // Read back in tmux's order rather than trusting the indices each
             // window had when it was made: inserting before one renumbers it
             // and everything after it.
-            let names = try await server.windows()
-                .filter { $0.sessionID == session.id }
+            let snapshot = try await server.snapshot()
+            let names = snapshot.windowLinks(of: session)
                 .sorted { $0.index < $1.index }
-                .map(\.name)
+                .compactMap { link in
+                    snapshot.windows.first { $0.id == link.windowID }?.name
+                }
             let before = try #require(names.firstIndex(of: "before"))
             let middle = try #require(names.firstIndex(of: "anchor"))
             let after = try #require(names.firstIndex(of: "after"))
             #expect(before < middle, "\(names)")
             #expect(middle < after, "\(names)")
+        }
+    }
+
+    @Test("relative creation uses the selected link's session")
+    func relativeCreationUsesTheSelectedLinkSession() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.windowLinks().first)
+            let destination = try await server.newSession(named: "place-linked")
+            let destinationLink = try await server.link(source, into: destination)
+
+            let created = try await server.newWindow(
+                .after, destinationLink, named: "beside-link")
+            let appearances = try await server.windowLinks()
+                .filter { $0.windowID == created.id }
+
+            #expect(appearances.map(\.sessionID) == [destination.id])
+            #expect(appearances.map(\.index) == [destinationLink.index + 1])
         }
     }
 

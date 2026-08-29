@@ -1,36 +1,37 @@
-/// Every object on one server, read as one consistent picture.
+/// Every object read from one daemon incarnation.
 ///
-/// A snapshot is taken across several tmux commands, so it carries the server
-/// incarnation it was read from. If the daemon died and a new one bound the
-/// same socket midway, the two reads describe different servers, and
-/// ``Server/snapshot()`` reports that rather than handing back a picture that
-/// never existed.
+/// A snapshot spans several tmux commands. It rejects a daemon replacement
+/// during capture, but another client can still mutate one daemon between its
+/// listings; this is a bounded aggregate, not a tmux transaction.
 public struct Snapshot: Sendable, Hashable, Codable {
-    /// The server process the whole capture came from. A restart changes it,
-    /// which is what makes the capture verifiable.
-    public let serverProcessID: Int
+    /// The daemon the whole capture came from.
+    public let incarnation: ServerIncarnation
+    public var serverProcessID: Int { incarnation.processID }
     /// Every session that existed when the capture ran, in tmux's own order.
     /// These are values: walking them cannot reach tmux again, so a relation
     /// resolved here is resolved for good.
     public let sessions: [Session]
-    /// Every window, on the same terms as ``sessions``. A window linked into
-    /// more than one session appears once per session.
+    /// Every underlying window, on the same terms as ``sessions``.
     public let windows: [Window]
+    /// Every session-local appearance of those windows.
+    public let windowLinks: [WindowLink]
     /// Every pane, on the same terms as ``sessions``.
     public let panes: [Pane]
     /// Every attached client, on the same terms as ``sessions``.
     public let clients: [Client]
 
     public init(
-        serverProcessID: Int,
+        incarnation: ServerIncarnation,
         sessions: [Session],
         windows: [Window],
+        windowLinks: [WindowLink],
         panes: [Pane],
         clients: [Client]
     ) {
-        self.serverProcessID = serverProcessID
+        self.incarnation = incarnation
         self.sessions = sessions
         self.windows = windows
+        self.windowLinks = windowLinks
         self.panes = panes
         self.clients = clients
     }
@@ -41,34 +42,81 @@ public struct Snapshot: Sendable, Hashable, Codable {
 extension Snapshot {
     /// The windows of a session, in tmux's order.
     public func windows(of session: Session) -> [Window] {
-        windows.filter { $0.sessionID == session.id }
+        guard session.incarnation == incarnation else { return [] }
+        let byID = Dictionary(
+            fromIncarnation(windows).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var seen: Set<WindowID> = []
+        return windowLinks(of: session).compactMap { link in
+            guard let window = byID[link.windowID], seen.insert(link.windowID).inserted else {
+                return nil
+            }
+            return window
+        }
+    }
+
+    /// The session-local window links of a session, in tmux's order.
+    public func windowLinks(of session: Session) -> [WindowLink] {
+        guard session.incarnation == incarnation else { return [] }
+        return fromIncarnation(windowLinks).filter { $0.sessionID == session.id }
+    }
+
+    /// Every link to a window, including repeated links in one session.
+    public func links(of window: Window) -> [WindowLink] {
+        guard window.incarnation == incarnation else { return [] }
+        return fromIncarnation(windowLinks).filter { $0.windowID == window.id }
     }
 
     /// The panes of a window, in tmux's order.
     public func panes(of window: Window) -> [Pane] {
-        panes.filter { $0.windowID == window.id }
+        guard window.incarnation == incarnation else { return [] }
+        return fromIncarnation(panes).filter { $0.windowID == window.id }
     }
 
     /// Every pane in a session, across all its windows.
     public func panes(of session: Session) -> [Pane] {
-        panes.filter { $0.sessionID == session.id }
+        guard session.incarnation == incarnation else { return [] }
+        let byWindow = Dictionary(grouping: fromIncarnation(panes), by: \.windowID)
+        var seen: Set<PaneID> = []
+        return windowLinks(of: session)
+            .flatMap { byWindow[$0.windowID] ?? [] }
+            .filter { seen.insert($0.id).inserted }
     }
 
-    /// The session a window belongs to, if the snapshot still holds it.
-    public func session(of window: Window) -> Session? {
-        sessions.first { $0.id == window.sessionID }
+    /// Every session linking a window, in tmux's order.
+    public func sessions(of window: Window) -> [Session] {
+        guard window.incarnation == incarnation else { return [] }
+        let ids = Set(links(of: window).map(\.sessionID))
+        return fromIncarnation(sessions).filter { ids.contains($0.id) }
     }
 
     /// The session a client is attached to, if the snapshot still holds it.
     public func session(of client: Client) -> Session? {
-        sessions.first { $0.id == client.sessionID }
+        guard client.incarnation == incarnation else { return nil }
+        return fromIncarnation(sessions).first { $0.id == client.sessionID }
     }
 
     /// The clients attached to a session.
     public func clients(of session: Session) -> [Client] {
-        clients.filter { $0.sessionID == session.id }
+        guard session.incarnation == incarnation else { return [] }
+        return fromIncarnation(clients).filter { $0.sessionID == session.id }
+    }
+
+    private func fromIncarnation<Value: SnapshotMember>(_ values: [Value]) -> [Value] {
+        values.filter { $0.incarnation == incarnation }
     }
 }
+
+private protocol SnapshotMember {
+    var incarnation: ServerIncarnation { get }
+}
+
+extension Session: SnapshotMember {}
+extension Window: SnapshotMember {}
+extension WindowLink: SnapshotMember {}
+extension Pane: SnapshotMember {}
+extension Client: SnapshotMember {}
 
 /// How many related objects have to match.
 public enum RelationQuantifier: String, Sendable, Hashable, Codable {
@@ -98,7 +146,7 @@ extension Snapshot {
         _ quantifier: RelationQuantifier,
         ofPanes expression: FilterExpr<Pane>
     ) -> [Session] {
-        sessions.filter { session in
+        fromIncarnation(sessions).filter { session in
             let related = panes(of: session)
             return quantifier.holds(
                 over: related.count(where: expression.matches),
@@ -112,7 +160,7 @@ extension Snapshot {
         _ quantifier: RelationQuantifier,
         ofWindows expression: FilterExpr<Window>
     ) -> [Session] {
-        sessions.filter { session in
+        fromIncarnation(sessions).filter { session in
             let related = windows(of: session)
             return quantifier.holds(
                 over: related.count(where: expression.matches),
@@ -126,7 +174,7 @@ extension Snapshot {
         _ quantifier: RelationQuantifier,
         ofPanes expression: FilterExpr<Pane>
     ) -> [Window] {
-        windows.filter { window in
+        fromIncarnation(windows).filter { window in
             let related = panes(of: window)
             return quantifier.holds(
                 over: related.count(where: expression.matches),
@@ -138,20 +186,30 @@ extension Snapshot {
     /// Panes whose window matches — the to-one direction, where a quantifier
     /// would say nothing.
     public func panes(inWindow expression: FilterExpr<Window>) -> [Pane] {
-        let matching = Set(windows.filter(expression).map(\.id))
-        return panes.filter { matching.contains($0.windowID) }
+        let matching = Set(fromIncarnation(windows).filter(expression).map(\.id))
+        return fromIncarnation(panes).filter { matching.contains($0.windowID) }
     }
 
     /// Panes whose session matches.
     public func panes(inSession expression: FilterExpr<Session>) -> [Pane] {
-        let matching = Set(sessions.filter(expression).map(\.id))
-        return panes.filter { matching.contains($0.sessionID) }
+        let matching = Set(fromIncarnation(sessions).filter(expression).map(\.id))
+        let windowIDs = Set(
+            fromIncarnation(windowLinks).lazy.filter { matching.contains($0.sessionID) }.map(
+                \.windowID
+            )
+        )
+        return fromIncarnation(panes).filter { windowIDs.contains($0.windowID) }
     }
 
     /// Windows whose session matches.
     public func windows(inSession expression: FilterExpr<Session>) -> [Window] {
-        let matching = Set(sessions.filter(expression).map(\.id))
-        return windows.filter { matching.contains($0.sessionID) }
+        let matching = Set(fromIncarnation(sessions).filter(expression).map(\.id))
+        let linked = Set(
+            fromIncarnation(windowLinks).lazy.filter { matching.contains($0.sessionID) }.map(
+                \.windowID
+            )
+        )
+        return fromIncarnation(windows).filter { linked.contains($0.id) }
     }
 }
 

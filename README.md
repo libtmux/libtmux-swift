@@ -142,10 +142,10 @@ let reply = try await server.run(
 print(reply.isSuccess ? reply.text : reply.errorText)
 ```
 
-### One consistent picture
+### Snapshots
 
-Three listings are three moments. `snapshot()` takes one, and the relationships
-are resolved inside it rather than by matching ids yourself:
+`snapshot()` collects sessions, windows, panes, and clients into one value. The
+relationships resolve inside that value rather than by matching ids yourself:
 
 ```swift
 let snapshot = try await server.snapshot()
@@ -153,6 +153,11 @@ for window in snapshot.windows(of: session) {
     print(window.name, snapshot.panes(of: window).count)
 }
 ```
+
+The listings are separate tmux commands. `snapshot()` checks the daemon
+incarnation before and after them and reports a replacement, but another client
+can still mutate the same daemon between listings. The result is not a tmux
+transaction.
 
 ## Change what is there
 
@@ -339,8 +344,8 @@ try await server.connected(attachingTo: "work") { server, control in
 
 **You did not write the command.** For a daemon printing `ready` or a dev
 server someone else started, wait on the pane's output. `%output` wakes the
-wait as the pane writes, and the matching runs against the rendered grid, so a
-quiet pane costs nothing while this waits:
+wait as the pane writes, and the matching runs against the rendered grid. A
+small liveness check detects a pane removed while it is quiet:
 
 ```swift
 let waited = try await server.waitForOutput(
@@ -456,7 +461,7 @@ package that it means to you.
 | `describe_server` `list_servers` | Which tmux this is and which pane is your own; what other servers are running |
 | `describe_filters` | The filterable fields, their types, and their aliases |
 | `list_sessions` `list_windows` `list_panes` | Listings, filtered, projected to the fields you asked for |
-| `snapshot` | Every level at once, proven to have existed together |
+| `snapshot` | Every level as one aggregate; detects daemon replacement during capture |
 | `capture_pane` `capture_since` | What a pane is showing; what it has printed since last time |
 | `search_panes` | Which pane mentions something |
 | `read_format` | Any tmux format, reaching fields the listings do not carry |

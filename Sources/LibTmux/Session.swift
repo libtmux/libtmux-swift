@@ -6,7 +6,9 @@ public struct Session: Sendable, Hashable, Codable, Identifiable {
     /// tmux's own session id, stable for the session's lifetime — `$0`, `$1`.
     /// Names are not: a session can be renamed, and two servers can both have
     /// a `0`.
-    public let id: String
+    public let id: SessionID
+    /// The daemon this value was read from.
+    public let incarnation: ServerIncarnation
     /// What a person calls it, and what tmux matches when a command names a
     /// session. Renameable, so it is not an identity.
     public let name: String
@@ -22,22 +24,24 @@ public struct Session: Sendable, Hashable, Codable, Identifiable {
     public let createdAt: Int
 
     public init(
-        id: String,
+        id: SessionID,
         name: String,
         windowCount: Int,
         isAttached: Bool,
-        createdAt: Int
+        createdAt: Int,
+        incarnation: ServerIncarnation
     ) {
         self.id = id
         self.name = name
         self.windowCount = windowCount
         self.isAttached = isAttached
         self.createdAt = createdAt
+        self.incarnation = incarnation
     }
 }
 
 extension Session {
-    private static let idField = FormatField("session_id")
+    private static let idField = FormatField("session_id", .identifier(SessionID.sigil))
     private static let nameField = FormatField("session_name")
     private static let windowsField = FormatField("session_windows", .integer)
     // `session_attached` counts attached clients rather than reporting a flag,
@@ -45,17 +49,19 @@ extension Session {
     private static let attachedField = FormatField("session_attached", .integer)
     private static let createdField = FormatField("session_created", .integer)
 
-    static let projection = FormatProjection([
-        idField, nameField, windowsField, attachedField, createdField,
-    ])
+    static let projection = FormatProjection(
+        [
+            idField, nameField, windowsField, attachedField, createdField,
+        ] + ServerIncarnation.projectionFields)
 
-    init(row: FormatRow) {
+    init(row: FormatRow, endpoint: Endpoint) {
         self.init(
-            id: row.text(Session.idField),
+            id: row.identifier(Session.idField, as: SessionID.self),
             name: row.text(Session.nameField),
             windowCount: row.integer(Session.windowsField),
             isAttached: row.integer(Session.attachedField) != 0,
-            createdAt: row.integer(Session.createdField)
+            createdAt: row.integer(Session.createdField),
+            incarnation: ServerIncarnation(row: row, endpoint: endpoint)
         )
     }
 }

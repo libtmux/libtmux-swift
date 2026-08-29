@@ -46,6 +46,7 @@ private let socketRoot = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
 /// assertions to the objects the case created rather than to the server being
 /// otherwise empty.
 public func withTmuxServer<Result>(
+    socketFileName: String = "s",
     _ body: (Server) async throws -> Result
 ) async throws -> Result {
     _ = sigpipeIgnoredOnce
@@ -66,7 +67,7 @@ public func withTmuxServer<Result>(
     defer { try? FileManager.default.removeItem(at: root) }
 
     let server = try Server(
-        socketPath: root.appendingPathComponent("s").path,
+        socketPath: root.appendingPathComponent(socketFileName).path,
         tmuxExecutable: tmuxExecutablePath()
     )
     _ = try await server.run([

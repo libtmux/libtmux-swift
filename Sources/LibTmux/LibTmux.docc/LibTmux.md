@@ -58,6 +58,7 @@ command explains itself on standard error — so
 
 - ``Session``
 - ``Window``
+- ``WindowLink``
 - ``Pane``
 - ``Client``
 - ``Snapshot``
@@ -74,8 +75,8 @@ command explains itself on standard error — so
 
 - ``Server/format(_:)``
 - ``Server/format(_:for:)-(String,Session)``
-- ``Server/format(_:for:)-(String,Window)``
-- ``Server/format(_:for:)-(String,Pane)``
+- ``Server/format(_:for:)-(String,WindowLink)``
+- ``Server/format(_:for:through:)``
 
 ### Configuration
 
