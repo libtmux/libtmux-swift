@@ -7,10 +7,9 @@ import LibTmux
 
 /// A tmux layout described as data, in tmuxp's vocabulary.
 ///
-/// The keys match tmuxp's so an existing workspace file is readable without
-/// translation. This is a useful subset, not a reimplementation: tmuxp's
-/// runtime — plugins, before/after hooks, environment inheritance — is not
-/// modelled, and a file using them will build its windows and ignore the rest.
+/// The modelled keys use tmuxp's spelling, so files limited to this structural
+/// subset need no translation. tmuxp's plugins, hooks, and environment runtime
+/// are ignored.
 public struct Workspace: Sendable, Hashable, Codable {
     /// What the session is called once built.
     public let sessionName: String
@@ -37,8 +36,6 @@ public struct Workspace: Sendable, Hashable, Codable {
     }
 
     /// Reads a workspace from JSON.
-    ///
-    /// YAML is a superset of JSON, so a file written either way loads.
     public static func decode(json: Data) throws -> Workspace {
         try JSONDecoder().decode(Workspace.self, from: json)
     }
