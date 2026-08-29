@@ -139,9 +139,9 @@ public struct MCPService: Sendable {
         _ lines: Lines,
         registry: RequestRegistry,
         outbound: OrderedOutbound
-    ) async where Lines.Element == String, Lines.Failure == Never {
-        await withTaskGroup(of: Void.self) { requestGroup in
-            for await line in lines {
+    ) async rethrows where Lines.Element == String {
+        try await withThrowingTaskGroup(of: Void.self) { requestGroup in
+            for try await line in lines {
                 if Task.isCancelled { break }
                 let decoded = MCPRequestHandler.decodeRequest(line)
                 // Cancellation arrives as a notification, so it is read before
