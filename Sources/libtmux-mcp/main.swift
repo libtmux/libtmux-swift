@@ -16,6 +16,36 @@ private func note(_ message: String) {
     FileHandle.standardError.write(Data("libtmux-mcp: \(message)\n".utf8))
 }
 
+private let inputChunkBytes = 64 * 1_024
+private let queuedRequestLines = 8
+
+private func emitInput(
+    _ event: BoundedLineFramer.Event,
+    to continuation: AsyncStream<String>.Continuation
+) -> Bool {
+    switch event {
+    case let .line(line):
+        switch continuation.yield(line) {
+        case .enqueued: return true
+        case .dropped:
+            note("stdin queue exceeded \(queuedRequestLines) request lines; closing input")
+            continuation.finish()
+            return false
+        case .terminated: return false
+        @unknown default: return false
+        }
+    case .oversized:
+        note(
+            "discarded a request above "
+                + "\(MCPRequestHandler.maximumRequestBytes) bytes"
+        )
+        return true
+    case .invalidUTF8:
+        note("discarded a request that was not UTF-8")
+        return true
+    }
+}
+
 /// Lines from standard input, read on a thread of its own.
 ///
 /// `readLine` blocks until a line arrives. On a cooperative thread that would
@@ -23,12 +53,24 @@ private func note(_ message: String) {
 /// server exists to run concurrently — so the one blocking call in the process
 /// gets a thread that is allowed to block.
 private func standardInputLines() -> AsyncStream<String> {
-    AsyncStream(bufferingPolicy: .unbounded) { continuation in
+    AsyncStream(bufferingPolicy: .bufferingOldest(queuedRequestLines)) { continuation in
         let reader = Thread {
-            while let line = readLine(strippingNewline: true) {
-                continuation.yield(line)
+            var framer = BoundedLineFramer(
+                maximumBytes: MCPRequestHandler.maximumRequestBytes
+            )
+            while true {
+                let chunk = FileHandle.standardInput.readData(ofLength: inputChunkBytes)
+                if chunk.isEmpty {
+                    for event in framer.finish() {
+                        guard emitInput(event, to: continuation) else { return }
+                    }
+                    continuation.finish()
+                    return
+                }
+                for event in framer.append(chunk) {
+                    guard emitInput(event, to: continuation) else { return }
+                }
             }
-            continuation.finish()
         }
         reader.name = "libtmux-mcp.stdin"
         reader.start()

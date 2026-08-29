@@ -29,7 +29,7 @@ public struct MCPRequestHandler: Sendable {
     public static var protocolVersion: String { protocolVersions[0] }
     public static let serverName = "libtmux"
     public static let serverVersion = LibTmuxVersion.current
-    static let maximumRequestBytes = 2_000_000
+    package static let maximumRequestBytes = 2_000_000
     static let maximumResponseBytes = 1_000_000
 
     private let tools: TmuxTools
