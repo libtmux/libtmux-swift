@@ -508,7 +508,7 @@ func measureNoticing() async throws -> (polled: Measurement, streamed: Measureme
         return try await server.connected(attachingTo: "bench") { server, events in
             let elapsed = try await clock.measure {
                 try await server.run("echo \(marker)", in: pane)
-                for await notification in events.notifications
+                for try await notification in events.notifications
                 where notification.arguments.contains(marker) {
                     break
                 }
