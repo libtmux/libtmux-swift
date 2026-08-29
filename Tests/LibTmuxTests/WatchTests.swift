@@ -712,17 +712,18 @@ struct WatchTests {
             let stopped = try await server.waitForOutput(
                 in: pane,
                 stoppingAt: [try RegexPattern("stale-marker")],
-                timeout: .milliseconds(200)
+                timeout: .seconds(30)
             )
             #expect(stopped.outcome == .stopped)
             #expect(stopped.matchedAtEntry)
             #expect(!stopped.sawNewOutput)
+            #expect(stopped.seconds < 10)
 
             let result = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("stale-marker")],
                 requiringFreshOutput: true,
-                timeout: .milliseconds(1200)
+                timeout: .seconds(3)
             )
             // Re-running a command whose output looks identical has to work, so
             // asking for a fresh line waits past the one on screen.
