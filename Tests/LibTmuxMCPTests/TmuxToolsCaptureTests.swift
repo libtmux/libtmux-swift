@@ -87,8 +87,8 @@ extension TmuxToolsTests {
         }
     }
 
-    @Test("a structurally impossible cursor is refused")
-    func impossibleCursorIsRefused() async throws {
+    @Test("structurally impossible cursors are refused")
+    func impossibleCursorsAreRefused() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
             let tools = TmuxTools(server: server)
@@ -102,6 +102,7 @@ extension TmuxToolsTests {
                 JSONSerialization.jsonObject(with: Data(started.cursor.utf8))
                     as? [String: Any]
             )
+            let anchor = payload["anchor"]
             payload["anchor"] = -1
             let impossible = try #require(
                 String(
@@ -117,6 +118,27 @@ extension TmuxToolsTests {
                         arguments: .object([
                             "pane": .string(wireRef(pane)),
                             "cursor": .string(impossible),
+                        ])
+                    )
+                )
+            }
+
+            payload["anchor"] = anchor
+            payload["checkpoint"] = ["mutable-anchor"]
+            payload["checkpointAnchor"] = anchor
+            let mutableCheckpoint = try #require(
+                String(
+                    data: JSONSerialization.data(withJSONObject: payload),
+                    encoding: .utf8
+                )
+            )
+            await #expect(throws: ToolError.self) {
+                try await tools.call(
+                    ToolCall(
+                        name: "capture_since",
+                        arguments: .object([
+                            "pane": .string(wireRef(pane)),
+                            "cursor": .string(mutableCheckpoint),
                         ])
                     )
                 )

@@ -38,7 +38,9 @@ struct CaptureSinceTests {
 
             _ = try await server.capture(pane, since: nil)
 
-            #expect(await transport.captureLimits == [1_048_576])
+            let limits = await transport.captureLimits
+            #expect(!limits.isEmpty)
+            #expect(limits.allSatisfy { $0 == 1_048_576 })
         }
     }
 
@@ -68,6 +70,122 @@ struct CaptureSinceTests {
         }
     }
 
+    @Test("incremental capture survives history collection")
+    func historyCollectionKeepsTheDelta() async throws {
+        try await withTmuxServer { server in
+            let historyLimit = 20
+            _ = try await server.setOption(
+                "history-limit",
+                to: String(historyLimit),
+                scope: .globalSession
+            )
+            let session = try await server.newSession(named: "history-collection")
+            let pane = try #require(
+                try await server.snapshot().panes(of: session).first
+            )
+            let height = try #require(
+                try await server.format("#{pane_height}", addressing: pane.id.rawValue)
+                    .flatMap(Int.init)
+            )
+            let belowCollection = historyLimit - max(1, historyLimit / 10)
+            let linesToReachBelowCollection = height - 1 + belowCollection
+            let linesToFillHistory = historyLimit
+            let linesToEvictTheMark = height + historyLimit + 5
+            let script =
+                "printf '\\033c'; \(server.shellInvocation) wait-for -S history-ready; "
+                + "\(server.shellInvocation) wait-for history-start; "
+                + "i=0; while [ \"$i\" -lt \(linesToReachBelowCollection) ]; do "
+                + "printf '\\n'; i=$((i + 1)); done; "
+                + "\(server.shellInvocation) wait-for -S history-below-collection; "
+                + "\(server.shellInvocation) wait-for history-fill; "
+                + "i=0; while [ \"$i\" -lt \(linesToFillHistory) ]; do "
+                + "printf 'SEED%03d\\n' \"$i\"; i=$((i + 1)); done; "
+                + "printf 'OLD'; "
+                + "\(server.shellInvocation) wait-for -S history-filled; "
+                + "\(server.shellInvocation) wait-for history-rewrite; "
+                + "printf '\\rNEW'; "
+                + "\(server.shellInvocation) wait-for -S history-rewrite-done; "
+                + "\(server.shellInvocation) wait-for history-next; "
+                + "printf '\\nLOST\\n'; "
+                + "\(server.shellInvocation) wait-for -S history-next-done; "
+                + "\(server.shellInvocation) wait-for history-overflow; "
+                + "i=0; while [ \"$i\" -lt \(linesToEvictTheMark) ]; do "
+                + "printf 'FRESH%03d\\n' \"$i\"; i=$((i + 1)); done; "
+                + "\(server.shellInvocation) wait-for -S history-overflow-done; "
+                + "\(server.shellInvocation) wait-for history-ambiguous; "
+                + "i=0; while [ \"$i\" -lt \(linesToEvictTheMark) ]; do "
+                + "printf 'SAME\\n'; i=$((i + 1)); done; "
+                + "\(server.shellInvocation) wait-for -S history-ambiguous-ready; "
+                + "\(server.shellInvocation) wait-for history-ambiguous-next; "
+                + "printf 'SAME\\n'; "
+                + "\(server.shellInvocation) wait-for -S history-ambiguous-done; "
+                + "\(server.shellInvocation) wait-for history-release"
+            try await server.respawn(pane, running: [script])
+            try await server.wait(for: "history-ready")
+            try await server.clearHistory(pane)
+            try await server.signal("history-start")
+            try await server.wait(for: "history-below-collection")
+            let below = "\(belowCollection):\(height - 1)"
+            #expect(
+                try await server.format(
+                    "#{history_size}:#{cursor_y}",
+                    addressing: pane.id.rawValue
+                ) == below
+            )
+            let belowMark = try await server.capture(pane, since: nil)
+            let belowQuiet = try await server.capture(pane, since: belowMark.cursor)
+            #expect(belowQuiet.lines.isEmpty)
+            #expect(!belowQuiet.linesMissed)
+
+            try await server.clearHistory(pane)
+            try await server.signal("history-fill")
+            try await server.wait(for: "history-filled")
+            let saturated = "\(historyLimit):\(height - 1)"
+            let before = try await server.format(
+                "#{history_size}:#{cursor_y}",
+                addressing: pane.id.rawValue
+            )
+            #expect(before == saturated)
+            let started = try await server.capture(pane, since: nil)
+            #expect(started.cursor.anchor == historyLimit + height - 1)
+            #expect(started.cursor.tail == "OLD")
+
+            try await server.signal("history-rewrite")
+            try await server.wait(for: "history-rewrite-done")
+            let rewritten = try await server.capture(pane, since: started.cursor)
+            #expect(rewritten.lines == ["NEW"])
+            #expect(!rewritten.linesMissed)
+
+            try await server.signal("history-next")
+            try await server.wait(for: "history-next-done")
+            let after = try await server.format(
+                "#{history_size}:#{cursor_y}",
+                addressing: pane.id.rawValue
+            )
+            #expect(after == saturated)
+            let update = try await server.capture(pane, since: rewritten.cursor)
+
+            #expect(update.lines == ["LOST"])
+            #expect(!update.linesMissed)
+
+            try await server.signal("history-overflow")
+            try await server.wait(for: "history-overflow-done")
+            let gap = try await server.capture(pane, since: update.cursor)
+            #expect(gap.lines.isEmpty)
+            #expect(gap.linesMissed)
+
+            try await server.signal("history-ambiguous")
+            try await server.wait(for: "history-ambiguous-ready")
+            let repeated = try await server.capture(pane, since: nil)
+            try await server.signal("history-ambiguous-next")
+            try await server.wait(for: "history-ambiguous-done")
+            let ambiguous = try await server.capture(pane, since: repeated.cursor)
+            #expect(ambiguous.lines.isEmpty)
+            #expect(ambiguous.linesMissed)
+            try await server.signal("history-release")
+        }
+    }
+
     @Test("the first read marks the place rather than dumping the backlog")
     func firstReadStartsWatching() async throws {
         try await withTmuxServer { server in
@@ -80,6 +198,35 @@ struct CaptureSinceTests {
             // what happened before it asked.
             #expect(started.lines.isEmpty)
             #expect(!started.restarted)
+        }
+    }
+
+    @Test("identical lines at successive rows are both reported")
+    func repeatedLinesRemainDistinct() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let script =
+                "printf '\\033c'; \(server.shellInvocation) wait-for -S repeat-ready; "
+                + "\(server.shellInvocation) wait-for repeat-first; printf 'SAME\\n'; "
+                + "\(server.shellInvocation) wait-for -S repeat-first-done; "
+                + "\(server.shellInvocation) wait-for repeat-second; printf 'SAME\\n'; "
+                + "\(server.shellInvocation) wait-for -S repeat-second-done; "
+                + "\(server.shellInvocation) wait-for repeat-release"
+            try await server.respawn(pane, running: [script])
+            try await server.wait(for: "repeat-ready")
+            try await server.clearHistory(pane)
+            let started = try await server.capture(pane, since: nil)
+
+            try await server.signal("repeat-first")
+            try await server.wait(for: "repeat-first-done")
+            let first = try await server.capture(pane, since: started.cursor)
+            #expect(first.lines == ["SAME"])
+
+            try await server.signal("repeat-second")
+            try await server.wait(for: "repeat-second-done")
+            let second = try await server.capture(pane, since: first.cursor)
+            #expect(second.lines == ["SAME"])
+            try await server.signal("repeat-release")
         }
     }
 
@@ -163,7 +310,14 @@ struct CaptureSinceTests {
                 incarnation: staleIncarnation,
                 anchor: started.cursor.anchor,
                 tail: started.cursor.tail,
-                processID: started.cursor.processID
+                processID: started.cursor.processID,
+                historySize: started.cursor.historySize,
+                historyLimit: started.cursor.historyLimit,
+                paneWidth: started.cursor.paneWidth,
+                paneHeight: started.cursor.paneHeight,
+                alternateScreen: started.cursor.alternateScreen,
+                checkpoint: started.cursor.checkpoint,
+                checkpointAnchor: started.cursor.checkpointAnchor
             )
 
             let crossed = try await server.capture(pane, since: staleCursor)

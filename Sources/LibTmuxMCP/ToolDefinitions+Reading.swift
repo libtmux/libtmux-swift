@@ -137,11 +137,12 @@ extension TmuxTools {
                 mark — then pass that cursor to each later call and get only the \
                 difference. A pane that has been quiet answers an empty list.
 
-                `linesMissed` says the pane scrolled further than its history \
-                keeps, so some output is gone for good. `restarted` says the pane \
-                was respawned, so the cursor described a program that is no longer \
-                running. `droppedLines` counts candidate rows omitted by the requested \
-                line or raw-text byte limit.
+                `linesMissed` says the previous mark no longer survives or the grid \
+                changed, so continuity cannot be proved; `lines` is then empty and \
+                the returned cursor is a fresh mark. `restarted` says the pane was \
+                respawned, so the cursor described a program that is no longer running. \
+                `droppedLines` counts candidate rows omitted by the requested line or \
+                raw-text byte limit.
 
                 Use wait_for_output instead when you want to block until something \
                 appears rather than to check what has appeared.

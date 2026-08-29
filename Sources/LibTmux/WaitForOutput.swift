@@ -468,6 +468,7 @@ extension Server {
             throw .tmux(normalizedTmuxError(error))
         }
         if let answerError { throw answerError }
+        if scan.linesMissed { throw .tmux(.outputContinuityLost) }
         if scan.restarted {
             let arrived: [String]
             do {

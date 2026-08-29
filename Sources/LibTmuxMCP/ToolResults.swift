@@ -363,7 +363,8 @@ public struct CaptureSinceResult: Sendable, Hashable, Codable {
     /// business, and a caller that read the fields would depend on something
     /// free to change.
     public let cursor: String
-    /// The pane scrolled past what its history keeps, so some output is gone.
+    /// The old mark no longer survives or the pane grid changed, so continuity
+    /// cannot be proved. `lines` is empty and `cursor` is a fresh mark.
     public let linesMissed: Bool
     /// The pane was respawned, so the cursor described a different program.
     public let restarted: Bool

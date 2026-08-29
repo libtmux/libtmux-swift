@@ -269,6 +269,57 @@ struct WatchTests {
         }
     }
 
+    @Test("a wait fails when its retained output boundary is lost")
+    func outputContinuityLossFailsTheWait() async throws {
+        try await withTmuxServer { server in
+            let historyLimit = 20
+            _ = try await server.setOption(
+                "history-limit",
+                to: String(historyLimit),
+                scope: .globalSession
+            )
+            let session = try await server.newSession(named: "wait-continuity")
+            let pane = try #require(
+                try await server.snapshot().panes(of: session).first
+            )
+            let height = try #require(
+                try await server.format("#{pane_height}", addressing: pane.id.rawValue)
+                    .flatMap(Int.init)
+            )
+            let linesToFill = height - 1 + historyLimit
+            let linesToEvict = height + historyLimit + 5
+            try await server.run(
+                "stty -echo; printf '\\033c'; i=0; "
+                    + "while [ \"$i\" -lt \(linesToFill) ]; do "
+                    + "printf 'SEED%03d\\n' \"$i\"; i=$((i + 1)); done; "
+                    + "\(server.shellInvocation) wait-for -S wait-filled",
+                in: pane
+            )
+            try await server.wait(for: "wait-filled")
+            let burst =
+                "i=0; while [ \"$i\" -lt \(linesToEvict) ]; do "
+                + "printf 'FRESH%03d\\n' \"$i\"; i=$((i + 1)); done; "
+                + "\(server.shellInvocation) wait-for -S wait-overflow-done"
+            let hook = try await server.setHook(
+                "client-attached",
+                to: TmuxCommand(
+                    "send-keys",
+                    ["-t", pane.id.rawValue, burst, "Enter"]
+                ).parsedString
+            )
+            #expect(hook.isSuccess)
+
+            await #expect(throws: OutputWaitError.tmux(.outputContinuityLost)) {
+                try await server.waitForOutput(
+                    in: pane,
+                    matching: [try RegexPattern("NEVER")],
+                    requiringFreshOutput: true,
+                    timeout: .seconds(5)
+                )
+            }
+        }
+    }
+
     @Test("a quiet pane times out saying it stayed quiet")
     func quietPaneReportsNoOutput() async throws {
         try await withTmuxServer { server in

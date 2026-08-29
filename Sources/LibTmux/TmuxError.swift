@@ -52,6 +52,10 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// buffer filled. Earlier buffered notifications remain readable.
     case notificationBufferOverflow(limit: Int)
 
+    /// A pane changed beyond the retained checkpoint while output was being
+    /// watched, so new rows cannot be separated from rows already seen.
+    case outputContinuityLost
+
     public enum InvalidEndpoint: Sendable, Hashable {
         case empty
         case socketPathTooLong(actualBytes: Int, maximumBytes: Int)

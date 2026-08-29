@@ -1,116 +1,12 @@
 import Foundation
 
-/// Where a previous read of a pane stopped.
-///
-/// Opaque on purpose: what it holds is this implementation's business, and a
-/// caller that reasons about the fields would be relying on something free to
-/// change. Hand it back to ``Server/capture(_:since:limit:)`` to be told only what
-/// has arrived since.
-public struct CaptureCursor: Sendable, Hashable, Codable {
-    let pane: String
-    /// The daemon whose pane history the cursor counted.
-    let incarnation: ServerIncarnation
-    /// The absolute row the last read ended on, counted from the start of the
-    /// pane's history rather than from the top of the screen. Screen-relative
-    /// numbers move as content scrolls; this one does not.
-    let anchor: Int
-    /// What that row said. A row can be rewritten in place — a spinner, a
-    /// progress bar, a prompt being redrawn — so position alone cannot tell a
-    /// row already reported from the same row saying something new.
-    let tail: String?
-    /// The process in the pane. A respawn keeps the pane id and replaces
-    /// everything the cursor described, so this is what makes that detectable
-    /// rather than silently reporting one program's output as another's.
-    let processID: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case pane, incarnation, anchor, tail, processID
-    }
-
-    init(
-        pane: String,
-        incarnation: ServerIncarnation,
-        anchor: Int,
-        tail: String?,
-        processID: String?
-    ) {
-        self.pane = pane
-        self.incarnation = incarnation
-        self.anchor = anchor
-        self.tail = tail
-        self.processID = processID
-    }
-}
-
-extension CaptureCursor {
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        pane = try container.decode(String.self, forKey: .pane)
-        incarnation = try container.decode(ServerIncarnation.self, forKey: .incarnation)
-        anchor = try container.decode(Int.self, forKey: .anchor)
-        guard anchor >= 0 else {
-            throw DecodingError.dataCorruptedError(
-                forKey: .anchor,
-                in: container,
-                debugDescription: "a capture cursor anchor cannot be negative"
-            )
-        }
-        tail = try container.decodeIfPresent(String.self, forKey: .tail)
-        processID = try container.decodeIfPresent(String.self, forKey: .processID)
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(pane, forKey: .pane)
-        try container.encode(incarnation, forKey: .incarnation)
-        try container.encode(anchor, forKey: .anchor)
-        try container.encodeIfPresent(tail, forKey: .tail)
-        try container.encodeIfPresent(processID, forKey: .processID)
-    }
-}
-
-/// What a pane has said since a cursor was taken.
-public struct IncrementalCapture: Sendable, Hashable, Codable {
-    /// Only what is new. Empty when nothing has happened, which is the point:
-    /// watching a quiet pane costs one command and no content.
-    public let lines: [String]
-    /// Hand this to the next call.
-    public let cursor: CaptureCursor
-    /// The pane scrolled further than its history keeps, so some output is
-    /// gone for good. What is here is still correct, just not complete.
-    public let linesMissed: Bool
-    /// The pane was respawned, so the cursor described a program that is no
-    /// longer running and everything here is from the new one.
-    public let restarted: Bool
-    /// The number of older rows omitted to keep ``lines`` within `limit`.
-    public let droppedLines: Int
-
-    public init(
-        lines: [String],
-        cursor: CaptureCursor,
-        linesMissed: Bool = false,
-        restarted: Bool = false,
-        droppedLines: Int = 0
-    ) {
-        self.lines = lines
-        self.cursor = cursor
-        self.linesMissed = linesMissed
-        self.restarted = restarted
-        self.droppedLines = droppedLines
-    }
-}
-
-package struct ForwardCaptureResult: Sendable, Hashable {
-    package let cursor: CaptureCursor
-    package let linesMissed: Bool
-    package let restarted: Bool
-    package let droppedLines: Int
-}
-
 private struct IncrementalPaneState {
     let bounds: PaneCaptureBounds
     let processID: String
     let absoluteCursorRow: Int
+    let historyLimit: Int
+    let paneWidth: Int
+    let alternateScreen: Bool
 }
 
 extension Server {
@@ -180,11 +76,11 @@ extension Server {
             cursor.incarnation == pane.incarnation,
             cursor.processID == state.processID
         else {
-            let reset = try await captureIncremental(
+            let reset = try await markIncremental(
                 pane,
-                since: cursor,
-                limit: 0,
-                perStreamOutputLimit: perStreamOutputLimit
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit,
+                restarted: true
             )
             return ForwardCaptureResult(
                 cursor: reset.cursor,
@@ -193,25 +89,30 @@ extension Server {
                 droppedLines: reset.droppedLines
             )
         }
-
-        let (relativeStart, startOverflowed) = cursor.anchor.subtractingReportingOverflow(
-            state.bounds.historySize
-        )
-        guard !startOverflowed else {
-            throw .invocationFailed(reason: "pane reported an invalid history size")
+        guard
+            let aligned = try await align(
+                cursor,
+                in: pane,
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+        else {
+            let reset = try await markIncremental(
+                pane,
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit,
+                linesMissed: true
+            )
+            return ForwardCaptureResult(
+                cursor: reset.cursor,
+                linesMissed: true,
+                restarted: false,
+                droppedLines: 0
+            )
         }
-        let oldest = -state.bounds.historySize
-        let linesMissed = relativeStart < oldest
-        let firstRelativeRow = max(relativeStart, oldest)
-        let (firstAbsoluteRow, firstOverflowed) = state.bounds.historySize
-            .addingReportingOverflow(firstRelativeRow)
-        guard !firstOverflowed, firstAbsoluteRow <= state.absoluteCursorRow else {
-            throw .invocationFailed(reason: "pane reported an invalid cursor")
-        }
 
-        var start = firstAbsoluteRow
-        var tail = cursor.tail
-        var droppedLines = 0
+        var start = aligned.anchor
+        var previousCursor = aligned
         while true {
             let (candidateEnd, endOverflowed) = start.addingReportingOverflow(
                 sourceLinesPerChunk - 1
@@ -223,38 +124,31 @@ extension Server {
                     candidateEnd,
                     state.absoluteCursorRow
                 )
-            let capture = try await captureTail(
+            let rawRows = try await captureExactRows(
                 pane,
-                fromAbsoluteRow: start,
-                throughAbsoluteRow: end,
-                maximumLines: sourceLinesPerChunk,
+                from: start,
+                through: end,
+                state: state,
                 perStreamOutputLimit: perStreamOutputLimit
             )
-            let (nextDroppedLines, droppedOverflowed) = droppedLines.addingReportingOverflow(
-                capture.droppedLines
-            )
-            guard !droppedOverflowed else {
-                throw .invocationFailed(reason: "pane capture size overflowed")
-            }
-            droppedLines = nextDroppedLines
-
-            var rows = capture.lines
-            if let tail, rows.first == tail { rows.removeFirst() }
+            var rows = rawRows
+            if let tail = previousCursor.tail, rows.first == tail { rows.removeFirst() }
             if end == state.absoluteCursorRow {
                 while rows.last?.isEmpty == true { rows.removeLast() }
             }
-            tail = rows.last ?? tail
+            let nextCursor = try makeCursor(
+                for: pane,
+                state: state,
+                anchor: end,
+                rawRows: rawRows,
+                fallback: previousCursor
+            )
+            previousCursor = nextCursor
             let result = ForwardCaptureResult(
-                cursor: CaptureCursor(
-                    pane: pane.id.rawValue,
-                    incarnation: pane.incarnation,
-                    anchor: end,
-                    tail: tail,
-                    processID: state.processID
-                ),
-                linesMissed: linesMissed,
+                cursor: nextCursor,
+                linesMissed: false,
                 restarted: false,
-                droppedLines: droppedLines
+                droppedLines: 0
             )
             if visit(rows) || end == state.absoluteCursorRow { return result }
             start = end
@@ -306,27 +200,26 @@ extension Server {
         guard let cursor, cursor.pane == pane.id.rawValue,
             cursor.incarnation == pane.incarnation, cursor.processID == processID
         else {
-            // Nothing to compare against, so this establishes the mark rather
-            // than answering with a backlog nobody asked for.
-            let restarted = cursor != nil
-            let tail = try await captureTail(
+            return try await markIncremental(
                 pane,
-                startingAt: .line(cursorRow),
-                endingAt: cursorRow,
-                bounds: bounds,
-                maximumLines: 1,
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit,
+                restarted: cursor != nil
+            )
+        }
+        guard
+            let cursor = try await align(
+                cursor,
+                in: pane,
+                state: state,
                 perStreamOutputLimit: perStreamOutputLimit
-            ).lines.first
-            return IncrementalCapture(
-                lines: [],
-                cursor: CaptureCursor(
-                    pane: pane.id.rawValue,
-                    incarnation: pane.incarnation,
-                    anchor: now,
-                    tail: tail,
-                    processID: processID
-                ),
-                restarted: restarted
+            )
+        else {
+            return try await markIncremental(
+                pane,
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit,
+                linesMissed: true
             )
         }
 
@@ -339,8 +232,14 @@ extension Server {
             )
         }
         let oldest = -history
-        let linesMissed = start < oldest
-        let earliest = max(start, oldest)
+        guard start >= oldest, start <= cursorRow else {
+            return try await markIncremental(
+                pane,
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit,
+                linesMissed: true
+            )
+        }
         let sourceLimit: Int
         if limit == .max {
             sourceLimit = .max
@@ -353,15 +252,18 @@ extension Server {
         }
         let bounded = try await captureTail(
             pane,
-            startingAt: .line(earliest),
+            startingAt: .line(start),
             endingAt: cursorRow,
             bounds: bounds,
             maximumLines: sourceLimit,
             perStreamOutputLimit: perStreamOutputLimit
         )
-        var rows = bounded.lines
+        let rawRows = bounded.lines
+        var rows = rawRows
         let sourceDropped = bounded.droppedLines
-        if let tail = cursor.tail, rows.first == tail { rows.removeFirst() }
+        if sourceDropped == 0, let tail = cursor.tail, rows.first == tail {
+            rows.removeFirst()
+        }
         // tmux pads the visible region with blank rows below the cursor; they
         // are not output and reporting them would be reporting the shape of the
         // terminal rather than what ran in it.
@@ -376,14 +278,14 @@ extension Server {
         }
         return IncrementalCapture(
             lines: Array(kept),
-            cursor: CaptureCursor(
-                pane: pane.id.rawValue,
-                incarnation: pane.incarnation,
+            cursor: try makeCursor(
+                for: pane,
+                state: state,
                 anchor: now,
-                tail: rows.last ?? cursor.tail,
-                processID: processID
+                rawRows: rawRows,
+                fallback: cursor
             ),
-            linesMissed: linesMissed,
+            linesMissed: false,
             droppedLines: droppedLines
         )
     }
@@ -394,14 +296,19 @@ extension Server {
         let separator = String(FormatProjection.separator)
         let state = try await formatGlobal(
             "#{history_size}\(separator)#{cursor_y}\(separator)#{pane_pid}"
-                + "\(separator)#{pane_height}\(separator)#{history_bytes}",
+                + "\(separator)#{pane_height}\(separator)#{history_bytes}"
+                + "\(separator)#{history_limit}\(separator)#{pane_width}"
+                + "\(separator)#{alternate_on}",
             for: pane
         )
-        guard let fields = state?.components(separatedBy: separator), fields.count >= 5,
+        guard let fields = state?.components(separatedBy: separator), fields.count >= 8,
             let history = Int(fields[0]), history >= 0,
             let cursorRow = Int(fields[1]), cursorRow >= 0,
             let paneHeight = Int(fields[3]), paneHeight > 0,
             let historyBytes = Int(fields[4]), historyBytes >= 0,
+            let historyLimit = Int(fields[5]), historyLimit >= 0,
+            let paneWidth = Int(fields[6]), paneWidth > 0,
+            fields[7] == "0" || fields[7] == "1",
             cursorRow < paneHeight
         else {
             throw .invocationFailed(reason: "pane \(pane.id.rawValue) has gone")
@@ -418,10 +325,247 @@ extension Server {
                 cursorRow: cursorRow
             ),
             processID: fields[2],
-            absoluteCursorRow: absoluteCursorRow
+            absoluteCursorRow: absoluteCursorRow,
+            historyLimit: historyLimit,
+            paneWidth: paneWidth,
+            alternateScreen: fields[7] == "1"
+        )
+    }
+
+    private func markIncremental(
+        _ pane: Pane,
+        state: IncrementalPaneState,
+        perStreamOutputLimit: Int,
+        linesMissed: Bool = false,
+        restarted: Bool = false
+    ) async throws(TmuxError) -> IncrementalCapture {
+        let first = max(
+            0,
+            state.absoluteCursorRow - CaptureCursor.maximumCheckpointRows
+        )
+        let rows = try await captureExactRows(
+            pane,
+            from: first,
+            through: state.absoluteCursorRow,
+            state: state,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        return IncrementalCapture(
+            lines: [],
+            cursor: try makeCursor(
+                for: pane,
+                state: state,
+                anchor: state.absoluteCursorRow,
+                rawRows: rows,
+                fallback: nil
+            ),
+            linesMissed: linesMissed,
+            restarted: restarted
+        )
+    }
+
+    private func align(
+        _ cursor: CaptureCursor,
+        in pane: Pane,
+        state: IncrementalPaneState,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> CaptureCursor? {
+        guard cursor.historyLimit == state.historyLimit,
+            cursor.paneWidth == state.paneWidth,
+            cursor.paneHeight == state.bounds.paneHeight,
+            cursor.alternateScreen == state.alternateScreen
+        else { return nil }
+
+        let collectionRows = max(1, state.historyLimit / 10)
+        let firstPostCollectionSize = max(
+            0,
+            state.historyLimit - collectionRows + 1
+        )
+        let nearCollection =
+            state.historyLimit == 0
+            || cursor.historySize >= firstPostCollectionSize
+            || state.bounds.historySize >= firstPostCollectionSize
+        guard
+            state.bounds.historySize < cursor.historySize
+                || state.absoluteCursorRow < cursor.anchor
+                || nearCollection
+        else { return cursor }
+        guard let checkpointAnchor = cursor.checkpointAnchor,
+            !cursor.checkpoint.isEmpty
+        else { return nil }
+        guard
+            let relocatedCheckpoint = try await findCheckpoint(
+                for: cursor,
+                collectionRows: collectionRows,
+                in: pane,
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+        else { return nil }
+        let (delta, deltaOverflowed) = relocatedCheckpoint.subtractingReportingOverflow(
+            checkpointAnchor
+        )
+        let (anchor, anchorOverflowed) = cursor.anchor.addingReportingOverflow(delta)
+        guard !deltaOverflowed, !anchorOverflowed,
+            anchor >= 0, anchor <= state.absoluteCursorRow
+        else { return nil }
+        return updatedCursor(
+            cursor,
+            state: state,
+            anchor: anchor,
+            checkpointAnchor: relocatedCheckpoint
+        )
+    }
+
+    private func updatedCursor(
+        _ cursor: CaptureCursor,
+        state: IncrementalPaneState,
+        anchor: Int,
+        checkpointAnchor: Int
+    ) -> CaptureCursor {
+        CaptureCursor(
+            pane: cursor.pane,
+            incarnation: cursor.incarnation,
+            anchor: anchor,
+            tail: cursor.tail,
+            processID: cursor.processID,
+            historySize: state.bounds.historySize,
+            historyLimit: state.historyLimit,
+            paneWidth: state.paneWidth,
+            paneHeight: state.bounds.paneHeight,
+            alternateScreen: state.alternateScreen,
+            checkpoint: cursor.checkpoint,
+            checkpointAnchor: checkpointAnchor
+        )
+    }
+
+    private func findCheckpoint(
+        for cursor: CaptureCursor,
+        collectionRows: Int,
+        in pane: Pane,
+        state: IncrementalPaneState,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> Int? {
+        let (rowBytes, widthOverflowed) = state.paneWidth.multipliedReportingOverflow(by: 4)
+        guard !widthOverflowed else { return nil }
+        let budgetedRows = perStreamOutputLimit / max(1, rowBytes + 1)
+        guard budgetedRows >= cursor.checkpoint.count,
+            let checkpointAnchor = cursor.checkpointAnchor
+        else { return nil }
+        let firstPossibleAnchor = cursor.checkpoint.count - 1
+        let maximumCollections = (checkpointAnchor - firstPossibleAnchor) / collectionRows
+        let historyRegression = max(0, cursor.historySize - state.bounds.historySize)
+        let anchorRegression = max(0, cursor.anchor - state.absoluteCursorRow)
+        let requiredShift = max(historyRegression, anchorRegression)
+        let minimumCollections =
+            requiredShift / collectionRows
+            + (requiredShift.isMultiple(of: collectionRows) ? 0 : 1)
+        guard minimumCollections <= maximumCollections,
+            maximumCollections - minimumCollections < Self.maximumCheckpointCandidates
+        else { return nil }
+
+        var match: Int?
+        for collections in minimumCollections...maximumCollections {
+            let candidate = checkpointAnchor - collections * collectionRows
+            let start = candidate - cursor.checkpoint.count + 1
+            let rows = try await captureExactRows(
+                pane,
+                from: start,
+                through: candidate,
+                state: state,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+            guard rows == cursor.checkpoint else { continue }
+            if match != nil { return nil }
+            match = candidate
+        }
+        return match
+    }
+
+    private func captureExactRows(
+        _ pane: Pane,
+        from first: Int,
+        through last: Int,
+        state: IncrementalPaneState,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> [String] {
+        guard first >= 0, last >= first, last <= state.absoluteCursorRow else {
+            throw .invocationFailed(reason: "pane reported an invalid capture range")
+        }
+        let (relativeFirst, firstOverflowed) = first.subtractingReportingOverflow(
+            state.bounds.historySize
+        )
+        let (relativeLast, lastOverflowed) = last.subtractingReportingOverflow(
+            state.bounds.historySize
+        )
+        let (span, spanOverflowed) = last.subtractingReportingOverflow(first)
+        let (count, countOverflowed) = span.addingReportingOverflow(1)
+        guard !firstOverflowed, !lastOverflowed, !spanOverflowed, !countOverflowed else {
+            throw .invocationFailed(reason: "pane capture size overflowed")
+        }
+        let capture = try await captureTail(
+            pane,
+            startingAt: .line(relativeFirst),
+            endingAt: relativeLast,
+            bounds: state.bounds,
+            maximumLines: count,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        var rows = capture.lines
+        if count == 1, rows.isEmpty { rows = [""] }
+        guard capture.droppedLines == 0, rows.count == count else {
+            throw .invocationFailed(reason: "tmux returned an incomplete pane capture")
+        }
+        return rows
+    }
+
+    private func makeCursor(
+        for pane: Pane,
+        state: IncrementalPaneState,
+        anchor: Int,
+        rawRows: [String],
+        fallback: CaptureCursor?
+    ) throws(TmuxError) -> CaptureCursor {
+        let priorRows = rawRows.dropLast()
+        let trailingEmptyRows = priorRows.reversed().prefix(while: \.isEmpty).count
+        let checkpointEnd = priorRows.count - trailingEmptyRows
+        let checkpoint: [String]
+        let checkpointAnchor: Int?
+        if checkpointEnd > 0 {
+            checkpoint = Array(
+                priorRows[..<checkpointEnd].suffix(CaptureCursor.maximumCheckpointRows)
+            )
+            let (distance, distanceOverflowed) = trailingEmptyRows.addingReportingOverflow(1)
+            let (candidate, anchorOverflowed) = anchor.subtractingReportingOverflow(
+                distance
+            )
+            guard !distanceOverflowed, !anchorOverflowed,
+                candidate >= checkpoint.count - 1
+            else {
+                throw .invocationFailed(reason: "pane reported an invalid cursor checkpoint")
+            }
+            checkpointAnchor = candidate
+        } else {
+            checkpoint = fallback?.checkpoint ?? []
+            checkpointAnchor = fallback?.checkpointAnchor
+        }
+        return CaptureCursor(
+            pane: pane.id.rawValue,
+            incarnation: pane.incarnation,
+            anchor: anchor,
+            tail: rawRows.last.flatMap { $0.isEmpty ? nil : $0 },
+            processID: state.processID,
+            historySize: state.bounds.historySize,
+            historyLimit: state.historyLimit,
+            paneWidth: state.paneWidth,
+            paneHeight: state.bounds.paneHeight,
+            alternateScreen: state.alternateScreen,
+            checkpoint: checkpoint,
+            checkpointAnchor: checkpointAnchor
         )
     }
 
     private static let incrementalCaptureAttempts = 3
     private static let incrementalCaptureOutputLimit = 1_048_576
+    private static let maximumCheckpointCandidates = 128
 }
