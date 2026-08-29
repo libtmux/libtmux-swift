@@ -56,14 +56,44 @@ command explains itself on standard error — so
 - ``TmuxCommandList``
 - ``TmuxVersion``
 
+### Naming one thing
+
+- ``SessionID``
+- ``WindowID``
+- ``PaneID``
+- ``WindowLinkID``
+- ``ServerIncarnation``
+
 ### What exists
 
 - ``Session``
 - ``Window``
 - ``WindowLink``
+- ``WindowAppearance``
 - ``Pane``
+- ``PaneSize``
 - ``Client``
 - ``Snapshot``
+
+### Finding a server
+
+- ``TmuxServers``
+- ``ServerDiscovery``
+- ``DiscoveredServer``
+
+### Reading a pane
+
+- ``Server/capture(_:includingHistory:)``
+- ``Server/capture(_:since:limit:)``
+- ``PaneCapture``
+- ``IncrementalCapture``
+- ``CaptureCursor``
+
+### Laying out a window
+
+- ``WindowPlacement``
+- ``PaneDirection``
+- ``ResizeDirection``
 
 ### Waiting for work to finish
 
@@ -96,14 +126,23 @@ command explains itself on standard error — so
 - ``FilterOperator``
 - ``FilterSchema``
 - ``FilterLookup``
+- ``Filterable``
+- ``FilterValue``
+- ``FilterOperation``
+- ``RelationQuery``
+- ``RelationQuantifier``
 - ``CardinalityError``
 - ``FilterSelectionError``
+- ``FilterLookupError``
+- ``FilterValidationError``
+- ``QueryConstructionError``
 
 ### Bounded pattern matching
 
 - ``RegexPattern``
 - ``RegexCompileError``
 - ``RegexMatchError``
+- ``RegexUnsupportedConstruct``
 
 ### Choosing a mode
 
@@ -120,6 +159,7 @@ command explains itself on standard error — so
 - ``ControlNotification``
 - ``FormatSubscription``
 - ``SubscriptionChange``
+- ``ControlNotificationStream``
 
 ### Failures
 
