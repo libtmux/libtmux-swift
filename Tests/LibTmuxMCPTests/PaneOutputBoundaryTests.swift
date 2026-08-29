@@ -171,6 +171,7 @@ struct PaneOutputBoundaryTests {
                 try await server.formatGlobal("#{history_limit}", for: current)
                     == "6000"
             )
+            let bounds = try await server.captureBounds(for: current)
             let result = try await TmuxTools(server: server).call(
                 ToolCall(
                     name: "capture_pane",
@@ -184,7 +185,10 @@ struct PaneOutputBoundaryTests {
 
             #expect(result.lines.count == 2)
             #expect(result.lines.map { String($0.prefix(7)) } == ["ROW4998", "ROW4999"])
-            #expect(result.droppedLines == 4998)
+            #expect(
+                result.droppedLines
+                    == bounds.historySize + bounds.paneHeight - result.lines.count
+            )
             let capture = try #require(await transport.lastCapture)
             #expect(capture.outputLimit == 262_144)
             #expect(capture.arguments.joined(separator: " ").contains(" -S "))
