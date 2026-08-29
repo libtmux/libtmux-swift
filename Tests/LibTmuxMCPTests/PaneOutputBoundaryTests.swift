@@ -205,7 +205,7 @@ struct PaneOutputBoundaryTests {
 
             let failure = TmuxError.invocationFailed(reason: "injected capture failure")
             await transport.failNextCapture(with: failure)
-            await #expect(throws: failure) {
+            await #expect(throws: ToolError.tmux(failure)) {
                 try await TmuxTools(server: server).call(
                     ToolCall(
                         name: "search_panes",
@@ -232,7 +232,7 @@ struct PaneOutputBoundaryTests {
                 try await fixture.wait(for: raced)
             }
             await transport.beforeNextCapture(race)
-            await #expect(throws: TmuxError.staleServerValue) {
+            await #expect(throws: ToolError.tmux(.staleServerValue)) {
                 try await tools.call(
                     ToolCall(
                         name: "capture_pane",

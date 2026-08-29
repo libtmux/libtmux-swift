@@ -19,7 +19,9 @@ struct RunShellLifetimeTests {
             let pane = try #require(try await server.panes().first)
             let tools = TmuxTools(server: server, tier: .mutating)
 
-            await #expect(throws: TmuxError.processLaunchFailed(reason: "did not spawn")) {
+            await #expect(
+                throws: ToolError.tmux(.processLaunchFailed(reason: "did not spawn"))
+            ) {
                 try await tools.call(
                     ToolCall(
                         name: "run_shell",
@@ -46,7 +48,7 @@ struct RunShellLifetimeTests {
             let pane = try #require(try await server.panes().first)
             let tools = TmuxTools(server: server, tier: .mutating)
 
-            await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "wait failed"))) {
                 try await tools.call(
                     ToolCall(
                         name: "run_shell",
@@ -98,7 +100,7 @@ struct RunShellLifetimeTests {
             }
 
             try await fixture.wait(for: started)
-            await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "wait failed"))) {
                 _ = try await first.value
             }
             #expect(
@@ -145,7 +147,7 @@ struct RunShellLifetimeTests {
             let tools = TmuxTools(server: server, tier: .mutating)
             let release = "libtmux-test-run-shell-release-\(UUID().uuidString)"
 
-            await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "wait failed"))) {
                 try await tools.call(
                     ToolCall(
                         name: "run_shell",
@@ -192,7 +194,7 @@ struct RunShellLifetimeTests {
             )
             let pane = try #require(try await server.panes().first)
             let tools = TmuxTools(server: server, tier: .mutating)
-            await #expect(throws: TmuxError.invocationFailed(reason: "wait failed")) {
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "wait failed"))) {
                 try await tools.call(
                     ToolCall(
                         name: "run_shell",
@@ -234,7 +236,7 @@ struct RunShellLifetimeTests {
             let pane = try #require(try await server.panes().first)
             let tools = TmuxTools(server: server, tier: .mutating)
 
-            await #expect(throws: TmuxError.invocationFailed(reason: "capture failed")) {
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "capture failed"))) {
                 try await tools.call(
                     ToolCall(
                         name: "run_shell",
@@ -338,7 +340,7 @@ struct RunShellLifetimeTests {
             )
             try await fixture.wait(for: started)
             first.cancel()
-            await #expect(throws: TmuxError.cancelled) {
+            await #expect(throws: ToolError.tmux(.cancelled)) {
                 _ = try await first.value
             }
 
@@ -394,7 +396,7 @@ struct RunShellLifetimeTests {
 
             try await server.wait(for: started)
             first.cancel()
-            await #expect(throws: TmuxError.cancelled) {
+            await #expect(throws: ToolError.tmux(.cancelled)) {
                 _ = try await first.value
             }
 

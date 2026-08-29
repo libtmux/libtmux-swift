@@ -105,8 +105,10 @@ struct RawCommandSafetyTests {
             #expect(loaded.isSuccess)
             let tools = TmuxTools(server: server, tier: .destructive)
             await #expect(
-                throws: TmuxError.invocationFailed(
-                    reason: "tmux output exceeded 262144 bytes per stream"
+                throws: ToolError.tmux(
+                    .invocationFailed(
+                        reason: "tmux output exceeded 262144 bytes per stream"
+                    )
                 )
             ) {
                 try await tools.call(

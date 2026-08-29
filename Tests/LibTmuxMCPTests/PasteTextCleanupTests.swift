@@ -19,7 +19,7 @@ struct PasteTextCleanupTests {
             let text = "must not remain in paste history"
 
             await #expect(
-                throws: TmuxError.invocationFailed(reason: "cleanup rejected")
+                throws: ToolError.tmux(.invocationFailed(reason: "cleanup rejected"))
             ) {
                 try await TmuxTools(server: server, tier: .mutating).call(
                     ToolCall(

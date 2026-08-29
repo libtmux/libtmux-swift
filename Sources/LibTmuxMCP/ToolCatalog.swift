@@ -1,4 +1,6 @@
 import Foundation
+import LibTmux
+import TmuxWorkspace
 
 /// How much damage a tool can do.
 ///
@@ -402,6 +404,9 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
     case refusedForSafety(String)
     case tmuxRejected(String)
     case timedOut(String, seconds: Double)
+    case tmux(TmuxError)
+    case workspace(WorkspaceBuilderError)
+    case internalFailure(String)
 
     public var description: String {
         switch self {
@@ -434,6 +439,12 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
             \(name) gave up after \(seconds)s. Its tmux command may already have \
             taken effect; inspect current state before retrying it.
             """
+        case let .tmux(error):
+            String(describing: error)
+        case let .workspace(error):
+            "workspace could not be applied: \(error)"
+        case let .internalFailure(reason):
+            "the tool failed unexpectedly: \(reason)"
         }
     }
 }

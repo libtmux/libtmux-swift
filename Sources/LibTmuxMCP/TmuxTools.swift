@@ -1,5 +1,6 @@
 import Foundation
 import LibTmux
+import TmuxWorkspace
 
 /// The tmux tools an MCP client can call.
 ///
@@ -51,6 +52,31 @@ public struct TmuxTools: Sendable {
     public func call(
         _ request: ToolCall,
         reporting progress: ProgressReporter = .silent
+    ) async throws(ToolError) -> ToolOutcome {
+        do {
+            return try await dispatch(request, reporting: progress)
+        } catch let error as ToolError {
+            throw error
+        } catch let error as TmuxError {
+            throw .tmux(error)
+        } catch let error as WorkspaceBuilderError {
+            throw .workspace(error)
+        } catch is DecodingError {
+            throw .wrongArgumentType(
+                "arguments",
+                expected: "values matching \(request.name)'s schema"
+            )
+        } catch is CancellationError {
+            throw .tmux(.cancelled)
+        } catch {
+            if Task.isCancelled { throw .tmux(.cancelled) }
+            throw .internalFailure(String(describing: error))
+        }
+    }
+
+    private func dispatch(
+        _ request: ToolCall,
+        reporting progress: ProgressReporter
     ) async throws -> ToolOutcome {
         guard let definition = Self.byName[request.name] else {
             throw ToolError.unknownTool(request.name)

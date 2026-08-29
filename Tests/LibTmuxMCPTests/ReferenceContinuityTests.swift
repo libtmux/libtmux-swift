@@ -52,7 +52,7 @@ struct ReferenceContinuityTests {
                 ? ["name": .string(name), "value": .string("changed")]
                 : ["name": .string(name), "value": .string("changed")]
 
-            await #expect(throws: TmuxError.serverRestarted) {
+            await #expect(throws: ToolError.tmux(.serverRestarted)) {
                 try await TmuxTools(server: server, tier: .mutating).call(
                     ToolCall(name: tool, arguments: .object(arguments))
                 )
@@ -82,7 +82,7 @@ struct ReferenceContinuityTests {
                 transport: transport
             )
 
-            await #expect(throws: TmuxError.serverRestarted) {
+            await #expect(throws: ToolError.tmux(.serverRestarted)) {
                 try await TmuxTools(server: server).call(ToolCall(name: "describe_server"))
             }
         }

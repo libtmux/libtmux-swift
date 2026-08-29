@@ -163,7 +163,7 @@ struct ToolSafetyTests {
             )
             let tools = TmuxTools(server: server, tier: .destructive, caller: identity)
 
-            await #expect(throws: TmuxError.invocationFailed(reason: "probe failed")) {
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "probe failed"))) {
                 try await tools.call(
                     ToolCall(
                         name: "kill_pane",

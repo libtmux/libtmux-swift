@@ -272,7 +272,7 @@ extension TmuxToolsTests {
             socketPath: "/tmp/libtmux-swift-test/channel-wait-failure",
             tmuxExecutable: "/tmp/libtmux-swift-test/missing-tmux-\(UUID())"
         )
-        await #expect(throws: TmuxError.self) {
+        await #expect(throws: ToolError.self) {
             try await TmuxTools(server: server).call(
                 ToolCall(
                     name: "wait_for_channel",
