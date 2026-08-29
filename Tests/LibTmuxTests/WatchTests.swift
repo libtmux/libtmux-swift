@@ -60,7 +60,7 @@ struct WatchTests {
         }
         let doorbell = WaitDoorbell()
 
-        await Server.pumpWaitNotifications(notifications, for: "%0", into: doorbell)
+        await OutputWaitSession.pumpWaitNotifications(notifications, for: "%0", into: doorbell)
 
         #expect(await doorbell.wait() == .output)
         #expect(await doorbell.wait() == .failed(failure))
