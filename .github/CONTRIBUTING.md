@@ -6,7 +6,7 @@ The package is the repository: `Package.swift` at the root, `Sources/` and
 `Tests/` beside it, because SwiftPM resolves a package from a repository root
 and cannot be pointed at a subdirectory. Five products ship from it —
 `LibTmux`, `TmuxWorkspace`, `LibTmuxMCP`, the `libtmux-mcp` executable, and
-`TmuxTestSupport` — and `Examples/`, `Benchmarks/`, and `dev/Spikes/` are
+`TmuxFixture` — and `Examples/`, `Benchmarks/`, and `dev/Spikes/` are
 packages of their own, so the shipped manifest names only what ships.
 
 How this project writes prose — README, changelog, release notes, commit
