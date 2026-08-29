@@ -136,6 +136,8 @@ public struct ToolDefinition: Sendable, Hashable {
     /// means. Empty for tools whose summary says everything.
     public let detail: String
     public let tier: SafetyTier
+    /// Whether the tool may replace, remove, or otherwise destroy state.
+    public let isDestructive: Bool
     /// Whether calling twice with the same arguments leaves the same state as
     /// calling once. Reaches clients as `idempotentHint`.
     public let isIdempotent: Bool
@@ -151,6 +153,7 @@ public struct ToolDefinition: Sendable, Hashable {
         summary: String,
         detail: String = "",
         tier: SafetyTier,
+        isDestructive: Bool? = nil,
         isIdempotent: Bool = false,
         arguments: [ToolArgument] = [],
         outputSchema: JSONValue? = nil
@@ -160,6 +163,7 @@ public struct ToolDefinition: Sendable, Hashable {
         self.summary = summary
         self.detail = detail
         self.tier = tier
+        self.isDestructive = isDestructive ?? (tier != .readonly)
         self.isIdempotent = isIdempotent
         self.arguments = arguments
         self.outputSchema = outputSchema
@@ -190,7 +194,7 @@ public struct ToolDefinition: Sendable, Hashable {
         .object([
             "title": .string(title),
             "readOnlyHint": .bool(tier == .readonly),
-            "destructiveHint": .bool(tier == .destructive),
+            "destructiveHint": .bool(isDestructive),
             "idempotentHint": .bool(isIdempotent),
             // Everything here acts on one tmux server, whose contents change
             // under us: panes come and go without this server doing anything.

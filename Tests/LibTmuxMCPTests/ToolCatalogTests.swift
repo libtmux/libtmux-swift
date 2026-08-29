@@ -155,16 +155,33 @@ struct ToolCatalogTests {
         }
     }
 
-    @Test("behaviour hints match the tier each tool is filed under")
-    func annotationsMatchTiers() {
+    @Test("read-only hints match the authorization tier")
+    func readOnlyAnnotationsMatchTiers() {
         for definition in TmuxTools.definitions {
             let annotations = definition.annotations
             #expect(
                 annotations["readOnlyHint"]?.boolValue == (definition.tier == .readonly)
             )
+        }
+    }
+
+    @Test("destructive hints describe effects, not authorization tiers")
+    func destructiveAnnotationsDescribeEffects() throws {
+        let expected = [
+            "run_shell": true,
+            "send_keys": true,
+            "apply_workspace": true,
+            "respawn_pane": true,
+            "new_session": false,
+            "new_window": false,
+            "split_pane": false,
+            "capture_pane": false,
+        ]
+        for (name, isDestructive) in expected {
+            let definition = try #require(TmuxTools.byName[name])
             #expect(
-                annotations["destructiveHint"]?.boolValue
-                    == (definition.tier == .destructive)
+                definition.annotations["destructiveHint"]?.boolValue == isDestructive,
+                "\(name)"
             )
         }
     }

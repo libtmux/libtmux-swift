@@ -93,6 +93,7 @@ extension TmuxTools {
             title: "Create a session",
             summary: "Creates a detached session and returns it.",
             tier: .mutating,
+            isDestructive: false,
             arguments: [
                 ToolArgument(
                     name: "name",
@@ -120,6 +121,7 @@ extension TmuxTools {
             title: "Create a window",
             summary: "Creates a window in a session and returns it.",
             tier: .mutating,
+            isDestructive: false,
             arguments: [
                 target("A session ref from list_sessions or snapshot."),
                 ToolArgument(name: "name", summary: "What to call it."),
@@ -143,6 +145,7 @@ extension TmuxTools {
             title: "Split a pane",
             summary: "Splits a pane and returns the new one.",
             tier: .mutating,
+            isDestructive: false,
             arguments: [
                 paneTarget,
                 ToolArgument(
