@@ -69,7 +69,7 @@ extension TmuxToolsTests {
                     name: "run_shell",
                     arguments: .object([
                         "pane": .string(wireRef(pane)),
-                        "command": .string("printf 'shell-marker\\n'"),
+                        "command": .string("printf shell-marker"),
                         "timeout": .number(20),
                     ])
                 )
@@ -77,7 +77,61 @@ extension TmuxToolsTests {
             let result = try outcome.decode(RunShellResult.self)
             #expect(result.exitStatus == 0)
             #expect(!result.timedOut)
-            #expect(result.output.contains { $0.contains("shell-marker") })
+            #expect(result.output == ["shell-marker"])
+        }
+    }
+
+    @Test("run_shell bounds output before collecting it")
+    func runShellBoundsOutputAtTheSource() async throws {
+        try await withTmuxServer { server in
+            _ = try await server.setOption("history-limit", to: "6000")
+            let existing = Set(try await server.panes().map(\.id))
+            _ = try await server.newSession(named: "bounded-run-shell")
+            let pane = try #require(
+                try await server.panes().first { !existing.contains($0.id) }
+            )
+            let ready = "libtmux-test-run-shell-ready-\(UUID().uuidString)"
+            try await server.run(
+                "stty -echo; printf '\\033c'; "
+                    + "\(server.shellInvocation) wait-for -S \(ready)",
+                in: pane
+            )
+            try await server.wait(for: ready)
+            try await server.clearHistory(pane)
+
+            let transport = CaptureLimitRecordingTransport()
+            let boundedServer = Server(
+                endpoint: server.endpoint,
+                tmuxExecutable: server.tmuxExecutable,
+                transport: transport
+            )
+            let current = try #require(
+                try await boundedServer.panes().first { $0.id == pane.id }
+            )
+            let filler = String(repeating: "x", count: 57)
+            let outcome = try await TmuxTools(server: boundedServer).call(
+                ToolCall(
+                    name: "run_shell",
+                    arguments: .object([
+                        "pane": .string(wireRef(current)),
+                        "command": .string(
+                            "i=0; while [ \"$i\" -lt 4200 ]; do "
+                                + "printf 'RUN%04d\(filler)\\n' \"$i\"; "
+                                + "i=$((i + 1)); done"
+                        ),
+                        "max_lines": .number(2),
+                        "timeout": .number(20),
+                    ])
+                )
+            ).decode(RunShellResult.self)
+
+            #expect(outcome.exitStatus == 0)
+            #expect(outcome.output.count == 2)
+            #expect(outcome.output.map { String($0.prefix(7)) } == ["RUN4198", "RUN4199"])
+            #expect(outcome.droppedLines == 4_198)
+            let capture = try #require(await transport.lastCapture)
+            #expect(capture.outputLimit == 262_144)
+            #expect(capture.arguments.joined(separator: " ").contains(" -S "))
         }
     }
 

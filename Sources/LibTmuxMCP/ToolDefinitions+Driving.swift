@@ -35,7 +35,9 @@ extension TmuxTools {
                     name: "max_lines",
                     summary: "Keep at most this many lines of output, dropping the oldest.",
                     kind: .integer,
-                    defaultValue: .number(200)
+                    defaultValue: .number(200),
+                    minimum: 1,
+                    maximum: Double(PaneOutputBudget.maximumLines)
                 ),
             ],
             outputSchema: Schema.object(
