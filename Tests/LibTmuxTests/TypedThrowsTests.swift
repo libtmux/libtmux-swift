@@ -4,6 +4,10 @@ private func requireTmuxError<Result: Sendable>(
     _ operation: @escaping @Sendable () async throws(TmuxError) -> Result
 ) {}
 
+private func requireOutputWaitError<Result: Sendable>(
+    _ operation: @escaping @Sendable () async throws(OutputWaitError) -> Result
+) {}
+
 private func compileTypedTmuxFailures(
     server: Server,
     control: ControlSession,
@@ -19,7 +23,7 @@ private func compileTypedTmuxFailures(
     requireTmuxError { () async throws(TmuxError) -> Void in
         try await control.stopWatching(subscription.name)
     }
-    requireTmuxError { () async throws(TmuxError) -> OutputWait in
+    requireOutputWaitError { () async throws(OutputWaitError) -> OutputWait in
         try await server.waitForOutput(in: pane)
     }
 }

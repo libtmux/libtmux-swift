@@ -13,35 +13,47 @@ extension Server {
         expecting incarnation: ServerIncarnation,
         _ body: @escaping @Sendable (Server, ControlSession) async throws(TmuxError) -> Result
     ) async throws(TmuxError) -> Result {
+        try await withTmuxErrorMapping {
+            try await connectedGuardingIncarnation(
+                attachingTo: sessionID,
+                expecting: incarnation,
+                body
+            )
+        }
+    }
+
+    func connectedGuardingIncarnation<Result: Sendable>(
+        attachingTo sessionID: SessionID,
+        expecting incarnation: ServerIncarnation,
+        _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result
+    ) async throws -> Result {
         let expected = try expectedIncarnation([incarnation])
         guard try await self.incarnation() == expected else {
             throw TmuxError.serverRestarted
         }
-        return try await withTmuxErrorMapping {
-            do {
-                return try await connected(attachingTo: sessionID.rawValue) { server, control in
-                    let request = GuardedRequest(
-                        command: TmuxCommand(
-                            "display-message",
-                            ["-p", "-t", sessionID.rawValue, "#{session_id}"]
-                        ),
-                        incarnation: expected,
-                        targets: [
-                            GuardedTarget(
-                                target: sessionID.rawValue,
-                                condition: "#{==:#{session_id},\(sessionID.rawValue)}"
-                            )
-                        ]
-                    )
-                    _ = try request.validate(await control.reply(to: request))
-                    return try await body(server, control)
-                }
-            } catch TmuxError.connectionClosed {
-                guard try await self.incarnation() == expected else {
-                    throw TmuxError.serverRestarted
-                }
-                throw TmuxError.connectionClosed
+        do {
+            return try await connected(attachingTo: sessionID.rawValue) { server, control in
+                let request = GuardedRequest(
+                    command: TmuxCommand(
+                        "display-message",
+                        ["-p", "-t", sessionID.rawValue, "#{session_id}"]
+                    ),
+                    incarnation: expected,
+                    targets: [
+                        GuardedTarget(
+                            target: sessionID.rawValue,
+                            condition: "#{==:#{session_id},\(sessionID.rawValue)}"
+                        )
+                    ]
+                )
+                _ = try request.validate(await control.reply(to: request))
+                return try await body(server, control)
             }
+        } catch TmuxError.connectionClosed {
+            guard try await self.incarnation() == expected else {
+                throw TmuxError.serverRestarted
+            }
+            throw TmuxError.connectionClosed
         }
     }
 

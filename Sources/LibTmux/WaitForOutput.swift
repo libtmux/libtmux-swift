@@ -54,6 +54,12 @@ public struct OutputWait: Sendable, Hashable, Codable {
     }
 }
 
+/// Why waiting for pane output failed before it produced an outcome.
+public enum OutputWaitError: Error, Sendable, Hashable {
+    case tmux(TmuxError)
+    case matching(RegexMatchError)
+}
+
 extension Server {
     /// Waits until a pane prints something, driven by tmux output events.
     ///
@@ -79,10 +85,10 @@ extension Server {
     ///
     /// - Parameters:
     ///   - pane: the pane to watch.
-    ///   - patterns: regular expressions, any of which ends the wait. Empty
+    ///   - patterns: bounded regular expressions, any of which ends the wait. Empty
     ///     means any new output at all does — the right choice when what the
     ///     pane prints is not known in advance.
-    ///   - stops: regular expressions that end the wait as
+    ///   - stops: bounded regular expressions that end the wait as
     ///     ``OutputWait/Outcome/stopped``. A failure marker belongs here: a
     ///     build that fails at five seconds should not hold the wait open for
     ///     the rest of the timeout.
@@ -92,14 +98,12 @@ extension Server {
     ///   - tailLimit: how many trailing lines to report back.
     public func waitForOutput(
         in pane: Pane,
-        matching patterns: [String] = [],
-        stoppingAt stops: [String] = [],
+        matching patterns: [RegexPattern] = [],
+        stoppingAt stops: [RegexPattern] = [],
         requiringFreshOutput requireFresh: Bool = false,
         timeout: Duration = .seconds(30),
         tailLimit: Int = 20
-    ) async throws(TmuxError) -> OutputWait {
-        let matchers = try patterns.map(RegularExpression.init(pattern:))
-        let stoppers = try stops.map(RegularExpression.init(pattern:))
+    ) async throws(OutputWaitError) -> OutputWait {
         let started = ContinuousClock.now
         let deadline = started.advanced(by: timeout)
         let keptTail = max(0, tailLimit)
@@ -107,19 +111,20 @@ extension Server {
         // Establish an absolute cursor before reading the entry screen. A
         // second cursor read below catches anything that arrived between the
         // two, so opening the event connection cannot create a blind spot.
-        var incremental = try await capture(pane, since: nil)
-        let entryRows = try await waitLookbackRows(in: pane)
-        let alreadyShowing = entryRows.firstIndex { row in
-            matchers.contains { $0.matches(row) }
+        var incremental = try await outputWaitTmux {
+            try await capture(pane, since: nil)
         }
+        let entryRows = try await outputWaitTmux { try await waitLookbackRows(in: pane) }
+        let alreadyShowing = try firstMatchingRow(in: entryRows, patterns: patterns)
         let wasAlreadyShowing = alreadyShowing != nil
 
-        let answer: @Sendable ([String], [String]) -> OutputWait? = { arrived, tail in
+        let answer: @Sendable ([String], [String]) throws(OutputWaitError) -> OutputWait? = {
+            arrived, tail in
             for line in arrived {
-                if let hit = stoppers.firstIndex(where: { $0.matches(line) }) {
+                if let hit = try firstOutputPatternMatch(in: line, patterns: stops) {
                     return OutputWait(
                         outcome: .stopped,
-                        matched: stops[hit],
+                        matched: stops[hit].source,
                         matchedIndex: hit,
                         sawNewOutput: true,
                         matchedAtEntry: wasAlreadyShowing,
@@ -127,11 +132,11 @@ extension Server {
                         seconds: Self.elapsed(since: started)
                     )
                 }
-                guard !matchers.isEmpty else { continue }
-                if let hit = matchers.firstIndex(where: { $0.matches(line) }) {
+                guard !patterns.isEmpty else { continue }
+                if let hit = try firstOutputPatternMatch(in: line, patterns: patterns) {
                     return OutputWait(
                         outcome: .matched,
-                        matched: patterns[hit],
+                        matched: patterns[hit].source,
                         matchedIndex: hit,
                         sawNewOutput: true,
                         matchedAtEntry: wasAlreadyShowing,
@@ -140,7 +145,7 @@ extension Server {
                     )
                 }
             }
-            guard matchers.isEmpty, !arrived.isEmpty else { return nil }
+            guard patterns.isEmpty, !arrived.isEmpty else { return nil }
             return OutputWait(
                 outcome: .matched,
                 sawNewOutput: true,
@@ -168,10 +173,10 @@ extension Server {
         // of them is fixed by waiting longer.
         if let alreadyShowing, !requireFresh {
             let row = entryRows[alreadyShowing]
-            let hit = matchers.firstIndex { $0.matches(row) }
+            let hit = try firstOutputPatternMatch(in: row, patterns: patterns)
             return OutputWait(
                 outcome: .matched,
-                matched: hit.map { patterns[$0] },
+                matched: hit.map { patterns[$0].source },
                 matchedIndex: hit,
                 sawNewOutput: false,
                 matchedAtEntry: true,
@@ -181,7 +186,11 @@ extension Server {
         }
 
         while ContinuousClock.now < deadline {
-            guard let attachment = try await waitAttachment(for: pane) else {
+            guard
+                let attachment = try await outputWaitTmux({
+                    try await waitAttachment(for: pane)
+                })
+            else {
                 return OutputWait(
                     outcome: .paneClosed,
                     sawNewOutput: sawNewOutput,
@@ -204,8 +213,14 @@ extension Server {
                     answer: answer
                 )
             } catch let error {
+                if case .matching = error { throw error }
+                if case .tmux(.cancelled) = error { throw error }
                 guard ContinuousClock.now < deadline else { throw error }
-                guard let current = try await waitAttachment(for: pane) else {
+                guard
+                    let current = try await outputWaitTmux({
+                        try await waitAttachment(for: pane)
+                    })
+                else {
                     return OutputWait(
                         outcome: .paneClosed,
                         sawNewOutput: sawNewOutput,
@@ -234,7 +249,7 @@ extension Server {
             }
         }
 
-        let closed = try await waitAttachment(for: pane) == nil
+        let closed = try await outputWaitTmux { try await waitAttachment(for: pane) } == nil
         return OutputWait(
             outcome: closed ? .paneClosed : .timedOut,
             sawNewOutput: sawNewOutput,
@@ -252,17 +267,17 @@ extension Server {
         sawNewOutput: Bool,
         tailLimit: Int,
         remaining: Duration,
-        answer: @escaping @Sendable ([String], [String]) -> OutputWait?
-    ) async throws(TmuxError) -> OutputWaitCycle {
+        answer: @escaping @Sendable ([String], [String]) throws(OutputWaitError) -> OutputWait?
+    ) async throws(OutputWaitError) -> OutputWaitCycle {
         let owner = self
-        return try await connected(
-            attachingTo: attachment.sessionID,
-            expecting: pane.incarnation
-        ) { (server: Server, control: ControlSession) async throws(TmuxError) -> OutputWaitCycle in
-            let doorbell = WaitDoorbell(primed: true)
-            let notifications = control.notifications
-            return try await withTmuxErrorMapping {
-                try await withThrowingTaskGroup(of: Void.self) { group in
+        return try await withOutputWaitErrorMapping {
+            try await connectedGuardingIncarnation(
+                attachingTo: attachment.sessionID,
+                expecting: pane.incarnation
+            ) { (server: Server, control: ControlSession) async throws -> OutputWaitCycle in
+                let doorbell = WaitDoorbell(primed: true)
+                let notifications = control.notifications
+                return try await withThrowingTaskGroup(of: Void.self) { group in
                     defer { group.cancelAll() }
                     group.addTask {
                         await Self.pumpWaitNotifications(
@@ -389,28 +404,46 @@ extension Server {
         newest: [String],
         sawNewOutput: Bool,
         tailLimit: Int,
-        answer: ([String], [String]) -> OutputWait?
-    ) async throws(TmuxError) -> WaitCaptureScan {
+        answer: ([String], [String]) throws(OutputWaitError) -> OutputWait?
+    ) async throws(OutputWaitError) -> WaitCaptureScan {
         var tail = newest
         var sawOutput = sawNewOutput
         var output: OutputWait?
-        let scan = try await scanForward(
-            pane,
-            since: cursor,
-            sourceLinesPerChunk: Self.waitCaptureLines,
-            perStreamOutputLimit: Self.waitCaptureOutputLimit
-        ) { rows in
-            let arrived = rows.filter { !$0.isEmpty }
-            sawOutput = sawOutput || !arrived.isEmpty
-            tail = Array((tail + arrived).suffix(tailLimit))
-            output = answer(arrived, tail)
-            return output != nil
+        var answerError: OutputWaitError?
+        let scan: ForwardCaptureResult
+        do {
+            scan = try await scanForward(
+                pane,
+                since: cursor,
+                sourceLinesPerChunk: Self.waitCaptureLines,
+                perStreamOutputLimit: Self.waitCaptureOutputLimit
+            ) { rows in
+                let arrived = rows.filter { !$0.isEmpty }
+                sawOutput = sawOutput || !arrived.isEmpty
+                tail = Array((tail + arrived).suffix(tailLimit))
+                do {
+                    output = try answer(arrived, tail)
+                } catch let error as OutputWaitError {
+                    answerError = error
+                } catch {
+                    answerError = .tmux(normalizedTmuxError(error))
+                }
+                return output != nil || answerError != nil
+            }
+        } catch {
+            throw .tmux(normalizedTmuxError(error))
         }
+        if let answerError { throw answerError }
         if scan.restarted {
-            let arrived = try await waitLookbackRows(in: pane).filter { !$0.isEmpty }
+            let arrived: [String]
+            do {
+                arrived = try await waitLookbackRows(in: pane).filter { !$0.isEmpty }
+            } catch {
+                throw .tmux(error)
+            }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
-            output = answer(arrived, tail)
+            output = try answer(arrived, tail)
         }
         return WaitCaptureScan(
             cursor: scan.cursor,
@@ -522,25 +555,50 @@ actor WaitDoorbell {
     }
 }
 
-/// A compiled pattern, so an unusable one is reported when it is given rather
-/// than silently matching nothing on every line.
-struct RegularExpression: Sendable {
-    private let expression: NSRegularExpression
-
-    init(pattern: String) throws(TmuxError) {
+func firstOutputPatternMatch(
+    in text: String,
+    patterns: [RegexPattern]
+) throws(OutputWaitError) -> Int? {
+    for (index, pattern) in patterns.enumerated() {
         do {
-            expression = try NSRegularExpression(pattern: pattern)
-        } catch {
-            throw TmuxError.invocationFailed(
-                reason: "not a usable regular expression: \(pattern)"
-            )
+            if try pattern.containsMatch(in: text) { return index }
+        } catch let error {
+            throw .matching(error)
         }
     }
+    return nil
+}
 
-    func matches(_ line: String) -> Bool {
-        expression.firstMatch(
-            in: line,
-            range: NSRange(line.startIndex..., in: line)
-        ) != nil
+private func firstMatchingRow(
+    in rows: [String],
+    patterns: [RegexPattern]
+) throws(OutputWaitError) -> Int? {
+    for (index, row) in rows.enumerated() {
+        if try firstOutputPatternMatch(in: row, patterns: patterns) != nil { return index }
+    }
+    return nil
+}
+
+private func outputWaitTmux<Result>(
+    _ operation: () async throws -> Result
+) async throws(OutputWaitError) -> Result {
+    do {
+        return try await operation()
+    } catch let error as OutputWaitError {
+        throw error
+    } catch {
+        throw .tmux(normalizedTmuxError(error))
+    }
+}
+
+private func withOutputWaitErrorMapping<Result>(
+    _ operation: () async throws -> Result
+) async throws(OutputWaitError) -> Result {
+    do {
+        return try await operation()
+    } catch let error as OutputWaitError {
+        throw error
+    } catch {
+        throw .tmux(normalizedTmuxError(error))
     }
 }

@@ -80,14 +80,36 @@ struct WatchTests {
                 // the printer already put on screen and never exercise it.
                 try await server.waitForOutput(
                     in: pane,
-                    matching: ["libtmux-ready"],
+                    matching: [
+                        try RegexPattern(
+                            "LIBTMUX-READY",
+                            options: [.caseInsensitive]
+                        )
+                    ],
                     requiringFreshOutput: true,
                     timeout: .seconds(20)
                 )
             }
             #expect(result.outcome == .matched)
-            #expect(result.matched == "libtmux-ready")
+            #expect(result.matched == "LIBTMUX-READY")
             #expect(result.sawNewOutput)
+        }
+    }
+
+    @Test("a matcher refusal remains distinct from a timeout")
+    func matcherRefusalPropagates() throws {
+        let members = String(repeating: "a", count: 4_000)
+        let pattern = try RegexPattern("[\(members)]")
+
+        #expect(
+            throws: OutputWaitError.matching(
+                .workLimitExceeded(maximum: RegexPattern.defaultMaximumWork)
+            )
+        ) {
+            try firstOutputPatternMatch(
+                in: String(repeating: "z", count: 4_000),
+                patterns: [pattern]
+            )
         }
     }
 
@@ -123,7 +145,7 @@ struct WatchTests {
             )
             let result = try await server.waitForOutput(
                 in: pane,
-                matching: ["^\(marker)$"],
+                matching: [try RegexPattern("^\(marker)$")],
                 requiringFreshOutput: true,
                 timeout: .seconds(3),
                 tailLimit: 5
@@ -152,8 +174,8 @@ struct WatchTests {
             let result = try await printing("FAILED", into: pane, on: server) {
                 try await server.waitForOutput(
                     in: pane,
-                    matching: ["never-appears-anywhere"],
-                    stoppingAt: ["FAILED"],
+                    matching: [try RegexPattern("never-appears-anywhere")],
+                    stoppingAt: [try RegexPattern("FAILED")],
                     requiringFreshOutput: true,
                     timeout: .seconds(20)
                 )
@@ -189,7 +211,7 @@ struct WatchTests {
             let pane = try await bootstrapPane(server)
             let result = try await server.waitForOutput(
                 in: pane,
-                matching: ["nothing-will-print-this"],
+                matching: [try RegexPattern("nothing-will-print-this")],
                 timeout: .milliseconds(1200)
             )
             #expect(result.outcome == .timedOut)
@@ -211,7 +233,7 @@ struct WatchTests {
             // timeout would only make the same answer expensive.
             let answered = try await server.waitForOutput(
                 in: pane,
-                matching: ["stale-marker"],
+                matching: [try RegexPattern("stale-marker")],
                 timeout: .seconds(30)
             )
             #expect(answered.outcome == .matched)
@@ -225,7 +247,7 @@ struct WatchTests {
 
             let result = try await server.waitForOutput(
                 in: pane,
-                matching: ["stale-marker"],
+                matching: [try RegexPattern("stale-marker")],
                 requiringFreshOutput: true,
                 timeout: .milliseconds(1200)
             )
@@ -264,7 +286,7 @@ struct WatchTests {
                 group.addTask {
                     try await server.waitForOutput(
                         in: pane,
-                        matching: ["^same-marker$"],
+                        matching: [try RegexPattern("^same-marker$")],
                         requiringFreshOutput: true,
                         timeout: .seconds(3)
                     )
@@ -303,7 +325,7 @@ struct WatchTests {
                 group.addTask {
                     try await server.waitForOutput(
                         in: pane,
-                        matching: ["never-appears"],
+                        matching: [try RegexPattern("never-appears")],
                         timeout: .seconds(5)
                     )
                 }
@@ -344,7 +366,7 @@ struct WatchTests {
 
             let result = try await server.waitForOutput(
                 in: pane,
-                matching: ["^after-respawn$"],
+                matching: [try RegexPattern("^after-respawn$")],
                 requiringFreshOutput: true,
                 timeout: .seconds(3)
             )
