@@ -7,6 +7,30 @@ import TmuxFixture
 
 @Suite("pane output boundaries", .timeLimit(.minutes(1)))
 struct PaneOutputBoundaryTests {
+    @Test("pane content resources bound capture at the source")
+    func paneContentResourcesAreBounded() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let transport = CaptureLimitRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+
+            let resource = try await TmuxResources(server: server).read(
+                "tmux://panes/\(wireRef(pane))/content"
+            )
+            let text = try #require(resource["text"]?.stringValue)
+            let rows = text.split(separator: "\n", omittingEmptySubsequences: false)
+            let capture = try #require(await transport.lastCapture)
+
+            #expect(rows.count <= PaneOutputBudget.defaultCaptureLines)
+            #expect(capture.outputLimit == PaneOutputBudget.sourceBytes)
+            #expect(capture.arguments.contains("-S"))
+        }
+    }
+
     @Test("incremental capture ends at the cursor rather than screen padding")
     func incrementalCaptureEndsAtTheCursor() async throws {
         try await withTmuxServer { fixture in

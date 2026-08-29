@@ -113,7 +113,7 @@ extension TmuxTools {
                         "Keep at most this many lines, dropping the oldest. The end of "
                         + "a pane is almost always the part that matters.",
                     kind: .integer,
-                    defaultValue: .number(200),
+                    defaultValue: .number(Double(PaneOutputBudget.defaultCaptureLines)),
                     minimum: 1,
                     maximum: Double(PaneOutputBudget.maximumLines)
                 ),

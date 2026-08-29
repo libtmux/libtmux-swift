@@ -63,8 +63,8 @@ struct TmuxResources: Sendable {
             name: "pane-content",
             title: "What a pane is showing",
             description:
-                "The rendered text of a pane. Plain text, because it is terminal "
-                + "output — neither JSON to parse nor markup to render.",
+                "The newest bounded slice of a pane's rendered text. Plain text, "
+                + "because terminal output is neither JSON nor markup.",
             mimeType: "text/plain"
         ),
     ]
@@ -105,7 +105,16 @@ struct TmuxResources: Sendable {
             )
         case (3, "panes") where parts[2] == "content":
             let pane = try await requirePane(reference: parts[1])
-            let rows = try await server.capture(pane)
+            let capture = try await server.captureTail(
+                pane,
+                includingHistory: false,
+                maximumLines: PaneOutputBudget.defaultCaptureLines,
+                perStreamOutputLimit: PaneOutputBudget.sourceBytes
+            )
+            let rows = try PaneOutputBudget.tail(
+                capture.lines,
+                afterDropping: capture.droppedLines
+            ).lines
             return .object([
                 "uri": .string(uri),
                 "mimeType": .string("text/plain"),

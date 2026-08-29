@@ -107,7 +107,10 @@ extension TmuxTools {
             refreshWith: "list_panes"
         )
         let history = try arguments.bool("history", or: false)
-        let maxLines = try arguments.integer("max_lines", or: 200)
+        let maxLines = try arguments.integer(
+            "max_lines",
+            or: PaneOutputBudget.defaultCaptureLines
+        )
         let capture = try await server.captureTail(
             pane,
             includingHistory: history,

@@ -3,6 +3,7 @@ enum PaneOutputBudget {
     static let returnedBytes = 128_000
     static let maximumLines = 2_000
     static let maximumMatches = 200
+    static let defaultCaptureLines = 200
     static let defaultSearchLines = 500
 
     struct Tail {
