@@ -46,8 +46,8 @@ public enum TmuxServers {
     public static func defaultDirectories(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String] {
-        if let named = environment["TMUX_TMPDIR"], !named.isEmpty { return [named] }
-        return ["/tmp/tmux-\(getuid())"]
+        let parent = environment["TMUX_TMPDIR"].flatMap { $0.isEmpty ? nil : $0 } ?? "/tmp"
+        return [(parent as NSString).appendingPathComponent("tmux-\(getuid())")]
     }
 
     /// Every server listening on a socket in `directories`.
@@ -85,7 +85,9 @@ public enum TmuxServers {
                 if error == .cancelled { throw error }
                 return nil
             }
-            guard !sessions.isEmpty else { return nil }
+            if sessions.isEmpty {
+                guard try await server.isRunning() else { return nil }
+            }
             let processID: Int?
             do {
                 processID = try await server.serverProcessID()

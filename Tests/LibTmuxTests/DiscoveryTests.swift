@@ -24,6 +24,27 @@ struct DiscoveryTests {
         }
     }
 
+    @Test("a running server with no sessions is found")
+    func runningServerWithoutSessionsIsFound() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(path) = server.endpoint else { return }
+            let directory = (path as NSString).deletingLastPathComponent
+            let session = try #require(try await server.sessions().first)
+            _ = try await server.setOption("exit-empty", to: "off")
+            try await server.kill(session)
+            #expect(try await server.isRunning())
+
+            let found = try await TmuxServers.discover(
+                in: [directory],
+                tmuxExecutable: tmuxExecutablePath()
+            )
+
+            #expect(found.servers.map(\.socketPath) == [path])
+            #expect(found.servers.first?.sessionCount == 0)
+            #expect(found.servers.first?.processID != nil)
+        }
+    }
+
     @Test("a socket left behind by a server that exited is not reported")
     func staleSocketIsNotAServer() async throws {
         let directory = "/tmp/libtmux-swift-test/stale-\(UUID().uuidString.prefix(8))"
@@ -52,11 +73,11 @@ struct DiscoveryTests {
         #expect(found.servers.isEmpty)
     }
 
-    @Test("TMUX_TMPDIR is where tmux looks, and so is this")
+    @Test("TMUX_TMPDIR is the parent of tmux's socket directory")
     func defaultDirectoriesFollowTmux() {
         #expect(
             TmuxServers.defaultDirectories(environment: ["TMUX_TMPDIR": "/somewhere"])
-                == ["/somewhere"]
+                == ["/somewhere/tmux-\(getuid())"]
         )
         // tmux builds the fallback from the real user id rather than the name.
         let fallback = TmuxServers.defaultDirectories(environment: [:])
