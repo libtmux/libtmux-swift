@@ -352,12 +352,14 @@ private actor ReplacingTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         let reply = try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
         if !replaced, shouldReplace(arguments) {
             replaced = true

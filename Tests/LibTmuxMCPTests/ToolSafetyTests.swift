@@ -385,7 +385,8 @@ private actor FailingCallerProbeTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         if !failed, arguments.contains("display-message") {
             failed = true
@@ -394,7 +395,8 @@ private actor FailingCallerProbeTransport: ProcessTransport {
         return try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
     }
 }

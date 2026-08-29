@@ -504,7 +504,7 @@ private func runCaptureAction(
     }
 }
 
-actor CaptureRecordingTransport: OutputLimitedProcessTransport {
+actor CaptureRecordingTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private(set) var captureRequests: [RecordedCaptureRequest] = []
     private var captureActions: [Int: @Sendable () async throws -> Void] = [:]
@@ -533,19 +533,6 @@ actor CaptureRecordingTransport: OutputLimitedProcessTransport {
         _ action: @escaping @Sendable () async throws -> Void
     ) {
         afterCaptureAction = action
-    }
-
-    func run(
-        executable: String,
-        arguments: [String],
-        environment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply {
-        try await run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment,
-            perStreamOutputLimit: .max
-        )
     }
 
     func run(

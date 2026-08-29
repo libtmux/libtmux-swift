@@ -45,7 +45,8 @@ private actor SessionReplacementTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         invocationCount += 1
         guard

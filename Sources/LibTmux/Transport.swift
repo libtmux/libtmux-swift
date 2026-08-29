@@ -16,52 +16,25 @@ func tmuxOutputLimitError(_ limit: Int) -> TmuxError {
 ///
 /// Kept behind a protocol so tests can drive a server without spawning tmux,
 /// and so the upstream process API stays out of the public surface.
+///
+/// A transport is told the limit so it can stop reading at it rather than
+/// buffering what it will then discard. ``ServerRuntime`` checks the reply
+/// against the same limit, so a transport that ignores it still fails closed.
 protocol ProcessTransport: Sendable {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply
-}
-
-protocol OutputLimitedProcessTransport: ProcessTransport {
-    func run(
-        executable: String,
-        arguments: [String],
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply
 }
 
-extension ProcessTransport {
-    func run(
-        executable: String,
-        arguments: [String],
-        environment: [String: String],
-        perStreamOutputLimit: Int
-    ) async throws(TmuxError) -> TmuxReply {
-        guard perStreamOutputLimit >= 0 else {
-            throw .invocationFailed(reason: "output limit cannot be negative")
-        }
-        if let limited = self as? any OutputLimitedProcessTransport {
-            return try await limited.run(
-                executable: executable,
-                arguments: arguments,
-                environment: environment,
-                perStreamOutputLimit: perStreamOutputLimit
-            )
-        }
-        let reply = try await run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment
-        )
-        guard reply.standardOutput.count <= perStreamOutputLimit,
-            reply.standardError.count <= perStreamOutputLimit
-        else {
-            throw tmuxOutputLimitError(perStreamOutputLimit)
-        }
-        return reply
+func requireReplyFitsLimit(
+    _ reply: TmuxReply,
+    _ limit: Int
+) throws(TmuxError) {
+    guard reply.standardOutput.count <= limit, reply.standardError.count <= limit else {
+        throw tmuxOutputLimitError(limit)
     }
 }
 
@@ -70,29 +43,13 @@ extension ProcessTransport {
 /// Cancellation kills the child's whole process group: tmux forks a daemon and
 /// panes fork shells, so signalling only the direct child would leave the rest
 /// running.
-struct SubprocessTransport: OutputLimitedProcessTransport {
-    func run(
-        executable: String,
-        arguments: [String],
-        environment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply {
-        try await run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment,
-            perStreamOutputLimit: defaultTmuxReplyByteLimit
-        )
-    }
-
+struct SubprocessTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
-        guard perStreamOutputLimit >= 0 else {
-            throw .invocationFailed(reason: "output limit cannot be negative")
-        }
         var platformOptions = PlatformOptions()
         platformOptions.createSession = true
         platformOptions.teardownSequence = [

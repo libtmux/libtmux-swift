@@ -299,7 +299,7 @@ struct PaneOutputBoundaryTests {
     }
 }
 
-actor CaptureLimitRecordingTransport: OutputLimitedProcessTransport {
+actor CaptureLimitRecordingTransport: ProcessTransport {
     struct Invocation: Sendable {
         let arguments: [String]
         let outputLimit: Int
@@ -318,19 +318,6 @@ actor CaptureLimitRecordingTransport: OutputLimitedProcessTransport {
         _ action: @escaping @Sendable () async throws -> Void
     ) {
         nextCaptureAction = action
-    }
-
-    func run(
-        executable: String,
-        arguments: [String],
-        environment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply {
-        try await run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment,
-            perStreamOutputLimit: .max
-        )
     }
 
     func run(

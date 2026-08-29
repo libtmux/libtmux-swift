@@ -375,6 +375,9 @@ actor ServerRuntime {
         rawArguments: [String],
         perStreamOutputLimit: Int = defaultTmuxReplyByteLimit
     ) async throws(TmuxError) -> TmuxReply {
+        guard perStreamOutputLimit >= 0 else {
+            throw .invocationFailed(reason: "output limit cannot be negative")
+        }
         try requireTmuxCommandFits(rawArguments)
         // Copied out of isolation before the await so the actor is not held for
         // the lifetime of a tmux process.
@@ -383,11 +386,13 @@ actor ServerRuntime {
         // `-u` keeps format bytes in UTF-8 without changing the environment a
         // newly started daemon passes to panes.
         let arguments = ["-u"] + endpoint.addressArguments + rawArguments
-        return try await transport.run(
+        let reply = try await transport.run(
             executable: executable,
             arguments: arguments,
             environment: TmuxProcessEnvironment.variables(),
             perStreamOutputLimit: perStreamOutputLimit
         )
+        try requireReplyFitsLimit(reply, perStreamOutputLimit)
+        return reply
     }
 }

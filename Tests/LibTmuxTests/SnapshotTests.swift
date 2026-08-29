@@ -459,7 +459,8 @@ private actor SnapshotReplacementTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         guard
             let command = arguments.first(where: {

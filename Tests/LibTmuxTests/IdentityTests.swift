@@ -347,13 +347,15 @@ private actor InvocationCountingTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         invocationCount += 1
         return try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
     }
 }

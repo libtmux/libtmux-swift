@@ -48,8 +48,8 @@ struct TransportLimitTests {
         }
     }
 
-    @Test("the compatibility transport checks each stream at the boundary")
-    func compatibilityTransportChecksEachStream() async throws {
+    @Test("a transport that ignores the limit still fails closed")
+    func runtimeChecksEachStreamAtTheBoundary() async throws {
         let endpoint = try Endpoint(
             socketPath: "/tmp/libtmux-swift-test/transport-limit/socket"
         )
@@ -154,7 +154,8 @@ private struct FixedReplyTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         reply
     }

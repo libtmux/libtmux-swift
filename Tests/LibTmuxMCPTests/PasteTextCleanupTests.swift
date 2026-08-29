@@ -51,7 +51,8 @@ private actor FailingPasteCleanupTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         if let command = arguments.firstIndex(of: "delete-buffer"),
             arguments.indices.contains(command + 2),
@@ -67,7 +68,8 @@ private actor FailingPasteCleanupTransport: ProcessTransport {
         return try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
     }
 }

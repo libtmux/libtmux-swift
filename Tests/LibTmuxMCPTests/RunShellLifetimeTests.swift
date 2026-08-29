@@ -632,7 +632,8 @@ private actor FailingRunShellLaunchTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         if arguments.contains(where: {
             $0.contains("send-keys") && $0.contains("libtmux-mcp-done-")
@@ -642,12 +643,13 @@ private actor FailingRunShellLaunchTransport: ProcessTransport {
         return try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
     }
 }
 
-private actor RunShellCaptureTransport: OutputLimitedProcessTransport {
+private actor RunShellCaptureTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private let failingCapture: Int?
     private var staleCaptureFailures: Int
@@ -659,19 +661,6 @@ private actor RunShellCaptureTransport: OutputLimitedProcessTransport {
     }
 
     var captureCount: Int { captureLimits.count }
-
-    func run(
-        executable: String,
-        arguments: [String],
-        environment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply {
-        try await run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment,
-            perStreamOutputLimit: .max
-        )
-    }
 
     func run(
         executable: String,
@@ -718,7 +707,8 @@ private actor FailingRunShellWaitTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         if endpointDeparted {
             if arguments.contains("display-message") {
@@ -743,7 +733,8 @@ private actor FailingRunShellWaitTransport: ProcessTransport {
         return try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
     }
 }
@@ -807,7 +798,8 @@ private actor GatedRunShellWaitTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         let isDoneWait =
             arguments.contains("wait-for")
@@ -827,7 +819,8 @@ private actor GatedRunShellWaitTransport: ProcessTransport {
         let reply = try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
         guard isDoneWait else { return reply }
         heldWitness.yield()
@@ -849,12 +842,14 @@ private actor WithheldRunShellReplyTransport: ProcessTransport {
     func run(
         executable: String,
         arguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         let reply = try await underlying.run(
             executable: executable,
             arguments: arguments,
-            environment: environment
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
         )
         guard !hasWithheldReply, isRunShellDispatch(arguments) else {
             return reply
