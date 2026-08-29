@@ -22,6 +22,7 @@ struct OutputSchemaTests {
             switch value {
             case .null: "null"
             case .bool: "boolean"
+            case .integer, .unsignedInteger: "integer"
             case let .number(number): number == number.rounded() ? "integer" : "number"
             case .string: "string"
             case .array: "array"

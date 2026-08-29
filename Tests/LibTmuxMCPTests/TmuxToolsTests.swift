@@ -11,7 +11,7 @@ private func containsKey(_ key: String, in value: JSONValue) -> Bool {
         values.contains { containsKey(key, in: $0) }
     case let .object(members):
         members[key] != nil || members.values.contains { containsKey(key, in: $0) }
-    case .null, .bool, .number, .string:
+    case .null, .bool, .integer, .unsignedInteger, .number, .string:
         false
     }
 }

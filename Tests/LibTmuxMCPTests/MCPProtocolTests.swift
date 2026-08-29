@@ -58,6 +58,18 @@ struct MCPProtocolTests {
         #expect(!reply.contains("7.0"))
     }
 
+    @Test("large integer ids are echoed without Double rounding")
+    func largeIntegerIdsSurvive() async throws {
+        for id in ["9007199254740993", "18446744073709551615"] {
+            let reply = try #require(
+                await handler().respond(
+                    to: #"{"jsonrpc":"2.0","id":\#(id),"method":"ping"}"#
+                )
+            )
+            #expect(reply.contains(#""id":\#(id)"#))
+        }
+    }
+
     @Test("a string id is echoed as the string it arrived as")
     func stringIdsSurvive() async throws {
         let reply = try #require(

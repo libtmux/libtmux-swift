@@ -8,6 +8,8 @@ import Foundation
 public enum JSONValue: Codable, Sendable, Hashable {
     case null
     case bool(Bool)
+    case integer(Int64)
+    case unsignedInteger(UInt64)
     case number(Double)
     case string(String)
     case array([JSONValue])
@@ -19,6 +21,10 @@ public enum JSONValue: Codable, Sendable, Hashable {
             self = .null
         } else if let value = try? container.decode(Bool.self) {
             self = .bool(value)
+        } else if let value = try? container.decode(Int64.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(UInt64.self) {
+            self = .unsignedInteger(value)
         } else if let value = try? container.decode(Double.self) {
             self = .number(value)
         } else if let value = try? container.decode(String.self) {
@@ -35,6 +41,8 @@ public enum JSONValue: Codable, Sendable, Hashable {
         switch self {
         case .null: try container.encodeNil()
         case let .bool(value): try container.encode(value)
+        case let .integer(value): try container.encode(value)
+        case let .unsignedInteger(value): try container.encode(value)
         case let .number(value):
             // Ids are usually integers; emitting 1.0 where 1 arrived is
             // technically equal and reads as a different id.
@@ -60,13 +68,21 @@ public enum JSONValue: Codable, Sendable, Hashable {
     }
 
     public var intValue: Int? {
-        guard case let .number(value) = self else { return nil }
-        return Int(exactly: value)
+        switch self {
+        case let .integer(value): Int(exactly: value)
+        case let .unsignedInteger(value): Int(exactly: value)
+        case let .number(value): Int(exactly: value)
+        default: nil
+        }
     }
 
     public var doubleValue: Double? {
-        if case let .number(value) = self { return value }
-        return nil
+        switch self {
+        case let .integer(value): Double(value)
+        case let .unsignedInteger(value): Double(value)
+        case let .number(value): value
+        default: nil
+        }
     }
 
     public var arrayValue: [JSONValue]? {
@@ -82,6 +98,57 @@ public enum JSONValue: Codable, Sendable, Hashable {
     public var isNull: Bool {
         if case .null = self { return true }
         return false
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.null, .null): true
+        case let (.bool(lhs), .bool(rhs)): lhs == rhs
+        case let (.integer(lhs), .integer(rhs)): lhs == rhs
+        case let (.unsignedInteger(lhs), .unsignedInteger(rhs)): lhs == rhs
+        case let (.integer(lhs), .unsignedInteger(rhs)):
+            UInt64(exactly: lhs) == rhs
+        case let (.unsignedInteger(lhs), .integer(rhs)):
+            lhs == UInt64(exactly: rhs)
+        case let (.integer(lhs), .number(rhs)), let (.number(rhs), .integer(lhs)):
+            lhs == Int64(exactly: rhs)
+        case let (.unsignedInteger(lhs), .number(rhs)),
+            let (.number(rhs), .unsignedInteger(lhs)):
+            lhs == UInt64(exactly: rhs)
+        case let (.number(lhs), .number(rhs)): lhs == rhs
+        case let (.string(lhs), .string(rhs)): lhs == rhs
+        case let (.array(lhs), .array(rhs)): lhs == rhs
+        case let (.object(lhs), .object(rhs)): lhs == rhs
+        default: false
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .null:
+            hasher.combine(0)
+        case let .bool(value):
+            hasher.combine(1)
+            hasher.combine(value)
+        case let .integer(value):
+            hasher.combine(2)
+            hasher.combine(Double(value))
+        case let .unsignedInteger(value):
+            hasher.combine(2)
+            hasher.combine(Double(value))
+        case let .number(value):
+            hasher.combine(2)
+            hasher.combine(value)
+        case let .string(value):
+            hasher.combine(3)
+            hasher.combine(value)
+        case let .array(value):
+            hasher.combine(4)
+            hasher.combine(value)
+        case let .object(value):
+            hasher.combine(5)
+            hasher.combine(value)
+        }
     }
 
     public subscript(key: String) -> JSONValue? {
