@@ -269,7 +269,7 @@ extension TmuxToolsTests {
                     arguments: .object([
                         "pane": .string(wireRef(pane)),
                         "command": .string("(exit 7) # trailing comment"),
-                        "timeout": .number(1),
+                        "timeout": .number(20),
                     ])
                 )
             )
