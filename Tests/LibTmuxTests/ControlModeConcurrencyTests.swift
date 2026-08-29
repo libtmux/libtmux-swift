@@ -11,6 +11,14 @@ private actor ControlSendResult {
     }
 }
 
+private actor ControlWriteLog {
+    private(set) var lines: [String] = []
+
+    func record(_ bytes: [UInt8]) {
+        lines.append(String(decoding: bytes, as: UTF8.self))
+    }
+}
+
 @Suite("control mode concurrency", .timeLimit(.minutes(1)))
 struct ControlModeConcurrencyTests {
     @Test("concurrent sends each receive their own reply")
@@ -101,6 +109,55 @@ struct ControlModeConcurrencyTests {
         }
         #expect(await firstResult.value == .failure(.cancelled))
         #expect(try await second.value.lines == ["second-reply"])
+    }
+
+    @Test("cancelling before attachment leaves the connection usable")
+    func cancelledAttachWaiterIsRemoved() async throws {
+        let writes = ControlWriteLog()
+        let control = ControlSession(write: { await writes.record($0) })
+        let firstResult = ControlSendResult()
+        let (starts, startWitness) = AsyncStream.makeStream(of: Void.self)
+        var startIterator = starts.makeAsyncIterator()
+        let first = Task { @MainActor in
+            startWitness.yield()
+            do {
+                let reply = try await control.send(
+                    TmuxCommand("display-message", ["-p", "cancelled-before-attach"])
+                )
+                await firstResult.record(.success(reply))
+            } catch let error as TmuxError {
+                await firstResult.record(.failure(error))
+            } catch {
+                Issue.record("unexpected send error: \(error)")
+            }
+        }
+        _ = await startIterator.next()
+        await control.consume("%begin 1 1 0")
+
+        first.cancel()
+        let cancelledPromptly = try await waitUntil(within: .seconds(1)) {
+            await firstResult.value != nil
+        }
+        #expect(cancelledPromptly)
+        #expect(await firstResult.value == .failure(.cancelled))
+        #expect(await writes.lines.isEmpty)
+
+        await control.consume("%end 1 1 0")
+        let second = Task {
+            try await control.send(
+                TmuxCommand("display-message", ["-p", "after-attach"])
+            )
+        }
+        let wroteSecond = try await waitUntil(within: .seconds(1)) {
+            await writes.lines.count == 1
+        }
+        #expect(wroteSecond)
+        #expect(await writes.lines == ["display-message -p after-attach\n"])
+
+        await control.consume("%begin 1 2 1")
+        await control.consume("after-attach-reply")
+        await control.consume("%end 1 2 1")
+        #expect(try await second.value.lines == ["after-attach-reply"])
     }
 
     @Test("hook replies do not answer the next command")

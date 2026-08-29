@@ -64,6 +64,11 @@ private struct SubmittedLine {
     }
 }
 
+private struct AttachWaiter {
+    let id: UInt64
+    let continuation: CheckedContinuation<Result<Void, TmuxError>, Never>
+}
+
 /// A live control-mode connection.
 ///
 /// Commands go in and numbered replies come back, so output belongs to the
@@ -74,7 +79,8 @@ public actor ControlSession {
     private var parser = ControlProtocolParser()
     private var pending: [SubmittedLine] = []
     private var nextSubmissionID: UInt64 = 0
-    private var attachWaiters: [CheckedContinuation<Result<Void, TmuxError>, Never>] = []
+    private var attachWaiters: [AttachWaiter] = []
+    private var nextAttachWaiterID: UInt64 = 0
     private var lastWrite: Task<Void, Never>?
     private var isAttached = false
     /// Why the connection ended, once it has.
@@ -217,10 +223,25 @@ public actor ControlSession {
     /// own reply, shifting every later answer by one.
     private func waitUntilAttached() async throws(TmuxError) {
         guard !isAttached else { return }
-        let result: Result<Void, TmuxError> = await withCheckedContinuation { continuation in
-            attachWaiters.append(continuation)
+        let id = nextAttachWaiterID
+        nextAttachWaiterID &+= 1
+        let result: Result<Void, TmuxError> = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: .failure(.cancelled))
+                    return
+                }
+                attachWaiters.append(AttachWaiter(id: id, continuation: continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelAttachWaiter(id) }
         }
         return try result.get()
+    }
+
+    private func cancelAttachWaiter(_ id: UInt64) {
+        guard let index = attachWaiters.firstIndex(where: { $0.id == id }) else { return }
+        attachWaiters.remove(at: index).continuation.resume(returning: .failure(.cancelled))
     }
 
     private func failOldestWaiter(_ error: TmuxError) {
@@ -250,7 +271,7 @@ public actor ControlSession {
                 isAttached = true
                 let waiters = attachWaiters
                 attachWaiters = []
-                for waiter in waiters { waiter.resume(returning: .success(())) }
+                for waiter in waiters { waiter.continuation.resume(returning: .success(())) }
                 return
             }
             guard !pending.isEmpty else { return }
@@ -295,7 +316,7 @@ public actor ControlSession {
         let attaching = attachWaiters
         attachWaiters = []
         for waiter in attaching {
-            waiter.resume(returning: .failure(reason))
+            waiter.continuation.resume(returning: .failure(reason))
         }
         broadcast.finish()
     }
