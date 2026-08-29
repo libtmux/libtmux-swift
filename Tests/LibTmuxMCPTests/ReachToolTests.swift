@@ -121,6 +121,8 @@ struct ReachToolTests {
 
     @Test("list_servers finds a running server and not a socket left behind")
     func listServersFindsWhatIsRunning() async throws {
+        let schema = try #require(TmuxTools.byName["list_servers"]?.outputSchema)
+        #expect(schema["properties"]?["servers"]?["maxItems"]?.doubleValue == 128)
         try await withTmuxServer { server in
             guard case let .socketPath(path) = server.endpoint else { return }
             let directory = (path as NSString).deletingLastPathComponent
@@ -133,6 +135,7 @@ struct ReachToolTests {
             let servers = try #require(outcome.structured["servers"]?.arrayValue)
             #expect(servers.count == 1)
             #expect(servers.first?["socketPath"]?.stringValue == path)
+            #expect(outcome.structured["truncated"]?.boolValue == false)
         }
     }
 

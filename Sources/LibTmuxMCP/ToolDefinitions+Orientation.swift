@@ -1,3 +1,5 @@
+import LibTmux
+
 extension TmuxTools {
     static let orientationDefinitions: [ToolDefinition] = [
         ToolDefinition(
@@ -48,7 +50,9 @@ extension TmuxTools {
 
                 A socket file is not a running server: tmux leaves the file \
                 behind when it exits, so each one is asked whether it answers \
-                and the ones that do not are left out.
+                and the ones that do not are left out. At most 4,096 entries \
+                are inspected and 128 socket candidates are probed, with two \
+                seconds allowed for each; `truncated` says more may remain.
                 """,
             tier: .readonly,
             isIdempotent: true,
@@ -63,18 +67,21 @@ extension TmuxTools {
             ],
             outputSchema: Schema.object(
                 [
-                    "servers": Schema.array(
-                        of: Schema.object(
+                    "servers": .object([
+                        "type": .string("array"),
+                        "items": Schema.object(
                             [
                                 "socketPath": Schema.string,
                                 "processID": Schema.nullableInteger,
                                 "sessionCount": Schema.integer,
                             ],
                             required: ["socketPath", "sessionCount"]
-                        )
-                    )
+                        ),
+                        "maxItems": .number(Double(TmuxServers.maximumCandidates)),
+                    ]),
+                    "truncated": Schema.boolean,
                 ],
-                required: ["servers"]
+                required: ["servers", "truncated"]
             )
         ),
         ToolDefinition(

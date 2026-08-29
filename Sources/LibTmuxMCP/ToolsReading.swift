@@ -425,11 +425,11 @@ extension TmuxTools {
 extension TmuxTools {
     func listServers(_ arguments: Arguments) async throws -> ToolOutcome {
         let directories = try arguments.optionalStrings("directories")
-        let found = await TmuxServers.discover(
+        let found = try await TmuxServers.discover(
             in: directories,
             tmuxExecutable: server.tmuxExecutable
         )
-        return .listing("servers", JSONValue.encoding(found))
+        return .init(found)
     }
 
     func showOptions(_ arguments: Arguments) async throws -> ToolOutcome {
