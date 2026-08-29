@@ -105,16 +105,35 @@ extension Server {
         // Establish an absolute cursor before reading the entry screen. A
         // second cursor read below catches anything that arrived between the
         // two, so opening the event connection cannot create a blind spot.
-        var incremental = try await retryingStaleOutputRead(until: deadline) {
-            () async throws(OutputWaitError) -> IncrementalCapture in
-            try await withOutputWaitErrorMapping {
-                try await capture(pane, since: nil)
+        let entryRace = await raceWaitOperation(until: deadline) {
+            let incremental = try await self.retryingStaleOutputRead(until: deadline) {
+                try await withOutputWaitErrorMapping {
+                    try await self.capture(pane, since: nil)
+                }
             }
+            let rows = try await self.retryingStaleOutputRead(until: deadline) {
+                try await withOutputWaitErrorMapping {
+                    try await self.waitLookbackRows(in: pane)
+                }
+            }
+            return WaitEntryRead(incremental: incremental, rows: rows)
         }
-        let entryRows = try await retryingStaleOutputRead(until: deadline) {
-            () async throws(OutputWaitError) -> [String] in
-            try await withOutputWaitErrorMapping { try await waitLookbackRows(in: pane) }
+        let entryRead: WaitEntryRead
+        switch entryRace {
+        case let .completed(value): entryRead = value
+        case let .failed(error): throw error
+        case .timedOut:
+            return OutputWait(
+                outcome: .timedOut,
+                sawNewOutput: false,
+                matchedAtEntry: false,
+                tail: [],
+                seconds: Self.elapsed(since: started)
+            )
+        case .cancelled: throw .tmux(.cancelled)
         }
+        var incremental = entryRead.incremental
+        let entryRows = entryRead.rows
         let entryMatch = try firstEntryOutputMatch(
             in: entryRows,
             patterns: patterns,
@@ -175,18 +194,34 @@ extension Server {
             )
         }
 
-        let caughtAtEntry = try await retryingStaleOutputRead(until: deadline) {
-            () async throws(OutputWaitError) -> WaitCaptureScan in
-            try await scanWaitOutput(
-                in: pane,
-                since: incremental.cursor,
-                newest: [],
+        let entryCursor = incremental.cursor
+        let caughtAtEntryRace = await raceWaitOperation(until: deadline) {
+            try await self.retryingStaleOutputRead(until: deadline) {
+                try await self.scanWaitOutput(
+                    in: pane,
+                    since: entryCursor,
+                    newest: [],
+                    sawNewOutput: false,
+                    tailLimit: keptTail,
+                    outputEvent: false,
+                    deadline: deadline,
+                    answer: answer
+                )
+            }
+        }
+        let caughtAtEntry: WaitCaptureScan
+        switch caughtAtEntryRace {
+        case let .completed(scan): caughtAtEntry = scan
+        case let .failed(error): throw error
+        case .timedOut:
+            return OutputWait(
+                outcome: .timedOut,
                 sawNewOutput: false,
-                tailLimit: keptTail,
-                outputEvent: false,
-                deadline: deadline,
-                answer: answer
+                matchedAtEntry: wasAlreadyShowing,
+                tail: [],
+                seconds: Self.elapsed(since: started)
             )
+        case .cancelled: throw .tmux(.cancelled)
         }
         incremental = IncrementalCapture(lines: [], cursor: caughtAtEntry.cursor)
         var sawNewOutput = caughtAtEntry.sawNewOutput
@@ -218,18 +253,32 @@ extension Server {
         }
 
         while ContinuousClock.now < deadline {
-            guard
-                let attachment = try await withOutputWaitErrorMapping({
-                    try await waitAttachment(for: pane)
-                })
-            else {
+            let attachmentRace = await raceWaitOperation(until: deadline) {
+                try await self.waitAttachment(for: pane)
+            }
+            let attachment: PaneAttachment
+            switch attachmentRace {
+            case let .completed(current):
+                guard let current else {
+                    return OutputWait(
+                        outcome: .paneClosed,
+                        sawNewOutput: sawNewOutput,
+                        matchedAtEntry: wasAlreadyShowing,
+                        tail: Array(newest.suffix(keptTail)),
+                        seconds: Self.elapsed(since: started)
+                    )
+                }
+                attachment = current
+            case let .failed(error): throw error
+            case .timedOut:
                 return OutputWait(
-                    outcome: .paneClosed,
+                    outcome: .timedOut,
                     sawNewOutput: sawNewOutput,
                     matchedAtEntry: wasAlreadyShowing,
                     tail: Array(newest.suffix(keptTail)),
                     seconds: Self.elapsed(since: started)
                 )
+            case .cancelled: throw .tmux(.cancelled)
             }
             let remaining = ContinuousClock.now.duration(to: deadline)
             let cycle: OutputWaitCycle
@@ -260,18 +309,32 @@ extension Server {
                     )
                 }
                 guard ContinuousClock.now < deadline else { throw error }
-                guard
-                    let current = try await withOutputWaitErrorMapping({
-                        try await waitAttachment(for: pane)
-                    })
-                else {
+                let currentRace = await raceWaitOperation(until: deadline) {
+                    try await self.waitAttachment(for: pane)
+                }
+                let current: PaneAttachment
+                switch currentRace {
+                case let .completed(value):
+                    guard let value else {
+                        return OutputWait(
+                            outcome: .paneClosed,
+                            sawNewOutput: sawNewOutput,
+                            matchedAtEntry: wasAlreadyShowing,
+                            tail: newest,
+                            seconds: Self.elapsed(since: started)
+                        )
+                    }
+                    current = value
+                case let .failed(readError): throw readError
+                case .timedOut:
                     return OutputWait(
-                        outcome: .paneClosed,
+                        outcome: .timedOut,
                         sawNewOutput: sawNewOutput,
                         matchedAtEntry: wasAlreadyShowing,
                         tail: newest,
                         seconds: Self.elapsed(since: started)
                     )
+                case .cancelled: throw .tmux(.cancelled)
                 }
                 guard current != attachment else {
                     if case .tmux(.staleServerValue) = error { continue }
@@ -296,12 +359,8 @@ extension Server {
             }
         }
 
-        let closed =
-            try await withOutputWaitErrorMapping {
-                try await waitAttachment(for: pane)
-            } == nil
         return OutputWait(
-            outcome: closed ? .paneClosed : .timedOut,
+            outcome: .timedOut,
             sawNewOutput: sawNewOutput,
             matchedAtEntry: wasAlreadyShowing,
             tail: Array(newest.suffix(keptTail)),
@@ -346,9 +405,12 @@ extension Server {
                         while !Task.isCancelled {
                             try? await Task.sleep(for: .seconds(1))
                             guard !Task.isCancelled else { return }
-                            do {
-                                guard let current = try await server.waitAttachment(for: pane)
-                                else {
+                            let currentRace = await server.raceWaitOperation(until: deadline) {
+                                try await server.waitAttachment(for: pane)
+                            }
+                            switch currentRace {
+                            case let .completed(current):
+                                guard let current else {
                                     await doorbell.ring(.paneClosed)
                                     return
                                 }
@@ -356,8 +418,13 @@ extension Server {
                                     await doorbell.ring(.reattach)
                                     return
                                 }
-                            } catch {
-                                await doorbell.ring(.failed(normalizedTmuxError(error)))
+                            case let .failed(error):
+                                await doorbell.ring(.failed(waitTmuxError(error)))
+                                return
+                            case .timedOut:
+                                await doorbell.ring(.timedOut)
+                                return
+                            case .cancelled:
                                 return
                             }
                         }
@@ -374,18 +441,24 @@ extension Server {
                         if wake == .output || wake == .scan || wake == .inspect
                             || wake == .reattach
                         {
-                            let scanRace = await server.raceWaitScan(
-                                in: pane,
-                                since: cursor,
-                                newest: newest,
-                                sawNewOutput: sawNewOutput,
-                                tailLimit: tailLimit,
-                                outputEvent: wake == .output,
-                                until: deadline,
-                                answer: answer
-                            )
+                            let scanCursor = cursor
+                            let scanTail = newest
+                            let scanSawOutput = sawNewOutput
+                            let scanOutputEvent = wake == .output
+                            let scanRace = await server.raceWaitOperation(until: deadline) {
+                                try await server.scanWaitOutput(
+                                    in: pane,
+                                    since: scanCursor,
+                                    newest: scanTail,
+                                    sawNewOutput: scanSawOutput,
+                                    tailLimit: tailLimit,
+                                    outputEvent: scanOutputEvent,
+                                    deadline: deadline,
+                                    answer: answer
+                                )
+                            }
                             switch scanRace {
-                            case let .scanned(scan):
+                            case let .completed(scan):
                                 cursor = scan.cursor
                                 sawNewOutput = scan.sawNewOutput
                                 newest = scan.tail
@@ -398,10 +471,21 @@ extension Server {
                                 }
                                 if scan.hasMore { await doorbell.ring(.scan) }
                             case let .failed(error):
-                                guard try await owner.waitAttachment(for: pane) != nil else {
-                                    return .finished(.paneClosed, newest, sawNewOutput)
+                                let currentRace = await owner.raceWaitOperation(until: deadline) {
+                                    try await owner.waitAttachment(for: pane)
                                 }
-                                throw error
+                                switch currentRace {
+                                case .completed(nil):
+                                    return .finished(.paneClosed, newest, sawNewOutput)
+                                case .completed:
+                                    throw error
+                                case let .failed(readError):
+                                    throw readError
+                                case .timedOut:
+                                    return .finished(.timedOut, newest, sawNewOutput)
+                                case .cancelled:
+                                    throw OutputWaitError.tmux(.cancelled)
+                                }
                             case .timedOut:
                                 return .finished(.timedOut, newest, sawNewOutput)
                             case .cancelled:
@@ -412,17 +496,37 @@ extension Server {
                         switch wake {
                         case .output, .scan: continue
                         case .inspect:
-                            guard let current = try await owner.waitAttachment(for: pane) else {
-                                return .finished(.paneClosed, newest, sawNewOutput)
+                            let currentRace = await owner.raceWaitOperation(until: deadline) {
+                                try await owner.waitAttachment(for: pane)
                             }
-                            guard current == attachment else {
-                                return .reattach(cursor, newest, sawNewOutput)
+                            switch currentRace {
+                            case .completed(nil):
+                                return .finished(.paneClosed, newest, sawNewOutput)
+                            case let .completed(current?):
+                                guard current == attachment else {
+                                    return .reattach(cursor, newest, sawNewOutput)
+                                }
+                            case let .failed(error): throw error
+                            case .timedOut:
+                                return .finished(.timedOut, newest, sawNewOutput)
+                            case .cancelled:
+                                throw OutputWaitError.tmux(.cancelled)
                             }
                         case .reattach, .connectionClosed:
-                            guard try await owner.waitAttachment(for: pane) != nil else {
-                                return .finished(.paneClosed, newest, sawNewOutput)
+                            let currentRace = await owner.raceWaitOperation(until: deadline) {
+                                try await owner.waitAttachment(for: pane)
                             }
-                            return .reattach(cursor, newest, sawNewOutput)
+                            switch currentRace {
+                            case .completed(nil):
+                                return .finished(.paneClosed, newest, sawNewOutput)
+                            case .completed:
+                                return .reattach(cursor, newest, sawNewOutput)
+                            case let .failed(error): throw error
+                            case .timedOut:
+                                return .finished(.timedOut, newest, sawNewOutput)
+                            case .cancelled:
+                                throw OutputWaitError.tmux(.cancelled)
+                            }
                         case .paneClosed:
                             return .finished(.paneClosed, newest, sawNewOutput)
                         case .timedOut:
@@ -435,17 +539,23 @@ extension Server {
         }
     }
 
-    private func retryingStaleOutputRead<Result>(
+    private func retryingStaleOutputRead<Value: Sendable>(
         until deadline: ContinuousClock.Instant,
-        _ operation: () async throws(OutputWaitError) -> Result
-    ) async throws(OutputWaitError) -> Result {
+        _ operation: @escaping @Sendable () async throws -> Value
+    ) async throws(OutputWaitError) -> Value {
         while true {
             do {
                 return try await operation()
-            } catch let error {
-                guard case .tmux(.staleServerValue) = error else { throw error }
+            } catch {
+                let mapped: OutputWaitError
+                if let error = error as? OutputWaitError {
+                    mapped = error
+                } else {
+                    mapped = .tmux(normalizedTmuxError(error))
+                }
+                guard case .tmux(.staleServerValue) = mapped else { throw mapped }
                 guard !Task.isCancelled else { throw .tmux(.cancelled) }
-                guard ContinuousClock.now < deadline else { throw error }
+                guard ContinuousClock.now < deadline else { throw mapped }
                 await Task.yield()
             }
         }
@@ -474,39 +584,35 @@ extension Server {
         return PaneAttachment(sessionID: sessionID, windowID: windowID)
     }
 
-    private func raceWaitScan(
-        in pane: Pane,
-        since cursor: CaptureCursor,
-        newest: [String],
-        sawNewOutput: Bool,
-        tailLimit: Int,
-        outputEvent: Bool,
+    private func raceWaitOperation<Value: Sendable>(
         until deadline: ContinuousClock.Instant,
-        answer: @escaping OutputWaitAnswer
-    ) async -> WaitScanRace {
+        _ operation: @escaping @Sendable () async throws -> Value
+    ) async -> WaitDeadlineRace<Value> {
         if Task.isCancelled { return .cancelled }
         let now = ContinuousClock.now
         guard now < deadline else { return .timedOut }
         let remaining = now.duration(to: deadline)
-        return await withTaskGroup(of: WaitScanRace.self) { group in
+        return await withTaskGroup(of: WaitDeadlineRace<Value>.self) { group in
             group.addTask {
                 do {
-                    return .scanned(
-                        try await self.scanWaitOutput(
-                            in: pane,
-                            since: cursor,
-                            newest: newest,
-                            sawNewOutput: sawNewOutput,
-                            tailLimit: tailLimit,
-                            outputEvent: outputEvent,
-                            deadline: deadline,
-                            answer: answer
-                        )
-                    )
+                    let value = try await operation()
+                    if Task.isCancelled { return .cancelled }
+                    return ContinuousClock.now < deadline ? .completed(value) : .timedOut
                 } catch let error as OutputWaitError {
+                    if case .tmux(.staleServerValue) = error,
+                        ContinuousClock.now >= deadline
+                    {
+                        return .timedOut
+                    }
                     return .failed(error)
                 } catch {
-                    return .failed(.tmux(normalizedTmuxError(error)))
+                    let mapped = normalizedTmuxError(error)
+                    if case .staleServerValue = mapped,
+                        ContinuousClock.now >= deadline
+                    {
+                        return .timedOut
+                    }
+                    return .failed(.tmux(mapped))
                 }
             }
             group.addTask {
@@ -655,14 +761,19 @@ private struct PaneAttachment: Sendable, Hashable {
     let windowID: WindowID
 }
 
+private struct WaitEntryRead: Sendable {
+    let incremental: IncrementalCapture
+    let rows: [String]
+}
+
 private enum OutputWaitCycle: Sendable {
     case answered(OutputWait)
     case reattach(CaptureCursor, [String], Bool)
     case finished(OutputWait.Outcome, [String], Bool)
 }
 
-private enum WaitScanRace: Sendable {
-    case scanned(WaitCaptureScan)
+private enum WaitDeadlineRace<Value: Sendable>: Sendable {
+    case completed(Value)
     case failed(OutputWaitError)
     case timedOut
     case cancelled
@@ -679,6 +790,13 @@ private struct WaitCaptureScan: Sendable {
 
 private typealias OutputWaitAnswer =
     @Sendable ([String], [String], Bool) throws(OutputWaitError) -> OutputWait?
+
+private func waitTmuxError(_ error: OutputWaitError) -> TmuxError {
+    switch error {
+    case let .tmux(error): error
+    case let .matching(error): .invocationFailed(reason: String(describing: error))
+    }
+}
 
 enum WaitWake: Sendable, Hashable {
     case output

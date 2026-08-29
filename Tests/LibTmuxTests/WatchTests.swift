@@ -250,6 +250,36 @@ struct WatchTests {
         }
     }
 
+    @Test("bootstrap capture cannot move a wait past its deadline")
+    func bootstrapCaptureCannotMoveTheDeadline() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            let transport = CaptureRecordingTransport()
+            await transport.afterEveryCapture { () async throws(TmuxError) in
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    throw TmuxError.cancelled
+                }
+            }
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+
+            let result = try await server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("never-matches")],
+                requiringFreshOutput: true,
+                timeout: .milliseconds(100)
+            )
+
+            #expect(result.outcome == .timedOut)
+            #expect(result.seconds < 0.5)
+        }
+    }
+
     @Test("a stop marker ends the wait before the deadline")
     func stopMarkerEndsTheWaitEarly() async throws {
         try await withTmuxServer { server in
