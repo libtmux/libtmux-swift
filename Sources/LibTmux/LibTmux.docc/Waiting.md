@@ -163,7 +163,7 @@ this is for:
 | --- | --- | --- |
 | pane captures taken | one per tick, for as long as the wait lasts | 5 captures |
 | quiet liveness | checked by every capture | one in-band target check per second |
-| tmux processes spent | one per capture | 12; quiet checks reuse the connection |
+| tmux processes spent | one per capture | 11; quiet checks reuse the connection |
 
 <!-- waiting-matrix:end -->
 
