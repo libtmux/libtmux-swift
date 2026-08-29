@@ -418,7 +418,7 @@ extension TmuxTools {
                         if capture.restarted { return false }
                     } catch let error as TmuxError {
                         switch error {
-                        case .foreignServerValue, .serverRestarted:
+                        case .commandFailed, .foreignServerValue, .serverRestarted:
                             return false
                         default:
                             continue
