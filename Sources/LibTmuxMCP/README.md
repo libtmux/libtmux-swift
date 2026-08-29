@@ -12,13 +12,19 @@ these tools served over stdio.
 ```
 
 ```swift
+import LibTmux
 import LibTmuxMCP
+```
 
-let tools = TmuxTools(server: server)
-for definition in tools.visibleDefinitions {
-    print(definition.name, definition.summary)
+```swift
+public func useEmbeddedTools(on server: Server) async throws -> Int {
+    let tools = TmuxTools(server: server)
+    for definition in tools.visibleDefinitions {
+        print(definition.name, definition.summary)
+    }
+    let result = try await tools.call(ToolCall(name: "list_panes"))
+    return result.structured["panes"]?.arrayValue?.count ?? 0
 }
-let result = try await tools.call(ToolCall(name: "list_panes"))
 ```
 
 `TmuxTools(server:)` permits readonly tools. Pass `tier: .mutating` or

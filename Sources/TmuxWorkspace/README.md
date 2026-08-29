@@ -16,7 +16,9 @@ family names it the same way — [`tmux-workspace`][rs], [`@libtmux/workspace`][
 
 ```swift
 import TmuxWorkspace
+```
 
+```swift
 let workspace = Workspace(
     sessionName: "work",
     windows: [
@@ -24,9 +26,16 @@ let workspace = Workspace(
             windowName: "editor",
             layout: "even-horizontal",
             panes: [PanePlan(), PanePlan()]
-        )
+        ),
+        WindowPlan(
+            windowName: "logs",
+            panes: [PanePlan(shellCommands: ["tail -f /tmp/build.log"])]
+        ),
     ]
 )
+```
+
+```swift
 let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 

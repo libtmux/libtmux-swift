@@ -151,7 +151,7 @@ live-test call sites from sliding. The trait-on test later compiles and runs
 that package:
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 36
+$ python3 Scripts/check_examples.py --min-executed 40
 ```
 
 Every socket this repository names by literal lives under one of this port's
@@ -214,12 +214,10 @@ bitten: it needs macOS 15.
 
 ## Documented examples
 
-Anything inside a `swift` fenced block in the top-level `README.md` or the DocC
-catalogue must also appear in a file under `Examples/Sources/`. Add the example
-there rather than writing it twice — `Scripts/check_examples.py` fails when a
-fence appears in no example. Those two documents are the whole of what the
-check scans: a `swift` fence added to a product README under `Sources/` is
-compiled by nothing.
+Anything inside a `swift` fenced block in the top-level `README.md`, a product
+README under `Sources/`, or the DocC catalogue must also appear in a file under
+`Examples/Sources/`. Add the example there rather than writing it twice —
+`Scripts/check_examples.py` fails when a fence appears in no example.
 
 `Examples/` is a package of its own that depends on this one, so an example
 reaches the library the way a reader does: through the products, with no

@@ -384,7 +384,7 @@ doorbell rather than the text being matched.
 Written in Swift, it is ordinary values:
 
 ```swift
-Workspace(
+let workspace = Workspace(
     sessionName: "work",
     windows: [
         WindowPlan(
@@ -597,12 +597,12 @@ executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-40 documented examples mapped to consumer sources
-36 have live-test call sites
+46 documented examples mapped to consumer sources
+40 have live-test call sites
 ```
 
 That check fails if a fence here has no example behind it. The Examples test
-run is what compiles those sources and exercises the 36 live call sites; CI
+run is what compiles those sources and exercises the 40 live call sites; CI
 runs both gates.
 [`Examples/README.md`](Examples/) says how a fence is matched, and what the
 check cannot see.

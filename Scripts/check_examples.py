@@ -8,8 +8,8 @@ cannot tell either from the page.
 `Examples/` is a package of its own that depends on this one, so
 `swift test --package-path Examples` compiles it the way a reader does: through
 the products, with no `@testable`. This script does not invoke Swift. It checks
-that each ```swift block in the README and DocC catalogue appears there rather
-than being a copy that drifted away from it.
+that each ```swift block in the repository README, product READMEs, and DocC
+catalogue appears there rather than being a copy that drifted away from it.
 
 Every example lives in a function, so a call from `Examples/Tests/` identifies
 the examples the live suite reaches. Running that suite is what proves they
@@ -33,7 +33,11 @@ import textwrap
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EXAMPLES = ROOT / "Examples" / "Sources"
 TESTS = ROOT / "Examples" / "Tests"
-DOCUMENTS = [ROOT / "README.md", *sorted((ROOT / "Sources").rglob("*.docc/*.md"))]
+DOCUMENTS = [
+    ROOT / "README.md",
+    *sorted((ROOT / "Sources").glob("*/README.md")),
+    *sorted((ROOT / "Sources").rglob("*.docc/*.md")),
+]
 
 # Excerpts from a consumer's `Package.swift`. They are Swift, and they are
 # fenced as Swift so they highlight, but none is a statement that can compile on
@@ -42,6 +46,8 @@ DOCUMENTS = [ROOT / "README.md", *sorted((ROOT / "Sources").rglob("*.docc/*.md")
 MANIFEST_EXCERPTS = {
     '.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")',
     '.product(name: "LibTmux", package: "libtmux-swift")',
+    '.product(name: "LibTmuxMCP", package: "libtmux-swift")',
+    '.product(name: "TmuxWorkspace", package: "libtmux-swift")',
     (
         '.package(\n'
         '    url: "https://github.com/libtmux/libtmux-swift.git",\n'

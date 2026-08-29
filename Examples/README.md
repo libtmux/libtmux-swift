@@ -7,9 +7,9 @@ lives here, and [`Scripts/check_examples.py`](../Scripts/check_examples.py)
 fails the build when a documented block appears in no file below.
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 36
-40 documented examples mapped to consumer sources
-36 have live-test call sites
+$ python3 Scripts/check_examples.py --min-executed 40
+46 documented examples mapped to consumer sources
+40 have live-test call sites
 ```
 
 ## Why this is its own package
@@ -56,17 +56,13 @@ sliding.
 
 ## What is checked, and what is not
 
-Two documents are scanned, and only two:
+The reader-facing Swift documentation is scanned:
 
 | Scanned | Not scanned |
 | --- | --- |
-| the top-level [`README.md`](../README.md) | the product READMEs under `Sources/` |
-| every `Sources/**/*.docc/*.md` | [`Benchmarks/README.md`](../Benchmarks/README.md) |
-
-A `swift` fence added to a product README is therefore **not** compiled by
-anything. That is a gap rather than a decision: put an example a reader is
-meant to rely on in the top-level README or in the DocC catalogue, where the
-check can reach it.
+| top-level `README.md` | `Benchmarks/README.md` |
+| the product READMEs under `Sources/` | |
+| every `Sources/**/*.docc/*.md` | |
 
 Two more things the check does not do:
 
@@ -105,12 +101,12 @@ Three things fail quietly, and all three have cost time:
 - **A line inserted into the middle of a quoted span breaks the match**, even
   though both the example and the page still read correctly on their own.
 
-Four documented blocks compile without counting as executed. The process-global
-`SIGPIPE` example appears here and in DocC, backed by one function intentionally
-not run because the test harness has already chosen that disposition.
-`TmuxContext.current()` is only non-nil inside a pane. The regular-expression
-filter does not yet have an example test. The quick start is top-level code, but
-its test spawns it, so it does count as executed.
+Six documented blocks compile without counting as executed. Two are import-only
+product examples. The process-global `SIGPIPE` example appears here and in
+DocC, backed by one function intentionally not run because the test harness has
+already chosen that disposition. `TmuxContext.current()` is only non-nil inside
+a pane, and the regular-expression filter has no example test. The quick start
+is top-level code, but its test spawns it, so it does count as executed.
 
 Every test here provisions servers through the same fixture as the main suite,
 so every socket stays under `/tmp/libtmux-swift-test/`.

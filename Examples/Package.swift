@@ -38,6 +38,7 @@ let package = Package(
             name: "ExampleCode",
             dependencies: [
                 .product(name: "LibTmux", package: "libtmux"),
+                .product(name: "LibTmuxMCP", package: "libtmux"),
                 .product(name: "TmuxWorkspace", package: "libtmux"),
             ]
         ),
