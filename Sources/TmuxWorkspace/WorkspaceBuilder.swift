@@ -81,39 +81,34 @@ public enum WorkspaceBuilder {
         on server: Server,
         timeout: Duration = .seconds(5)
     ) async -> TmuxError? {
-        let cleanup = Task.detached { () -> TmuxError? in
+        let race = RollbackRaceGate()
+        let cleanup = Task.detached {
+            let result: TmuxError?
             do {
                 try await server.kill(session)
-                return nil
+                result = nil
             } catch let error as TmuxError {
-                return error
+                result = error
             } catch {
-                return .invocationFailed(reason: String(describing: error))
+                result = .invocationFailed(reason: String(describing: error))
             }
+            await race.finish(.cleanup(result))
         }
         let deadline = Task.detached {
-            try? await Task.sleep(for: max(.zero, timeout))
-        }
-        let winner = await withTaskGroup(of: RollbackRace.self) { group in
-            group.addTask { .cleanup(await cleanup.value) }
-            group.addTask {
-                await deadline.value
-                return .deadline
+            do {
+                try await Task.sleep(for: max(.zero, timeout))
+            } catch {
+                return
             }
-            let winner = await group.next() ?? .deadline
-            switch winner {
-            case .cleanup:
-                deadline.cancel()
-            case .deadline:
-                cleanup.cancel()
-            }
-            group.cancelAll()
-            return winner
+            await race.finish(.deadline)
         }
+        let winner = await race.value()
         switch winner {
         case let .cleanup(error):
+            deadline.cancel()
             return error
         case .deadline:
+            cleanup.cancel()
             return .invocationFailed(reason: "workspace rollback timed out")
         }
     }
@@ -169,6 +164,23 @@ public enum WorkspaceBuilder {
 private enum RollbackRace: Sendable {
     case cleanup(TmuxError?)
     case deadline
+}
+
+private actor RollbackRaceGate {
+    private var result: RollbackRace?
+    private var waiter: CheckedContinuation<RollbackRace, Never>?
+
+    func finish(_ result: RollbackRace) {
+        guard self.result == nil else { return }
+        self.result = result
+        waiter?.resume(returning: result)
+        waiter = nil
+    }
+
+    func value() async -> RollbackRace {
+        if let result { return result }
+        return await withCheckedContinuation { waiter = $0 }
+    }
 }
 
 public indirect enum WorkspaceBuilderError: Error, Sendable, Hashable {

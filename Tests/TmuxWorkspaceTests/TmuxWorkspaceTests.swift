@@ -192,8 +192,8 @@ struct WorkspaceBuildingTests {
         }
     }
 
-    @Test("a stuck rollback is cancelled and reaped at its deadline")
-    func stuckRollbackIsCancelledAndReaped() async throws {
+    @Test("a rollback returns at its deadline when cleanup ignores cancellation")
+    func stuckRollbackReturnsAtDeadline() async throws {
         let socketPath = "/tmp/libtmux-swift-test/workspace-rollback/socket"
         let endpoint = try Endpoint(socketPath: socketPath)
         let transport = StuckRollbackTransport()
@@ -229,6 +229,8 @@ struct WorkspaceBuildingTests {
         }
         #expect(reason == "workspace rollback timed out")
         #expect(ContinuousClock.now - started < .seconds(1))
+
+        await transport.releaseAndWait()
         #expect(await transport.cancelled)
     }
 
@@ -289,6 +291,10 @@ struct WorkspaceBuildingTests {
 
 private actor StuckRollbackTransport: ProcessTransport {
     private(set) var cancelled = false
+    private var released = false
+    private var finished = false
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    private var finishWaiter: CheckedContinuation<Void, Never>?
 
     func run(
         executable: String,
@@ -296,12 +302,28 @@ private actor StuckRollbackTransport: ProcessTransport {
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
-        do {
-            try await Task.sleep(for: .seconds(2))
-        } catch {
-            cancelled = true
+        await withCheckedContinuation { continuation in
+            if released {
+                continuation.resume()
+            } else {
+                releaseWaiter = continuation
+            }
+        }
+        cancelled = Task.isCancelled
+        finished = true
+        finishWaiter?.resume()
+        finishWaiter = nil
+        if cancelled {
             throw .cancelled
         }
         return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
+    }
+
+    func releaseAndWait() async {
+        released = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+        if finished { return }
+        await withCheckedContinuation { finishWaiter = $0 }
     }
 }
