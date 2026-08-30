@@ -660,8 +660,6 @@ struct WatchTests {
             try await server.run("printf 'settled\\n'", in: pane)
             try await Task.sleep(for: .milliseconds(400))
 
-            // Entering mid-wait used to end the wait with `outputContinuityLost`:
-            // the flip moved the addressing, which read as a gap in output.
             async let entering = server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("^never-appears$")],
