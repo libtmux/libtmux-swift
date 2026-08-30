@@ -9,13 +9,13 @@ import Testing
 /// by nature — nobody sees a flag that was not accepted.
 @Suite("configuration")
 struct ConfigurationTests {
-    @Test("with nothing set it serves the default socket at the mutating tier")
+    @Test("with nothing set it serves the default socket read-only")
     func defaultsAreTheOnesDocumented() {
         let configuration = ServerConfiguration(environment: [:])
         #expect(configuration.socketName == "default")
         #expect(configuration.socketPath == nil)
         #expect(configuration.tmuxExecutable == "tmux")
-        #expect(configuration.tier == .mutating)
+        #expect(configuration.tier == .readonly)
         #expect(configuration.waitCeiling == .seconds(120))
         #expect(configuration.warnings.isEmpty)
     }
@@ -55,6 +55,36 @@ struct ConfigurationTests {
         #expect(configuration.warnings.first?.contains("destructve") == true)
     }
 
+    @Test("exact tool names are parsed without widening the tier")
+    func exactToolsAreRead() {
+        let configuration = ServerConfiguration(
+            environment: [
+                "LIBTMUX_SAFETY": "mutating",
+                "LIBTMUX_MCP_TOOLS": "new_window, list_sessions",
+            ]
+        )
+
+        #expect(configuration.tier == .mutating)
+        #expect(configuration.authority.enabledTools == [.newWindow, .listSessions])
+        #expect(configuration.warnings.isEmpty)
+    }
+
+    @Test(
+        "an invalid exact tool selection fails closed",
+        arguments: ["new_window,teleport", "new_window,,send_keys"]
+    )
+    func invalidExactToolSelectionFailsClosed(_ configured: String) {
+        let configuration = ServerConfiguration(
+            environment: [
+                "LIBTMUX_SAFETY": "mutating",
+                "LIBTMUX_MCP_TOOLS": configured,
+            ]
+        )
+
+        #expect(configuration.authority.enabledTools?.isEmpty == true)
+        #expect(configuration.warnings.count == 1)
+    }
+
     @Test("a wait ceiling past the hard limit is clamped, and says so")
     func ceilingIsClamped() {
         let configuration = ServerConfiguration(
@@ -67,6 +97,15 @@ struct ConfigurationTests {
         #expect(configuration.warnings.count == 1)
     }
 
+    @Test("a fractional wait ceiling keeps its precision")
+    func fractionalCeilingIsPreserved() {
+        let configuration = ServerConfiguration(
+            environment: ["LIBTMUX_MCP_WAIT_MAX_SECONDS": "1.25"]
+        )
+        #expect(configuration.waitCeiling == .milliseconds(1_250))
+        #expect(configuration.warnings.isEmpty)
+    }
+
     @Test("a ceiling that is not a number falls back rather than becoming zero")
     func unreadableCeilingFallsBack() {
         // `Double("soon")` is nil, and treating that as zero would make every
@@ -76,6 +115,17 @@ struct ConfigurationTests {
             environment: ["LIBTMUX_MCP_WAIT_MAX_SECONDS": "soon"]
         )
         #expect(configuration.waitCeiling == .seconds(120))
+    }
+
+    @Test("nonfinite wait ceilings fall back without trapping")
+    func nonfiniteCeilingsFallBack() {
+        for value in ["nan", "inf", "-inf"] {
+            let configuration = ServerConfiguration(
+                environment: ["LIBTMUX_MCP_WAIT_MAX_SECONDS": value]
+            )
+            #expect(configuration.waitCeiling == .seconds(120))
+            #expect(configuration.warnings.count == 1)
+        }
     }
 
     @Test("a ceiling of zero still leaves a wait long enough to do anything")

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import LibTmux
@@ -31,6 +32,67 @@ private func parse(_ stream: String) -> [ControlEvent] {
 
 @Suite("control-mode protocol")
 struct ControlProtocolTests {
+    @Test("reply blocks discard output beyond their finite boundary")
+    func oversizedReplyBlockIsDiscarded() {
+        var exact = ControlProtocolParser(maximumReplyBytes: 5)
+        _ = exact.consume("%begin 1 1 1")
+        _ = exact.consume("1234")
+        guard case let .reply(exactReply) = exact.consume("%end 1 1 1") else {
+            Issue.record("expected an exact-boundary reply")
+            return
+        }
+        #expect(exactReply.lines == ["1234"])
+        #expect(!exactReply.outputExceededLimit)
+
+        var oversized = ControlProtocolParser(maximumReplyBytes: 5)
+        _ = oversized.consume("%begin 1 2 1")
+        _ = oversized.consume("12345")
+        guard case let .reply(oversizedReply) = oversized.consume("%end 1 2 1") else {
+            Issue.record("expected an oversized reply")
+            return
+        }
+        #expect(oversizedReply.lines.isEmpty)
+        #expect(oversizedReply.outputExceededLimit)
+    }
+
+    @Test("control input has a finite line and encoding boundary")
+    func controlInputIsBounded() {
+        var oversized = ControlLineInput()
+        #expect(
+            oversized.append(
+                Data(repeating: 0x61, count: ControlLineInput.maximumBytes + 1)
+            )
+                == [
+                    .failure(
+                        .invocationFailed(
+                            reason:
+                                "control protocol line exceeds "
+                                + "\(ControlLineInput.maximumBytes) bytes"
+                        )
+                    )
+                ]
+        )
+
+        var invalid = ControlLineInput()
+        #expect(
+            invalid.append(Data([0xFF, 0x0A]))
+                == [.failure(.invocationFailed(reason: "control protocol line is not UTF-8"))]
+        )
+
+        var incomplete = ControlLineInput()
+        #expect(incomplete.append(Data("partial".utf8)).isEmpty)
+        #expect(
+            incomplete.finish()
+                == [
+                    .failure(
+                        .invocationFailed(
+                            reason: "control protocol ended with an incomplete line"
+                        )
+                    )
+                ]
+        )
+    }
+
     @Test("a captured session parses into its replies, notifications, and exit")
     func capturedSessionParses() {
         let events = parse(capturedStream)
@@ -41,6 +103,7 @@ struct ControlProtocolTests {
             return
         }
         #expect(attach.number == 347)
+        #expect(!attach.isControlCommand)
         #expect(attach.lines.isEmpty)
         #expect(!attach.isError)
 
@@ -63,6 +126,7 @@ struct ControlProtocolTests {
         // Attribution is the whole point: a `;` list merges output, this does
         // not.
         #expect(replies.map(\.number) == [347, 352, 353, 354, 355])
+        #expect(replies.map(\.isControlCommand) == [false, true, true, true, true])
         #expect(replies[1].lines == ["boot"])
         #expect(replies[2].lines == ["ok"])
     }
@@ -112,6 +176,35 @@ struct ControlProtocolTests {
         #expect(reply.lines == ["%output %0 not really a notification", "plain"])
     }
 
+    @Test("guard-looking output stays inside its block")
+    func outputResemblingBlockGuardsStaysInItsBlock() {
+        let events = parse(
+            """
+            %begin 1 1 1
+            %begin 1 10 1
+            %end literal
+            %end 1 10 1
+            %end 1 1 1 trailing
+            plain
+            %end 1 1 1
+            """
+        )
+        #expect(events.count == 1)
+        guard case let .reply(reply) = events.first else {
+            Issue.record("expected one reply")
+            return
+        }
+        #expect(
+            reply.lines == [
+                "%begin 1 10 1",
+                "%end literal",
+                "%end 1 10 1",
+                "%end 1 1 1 trailing",
+                "plain",
+            ]
+        )
+    }
+
     @Test("a notification outside a block is an event")
     func notificationOutsideABlockIsAnEvent() {
         let events = parse("%output %0 hello\n%window-add @2")
@@ -136,5 +229,62 @@ struct ControlProtocolTests {
         #expect(parser.isInsideBlock)
         _ = parser.consume("%end 1 9 1")
         #expect(!parser.isInsideBlock)
+    }
+
+    @Test(
+        "malformed and unmatched block guards are violations",
+        arguments: [
+            "%begin broken",
+            "%begin 1 9",
+            "%end 1 9 1",
+            "%error 1 9 1",
+        ]
+    )
+    func invalidBlockGuardsFailClosed(_ stream: String) {
+        let events = parse(stream)
+        guard events.count == 1 else {
+            Issue.record("expected one protocol violation")
+            return
+        }
+        guard case let .protocolViolation(reason) = events[0] else {
+            Issue.record("expected a protocol violation")
+            return
+        }
+        #expect(!reason.isEmpty)
+    }
+
+    @Test(
+        "a block number that does not advance is a violation, not a reply",
+        arguments: ["9", "8"]
+    )
+    func staleBlockNumbersFailClosed(_ second: String) {
+        let events = parse(
+            """
+            %begin 1 9 1
+            %end 1 9 1
+            %begin 1 \(second) 1
+            %end 1 \(second) 1
+            """
+        )
+        guard case .reply = events[0],
+            case let .protocolViolation(reason) = events[1]
+        else {
+            Issue.record("expected the first block to reply and the second to fail")
+            return
+        }
+        #expect(reason.contains("did not advance"))
+    }
+
+    @Test("the block counter may wrap without ending the connection")
+    func wrappedBlockNumbersStillAdvance() {
+        let events = parse(
+            """
+            %begin 1 4294967295 1
+            %end 1 4294967295 1
+            %begin 1 0 1
+            %end 1 0 1
+            """
+        )
+        #expect(events.compactMap { if case .reply = $0 { true } else { nil } }.count == 2)
     }
 }

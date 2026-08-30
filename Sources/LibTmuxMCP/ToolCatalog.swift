@@ -1,4 +1,6 @@
 import Foundation
+import LibTmux
+import TmuxWorkspace
 
 /// How much damage a tool can do.
 ///
@@ -10,7 +12,7 @@ public enum SafetyTier: String, Sendable, Hashable, Codable, CaseIterable, Compa
     case readonly
     /// Creates, renames, resizes, and sends input.
     case mutating
-    /// Ends something: a pane, a window, a session, the server.
+    /// Ends objects, or runs a confirmed raw command outside typed safeguards.
     case destructive
 
     private var rank: Int {
@@ -38,6 +40,7 @@ public struct ToolArgument: Sendable, Hashable {
         case number
         case boolean
         case stringArray
+        case commandArray
         /// A nested JSON document, described by what it is rather than by its
         /// shape — a filter expression, a workspace plan.
         case object
@@ -48,7 +51,7 @@ public struct ToolArgument: Sendable, Hashable {
             case .integer: "integer"
             case .number: "number"
             case .boolean: "boolean"
-            case .stringArray: "array"
+            case .stringArray, .commandArray: "array"
             case .object: "object"
             }
         }
@@ -64,14 +67,22 @@ public struct ToolArgument: Sendable, Hashable {
     /// What the tool does when the argument is omitted, stated in the schema so
     /// a caller need not send it to find out.
     public let defaultValue: JSONValue?
+    /// Inclusive numeric bounds, enforced by the reader and published in the schema.
+    public let minimum: Double?
+    public let maximum: Double?
+    /// The most entries accepted in an array argument.
+    public let maximumItems: Int?
 
-    public init(
+    init(
         name: String,
         summary: String,
         kind: Kind = .string,
         isRequired: Bool = false,
         allowed: [String] = [],
-        defaultValue: JSONValue? = nil
+        defaultValue: JSONValue? = nil,
+        minimum: Double? = nil,
+        maximum: Double? = nil,
+        maximumItems: Int? = nil
     ) {
         self.name = name
         self.summary = summary
@@ -79,6 +90,9 @@ public struct ToolArgument: Sendable, Hashable {
         self.isRequired = isRequired
         self.allowed = allowed
         self.defaultValue = defaultValue
+        self.minimum = minimum
+        self.maximum = maximum
+        self.maximumItems = maximumItems
     }
 
     var schema: JSONValue {
@@ -89,18 +103,35 @@ public struct ToolArgument: Sendable, Hashable {
         if kind == .stringArray {
             members["items"] = .object(["type": .string("string")])
         }
+        if kind == .commandArray {
+            members["items"] = .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "command": .object(["type": .string("string")]),
+                    "arguments": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                ]),
+                "required": .array([.string("command")]),
+                "additionalProperties": .bool(false),
+            ])
+        }
         if !allowed.isEmpty {
             members["enum"] = .array(allowed.map(JSONValue.string))
         }
         if let defaultValue {
             members["default"] = defaultValue
         }
+        if let minimum { members["minimum"] = .number(minimum) }
+        if let maximum { members["maximum"] = .number(maximum) }
+        if let maximumItems { members["maxItems"] = .number(Double(maximumItems)) }
         return .object(members)
     }
 }
 
-/// One tool a client can call.
 public struct ToolDefinition: Sendable, Hashable {
+    let operation: ToolOperation
     /// What the client names in a ``ToolCall``.
     public let name: String
     /// A short human label, shown by clients that render one.
@@ -112,6 +143,8 @@ public struct ToolDefinition: Sendable, Hashable {
     /// means. Empty for tools whose summary says everything.
     public let detail: String
     public let tier: SafetyTier
+    /// Whether the tool may replace, remove, or otherwise destroy state.
+    public let isDestructive: Bool
     /// Whether calling twice with the same arguments leaves the same state as
     /// calling once. Reaches clients as `idempotentHint`.
     public let isIdempotent: Bool
@@ -121,21 +154,24 @@ public struct ToolDefinition: Sendable, Hashable {
     /// so a schema the server may break is worse than none at all.
     public let outputSchema: JSONValue?
 
-    public init(
-        name: String,
+    init(
+        operation: ToolOperation,
         title: String,
         summary: String,
         detail: String = "",
         tier: SafetyTier,
+        isDestructive: Bool? = nil,
         isIdempotent: Bool = false,
         arguments: [ToolArgument] = [],
         outputSchema: JSONValue? = nil
     ) {
-        self.name = name
+        self.operation = operation
+        self.name = operation.rawValue
         self.title = title
         self.summary = summary
         self.detail = detail
         self.tier = tier
+        self.isDestructive = isDestructive ?? (tier != .readonly)
         self.isIdempotent = isIdempotent
         self.arguments = arguments
         self.outputSchema = outputSchema
@@ -166,7 +202,7 @@ public struct ToolDefinition: Sendable, Hashable {
         .object([
             "title": .string(title),
             "readOnlyHint": .bool(tier == .readonly),
-            "destructiveHint": .bool(tier == .destructive),
+            "destructiveHint": .bool(isDestructive),
             "idempotentHint": .bool(isIdempotent),
             // Everything here acts on one tmux server, whose contents change
             // under us: panes come and go without this server doing anything.
@@ -212,8 +248,11 @@ struct Arguments {
     private let tool: ToolDefinition
 
     init(_ call: ToolCall, for tool: ToolDefinition) throws {
+        guard let values = call.arguments.objectValue else {
+            throw ToolError.wrongArgumentType("arguments", expected: "an object")
+        }
         self.tool = tool
-        self.values = call.arguments.objectValue ?? [:]
+        self.values = values
 
         let declared = Set(tool.arguments.map(\.name))
         let unknown = values.keys.filter { !declared.contains($0) }.sorted()
@@ -261,6 +300,14 @@ struct Arguments {
         guard let entries = value.arrayValue else {
             throw ToolError.wrongArgumentType(name, expected: "an array of strings")
         }
+        if let maximum = tool.arguments.first(where: { $0.name == name })?.maximumItems,
+            entries.count > maximum
+        {
+            throw ToolError.wrongArgumentType(
+                name,
+                expected: "an array of at most \(maximum) strings"
+            )
+        }
         return try entries.map { entry in
             guard let text = entry.stringValue else {
                 throw ToolError.wrongArgumentType(name, expected: "an array of strings")
@@ -289,6 +336,7 @@ struct Arguments {
         guard let number = value.intValue else {
             throw ToolError.wrongArgumentType(name, expected: "a whole number")
         }
+        try checkNumericBounds(name, Double(number))
         return number
     }
 
@@ -306,6 +354,10 @@ struct Arguments {
         guard let number = value.doubleValue ?? value.intValue.map(Double.init) else {
             throw ToolError.wrongArgumentType(name, expected: "a number of seconds")
         }
+        guard number.isFinite else {
+            throw ToolError.wrongArgumentType(name, expected: "a finite number of seconds")
+        }
+        try checkNumericBounds(name, number)
         return number
     }
 
@@ -326,10 +378,23 @@ struct Arguments {
         else { return }
         throw ToolError.notAllowed(name, value: value, allowed: argument.allowed)
     }
+
+    private func checkNumericBounds(_ name: String, _ value: Double) throws {
+        guard let argument = tool.arguments.first(where: { $0.name == name }) else { return }
+        guard argument.minimum.map({ value >= $0 }) ?? true,
+            argument.maximum.map({ value <= $0 }) ?? true
+        else {
+            let lower = argument.minimum.map { String($0) } ?? "-infinity"
+            let upper = argument.maximum.map { String($0) } ?? "infinity"
+            throw ToolError.wrongArgumentType(
+                name,
+                expected: "a number from \(lower) through \(upper)"
+            )
+        }
+    }
 }
 
-/// Why a call could not be run at all, as distinct from a tmux command that ran
-/// and reported a nonzero status.
+/// Why a call could not produce its normal result.
 public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
     case unknownTool(String)
     case missingArgument(String)
@@ -337,8 +402,13 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
     case wrongArgumentType(String, expected: String)
     case notAllowed(String, value: String, allowed: [String])
     case deniedByTier(String, needs: SafetyTier, allowed: SafetyTier)
+    case notEnabled(String)
     case refusedForSafety(String)
+    case tmuxRejected(String)
     case timedOut(String, seconds: Double)
+    case tmux(TmuxError)
+    case workspace(WorkspaceBuilderError)
+    case internalFailure(String)
 
     public var description: String {
         switch self {
@@ -362,13 +432,23 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
             \(allowed.rawValue). Restart it with LIBTMUX_SAFETY=\(needs.rawValue) \
             if that is what you want.
             """
+        case let .notEnabled(name):
+            "\(name) is not enabled by this server's exact tool selection"
         case let .refusedForSafety(reason):
             reason
+        case let .tmuxRejected(reason):
+            "tmux refused the command: \(reason)"
         case let .timedOut(name, seconds):
             """
-            \(name) gave up after \(seconds)s. The work it started is still \
-            running in tmux — read the pane, or call again with a longer timeout.
+            \(name) gave up after \(seconds)s. Its tmux command may already have \
+            taken effect; inspect current state before retrying it.
             """
+        case let .tmux(error):
+            String(describing: error)
+        case let .workspace(error):
+            "workspace could not be applied: \(error)"
+        case let .internalFailure(reason):
+            "the tool failed unexpectedly: \(reason)"
         }
     }
 }

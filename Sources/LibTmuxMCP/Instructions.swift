@@ -12,20 +12,20 @@ enum Instructions {
     static let maximumBytes = 2048
 
     static func text(
-        tier: SafetyTier,
+        authority: ToolAuthority,
         waitCeiling: Duration,
         caller: CallerIdentity?
     ) -> String {
-        var sections = required(tier: tier, waitCeiling: waitCeiling)
+        var sections = required(authority: authority, waitCeiling: waitCeiling)
 
-        // The caller's own pane is the one fact no tool call can re-derive: it
-        // is about this process, not about tmux.
+        // This belongs to the caller process, not to the server hierarchy.
         if let pane = caller?.paneID {
-            sections.append(
+            sections.insert(
                 """
                 You run inside tmux pane \(pane). Kill tools refuse it without \
                 confirm_self; list_panes marks it isCaller.
-                """
+                """,
+                at: min(1, sections.count)
             )
         }
 
@@ -42,56 +42,126 @@ enum Instructions {
 
     /// The sections, longest-lived first, so what drops under budget pressure
     /// is what a model can most easily do without.
-    static func required(tier: SafetyTier, waitCeiling: Duration) -> [String] {
-        [
+    static func required(authority: ToolAuthority, waitCeiling: Duration) -> [String] {
+        let available = Set(
+            TmuxTools.definitions.lazy
+                .filter { authority.rejection(for: $0) == nil }
+                .map(\.operation)
+        )
+        var sections = [
             """
-            tmux through libtmux for Swift. Server > Session > Window > Pane. \
-            Target panes by id (%1): ids survive layout changes, indexes do not.
+            tmux via libtmux for Swift. Server > Session > Window > Pane. \
+            Tool refs are process-local; refresh them after MCP restart.
             """,
-
             """
             TRIGGERS: tmux panes, windows, sessions; 'this terminal', 'send keys', \
-            'scrollback', 'copy mode'. Ids %1 @1 $1 are unambiguous.
+            'scrollback', 'copy mode'.
             NOT FOR: browser tabs, editor splits (VS Code, Neovim), GUI windows \
             (i3, sway), Jupyter cells, login sessions. Ask once if genuinely unclear.
             """,
-
-            """
-            METADATA vs CONTENT: list_* and filters read what a pane *is* — command, \
-            path, size. search_panes and capture_pane read what it has *printed*. \
-            Asking a listing about text finds nothing and looks like an empty server.
-            Watching a pane across turns: capture_since, which answers only the \
-            difference. capture_pane re-sends the whole screen every call.
-            """,
-
-            """
-            WAIT, DON'T POLL. Cheapest first:
-            - run_shell: a command you wrote. Signals completion through a tmux \
-            channel; returns exit status.
-            - watch_format: a question about state (#{pane_current_command}, \
-            #{pane_dead}). Reads no scrollback.
-            - wait_for_output: output you did NOT author. Event-driven. Always pass \
-            `stops` for failure markers.
-            - wait_for_channel: when the shell composition must be your own.
-            Never loop send_keys + capture_pane: it cannot tell slow from finished.
-            """,
-
-            """
-            START WITH describe_server (tmux version, wait ceiling, which pane is \
-            yours) and describe_filters (the vocabulary a `filter` may name).
-            ONE CALL, NOT FOUR: snapshot reads the whole hierarchy consistently; \
-            apply_workspace builds a session from one plan; run_commands batches and \
-            says which step failed. Pass `fields` when one field answers the question.
-            """,
-
-            """
-            Tier: \(tier.rawValue) — tools above it are hidden and refused \
-            (LIBTMUX_SAFETY). Waits clamp to \(Int(waitCeiling.components.seconds))s \
-            and report what was enforced. No attach, prompts or choose-*: they wait \
-            for a terminal a tool call has not got, and run_command refuses them by \
-            name. Hooks outlive this process, so they belong in your tmux config.
-            """,
         ]
+        if let section = contentGuidance(available) { sections.append(section) }
+        if let section = waitGuidance(available) { sections.append(section) }
+        if let section = startingGuidance(available) { sections.append(section) }
+        sections.append(authorityGuidance(authority, available, waitCeiling))
+        return sections
+    }
+
+    private static func contentGuidance(_ available: Set<ToolOperation>) -> String? {
+        let metadata = [
+            ToolOperation.listSessions, .listWindows, .listPanes, .snapshot, .readFormat,
+        ].filter(available.contains)
+        let content = [
+            ToolOperation.searchPanes, .capturePane, .captureSince,
+        ].filter(available.contains)
+        guard !metadata.isEmpty || !content.isEmpty else { return nil }
+
+        var sentences = ["METADATA vs CONTENT:"]
+        if !metadata.isEmpty {
+            sentences.append(
+                "\(names(metadata)) read what tmux objects are; they do not search text."
+            )
+        }
+        if !content.isEmpty {
+            sentences.append("\(names(content)) read printed pane content.")
+        }
+        if available.contains(.captureSince) {
+            sentences.append("Across turns, capture_since returns only the difference.")
+        }
+        return sentences.joined(separator: " ")
+    }
+
+    private static func waitGuidance(_ available: Set<ToolOperation>) -> String? {
+        var lines: [String] = []
+        if available.contains(.runShell) {
+            lines.append("- run_shell: a command you wrote; returns its exit status.")
+        }
+        if available.contains(.watchFormat) {
+            lines.append("- watch_format: a question about state; reads no scrollback.")
+        }
+        if available.contains(.waitForOutput) {
+            lines.append("- wait_for_output: output you did not author; always pass `stops`.")
+        }
+        if available.contains(.waitForChannel) {
+            lines.append("- wait_for_channel: when the shell composition must be your own.")
+        }
+        guard !lines.isEmpty else { return nil }
+        if available.contains(.sendKeys), available.contains(.capturePane) {
+            lines.append("Never loop send_keys + capture_pane; it cannot prove completion.")
+        }
+        return (["WAIT, DON'T POLL. Cheapest applicable tool first:"] + lines)
+            .joined(separator: "\n")
+    }
+
+    private static func startingGuidance(_ available: Set<ToolOperation>) -> String? {
+        var sentences: [String] = []
+        let orientation = [ToolOperation.describeServer, .describeFilters]
+            .filter(available.contains)
+        if !orientation.isEmpty { sentences.append("START WITH \(names(orientation)).") }
+        if available.contains(.snapshot) {
+            sentences.append("snapshot reads the hierarchy and detects daemon replacement.")
+        }
+        if available.contains(.applyWorkspace) {
+            sentences.append("apply_workspace builds one workspace plan.")
+        }
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
+    }
+
+    private static func authorityGuidance(
+        _ authority: ToolAuthority,
+        _ available: Set<ToolOperation>,
+        _ waitCeiling: Duration
+    ) -> String {
+        var sentences: [String] = []
+        if authority.enabledTools == nil {
+            sentences.append(
+                "Tier: \(authority.tier.rawValue); higher-tier tools are hidden and refused."
+            )
+        } else if available.isEmpty {
+            sentences.append("Exact tool selection: none; every tool is hidden and refused.")
+        } else {
+            sentences.append(
+                "Exact tools: \(names(available)); every other tool is hidden and refused."
+            )
+        }
+        let waits: Set<ToolOperation> = [
+            .runShell, .watchFormat, .waitForOutput, .waitForChannel,
+        ]
+        if !available.isDisjoint(with: waits) {
+            sentences.append("Waits clamp to \(waitCeiling.secondsText)s and report the limit.")
+        }
+        if available.contains(.runCommand) || available.contains(.runCommands) {
+            sentences.append("Raw commands require confirm_unsafe, a server ref, and a deadline.")
+        }
+        sentences.append(
+            "No attach, prompts or choose-*; they need a terminal. Persistent hooks belong in tmux config."
+        )
+        return sentences.joined(separator: " ")
+    }
+
+    private static func names<S: Sequence>(_ operations: S) -> String
+    where S.Element == ToolOperation {
+        operations.map(\.rawValue).sorted().joined(separator: ", ")
     }
 
     private static func joined(_ sections: [String]) -> String {

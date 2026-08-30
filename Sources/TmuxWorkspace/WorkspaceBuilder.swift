@@ -12,51 +12,112 @@ public enum WorkspaceBuilder {
     ///
     /// Fails rather than adopting an existing session of the same name: two
     /// callers building the same workspace should not silently share one.
+    /// A failure after creation removes that exact session. If cleanup also
+    /// fails, ``WorkspaceBuilderError/rollbackFailed(original:cleanup:)``
+    /// reports both errors.
     public static func build(
         _ workspace: Workspace,
         on server: Server
-    ) async throws -> Session {
+    ) async throws(WorkspaceBuilderError) -> Session {
         guard !workspace.windows.isEmpty else {
             throw WorkspaceBuilderError.noWindows
         }
-        let existing = try await server.sessions()
+        let existing: [Session]
+        do {
+            existing = try await server.sessions()
+        } catch {
+            throw .tmux(error)
+        }
         guard !existing.contains(where: { $0.name == workspace.sessionName }) else {
             throw WorkspaceBuilderError.sessionExists(workspace.sessionName)
         }
 
         var session: Session?
-        for (index, window) in workspace.windows.enumerated() {
-            let directory = window.startDirectory ?? workspace.startDirectory
-            let created: Window
-            if index == 0 {
-                let made = try await server.newSession(
-                    named: workspace.sessionName,
-                    startDirectory: directory,
-                    windowName: window.windowName
-                )
-                session = made
-                guard let first = try await server.snapshot().windows(of: made).first
-                else {
-                    throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
+        do {
+            for (index, window) in workspace.windows.enumerated() {
+                let directory = window.startDirectory ?? workspace.startDirectory
+                let created: Window
+                if index == 0 {
+                    let made = try await server.newSession(
+                        named: workspace.sessionName,
+                        startDirectory: directory,
+                        windowName: window.windowName
+                    )
+                    session = made
+                    guard let first = try await server.snapshot().windows(of: made).first
+                    else {
+                        throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
+                    }
+                    created = first
+                } else {
+                    guard let session else {
+                        throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
+                    }
+                    created = try await server.newWindow(
+                        in: session,
+                        named: window.windowName,
+                        startDirectory: directory
+                    ).window
                 }
-                created = first
-            } else {
-                guard let session else {
-                    throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
-                }
-                created = try await server.newWindow(
-                    in: session,
-                    named: window.windowName,
-                    startDirectory: directory
-                )
+                try await build(window, in: created, of: workspace, on: server)
             }
-            try await build(window, in: created, of: workspace, on: server)
-        }
 
-        guard let session else {
-            throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
+            guard let session else {
+                throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
+            }
+            return session
+        } catch {
+            let original = Self.builderError(error)
+            guard let session else { throw original }
+            if let cleanup = await rollback(session, on: server) {
+                throw .rollbackFailed(original: original, cleanup: cleanup)
+            }
+            throw original
         }
-        return session
+    }
+
+    static func rollback(
+        _ session: Session,
+        on server: Server,
+        timeout: Duration = .seconds(5)
+    ) async -> TmuxError? {
+        let race = RollbackRaceGate()
+        let cleanup = Task.detached {
+            let result: TmuxError?
+            do {
+                try await server.kill(session)
+                result = nil
+            } catch let error as TmuxError {
+                result = error
+            } catch {
+                result = .invocationFailed(reason: String(describing: error))
+            }
+            await race.finish(.cleanup(result))
+        }
+        let deadline = Task.detached {
+            do {
+                try await Task.sleep(for: max(.zero, timeout))
+            } catch {
+                return
+            }
+            await race.finish(.deadline)
+        }
+        let winner = await race.value()
+        switch winner {
+        case let .cleanup(error):
+            deadline.cancel()
+            return error
+        case .deadline:
+            cleanup.cancel()
+            return .invocationFailed(reason: "workspace rollback timed out")
+        }
+    }
+
+    private static func builderError(_ error: any Error) -> WorkspaceBuilderError {
+        if let error = error as? WorkspaceBuilderError { return error }
+        if let error = error as? TmuxError { return .tmux(error) }
+        if error is CancellationError || Task.isCancelled { return .tmux(.cancelled) }
+        return .tmux(.invocationFailed(reason: String(describing: error)))
     }
 
     private static func build(
@@ -64,7 +125,7 @@ public enum WorkspaceBuilder {
         in created: Window,
         of workspace: Workspace,
         on server: Server
-    ) async throws {
+    ) async throws(TmuxError) {
         // The window arrives with one pane; only the rest are split in.
         var panes = try await server.snapshot().panes(of: created)
         for pane in window.panes.dropFirst() {
@@ -100,10 +161,32 @@ public enum WorkspaceBuilder {
 
 }
 
-public enum WorkspaceBuilderError: Error, Sendable, Hashable {
+private enum RollbackRace: Sendable {
+    case cleanup(TmuxError?)
+    case deadline
+}
+
+private actor RollbackRaceGate {
+    private var result: RollbackRace?
+    private var waiter: CheckedContinuation<RollbackRace, Never>?
+
+    func finish(_ result: RollbackRace) {
+        guard self.result == nil else { return }
+        self.result = result
+        waiter?.resume(returning: result)
+        waiter = nil
+    }
+
+    func value() async -> RollbackRace {
+        if let result { return result }
+        return await withCheckedContinuation { waiter = $0 }
+    }
+}
+
+public indirect enum WorkspaceBuilderError: Error, Sendable, Hashable {
     case noWindows
     case sessionExists(String)
     case sessionVanished(String)
-    /// tmux refused a command, carrying the reason it gave.
-    case tmuxRejected(String)
+    case tmux(TmuxError)
+    case rollbackFailed(original: WorkspaceBuilderError, cleanup: TmuxError)
 }

@@ -13,15 +13,24 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session, named: "second")
+            let second = try await server.newWindow(in: session, named: "second").window
+            let links = try await server.windowLinks()
+            let firstLink = try #require(links.first { $0.windowID == first.id })
+            let secondLink = try #require(links.first { $0.windowID == second.id })
 
-            try await server.select(second)
-            var windows = try await server.snapshot().windows(of: session)
-            #expect(windows.first { $0.id == second.id }?.isActive == true)
+            try await server.select(secondLink)
+            var snapshot = try await server.snapshot()
+            #expect(
+                snapshot.windowLinks(of: session).first { $0.windowID == second.id }?
+                    .isActive == true
+            )
 
-            try await server.select(first)
-            windows = try await server.snapshot().windows(of: session)
-            #expect(windows.first { $0.id == first.id }?.isActive == true)
+            try await server.select(firstLink)
+            snapshot = try await server.snapshot()
+            #expect(
+                snapshot.windowLinks(of: session).first { $0.windowID == first.id }?
+                    .isActive == true
+            )
         }
     }
 
@@ -32,18 +41,21 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
+            let firstLink = try #require(
+                try await server.windowLinks().first { $0.windowID == first.id }
+            )
 
             // Active is per session, so this asks about this session's
             // windows rather than every window on the server.
-            func active() async throws -> String? {
+            func active() async throws -> WindowID? {
                 try await server.snapshot()
-                    .windows(of: session)
+                    .windowLinks(of: session)
                     .first { $0.isActive }?
-                    .id
+                    .windowID
             }
 
-            try await server.select(first)
+            try await server.select(firstLink)
             try await server.selectNextWindow(in: session)
             #expect(try await active() == second.id)
 
@@ -62,14 +74,17 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
-            let firstIndex = first.index
+            let second = try await server.newWindow(in: session).window
+            let links = try await server.windowLinks()
+            let firstLink = try #require(links.first { $0.windowID == first.id })
+            let secondLink = try #require(links.first { $0.windowID == second.id })
+            let firstIndex = firstLink.index
 
-            try await server.swap(first, with: second)
+            try await server.swap(firstLink, with: secondLink)
 
-            let windows = try await server.windows()
-            let movedFirst = try #require(windows.first { $0.id == first.id })
-            let movedSecond = try #require(windows.first { $0.id == second.id })
+            let movedLinks = try await server.windowLinks()
+            let movedFirst = try #require(movedLinks.first { $0.windowID == first.id })
+            let movedSecond = try #require(movedLinks.first { $0.windowID == second.id })
             // The ids you already hold stay valid; only the indices moved.
             #expect(movedFirst.index != firstIndex)
             #expect(movedSecond.index == firstIndex)
@@ -84,12 +99,17 @@ struct NavigationTests {
                 try await server.snapshot().windows(of: session).first
             )
             let extra = try await server.splitWindow(window)
+            let source = try #require(
+                try await server.windowLinks().first { $0.windowID == window.id }
+            )
 
-            let broken = try await server.breakPane(extra, named: "broken")
-            #expect(broken.name == "broken")
+            let broken = try await server.breakPane(extra, from: source, named: "broken")
+            #expect(broken.window.name == "broken")
+            #expect(broken.link.sessionID == session.id)
+            #expect(broken.link.windowID == broken.window.id)
 
             let snapshot = try await server.snapshot()
-            #expect(snapshot.panes(of: broken).map(\.id) == [extra.id])
+            #expect(snapshot.panes(of: broken.window).map(\.id) == [extra.id])
             #expect(snapshot.panes(of: window).count == 1)
         }
     }
@@ -101,7 +121,7 @@ struct NavigationTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
             let pane = try #require(
                 try await server.snapshot().panes(of: second).first
             )
@@ -145,8 +165,8 @@ struct NavigationTests {
         }
     }
 
-    @Test("requireRunning distinguishes an absent server from an empty one")
-    func requireRunningDistinguishesAbsentFromEmpty() async throws {
+    @Test("requireRunning and listings both reject an absent server")
+    func requireRunningAgreesWithStrictListings() async throws {
         try await withTmuxServer { server in
             // A running server: no throw, whatever it does or does not hold.
             try await server.requireRunning()
@@ -155,9 +175,9 @@ struct NavigationTests {
             await #expect(throws: TmuxError.self) {
                 try await server.requireRunning()
             }
-            // The lenient accessor still answers with an empty array.
-            let sessions = try await server.sessions()
-            #expect(sessions.isEmpty)
+            await #expect(throws: TmuxError.self) {
+                _ = try await server.sessions()
+            }
         }
     }
 
@@ -206,24 +226,36 @@ struct NavigationTests {
             let source = try await server.newSession(named: "source", windowName: "shared")
             let target = try await server.newSession(named: "target")
             let shared = try #require(
-                try await server.windows().first {
-                    $0.sessionID == source.id && $0.name == "shared"
-                }
+                try await server.snapshot().windows(of: source).first { $0.name == "shared" }
             )
 
-            try await server.link(shared, into: target)
+            let inTarget = try await server.link(shared, into: target)
 
             // Naming which session gained the window is what tells a `-s`/`-t`
             // swap apart from the correct call.
-            let linked = try await server.windows().filter { $0.id == shared.id }
+            let linked = try await server.windowLinks().filter { $0.windowID == shared.id }
             #expect(linked.count == 2)
             #expect(Set(linked.map(\.sessionID)) == [source.id, target.id])
 
-            let inTarget = try #require(linked.first { $0.sessionID == target.id })
             try await server.unlink(inTarget)
 
-            let remaining = try await server.windows().filter { $0.id == shared.id }
+            let remaining = try await server.windowLinks().filter { $0.windowID == shared.id }
             #expect(remaining.map(\.sessionID) == [source.id])
+        }
+    }
+
+    @Test("moving a window within its source session is refused")
+    func moveWithinItsSourceSessionIsRefused() async throws {
+        try await withTmuxServer { server in
+            let session = try #require(try await server.sessions().first)
+            let source = try #require(
+                try await server.windowLinks().first { $0.sessionID == session.id }
+            )
+
+            await #expect(throws: TmuxError.self) {
+                try await server.move(source, to: session)
+            }
+            #expect(try await server.windowLinks().contains { $0.id == source.id })
         }
     }
 
@@ -235,11 +267,20 @@ struct NavigationTests {
             let first = try #require(
                 try await server.panes().first { $0.windowID == window.id && $0.id != second.id }
             )
+            let link = try #require(
+                try await server.windowLinks().first { $0.windowID == window.id }
+            )
 
             try await server.setTitle("probe-title", of: second)
 
-            #expect(try await server.format("#{pane_title}", for: second) == "probe-title")
-            #expect(try await server.format("#{pane_title}", for: first) != "probe-title")
+            #expect(
+                try await server.format("#{pane_title}", for: second, through: link)
+                    == "probe-title"
+            )
+            #expect(
+                try await server.format("#{pane_title}", for: first, through: link)
+                    != "probe-title"
+            )
         }
     }
 
@@ -273,20 +314,23 @@ struct NavigationTests {
         try await withTmuxServer { server in
             let window = try #require(try await server.windows().first)
             _ = try await server.splitWindow(window, direction: .right)
+            let link = try #require(
+                try await server.windowLinks().first { $0.windowID == window.id }
+            )
 
             // From a named preset, not from whatever the split produced: tmux
             // cycles a fixed list of layouts, and a custom arrangement is not
             // on it — so next-then-previous from one lands on the last preset
             // rather than back where it started.
             try await server.selectLayout(window, "even-horizontal")
-            let start = try await server.format("#{window_layout}", for: window)
+            let start = try await server.format("#{window_layout}", for: link)
 
             try await server.nextLayout(window)
-            let moved = try await server.format("#{window_layout}", for: window)
+            let moved = try await server.format("#{window_layout}", for: link)
             #expect(moved != start, "next-layout left the layout where it was")
 
             try await server.previousLayout(window)
-            let back = try await server.format("#{window_layout}", for: window)
+            let back = try await server.format("#{window_layout}", for: link)
             #expect(back == start, "previous-layout did not undo next-layout")
         }
     }
@@ -383,11 +427,11 @@ struct PaneGeometryTests {
             let first = try #require(
                 try await server.snapshot().windows(of: session).first
             )
-            let second = try await server.newWindow(in: session)
+            let second = try await server.newWindow(in: session).window
 
-            try await server.setOption("@marked", to: "yes", of: first)
-            let onFirst = try await server.option("@marked", of: first)
-            let onSecond = try await server.option("@marked", of: second)
+            _ = try await server.setOption("@marked", to: "yes", scope: .window(first))
+            let onFirst = try await server.option("@marked", scope: .window(first))
+            let onSecond = try await server.option("@marked", scope: .window(second))
             #expect(onFirst == "yes")
             #expect(onSecond == nil)
         }
@@ -403,7 +447,7 @@ struct PaneGeometryTests {
             _ = try await server.splitWindow(window)
             _ = try await server.splitWindow(window)
 
-            func order() async throws -> [String] {
+            func order() async throws -> [PaneID] {
                 try await server.snapshot().panes(of: window).map(\.id)
             }
 
@@ -431,7 +475,7 @@ struct PaneGeometryTests {
             )
             let second = try await server.splitWindow(window)
 
-            func active() async throws -> String? {
+            func active() async throws -> PaneID? {
                 try await server.snapshot().panes(of: window).first { $0.isActive }?.id
             }
 

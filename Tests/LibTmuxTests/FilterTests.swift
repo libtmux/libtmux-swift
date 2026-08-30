@@ -3,14 +3,20 @@ import Testing
 
 @testable import LibTmux
 
+private let filterIncarnation = ServerIncarnation(
+    endpoint: .socketPath("/tmp/libtmux-swift-test/filter-fixture"),
+    socketPath: "/tmp/libtmux-swift-test/filter-fixture",
+    processID: 1,
+    startedAt: 1
+)
+
 private func makePane(
-    id: String = "%0",
+    id: PaneID = "%0",
     index: Int = 0,
     command: String = "zsh",
     path: String = "/home/tony",
     isActive: Bool = true,
-    windowID: String = "@0",
-    sessionID: String = "$0"
+    windowID: WindowID = "@0"
 ) -> Pane {
     Pane(
         id: id,
@@ -21,7 +27,7 @@ private func makePane(
         currentCommand: command,
         currentPath: path,
         windowID: windowID,
-        sessionID: sessionID
+        incarnation: filterIncarnation
     )
 }
 
@@ -53,6 +59,39 @@ struct FilterExprTests {
         #expect(matched.map(\.id) == ["%0", "%2"])
     }
 
+    @Test("typed ids build equality and membership filters")
+    func typedIDsBuildEqualityAndMembershipFilters() throws {
+        let session = Session(
+            id: "$7", name: "typed", windowCount: 1, isAttached: false,
+            createdAt: 0, incarnation: filterIncarnation
+        )
+        let window = Window(
+            id: "@4", name: "typed", paneCount: 1, width: 80, height: 24,
+            incarnation: filterIncarnation
+        )
+        let pane = makePane(id: "%9", windowID: window.id)
+        let client = Client(
+            name: "typed", tty: "", processID: 2, width: nil, height: nil,
+            isControlMode: true, sessionID: session.id, incarnation: filterIncarnation
+        )
+
+        let sessionID = try FilterExpr<Session>.where(\.id, .equals(session.id))
+        let clientSessionID = try FilterExpr<Client>.where(
+            \.sessionID, .isIn([session.id])
+        )
+        let windowID = try FilterExpr<Window>.where(\.id, .equals(window.id))
+        let paneWindowID = try FilterExpr<Pane>.where(\.windowID, .isIn([window.id]))
+        let paneID = try FilterExpr<Pane>.where(\.id, .equals(pane.id))
+        let paneIDs = try FilterExpr<Pane>.where(\.id, .isIn([pane.id]))
+
+        #expect(try sessionID.matches(session))
+        #expect(try clientSessionID.matches(client))
+        #expect(try windowID.matches(window))
+        #expect(try paneWindowID.matches(pane))
+        #expect(try paneID.matches(pane))
+        #expect(try paneIDs.matches(pane))
+    }
+
     @Test("case-insensitive matching is a distinct operator, not a default")
     func caseInsensitiveMatchingIsDistinct() throws {
         let exact = try panes.filter(FilterExpr.where(\.currentCommand, .equals("nvim")))
@@ -66,19 +105,27 @@ struct FilterExprTests {
 
     @Test("a regular expression travels as pattern and flags")
     func regularExpressionTravelsAsData() throws {
+        let pattern = try RegexPattern(
+            "^n?vim$",
+            options: [.caseInsensitive]
+        )
         let expression = try FilterExpr<Pane>.where(
             \.currentCommand,
-            .matches("^n?vim$", caseInsensitive: true)
+            .matches(pattern)
         )
         guard case let .comparison(_, operation) = expression,
-            case let .matches(pattern, caseInsensitive) = operation
+            case let .matches(traveled) = operation
         else {
             Issue.record("expected a regular-expression comparison")
             return
         }
-        #expect(pattern == "^n?vim$")
-        #expect(caseInsensitive)
-        #expect(panes.filter(expression).map(\.id) == ["%0", "%2", "%3"])
+        #expect(traveled == pattern)
+        let decoded = try JSONDecoder().decode(
+            FilterExpr<Pane>.self,
+            from: JSONEncoder().encode(expression)
+        )
+        #expect(decoded == expression)
+        #expect(try panes.filter(decoded).map(\.id) == ["%0", "%2", "%3"])
     }
 
     @Test("conjunction, disjunction, and negation compose")
@@ -86,9 +133,9 @@ struct FilterExprTests {
         let active = try FilterExpr<Pane>.where(\.isActive, .equals(true))
         let vimish = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
 
-        #expect(panes.filter(.and([active, vimish])).map(\.id) == ["%0"])
-        #expect(panes.filter(.or([active, vimish])).map(\.id) == ["%0", "%2"])
-        #expect(panes.filter(.not(vimish)).map(\.id) == ["%1", "%3"])
+        #expect(try panes.filter(.and([active, vimish])).map(\.id) == ["%0"])
+        #expect(try panes.filter(.or([active, vimish])).map(\.id) == ["%0", "%2"])
+        #expect(try panes.filter(.not(vimish)).map(\.id) == ["%1", "%3"])
     }
 
     @Test("an expression round-trips through JSON without a key path")
@@ -100,7 +147,21 @@ struct FilterExprTests {
         let data = try JSONEncoder().encode(expression)
         let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
         #expect(decoded == expression)
-        #expect(panes.filter(decoded).map(\.id) == ["%2"])
+        #expect(try panes.filter(decoded).map(\.id) == ["%2"])
+    }
+
+    @Test("validation rejects dynamically impossible comparisons")
+    func validationRejectsImpossibleComparisons() throws {
+        let expressions: [FilterExpr<Pane>] = [
+            .comparison(field: "pane.index", operation: .contains("3")),
+            .comparison(field: "pane.active", operation: .equals(.text("true"))),
+        ]
+
+        for expression in expressions {
+            let data = try JSONEncoder().encode(expression)
+            let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
+            #expect(throws: FilterValidationError.self) { try decoded.validate() }
+        }
     }
 
     @Test("exactlyOne tells absence apart from ambiguity")
@@ -108,10 +169,10 @@ struct FilterExprTests {
         let one = try panes.exactlyOne(FilterExpr.where(\.currentCommand, .equals("zsh")))
         #expect(one.id == "%1")
 
-        #expect(throws: CardinalityError.noMatch) {
+        #expect(throws: FilterSelectionError.cardinality(.noMatch)) {
             try panes.exactlyOne(FilterExpr.where(\.currentCommand, .equals("emacs")))
         }
-        #expect(throws: CardinalityError.multipleMatches(count: 2)) {
+        #expect(throws: FilterSelectionError.cardinality(.multipleMatches(count: 2))) {
             try panes.exactlyOne(FilterExpr.where(\.currentCommand, .isIn(["nvim", "vim"])))
         }
     }
@@ -119,8 +180,44 @@ struct FilterExprTests {
     @Test("oneOrNil treats absence as an answer and ambiguity as an error")
     func oneOrNilOnlyThrowsOnAmbiguity() throws {
         #expect(try panes.oneOrNil(FilterExpr.where(\.currentCommand, .equals("emacs"))) == nil)
-        #expect(throws: CardinalityError.multipleMatches(count: 2)) {
+        #expect(throws: FilterSelectionError.cardinality(.multipleMatches(count: 2))) {
             try panes.oneOrNil(FilterExpr.where(\.currentCommand, .isIn(["nvim", "vim"])))
+        }
+    }
+
+    @Test("pattern work limits propagate through filter evaluation")
+    func patternWorkLimitsPropagate() throws {
+        let members = String(repeating: "a", count: 4_000)
+        let expression = try FilterExpr<Pane>.where(
+            \.currentCommand,
+            .matches(try RegexPattern("[\(members)]"))
+        )
+        let input = makePane(command: String(repeating: "z", count: 4_000))
+
+        #expect(
+            throws: RegexMatchError.workLimitExceeded(
+                maximum: RegexPattern.defaultMaximumWork
+            )
+        ) {
+            try expression.matches(input)
+        }
+    }
+
+    @Test("one pattern budget spans every filtered value")
+    func patternBudgetSpansFilteredValues() throws {
+        let pattern = try RegexPattern("z$")
+        let expression = try FilterExpr<Pane>.where(
+            \.currentCommand,
+            .matches(pattern)
+        )
+        let input = [makePane(command: "aaaa"), makePane(command: "aaaa")]
+        #expect(try !pattern.containsMatch(in: "aaaa", maximumWork: 20))
+
+        #expect(throws: RegexMatchError.workLimitExceeded(maximum: 20)) {
+            try input.filter(
+                expression,
+                regexBudget: try RegexMatchBudget(maximum: 20)
+            )
         }
     }
 
@@ -135,7 +232,6 @@ struct FilterExprTests {
             ("pane.path", \Pane.currentPath),
             ("pane.active", \Pane.isActive),
             ("pane.windowID", \Pane.windowID),
-            ("pane.sessionID", \Pane.sessionID),
         ]
         let pane = makePane()
         for (expected, keyPath) in pairs {

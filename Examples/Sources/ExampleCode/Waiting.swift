@@ -3,7 +3,10 @@
 import LibTmux
 
 public func waitingOnAChannel(_ server: Server, pane: Pane) async throws {
-    try await server.run("make && tmux wait-for -S built", in: pane)
+    try await server.run(
+        "make; \(server.shellInvocation) wait-for -S built",
+        in: pane
+    )
     try await server.wait(for: "built")
 }
 
@@ -16,18 +19,23 @@ public func watchingAFormat(_ server: Server, pane: Pane) async throws -> String
                 format: "#{pane_current_command}"
             )
         )
-        for await change in control.changes(named: "cmd") {
+        for try await change in control.changes(named: "cmd") {
             return change.value
         }
         return nil
     }
 }
 
-public func waitingOnOutput(_ server: Server, pane: Pane) async throws -> OutputWait {
+public func waitingOnOutput(
+    _ server: Server,
+    pane: Pane
+) async throws -> OutputWait {
+    let ready = try RegexPattern("Listening on")
+    let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
     let waited = try await server.waitForOutput(
         in: pane,
-        matching: ["Listening on"],
-        stoppingAt: ["EADDRINUSE", "error"]
+        matching: [ready],
+        stoppingAt: [failed]
     )
     return waited
 }

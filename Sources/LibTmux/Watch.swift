@@ -15,20 +15,20 @@ public struct FormatSubscription: Sendable, Hashable {
         /// The session the connection attached to.
         case attachedSession
         /// One pane, by id.
-        case pane(String)
+        case pane(PaneID)
         /// Every pane in the attached session, including ones opened later.
         case allPanes
         /// One window, by id.
-        case window(String)
+        case window(WindowID)
         /// Every window in the attached session, including ones opened later.
         case allWindows
 
         var wireForm: String {
             switch self {
             case .attachedSession: ""
-            case let .pane(id): id
+            case let .pane(id): id.rawValue
             case .allPanes: "%*"
-            case let .window(id): id
+            case let .window(id): id.rawValue
             case .allWindows: "@*"
             }
         }
@@ -58,21 +58,21 @@ public struct FormatSubscription: Sendable, Hashable {
 public struct SubscriptionChange: Sendable, Hashable, Codable {
     /// Which ``FormatSubscription`` this belongs to.
     public let name: String
-    public let sessionID: String
+    public let sessionID: SessionID
     /// Absent when the subscription's scope is a session.
-    public let windowID: String?
+    public let windowID: WindowID?
     public let windowIndex: Int?
     /// Absent when the subscription's scope is a session or a window.
-    public let paneID: String?
+    public let paneID: PaneID?
     /// What the format evaluates to now.
     public let value: String
 
     public init(
         name: String,
-        sessionID: String,
-        windowID: String? = nil,
+        sessionID: SessionID,
+        windowID: WindowID? = nil,
         windowIndex: Int? = nil,
-        paneID: String? = nil,
+        paneID: PaneID? = nil,
         value: String
     ) {
         self.name = name
@@ -98,24 +98,43 @@ public struct SubscriptionChange: Sendable, Hashable, Codable {
         guard let separator = fields.firstIndex(of: ":"), separator >= 5 else {
             return nil
         }
-        func optional(_ index: Int) -> String? {
+        func optionalID<ID: TmuxID>(_ index: Int, as _: ID.Type) -> ID?? {
             let field = String(fields[index])
-            return field == "-" ? nil : field
+            if field == "-" { return .some(nil) }
+            guard let id = ID(rawValue: field) else { return nil }
+            return .some(id)
         }
+        func optionalIndex(_ index: Int) -> Int?? {
+            let field = String(fields[index])
+            if field == "-" { return .some(nil) }
+            guard let value = Int(field), value >= 0 else { return nil }
+            return .some(value)
+        }
+        guard
+            let sessionID = SessionID(rawValue: String(fields[1])),
+            let windowID = optionalID(2, as: WindowID.self),
+            let windowIndex = optionalIndex(3),
+            let paneID = optionalID(4, as: PaneID.self)
+        else { return nil }
         self.init(
             name: String(fields[0]),
-            sessionID: String(fields[1]),
-            windowID: optional(2),
-            windowIndex: optional(3).flatMap(Int.init),
-            paneID: optional(4),
+            sessionID: sessionID,
+            windowID: windowID,
+            windowIndex: windowIndex,
+            paneID: paneID,
             value: fields[(separator + 1)...].joined(separator: " ")
         )
     }
 }
 
+/// A lazy view of subscription changes from one bounded notification observer.
+public typealias SubscriptionChangeStream = AsyncCompactMapSequence<
+    ControlNotificationStream, SubscriptionChange
+>
+
 extension ControlSession {
     /// Registers a format subscription on this connection.
-    public func watch(_ subscription: FormatSubscription) async throws {
+    public func watch(_ subscription: FormatSubscription) async throws(TmuxError) {
         let reply = try await send(
             TmuxCommand("refresh-client", ["-B", subscription.argument])
         )
@@ -128,7 +147,7 @@ extension ControlSession {
     ///
     /// tmux reads a `-B` argument with no scope and no format as a removal, so
     /// this is the same command with the rest left off.
-    public func stopWatching(_ name: String) async throws {
+    public func stopWatching(_ name: String) async throws(TmuxError) {
         _ = try await send(TmuxCommand("refresh-client", ["-B", name]))
     }
 
@@ -137,20 +156,11 @@ extension ControlSession {
     ///
     /// An observer of its own, like ``notifications``, so watching does not
     /// take notifications away from anything else reading the connection.
-    public nonisolated func changes(named name: String? = nil) -> AsyncStream<
-        SubscriptionChange
-    > {
-        let notifications = self.notifications
-        return AsyncStream(bufferingPolicy: .unbounded) { continuation in
-            let pump = Task {
-                for await notification in notifications {
-                    guard let change = SubscriptionChange(notification) else { continue }
-                    guard name == nil || change.name == name else { continue }
-                    continuation.yield(change)
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in pump.cancel() }
+    public nonisolated func changes(named name: String? = nil) -> SubscriptionChangeStream {
+        notifications.compactMap { notification in
+            guard let change = SubscriptionChange(notification) else { return nil }
+            guard name == nil || change.name == name else { return nil }
+            return change
         }
     }
 }

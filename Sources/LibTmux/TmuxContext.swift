@@ -16,10 +16,10 @@ public struct TmuxContext: Sendable, Hashable, Codable {
     /// The server process, which is the one thing here that distinguishes two
     /// servers that reused a socket path.
     public let serverProcessID: Int
-    /// The session, in the same spelling ``Session/id`` uses.
-    public let sessionID: String
+    /// The session, normalised to the spelling ``Session/id`` uses.
+    public let sessionID: SessionID
 
-    public init(socketPath: String, serverProcessID: Int, sessionID: String) {
+    public init(socketPath: String, serverProcessID: Int, sessionID: SessionID) {
         self.socketPath = socketPath
         self.serverProcessID = serverProcessID
         self.sessionID = sessionID
@@ -42,13 +42,16 @@ public struct TmuxContext: Sendable, Hashable, Codable {
         let path = parts[0..<(parts.count - 2)].joined(separator: ",")
         guard !path.isEmpty else { return nil }
 
-        let session = String(parts[parts.count - 1])
-        guard session.allSatisfy(\.isNumber) else { return nil }
+        guard
+            let sessionID = SessionID(
+                rawValue: "$\(parts[parts.count - 1])"
+            )
+        else { return nil }
 
         self.init(
             socketPath: path,
             serverProcessID: processID,
-            sessionID: "$\(session)"
+            sessionID: sessionID
         )
     }
 

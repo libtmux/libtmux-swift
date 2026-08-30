@@ -2,11 +2,8 @@ import Foundation
 
 /// Resolves a bare command name against this process's `PATH`.
 ///
-/// The transport spawns by path and never searches, and the environment it
-/// hands tmux carries `LC_ALL=C` and nothing else — so a name with no slash in
-/// it is unresolvable at the moment of spawning. Resolving here, against the
-/// environment the *caller* was started in, is what lets `tmuxExecutable`
-/// default to `"tmux"` and still work.
+/// The transport spawns by path and never searches, so a name with no slash is
+/// resolved here before it reaches that boundary.
 ///
 /// A name that resolves to nothing is returned unchanged, so a typo surfaces as
 /// the invocation failing rather than as construction failing somewhere the

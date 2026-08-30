@@ -10,7 +10,7 @@ connection can do and a process cannot:
 
 ```swift
 let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-    for await notification in events.notifications
+    for try await notification in events.notifications
     where notification.name == "output" {
         return notification.arguments
     }

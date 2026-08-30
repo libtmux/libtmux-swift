@@ -10,15 +10,18 @@ struct ChangingTests {
         try await withTmuxServer { server in
             let pane = try await buildASessionByHand(server)
 
-            let sessions = try await server.sessions()
-            #expect(sessions.contains { $0.name == "work" })
+            let snapshot = try await server.snapshot()
+            #expect(snapshot.sessions.contains { $0.name == "work" })
 
-            let work = try #require(sessions.first { $0.name == "work" })
-            let windows = try await server.windows().filter { $0.sessionID == work.id }
+            let work = try #require(snapshot.sessions.first { $0.name == "work" })
+            #expect(
+                try await server.option("@purpose", scope: .session(work)) == "development"
+            )
+            let windows = snapshot.windows(of: work)
             #expect(windows.map(\.name).sorted() == ["editor", "logs"])
 
             let logs = try #require(windows.first { $0.name == "logs" })
-            let panes = try await server.panes().filter { $0.windowID == logs.id }
+            let panes = snapshot.panes(of: logs)
             #expect(panes.count == 2)
             #expect(panes.contains { $0.id == pane.id })
         }
@@ -30,7 +33,7 @@ struct ChangingTests {
             let marker = "libtmux-capture-marker"
             let pane = try #require(try await server.panes().first)
             _ = try await server.run(
-                TmuxCommand("send-keys", ["-t", pane.id, "echo \(marker)", "Enter"])
+                TmuxCommand("send-keys", ["-t", pane.id.rawValue, "echo \(marker)", "Enter"])
             )
             let arrived = try await waitUntil {
                 try await readBackWhatAPanePrinted(server, pane)

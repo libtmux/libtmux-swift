@@ -21,22 +21,40 @@ private let blockingCommands: [String: String] = [
     "command-prompt": "send_keys, which does not need a terminal to answer it",
     "confirm-before": "the tool for the command itself, which needs no confirmation",
     "choose-tree": "list_sessions or snapshot",
-    "choose-client": "read_format against #{client_name}",
+    "choose-client": "snapshot to inspect clients; there is no typed client-format target",
     "choose-buffer": "run_command with list-buffers",
     "lock-server": "no tool: a locked server answers nothing",
     "lock-session": "no tool: a locked session answers nothing",
     "lock-client": "no tool: a locked client answers nothing",
 ]
 
+private let rawCommandOutputLimit = 256 * 1_024
+private let rawCommandBatchLimit = 16
+private let rawUnsafeConfirmationReason =
+    "raw tmux commands bypass typed target and safety checks; "
+    + "pass confirm_unsafe=true to acknowledge that"
+
 extension TmuxTools {
     func runCommand(_ arguments: Arguments) async throws -> ToolOutcome {
+        let (timeout, enforced) = try rawCommandDeadline(arguments)
+        let incarnation = try await serverIncarnation(try arguments.string("server_ref"))
         let name = try arguments.string("command")
         try Self.refuseIfBlocking(name)
-        let reply = try await server.run(
-            TmuxCommand(name, try arguments.strings("arguments"))
-        )
+        let command = TmuxCommand(name, try arguments.strings("arguments"))
+        let reply = try await withRawCommandDeadline(
+            "run_command",
+            timeout: timeout,
+            seconds: enforced
+        ) {
+            try await server.runIsolated(
+                command,
+                expecting: incarnation,
+                perStreamOutputLimit: rawCommandOutputLimit
+            )
+        }
         return .init(
             CommandResult(
+                serverRef: WireReferenceCodec.processLocal.reference(to: incarnation),
                 exitCode: reply.exitCode,
                 standardOutput: reply.text,
                 standardError: reply.errorText
@@ -45,6 +63,8 @@ extension TmuxTools {
     }
 
     func runCommands(_ arguments: Arguments) async throws -> ToolOutcome {
+        let (timeout, enforced) = try rawCommandDeadline(arguments)
+        let incarnation = try await serverIncarnation(try arguments.string("server_ref"))
         guard let document = try arguments.document("commands") else {
             throw ToolError.missingArgument("commands")
         }
@@ -52,34 +72,77 @@ extension TmuxTools {
         guard !requested.isEmpty else {
             throw ToolError.wrongArgumentType("commands", expected: "a non-empty array")
         }
+        guard requested.count <= rawCommandBatchLimit else {
+            throw ToolError.wrongArgumentType(
+                "commands",
+                expected: "at most \(rawCommandBatchLimit) commands"
+            )
+        }
         for request in requested { try Self.refuseIfBlocking(request.command) }
 
-        var results: [StepResult] = []
-        for (index, request) in requested.enumerated() {
-            let reply = try await server.run(
-                TmuxCommand(request.command, request.arguments ?? [])
-            )
-            results.append(
-                StepResult(
-                    step: index,
-                    command: request.command,
-                    exitCode: reply.exitCode,
-                    standardOutput: reply.text,
-                    standardError: reply.errorText
+        let results = try await withRawCommandDeadline(
+            "run_commands",
+            timeout: timeout,
+            seconds: enforced
+        ) {
+            var results: [StepResult] = []
+            for (index, request) in requested.enumerated() {
+                let reply = try await server.runIsolated(
+                    TmuxCommand(request.command, request.arguments ?? []),
+                    expecting: incarnation,
+                    perStreamOutputLimit: rawCommandOutputLimit
                 )
-            )
-            // tmux runs a command list only as far as its first failure, and a
-            // batch that kept going would do something the caller did not ask
-            // for after the step it asked for stopped making sense.
-            guard reply.isSuccess else { break }
+                results.append(
+                    StepResult(
+                        step: index,
+                        command: request.command,
+                        exitCode: reply.exitCode,
+                        standardOutput: reply.text,
+                        standardError: reply.errorText
+                    )
+                )
+                // A later command is unsafe to infer after this one failed.
+                guard reply.isSuccess else { break }
+            }
+            return results
         }
         return .init(
             BatchResult(
+                serverRef: WireReferenceCodec.processLocal.reference(to: incarnation),
                 steps: results,
                 requested: requested.count,
                 stoppedEarly: results.count < requested.count
             )
         )
+    }
+
+    private func rawCommandDeadline(
+        _ arguments: Arguments
+    ) throws -> (duration: Duration, enforced: Double) {
+        guard try arguments.bool("confirm_unsafe", or: false) else {
+            throw ToolError.refusedForSafety(rawUnsafeConfirmationReason)
+        }
+        return bounded(try arguments.seconds("timeout", or: 10))
+    }
+
+    private func withRawCommandDeadline<Result: Sendable>(
+        _ tool: String,
+        timeout: Duration,
+        seconds: Double,
+        operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        try await withThrowingTaskGroup(of: Result.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw ToolError.timedOut(tool, seconds: seconds)
+            }
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else {
+                throw ToolError.refusedForSafety("\(tool) started no isolated command")
+            }
+            return result
+        }
     }
 
     static func refuseIfBlocking(_ command: String) throws {
@@ -95,7 +158,7 @@ extension TmuxTools {
 }
 
 /// One step of a batch, as it arrives.
-struct CommandRequest: Decodable {
+struct CommandRequest: Decodable, Sendable {
     let command: String
     let arguments: [String]?
 }

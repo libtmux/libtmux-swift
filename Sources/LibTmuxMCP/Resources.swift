@@ -16,10 +16,10 @@ struct TmuxResources: Sendable {
         entry(
             uri: "tmux://snapshot",
             name: "snapshot",
-            title: "Everything at once",
+            title: "Server snapshot",
             description:
-                "Every session, window, pane and client as one consistent read — "
-                + "the whole hierarchy without walking it.",
+                "Sessions, windows, panes and clients collected from separate listings, "
+                + "with exact window links and no endpoint metadata.",
             mimeType: "application/json"
         ),
         entry(
@@ -46,14 +46,16 @@ struct TmuxResources: Sendable {
             uri: "tmux://sessions/{session}/windows",
             name: "session-windows",
             title: "Windows of a session",
-            description: "Every window in one session, by id or name.",
+            description:
+                "Every session-local window occurrence, including its exact $session:index "
+                + "target, selected by a ref from list_sessions.",
             mimeType: "application/json"
         ),
         entry(
             uri: "tmux://panes/{pane}",
             name: "pane",
             title: "One pane",
-            description: "What tmux reports about a single pane.",
+            description: "What tmux reports about a pane selected by a ref from list_panes.",
             mimeType: "application/json"
         ),
         entry(
@@ -61,8 +63,8 @@ struct TmuxResources: Sendable {
             name: "pane-content",
             title: "What a pane is showing",
             description:
-                "The rendered text of a pane. Plain text, because it is terminal "
-                + "output — neither JSON to parse nor markup to render.",
+                "The newest bounded slice of a pane's rendered text. Plain text, "
+                + "because terminal output is neither JSON nor markup.",
             mimeType: "text/plain"
         ),
     ]
@@ -75,25 +77,44 @@ struct TmuxResources: Sendable {
 
         switch (parts.count, parts.first) {
         case (1, "snapshot"):
-            return Self.json(uri, JSONValue.encoding(try await server.snapshot()))
+            return Self.json(uri, JSONValue.encoding(SnapshotResult(try await server.snapshot())))
         case (1, "sessions"):
-            return Self.json(uri, JSONValue.encoding(try await server.sessions()))
+            return Self.json(
+                uri,
+                JSONValue.encoding(try await server.sessions().map { SessionResult($0) })
+            )
         case (1, "filters"):
             return Self.json(uri, JSONValue.encoding(FilterSchema.current))
         case (3, "sessions") where parts[2] == "windows":
-            let name = parts[1]
             let snapshot = try await server.snapshot()
-            guard
-                let session = snapshot.sessions.first(where: {
-                    $0.id == name || $0.name == name
-                })
-            else { throw ToolError.unknownTool("no session \(name)") }
-            return Self.json(uri, JSONValue.encoding(snapshot.windows(of: session)))
+            let session = try WireReferenceCodec.processLocal.resolve(
+                parts[1],
+                among: snapshot.sessions,
+                argument: "session resource ref",
+                refreshWith: "list_sessions"
+            )
+            let occurrences = WindowOccurrenceResult.projecting(
+                snapshot.windows,
+                through: snapshot.windowLinks(of: session)
+            )
+            return Self.json(uri, JSONValue.encoding(occurrences))
         case (2, "panes"):
-            return Self.json(uri, JSONValue.encoding(try await requirePane(parts[1])))
+            return Self.json(
+                uri,
+                JSONValue.encoding(PaneResult(try await requirePane(reference: parts[1])))
+            )
         case (3, "panes") where parts[2] == "content":
-            let pane = try await requirePane(parts[1])
-            let rows = try await server.capture(pane)
+            let pane = try await requirePane(reference: parts[1])
+            let capture = try await server.captureTail(
+                pane,
+                includingHistory: false,
+                maximumLines: PaneOutputBudget.defaultCaptureLines,
+                perStreamOutputLimit: PaneOutputBudget.sourceBytes
+            )
+            let rows = try PaneOutputBudget.tail(
+                capture.lines,
+                afterDropping: capture.droppedLines
+            ).lines
             return .object([
                 "uri": .string(uri),
                 "mimeType": .string("text/plain"),
@@ -104,11 +125,13 @@ struct TmuxResources: Sendable {
         }
     }
 
-    private func requirePane(_ id: String) async throws -> Pane {
-        guard let pane = try await server.panes().first(where: { $0.id == id }) else {
-            throw ToolError.unknownTool("no pane \(id)")
-        }
-        return pane
+    private func requirePane(reference: String) async throws -> Pane {
+        try WireReferenceCodec.processLocal.resolve(
+            reference,
+            among: try await server.panes(),
+            argument: "pane resource ref",
+            refreshWith: "list_panes"
+        )
     }
 
     private static func json(_ uri: String, _ value: JSONValue) -> JSONValue {

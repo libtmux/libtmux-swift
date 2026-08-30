@@ -10,6 +10,48 @@ import TmuxFixture
 /// property worth holding on to.
 @Suite("tools under either mode", .timeLimit(.minutes(1)))
 struct ModeParityTests {
+    @Test("run_shell outlives the connection used to start it")
+    func runShellFinishesAfterItsConnectionCloses() async throws {
+        try await withTmuxServer { server in
+            let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            let started = "libtmux-test-connected-run-started-\(nonce)"
+            let release = "libtmux-test-connected-run-release-\(nonce)"
+            let tmux = server.shellInvocation
+            let running = try await server.connected(attachingTo: "bootstrap") {
+                connected,
+                _ in
+                let pane = try #require(try await connected.panes().first)
+                let tools = TmuxTools(server: connected, tier: .mutating)
+                let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
+                let task = Task {
+                    try await tools.call(
+                        ToolCall(
+                            name: "run_shell",
+                            arguments: .object([
+                                "pane": .string(paneRef),
+                                "command": .string(
+                                    "\(tmux) wait-for -S \(started); "
+                                        + "\(tmux) wait-for \(release); "
+                                        + "printf 'after-connection\\n'"
+                                ),
+                                "timeout": .number(20),
+                            ])
+                        )
+                    )
+                }
+                try await server.wait(for: started)
+                return task
+            }
+
+            try await server.signal(release)
+            let outcome = try await running.value
+            let data = Data(outcome.text.utf8)
+            let result = try JSONDecoder().decode(RunShellResult.self, from: data)
+            #expect(result.exitStatus == 0)
+            #expect(result.output.contains { $0.hasSuffix("after-connection") })
+        }
+    }
+
     @Test("a tool answers the same over a connection as over a process")
     func toolsAnswerTheSameEitherWay() async throws {
         try await withTmuxServer { server in

@@ -7,8 +7,9 @@ lives here, and [`Scripts/check_examples.py`](../Scripts/check_examples.py)
 fails the build when a documented block appears in no file below.
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 36
-39 documented examples, each compiled; 36 of them run against a real tmux
+$ python3 Scripts/check_examples.py --min-executed 40
+46 documented examples mapped to consumer sources
+40 have live-test call sites
 ```
 
 ## Why this is its own package
@@ -46,25 +47,22 @@ new unit, so a block spanning two functions matches neither. `main.swift` has
 no function to name, so it takes the name of the directory it builds —
 `QuickStart`.
 
-A unit counts as **executed** when a test under `Tests/` names it: by calling
-`unit(...)`, or for an executable by naming `"QuickStart"` as a string and
-spawning it. Compiling catches a call that was renamed; only running catches
-one that kept its name and began answering something else. `--min-executed`
-keeps that number from sliding.
+A unit has a **live-test call site** when a test under `Tests/` names it: by
+calling `unit(...)`, or for an executable by naming `"QuickStart"` as a string
+and spawning it. This static check does not invoke Swift. Compiling catches a
+call that was renamed; only running catches one that kept its name and began
+answering something else. `--min-executed` keeps the call-site count from
+sliding.
 
 ## What is checked, and what is not
 
-Two documents are scanned, and only two:
+The reader-facing Swift documentation is scanned:
 
 | Scanned | Not scanned |
 | --- | --- |
-| the top-level [`README.md`](../README.md) | the product READMEs under `Sources/` |
-| every `Sources/**/*.docc/*.md` | [`Benchmarks/README.md`](../Benchmarks/README.md) |
-
-A `swift` fence added to a product README is therefore **not** compiled by
-anything. That is a gap rather than a decision: put an example a reader is
-meant to rely on in the top-level README or in the DocC catalogue, where the
-check can reach it.
+| top-level `README.md` | `Benchmarks/README.md` |
+| the product READMEs under `Sources/` | |
+| every `Sources/**/*.docc/*.md` | |
 
 Two more things the check does not do:
 
@@ -86,7 +84,7 @@ Edit the code here, never the block on the page, then bring the check across:
 $ python3 Scripts/check_examples.py
 ```
 
-Run them for real, which is what the executed half of that count means:
+Compile and run them for real:
 
 ```console
 $ swift test --package-path Examples
@@ -103,10 +101,12 @@ Three things fail quietly, and all three have cost time:
 - **A line inserted into the middle of a quoted span breaks the match**, even
   though both the example and the page still read correctly on their own.
 
-Three examples are compiled and never run, for reasons that will not change:
-`SIGPIPE` is a process-global disposition the test runner has already chosen,
-`TmuxContext.current()` is only non-nil inside a pane, and the quick start is
-top-level code no test can call — it is spawned instead.
+Six documented blocks compile without counting as executed. Two are import-only
+product examples. The process-global `SIGPIPE` example appears here and in
+DocC, backed by one function intentionally not run because the test harness has
+already chosen that disposition. `TmuxContext.current()` is only non-nil inside
+a pane, and the regular-expression filter has no example test. The quick start
+is top-level code, but its test spawns it, so it does count as executed.
 
 Every test here provisions servers through the same fixture as the main suite,
 so every socket stays under `/tmp/libtmux-swift-test/`.

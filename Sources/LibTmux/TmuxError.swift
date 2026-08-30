@@ -1,13 +1,32 @@
 /// Everything a tmux operation can fail with.
 ///
-/// A tmux command that runs and reports a nonzero status is a *reply*, not an
-/// error — ``Server/run(_:)-(TmuxCommand)`` hands it back as ``TmuxReply`` so a caller can
-/// read the diagnostic tmux wrote. This type covers the cases where no usable
-/// reply exists at all.
+/// ``Server/run(_:)-(TmuxCommand)`` hands every tmux status back as a
+/// ``TmuxReply``. Higher-level operations that promise a decoded value throw
+/// ``commandFailed(command:exitCode:reason:)`` when tmux rejects that read.
 public enum TmuxError: Error, Sendable, Hashable {
-    /// tmux could not be started: it is missing, not executable, or the
-    /// endpoint is unusable.
+    /// The tmux client process was never started, so the requested command
+    /// cannot have reached a daemon.
+    case processLaunchFailed(reason: String)
+
+    /// A control connection closed before the command was enqueued. Retrying
+    /// cannot duplicate the requested action because tmux never received it.
+    case requestNotSubmitted
+
+    /// No usable reply was obtained after submission. Unless a narrower error
+    /// says otherwise, the action may have reached tmux.
     case invocationFailed(reason: String)
+
+    /// A direct tmux client cannot encode the command, so it was not submitted.
+    case commandTooLarge(actualBytes: Int, maximumBytes: Int)
+
+    /// tmux received a typed command but rejected it.
+    ///
+    /// Only the command name is retained; arguments may contain pane text,
+    /// environment values, or other caller data that does not belong in an error.
+    case commandFailed(command: String, exitCode: Int32, reason: String)
+
+    /// A reply exceeded its finite per-stream memory boundary.
+    case outputLimitExceeded(perStreamBytes: Int)
 
     /// The endpoint is not addressable. A UNIX socket path has a hard length
     /// limit far shorter than the filesystem's, and exceeding it fails at bind
@@ -21,6 +40,12 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// prepared against.
     case serverRestarted
 
+    /// A value from another endpoint cannot target this server.
+    case foreignServerValue
+
+    /// A session-local target no longer names the object the value described.
+    case staleServerValue
+
     /// The task was cancelled. A cancelled request never reports an empty
     /// listing — that would be indistinguishable from a server with no
     /// sessions.
@@ -33,6 +58,14 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// away, or the server is shutting down — which says nothing about a
     /// replacement daemon having appeared.
     case connectionClosed
+
+    /// An observer did not drain control notifications before its finite
+    /// buffer filled. Earlier buffered notifications remain readable.
+    case notificationBufferOverflow(limit: Int)
+
+    /// A pane changed beyond the retained checkpoint while output was being
+    /// watched, so new rows cannot be separated from rows already seen.
+    case outputContinuityLost
 
     public enum InvalidEndpoint: Sendable, Hashable {
         case empty

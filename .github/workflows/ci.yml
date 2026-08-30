@@ -1,7 +1,10 @@
 name: ci
 
+# Pull requests already test their head commit. Running every branch push too
+# duplicates the eight real-tmux jobs and makes both suites compete for runners.
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -30,9 +33,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Sixteen jobs building the same eight releases from source, on every
-      # push, is most of this workflow's runtime. A release tarball never
-      # changes, so the version and the runner are the whole key.
+      # Eight jobs building the same releases from source is most of this
+      # workflow's runtime. A release tarball never changes, so the version and
+      # the runner are the whole key.
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
         uses: actions/cache@v6
@@ -156,9 +159,9 @@ jobs:
       # longer builds fails the job below. This checks the other half: that the
       # examples on the page are the ones in the package, rather than copies
       # that drifted — and that the number of them actually run has not slid.
-      - name: Check documented examples are compiled
+      - name: Check documented examples are mapped
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
-        run: python3 Scripts/check_examples.py --min-executed 36
+        run: python3 Scripts/check_examples.py --min-executed 40
 
       # AGENTS.md states the socket-namespace rule in prose; this is what makes
       # it fail rather than be remembered. `/tmp` is shared with every other
@@ -179,14 +182,24 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_version.py
 
+      # A changelog entry leads with an identifier, which is what makes it go
+      # stale silently: a renamed symbol still reads fine on the page.
+      - name: Check every changelog symbol resolves
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_changelog_symbols.py
+
       - name: Build documentation
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: |
           set -euo pipefail
-          swift package generate-documentation --target LibTmux 2>&1 | tee docs.log
-          if grep -q 'warning:' docs.log; then
+          : > docs.log
+          for target in LibTmux TmuxWorkspace LibTmuxMCP; do
+            swift package --force-resolved-versions generate-documentation \
+              --target "$target" 2>&1 | tee -a docs.log
+          done
+          if rg -q 'warning:' docs.log; then
             echo "::error::DocC reported warnings"
-            grep -A3 'warning:' docs.log
+            rg -A3 'warning:' docs.log
             exit 1
           fi
 
@@ -200,11 +213,10 @@ jobs:
           python3 Scripts/update_mode_matrix.py --check
 
       # The trait is off by default, so this proves the configuration a consumer
-      # gets without asking for anything still compiles. It runs before the
-      # suite because a default-trait resolve drops the Yams pin, and the
-      # trait-on run below puts the checkout back.
+      # gets without asking for anything still compiles. Resolved-version
+      # enforcement keeps the tracked superset unchanged when Yams is unused.
       - name: Build with default traits
-        run: swift build
+        run: swift build --force-resolved-versions
 
       - name: Test
         run: |
@@ -220,10 +232,9 @@ jobs:
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
           # The examples are their own package, so the root invocation does not
-          # reach them. It runs first because it resolves this package with the
-          # trait on and leaves the root `Package.resolved` alone, where a
-          # default-trait resolve afterwards would drop the Yams pin.
-          swift test --package-path Examples
+          # reach them. Their resolved-version flag enforces
+          # `Examples/Package.resolved` and leaves the root lock alone.
+          swift test --package-path Examples --force-resolved-versions
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
-          swift test --traits YAMLWorkspaces
+          swift test --traits YAMLWorkspaces --force-resolved-versions

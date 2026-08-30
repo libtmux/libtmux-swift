@@ -11,8 +11,10 @@ wait built from commands alone has to re-read the pane on a timer, and every
 tick costs a tmux process whether or not anything happened.
 
 A control connection is told instead. `%output` arrives as the pane writes,
-and `%subscription-changed` arrives when a format's value changes. Both are
-free while nothing is happening, which is most of the time.
+and `%subscription-changed` arrives when a format's value changes. A bare
+notification stream is free while nothing is happening. `waitForOutput` also
+checks its target once per quiet second so removing a silent pane ends the
+wait instead of looking like a timeout.
 
 ## Pick the cheapest one that answers the question
 
@@ -21,13 +23,17 @@ block on it. tmux blocks server-side and returns on the signal itself, so
 nothing is inferred from what the screen looks like:
 
 ```swift
-try await server.run("make && tmux wait-for -S built", in: pane)
+try await server.run(
+    "make; \(server.shellInvocation) wait-for -S built",
+    in: pane
+)
 try await server.wait(for: "built")
 ```
 
-Use `;` rather than `&&` when the wait must survive a failing command — the
-signal has to fire either way or the wait deadlocks on the failure it exists
-to report.
+The `;` matters: the signal has to fire after failure too, or the wait
+deadlocks on the failure it exists to report. ``Server/shellInvocation`` names
+the same tmux binary and endpoint as `server` rather than whichever `tmux`
+happens to be on the pane's `PATH`.
 
 **The question is about state: subscribe to a format.** "Has the command
 finished", "has the pane died", "has that window rung its bell" are all
@@ -43,7 +49,7 @@ try await server.connected(attachingTo: "work") { server, control in
             format: "#{pane_current_command}"
         )
     )
-    for await change in control.changes(named: "cmd") {
+    for try await change in control.changes(named: "cmd") {
         return change.value
     }
     return nil
@@ -61,12 +67,19 @@ daemon printing `ready`, a dev server someone else started, a build you
 attached to:
 
 ```swift
+let ready = try RegexPattern("Listening on")
+let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
 let waited = try await server.waitForOutput(
     in: pane,
-    matching: ["Listening on"],
-    stoppingAt: ["EADDRINUSE", "error"]
+    matching: [ready],
+    stoppingAt: [failed]
 )
 ```
+
+Compile patterns before starting the wait. ``RegexPattern`` supports a bounded
+dialect, rejects lookaround and backreferences, and refuses oversized input or
+matching that exhausts its work budget. Those refusals surface through
+``OutputWaitError`` rather than becoming a false non-match.
 
 Pass `stops` whenever a failure marker exists. A build that fails after five
 seconds should end the wait then, rather than holding it open for the rest of
@@ -111,21 +124,23 @@ misses words split across two notifications.
 
 So the stream is used as a doorbell. A burst of `%output` for the pane wakes
 one capture, and the matching runs against the rendered grid — the same text a
-person reads. That keeps a capture's accuracy and pays for it only when
-something actually happened.
+person reads. Captures therefore happen only after output; a separate low-rate
+liveness check is what distinguishes a removed pane from a quiet one.
 
 ## Reading the result
 
-A wait that ends without a match has three quite different causes, and the
+A wait that ends without a match has several quite different causes, and the
 result distinguishes them rather than leaving it to be guessed:
 
 | Field | What it means |
 | --- | --- |
-| `sawNewOutput: false` | The pane stayed quiet. The command never ran; no pattern fixes that. |
+| `sawNewOutput: false`, `outcome: .timedOut` | The pane stayed quiet. The command never ran; no pattern fixes that. |
 | `sawNewOutput: true`, `outcome: .timedOut` | Output arrived and did not match. `tail` holds what it actually said. |
 | `matchedAtEntry: true` | It was on screen when the wait started — matched at once, or waited past under `requiringFreshOutput`. |
 | `outcome: .stopped` | A `stops` marker hit first. `matchedIndex` says which. |
 | `outcome: .paneClosed` | The pane went away, so nothing more can arrive. |
+| `outcome: .expiredWhileReading` | The timeout ran out before a read finished, so nothing above it was established. Ask again with a longer one. |
+| `outcome: .alternateScreen` | A pager, editor, or full-screen program held the pane. tmux fills that grid without adding to history, so matching was suppressed rather than run against paint. Read the screen with ``Server/capture(_:includingHistory:)``; a different pattern changes nothing. |
 
 `matchedAtEntry` is the one worth knowing about. The condition is checked
 before it is blocked on, the way any other wait on a predicate works: a pattern
@@ -152,8 +167,9 @@ this is for:
 
 | Waiting for a line that has not been printed yet | Polling | waitForOutput |
 | --- | --- | --- |
-| pane captures taken | one per tick, for as long as the wait lasts | 1 capture |
-| tmux processes spent | one per capture | 4, however long it waits |
+| pane captures taken | one per tick, for as long as the wait lasts | 4 captures |
+| quiet liveness | checked by every capture | one in-band target check per second |
+| tmux processes spent | one per capture | 9; quiet checks reuse the connection |
 
 <!-- waiting-matrix:end -->
 
@@ -164,9 +180,10 @@ a claim worth writing down.
 
 What does not move is the point: polling re-reads the pane to find out whether
 anything happened, so its cost is set by how long the wait lasts.
-`waitForOutput` is told, and captures once, when there is something to read.
-Wait ten seconds instead of two and the left column grows fivefold while the
-right one does not move.
+`waitForOutput` is told and captures only at entry and after output. Its quiet
+liveness checks reuse the control process, so waiting longer does not create
+more processes or captures, but it does spend one additional in-band round
+trip per second.
 
 ## Topics
 
@@ -174,6 +191,8 @@ right one does not move.
 
 - ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
 - ``OutputWait``
+- ``OutputWaitError``
+- ``RegexPattern``
 
 ### Watching a pane
 

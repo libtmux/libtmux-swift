@@ -11,7 +11,7 @@ import PackageDescription
 // identified by its last path component, so `package:` below would otherwise
 // only resolve in a checkout called `libtmux-swift`.
 //
-// The fixture arrives as `TmuxTestSupport` rather than by path: two targets of
+// The fixture arrives as a product rather than by path: two targets of
 // the same name in one package graph is an error, not a duplicate.
 let package = Package(
     name: "Benchmarks",
@@ -27,7 +27,7 @@ let package = Package(
             name: "libtmux-bench",
             dependencies: [
                 .product(name: "LibTmux", package: "libtmux"),
-                .product(name: "TmuxTestSupport", package: "libtmux"),
+                .product(name: "TmuxFixture", package: "libtmux"),
             ]
         )
     ],

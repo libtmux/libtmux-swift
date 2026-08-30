@@ -1,15 +1,13 @@
 /// One tmux command, as argv.
 ///
-/// Arguments are passed to the process untouched — no shell ever sees them — so
-/// a window name containing a space, a quote, a semicolon, or a newline needs
-/// no escaping and cannot change what runs.
+/// No shell sees the arguments. tmux still reads a trailing `;` as a command
+/// separator; spell a literal trailing semicolon as `\;`.
 public struct TmuxCommand: Sendable, Hashable {
     /// The tmux command, as tmux spells it — `new-session`, `list-panes`.
     public let name: String
     /// Its arguments, one element each. Never a joined string: a value holding
-    /// a space is data, and only a shell would think otherwise.
+    /// a space is data.
     public let arguments: [String]
-
     public init(_ name: String, _ arguments: [String] = []) {
         self.name = name
         self.arguments = arguments
@@ -18,6 +16,38 @@ public struct TmuxCommand: Sendable, Hashable {
     /// The command's own argv, without the endpoint tmux is addressed with.
     var argumentVector: [String] {
         [name] + arguments
+    }
+
+    /// A command argument that tmux will parse as another command.
+    var parsedString: String {
+        argumentVector.map(tmuxQuoted).joined(separator: " ")
+    }
+}
+
+// tmux packs argv after a four-byte argc in its 16 KiB command message.
+private let maximumTmuxCommandPayloadBytes = 16_380
+
+func requireTmuxCommandFits(_ arguments: [String]) throws(TmuxError) {
+    var actualBytes = 0
+    for argument in arguments {
+        let (argumentBytes, argumentOverflowed) = argument.utf8.count
+            .addingReportingOverflow(1)
+        let (nextBytes, totalOverflowed) = actualBytes.addingReportingOverflow(
+            argumentBytes
+        )
+        guard !argumentOverflowed, !totalOverflowed else {
+            throw .commandTooLarge(
+                actualBytes: .max,
+                maximumBytes: maximumTmuxCommandPayloadBytes
+            )
+        }
+        actualBytes = nextBytes
+    }
+    guard actualBytes <= maximumTmuxCommandPayloadBytes else {
+        throw .commandTooLarge(
+            actualBytes: actualBytes,
+            maximumBytes: maximumTmuxCommandPayloadBytes
+        )
     }
 }
 
@@ -54,5 +84,13 @@ public struct TmuxReply: Sendable, Hashable {
         var text = String(decoding: standardError, as: UTF8.self)
         if text.hasSuffix("\n") { text.removeLast() }
         return text
+    }
+
+    func failure(for command: TmuxCommand) -> TmuxError {
+        .commandFailed(
+            command: command.name,
+            exitCode: exitCode,
+            reason: errorText
+        )
     }
 }

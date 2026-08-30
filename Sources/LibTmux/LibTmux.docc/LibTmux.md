@@ -14,8 +14,10 @@ You address a server, ask it what exists, and send it commands. Everything you
 get back is a value — a `Session` you hold is what the server looked like when
 you asked, not a live handle that changes under you. Ask again for a newer view.
 
+With tmux already running on its default socket:
+
 ```swift
-let server = try Server(socketName: "libtmux-swift")
+let server = try Server(socketName: "default")
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
@@ -54,19 +56,51 @@ command explains itself on standard error — so
 - ``TmuxCommandList``
 - ``TmuxVersion``
 
+### Naming one thing
+
+- ``SessionID``
+- ``WindowID``
+- ``PaneID``
+- ``WindowLinkID``
+- ``ServerIncarnation``
+
 ### What exists
 
 - ``Session``
 - ``Window``
+- ``WindowLink``
+- ``WindowAppearance``
 - ``Pane``
+- ``PaneSize``
 - ``Client``
 - ``Snapshot``
+
+### Finding a server
+
+- ``TmuxServers``
+- ``ServerDiscovery``
+- ``DiscoveredServer``
+
+### Reading a pane
+
+- ``Server/capture(_:includingHistory:)``
+- ``Server/capture(_:since:limit:)``
+- ``PaneCapture``
+- ``IncrementalCapture``
+- ``CaptureCursor``
+
+### Laying out a window
+
+- ``WindowPlacement``
+- ``PaneDirection``
+- ``ResizeDirection``
 
 ### Waiting for work to finish
 
 - <doc:Waiting>
 - ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
 - ``OutputWait``
+- ``OutputWaitError``
 - ``Server/wait(for:)``
 - ``Server/signal(_:)``
 
@@ -74,8 +108,8 @@ command explains itself on standard error — so
 
 - ``Server/format(_:)``
 - ``Server/format(_:for:)-(String,Session)``
-- ``Server/format(_:for:)-(String,Window)``
-- ``Server/format(_:for:)-(String,Pane)``
+- ``Server/format(_:for:)-(String,WindowLink)``
+- ``Server/format(_:for:through:)``
 
 ### Configuration
 
@@ -92,7 +126,23 @@ command explains itself on standard error — so
 - ``FilterOperator``
 - ``FilterSchema``
 - ``FilterLookup``
+- ``Filterable``
+- ``FilterValue``
+- ``FilterOperation``
+- ``RelationQuery``
+- ``RelationQuantifier``
 - ``CardinalityError``
+- ``FilterSelectionError``
+- ``FilterLookupError``
+- ``FilterValidationError``
+- ``QueryConstructionError``
+
+### Bounded pattern matching
+
+- ``RegexPattern``
+- ``RegexCompileError``
+- ``RegexMatchError``
+- ``RegexUnsupportedConstruct``
 
 ### Choosing a mode
 
@@ -109,6 +159,7 @@ command explains itself on standard error — so
 - ``ControlNotification``
 - ``FormatSubscription``
 - ``SubscriptionChange``
+- ``ControlNotificationStream``
 
 ### Failures
 

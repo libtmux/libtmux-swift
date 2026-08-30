@@ -48,7 +48,9 @@ public struct ProgressReporter: Sendable {
         ]
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(notification) else { return }
+        guard let data = try? encoder.encode(notification),
+            data.count <= MCPRequestHandler.maximumResponseBytes
+        else { return }
         await emit(String(decoding: data, as: UTF8.self))
     }
 
@@ -65,41 +67,29 @@ public struct ProgressReporter: Sendable {
         _ work: @escaping @Sendable () async throws -> Result
     ) async rethrows -> Result {
         guard token != nil else { return try await work() }
-        let total = Self.seconds(deadline)
-        return try await withThrowingTaskGroup(of: Result?.self) { group in
-            group.addTask { try await work() }
+        let total = deadline.secondsValue
+        return try await withThrowingTaskGroup(of: Void.self, returning: Result.self) { group in
             group.addTask {
                 var elapsed = 0.0
-                let step = Self.seconds(interval)
+                let step = interval.secondsValue
                 while elapsed < total {
-                    try await Task.sleep(for: interval)
-                    elapsed += step
+                    do {
+                        try await Task.sleep(for: interval)
+                    } catch {
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                    elapsed = min(elapsed + step, total)
                     await report(
-                        min(elapsed, total),
+                        elapsed,
                         of: total,
                         "\(label) — \(Int(elapsed))s of \(Int(total))s"
                     )
                 }
-                // Outlives the deadline rather than returning: whichever task
-                // finishes first ends the group, and a ticker that returned
-                // would end it with no result.
-                try await Task.sleep(for: .seconds(86_400))
-                return nil
             }
-            // The first non-nil is the work; the ticker only ever yields after
-            // the work has already won.
-            while let outcome = try await group.next() {
-                if let outcome {
-                    group.cancelAll()
-                    return outcome
-                }
-            }
-            fatalError("the work task always produces a result or throws")
+            defer { group.cancelAll() }
+            return try await work()
         }
     }
 
-    private static func seconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds)
-            + Double(duration.components.attoseconds) / 1e18
-    }
 }

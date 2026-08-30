@@ -13,6 +13,7 @@ struct FormatField: Sendable, Hashable {
         /// terminal, so its dimensions are absent rather than zero.
         case optionalInteger
         case flag
+        case identifier(Character)
     }
 
     init(_ name: String, _ kind: Kind = .text) {
@@ -76,6 +77,83 @@ struct FormatProjection: Sendable, Hashable {
     }
 }
 
+/// A tmux format that expands to `1` or `0`.
+///
+/// tmux nests a conditional by wrapping rather than by joining, so writing one
+/// by hand means counting closing braces at the end of the string. Building
+/// them here counts once, and escapes every operand.
+struct FormatCondition: Sendable, Hashable {
+    let text: String
+
+    static func equals(_ field: String, _ value: String) -> Self {
+        Self(text: "#{==:#{\(field)},\(tmuxFormatComparisonOperand(value))}")
+    }
+
+    static func equals(_ field: String, _ value: Int) -> Self {
+        Self(text: "#{==:#{\(field)},\(value)}")
+    }
+
+    /// Every condition at once, nested two at a time.
+    ///
+    /// tmux gained an n-ary `#{&&:}` in 3.6; below that it is binary, so the
+    /// nesting is what reaches the 3.2a floor. It finds the comma by skipping
+    /// balanced `#{}`, so an operand that is itself a condition needs no
+    /// further quoting.
+    static func all(_ first: Self, _ rest: Self...) -> Self {
+        guard let innermost = rest.last else { return first }
+        return ([first] + rest.dropLast()).reversed().reduce(innermost) {
+            combined, condition in
+            Self(text: "#{&&:\(condition.text),\(combined.text)}")
+        }
+    }
+}
+
+/// Whether a format template asks tmux to run a shell command.
+///
+/// `#(command)` in a format is a job: tmux runs `command` and substitutes its
+/// output. That is part of the format language, and correct for a caller that
+/// wrote the template. It is arbitrary execution for one that only passed it
+/// along, so a server accepting a template from elsewhere refuses these rather
+/// than running them.
+///
+/// `##` is tmux's own escape for a literal `#`, so a run of them decides:
+/// `##(` is text and `###(` is a job again.
+package func tmuxFormatRequestsShellJob(_ template: String) -> Bool {
+    var hashes = 0
+    for character in template {
+        if character == "#" {
+            hashes += 1
+        } else {
+            if character == "(", hashes.isMultiple(of: 2) == false { return true }
+            hashes = 0
+        }
+    }
+    return false
+}
+
+/// Escapes text tmux expands but the caller meant literally.
+///
+/// tmux runs a name, a title, and the other data arguments through the format
+/// expander before storing them, so a window renamed to `w-#{session_name}`
+/// ends up named after its session and one renamed to `r-#{host_short}` ends
+/// up carrying the machine's hostname. Doubling `#` is tmux's own escape and
+/// is not expanded again. A caller that wants a name tmux keeps re-evaluating
+/// sets `automatic-rename-format`, which is an option rather than a name.
+func tmuxLiteralArgument(_ value: String) -> String {
+    value.replacingOccurrences(of: "#", with: "##")
+}
+
+/// Escapes text used as a direct tmux format comparison operand.
+func tmuxFormatComparisonOperand(_ value: String) -> String {
+    var escaped = ""
+    escaped.reserveCapacity(value.count)
+    for character in value {
+        if "#,}".contains(character) { escaped.append("#") }
+        escaped.append(character)
+    }
+    return escaped
+}
+
 enum FormatValue: Sendable, Hashable {
     case text(String)
     case integer(Int)
@@ -102,6 +180,9 @@ enum FormatValue: Sendable, Hashable {
             case "1": self = .flag(true)
             default: return nil
             }
+        case let .identifier(sigil):
+            guard isValidTmuxID(raw, sigil: sigil) else { return nil }
+            self = .text(raw)
         }
     }
 }
@@ -130,6 +211,13 @@ struct FormatRow: Sendable, Hashable {
         guard case let .flag(value) = values[field.name] else { return false }
         return value
     }
+
+    func identifier<ID: TmuxID>(_ field: FormatField, as _: ID.Type) -> ID {
+        guard let id = ID(rawValue: text(field)) else {
+            preconditionFailure("projection accepted an invalid \(ID.self)")
+        }
+        return id
+    }
 }
 
 /// Splits on newlines, dropping only the terminator tmux writes after the last
@@ -156,12 +244,16 @@ extension Server {
     /// one first:
     ///
     /// ```swift
-    /// let tty = try await server.format("#{pane_tty}", for: pane)
+    /// let tty = try await server.format("#{pane_tty}", for: pane, through: link)
     /// ```
     ///
     /// Ask for as many fields as you like in one template, separated by
     /// whatever the value cannot contain — a newline is the one separator to
     /// avoid, since a connection reads commands by line and refuses one.
+    ///
+    /// > Warning: tmux runs `#(command)` in a template and substitutes its
+    /// > output, so a template is executable. Write it, or double the `#` in
+    /// > anything that reaches one from elsewhere.
     ///
     /// - Returns: what tmux printed, minus the newline it ends every answer
     ///   with, or `nil` when `target` no longer resolves.
@@ -169,25 +261,63 @@ extension Server {
         _ template: String,
         for session: Session
     ) async throws(TmuxError) -> String? {
-        try await format(template, addressing: session.id)
+        return try await format(
+            template,
+            addressing: session.id.rawValue,
+            probe: "#{session_id}",
+            expectedProbe: session.id.rawValue,
+            guardedBy: [.session(session)]
+        )
     }
 
-    /// Evaluates a tmux format against a window. See
+    /// Evaluates a tmux format against one session-local window link. See
     /// ``format(_:for:)-(String,Session)``.
     public func format(
         _ template: String,
-        for window: Window
+        for link: WindowLink
     ) async throws(TmuxError) -> String? {
-        try await format(template, addressing: window.id)
+        try await format(
+            template,
+            addressing: link.target,
+            probe: "#{session_id}:#{window_index}:#{window_id}",
+            expectedProbe:
+                "\(link.sessionID.rawValue):\(link.index):\(link.windowID.rawValue)",
+            guardedBy: [.windowLink(link)]
+        )
     }
 
-    /// Evaluates a tmux format against a pane. See
+    /// Evaluates a tmux format against a pane through one of its window links. See
     /// ``format(_:for:)-(String,Session)``.
     public func format(
+        _ template: String,
+        for pane: Pane,
+        through link: WindowLink
+    ) async throws(TmuxError) -> String? {
+        _ = try expectedIncarnation([pane.incarnation, link.incarnation])
+        guard pane.windowID == link.windowID else { throw .staleServerValue }
+        return try await format(
+            template,
+            addressing: "\(link.target).\(pane.id.rawValue)",
+            probe: "#{session_id}:#{window_index}:#{window_id}:#{pane_id}",
+            expectedProbe:
+                "\(link.sessionID.rawValue):\(link.index):\(link.windowID.rawValue):"
+                + pane.id.rawValue,
+            guardedBy: [.pane(pane), .windowLink(link)]
+        )
+    }
+
+    /// Evaluates a library-owned format whose fields are daemon-global for a pane.
+    package func formatGlobal(
         _ template: String,
         for pane: Pane
     ) async throws(TmuxError) -> String? {
-        try await format(template, addressing: pane.id)
+        try await format(
+            template,
+            addressing: pane.id.rawValue,
+            probe: "#{pane_id}",
+            expectedProbe: pane.id.rawValue,
+            guardedBy: [.pane(pane)]
+        )
     }
 
     /// Evaluates a tmux format against a target named by id.
@@ -202,11 +332,22 @@ extension Server {
         _ template: String,
         addressing target: String
     ) async throws(TmuxError) -> String? {
-        // The pane id is asked alongside the caller's template, because tmux
-        // answers a target that has gone exactly as it answers an empty field
-        // — nothing, on a zero exit — and a pane id is never empty for a
-        // target that resolves. Both travel in one command, so proving the
-        // target costs no round trip.
+        try await format(template, addressing: target, guardedBy: nil)
+    }
+
+    private func format(
+        _ template: String,
+        addressing target: String,
+        probe: String = "#{pane_id}",
+        expectedProbe: String? = nil,
+        guardedBy values: [GuardedValue]?
+    ) async throws(TmuxError) -> String? {
+        // A target probe is asked alongside the caller's template, because
+        // tmux answers a target that has gone exactly as it answers an empty
+        // field — nothing, on a zero exit. Typed targets also compare their
+        // full identity, so a stale session-local index cannot read the window
+        // that replaced it. Both travel in one command, so proving the target
+        // costs no round trip.
         //
         // Separated by the record separator rather than a newline, because a
         // connection takes a command *line*: a newline inside an argument ends
@@ -214,12 +355,16 @@ extension Server {
         // Only the first separator divides the two, so a value carrying one of
         // its own arrives whole.
         let probeSeparator = FormatProjection.separator
-        let reply = try await run(
-            rawArguments: TmuxCommand(
-                "display-message",
-                ["-p", "-t", target, "#{pane_id}\(probeSeparator)" + template]
-            ).argumentVector
+        let command = TmuxCommand(
+            "display-message",
+            ["-p", "-t", target, "\(probe)\(probeSeparator)" + template]
         )
+        let reply: TmuxReply
+        if let values {
+            reply = try await runGuarded(command, by: values, checkingTargets: false)
+        } else {
+            reply = try await run(rawArguments: command.argumentVector)
+        }
         guard reply.isSuccess else { return nil }
         var text = reply.text
         if text.hasSuffix("\n") { text.removeLast() }
@@ -228,7 +373,12 @@ extension Server {
             maxSplits: 1,
             omittingEmptySubsequences: false
         )
-        guard let probe = parts.first, !probe.isEmpty else { return nil }
+        guard let reportedProbe = parts.first else { return nil }
+        if let expectedProbe {
+            guard reportedProbe == Substring(expectedProbe) else { return nil }
+        } else if reportedProbe.isEmpty {
+            return nil
+        }
         return parts.count > 1 ? String(parts[1]) : ""
     }
 

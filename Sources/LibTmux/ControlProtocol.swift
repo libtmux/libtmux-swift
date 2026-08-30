@@ -1,3 +1,47 @@
+import Foundation
+
+struct ControlLineInput: Sendable {
+    enum Event: Sendable, Hashable {
+        case line(String)
+        case failure(TmuxError)
+    }
+
+    static let maximumBytes = 2_000_000
+    private var framer = BoundedLineFramer(maximumBytes: maximumBytes)
+
+    mutating func append(_ data: Data) -> [Event] {
+        map(framer.append(data))
+    }
+
+    mutating func finish() -> [Event] {
+        guard framer.bufferedBytes == 0 else {
+            _ = framer.finish()
+            return [
+                .failure(
+                    .invocationFailed(reason: "control protocol ended with an incomplete line")
+                )
+            ]
+        }
+        return []
+    }
+
+    private func map(_ events: [BoundedLineFramer.Event]) -> [Event] {
+        events.map { event in
+            switch event {
+            case let .line(line): .line(line)
+            case .oversized:
+                .failure(
+                    .invocationFailed(
+                        reason: "control protocol line exceeds \(Self.maximumBytes) bytes"
+                    )
+                )
+            case .invalidUTF8:
+                .failure(.invocationFailed(reason: "control protocol line is not UTF-8"))
+            }
+        }
+    }
+}
+
 /// One thing a control-mode server can say.
 enum ControlEvent: Sendable, Hashable {
     /// A command's reply, bracketed by `%begin`/`%end` in the stream.
@@ -13,23 +57,49 @@ enum ControlEvent: Sendable, Hashable {
 
     /// The server closed the connection.
     case exited
+
+    /// The stream broke its own block framing.
+    case protocolViolation(String)
 }
 
 public struct ControlReply: Sendable, Hashable {
-    /// The number tmux stamped on this reply's block. Replies come back in the
-    /// order their commands were sent, and this is what proves it rather than
-    /// assuming it.
+    /// The number tmux stamped on this reply's block.
+    ///
+    /// tmux numbers a command when it runs it, from one counter shared by every
+    /// client, so a connection's own replies advance without being contiguous.
+    /// A block that does not advance is a protocol violation rather than a
+    /// reply, which is what keeps ordering proven rather than assumed.
     public let number: Int
     /// What the command printed, one entry per line, with the block's own
     /// `%begin` and `%end` removed.
     public let lines: [String]
+    let isControlCommand: Bool
+    let outputExceededLimit: Bool
     /// tmux closed the block with `%error` rather than `%end`. The reason is in
     /// ``lines``, the same place a successful reply's output is.
     public let isError: Bool
 
     public init(number: Int, lines: [String], isError: Bool) {
+        self.init(
+            number: number,
+            lines: lines,
+            isControlCommand: false,
+            outputExceededLimit: false,
+            isError: isError
+        )
+    }
+
+    init(
+        number: Int,
+        lines: [String],
+        isControlCommand: Bool,
+        outputExceededLimit: Bool = false,
+        isError: Bool
+    ) {
         self.number = number
         self.lines = lines
+        self.isControlCommand = isControlCommand
+        self.outputExceededLimit = outputExceededLimit
         self.isError = isError
     }
 }
@@ -54,43 +124,78 @@ public struct ControlNotification: Sendable, Hashable {
 /// same start yields the same events, which is what makes the protocol testable
 /// without a live server.
 struct ControlProtocolParser: Sendable {
-    private var openBlock: (number: Int, lines: [String])?
+    private struct OpenBlock: Sendable {
+        let metadata: BlockMetadata
+        var lines: [String] = []
+        var retainedBytes = 0
+        var outputExceededLimit = false
+    }
 
-    init() {}
+    private let maximumReplyBytes: Int
+    private var openBlock: OpenBlock?
+    private var lastBlockNumber: Int?
+
+    init(maximumReplyBytes: Int = defaultTmuxReplyByteLimit) {
+        precondition(maximumReplyBytes >= 0)
+        self.maximumReplyBytes = maximumReplyBytes
+    }
 
     /// Consumes one line, returning an event if that line completed one.
     mutating func consume(_ line: String) -> ControlEvent? {
+        if var block = openBlock {
+            if line.hasPrefix("%") {
+                let (marker, rest) = splitOnFirstSpace(String(line.dropFirst()))
+                if (marker == "end" || marker == "error"),
+                    let metadata = blockMetadata(rest),
+                    metadata == block.metadata
+                {
+                    openBlock = nil
+                    return .reply(
+                        ControlReply(
+                            number: block.metadata.number,
+                            lines: block.lines,
+                            isControlCommand: block.metadata.isControlCommand,
+                            outputExceededLimit: block.outputExceededLimit,
+                            isError: marker == "error"
+                        )
+                    )
+                }
+            }
+            retain(line, in: &block)
+            openBlock = block
+            return nil
+        }
+
         guard line.hasPrefix("%") else {
-            // Inside a block this is output; outside one tmux does not send
-            // bare lines, and inventing an event for one would be a guess.
-            openBlock?.lines.append(line)
+            // Outside a block tmux does not send bare lines, and inventing an
+            // event for one would be a guess.
             return nil
         }
 
         let (marker, rest) = splitOnFirstSpace(String(line.dropFirst()))
         switch marker {
         case "begin":
-            openBlock = (number: blockNumber(rest) ?? 0, lines: [])
+            guard let metadata = blockMetadata(rest) else {
+                return .protocolViolation("malformed %begin metadata")
+            }
+            if let last = lastBlockNumber, !blockNumberAdvances(metadata.number, past: last) {
+                return .protocolViolation(
+                    "block \(metadata.number) did not advance past \(last)"
+                )
+            }
+            lastBlockNumber = metadata.number
+            openBlock = OpenBlock(metadata: metadata)
             return nil
         case "end", "error":
-            guard let block = openBlock else { return nil }
-            openBlock = nil
-            return .reply(
-                ControlReply(
-                    number: block.number,
-                    lines: block.lines,
-                    isError: marker == "error"
-                )
+            guard let metadata = blockMetadata(rest) else {
+                return .protocolViolation("malformed %\(marker) metadata")
+            }
+            return .protocolViolation(
+                "unmatched %\(marker) for command \(metadata.number)"
             )
         case "exit":
             return .exited
         default:
-            // A notification can only arrive between blocks. Treating one as
-            // block output would silently corrupt a command's reply.
-            guard openBlock == nil else {
-                openBlock?.lines.append(line)
-                return nil
-            }
             return .notification(
                 ControlNotification(name: marker, arguments: rest)
             )
@@ -99,13 +204,51 @@ struct ControlProtocolParser: Sendable {
 
     /// Whether a command's reply is still being read.
     public var isInsideBlock: Bool { openBlock != nil }
+
+    private func retain(_ line: String, in block: inout OpenBlock) {
+        guard !block.outputExceededLimit else { return }
+        let (lineBytes, lineOverflowed) = line.utf8.count.addingReportingOverflow(1)
+        let (totalBytes, totalOverflowed) = block.retainedBytes.addingReportingOverflow(lineBytes)
+        guard !lineOverflowed, !totalOverflowed, totalBytes <= maximumReplyBytes else {
+            block.outputExceededLimit = true
+            block.lines.removeAll(keepingCapacity: false)
+            return
+        }
+        block.retainedBytes = totalBytes
+        block.lines.append(line)
+    }
 }
 
-/// `%begin <timestamp> <number> <flags>` — the number is the second field.
-private func blockNumber(_ arguments: String) -> Int? {
+/// `%begin <timestamp> <number> <flags>`.
+private struct BlockMetadata: Sendable, Hashable {
+    let timestamp: Int
+    let number: Int
+    let flags: Int
+
+    var isControlCommand: Bool { flags != 0 }
+}
+
+/// Whether one block number follows another.
+///
+/// tmux stamps the number from a `u_int` counter shared by every client, so it
+/// advances by an unpredictable step and wraps at 2^32. Comparing the wrapped
+/// difference accepts the wrap — invisible to tmux, which never reads the
+/// number back — while still rejecting a repeat or a rewind.
+private func blockNumberAdvances(_ number: Int, past last: Int) -> Bool {
+    let step = UInt32(truncatingIfNeeded: number) &- UInt32(truncatingIfNeeded: last)
+    return step != 0 && step < UInt32(1) << 31
+}
+
+private func blockMetadata(_ arguments: String) -> BlockMetadata? {
     let fields = arguments.split(separator: " ")
-    guard fields.count >= 2 else { return nil }
-    return Int(fields[1])
+    guard fields.count == 3,
+        let timestamp = Int(fields[0]),
+        let number = Int(fields[1]),
+        let flags = Int(fields[2])
+    else {
+        return nil
+    }
+    return BlockMetadata(timestamp: timestamp, number: number, flags: flags)
 }
 
 private func splitOnFirstSpace(_ line: String) -> (String, String) {

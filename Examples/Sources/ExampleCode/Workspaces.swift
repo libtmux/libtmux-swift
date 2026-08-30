@@ -5,7 +5,7 @@ import LibTmux
 import TmuxWorkspace
 
 public func describeAWorkspaceInSwift() -> Workspace {
-    Workspace(
+    let workspace = Workspace(
         sessionName: "work",
         windows: [
             WindowPlan(
@@ -19,6 +19,7 @@ public func describeAWorkspaceInSwift() -> Workspace {
             ),
         ]
     )
+    return workspace
 }
 
 public func buildItOnAServer(_ server: Server, _ workspace: Workspace) async throws -> Session {

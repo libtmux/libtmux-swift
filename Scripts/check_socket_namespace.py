@@ -9,17 +9,14 @@ enforces the same invariant with a script, and this is the Swift half of it.
 
     python3 Scripts/check_socket_namespace.py
 
-What it can and cannot see. It matches `Server(socketPath:)` given a *literal*,
-which is where a stray socket root gets written down. It does not look at
-`Server(socketName:)`: tmux resolves a name inside `TMUX_TMPDIR`, so the literal
-says nothing about where the socket lands, and the suite gates that separately
-through `namedSocketsAvailable`. Nor can it tell a server that was addressed
-from one that was started — nothing reaches the filesystem until a command runs
-against it, and that is a runtime fact. So a couple of cases legitimately name a
-path outside the roots and never create it; they are listed below rather than
-detected, the way `check_examples.py` lists its manifest excerpts, so the next
-one has to be a decision somebody made rather than a pattern somebody's file
-happened to match.
+What it can and cannot see. It matches literal `Server(socketPath:)` and
+`Server(socketName:)` calls. A path records its root directly; a name resolves
+inside `TMUX_TMPDIR`, so the suite gates that part through
+`namedSocketsAvailable` and this check requires the name to identify this port.
+It cannot tell a server that was addressed from one that was started — nothing
+reaches the filesystem until a command runs against it, and that is a runtime
+fact. The exceptions below therefore stay explicit decisions rather than
+patterns that happen to pass.
 
 `dev/Spikes/` is excluded: it is scratch work that CI does not build.
 """
@@ -43,6 +40,10 @@ ALLOWED = {
     ("Tests/LibTmuxTests/CommandListTests.swift", "/tmp/lt-empty"),
     # Identity and equality over endpoints; no server is ever started.
     ("Tests/LibTmuxTests/ServerTests.swift", "/tmp/libtmux-value"),
+    # The consumer example addresses tmux's conventional socket; listing does
+    # not start it, and its test creates this name only under guarded TMUX_TMPDIR.
+    ("Examples/Sources/QuickStart/main.swift", "default"),
+    ("Examples/Tests/ExampleTests/QuickStartTests.swift", "default"),
 }
 
 PATH_LITERAL = re.compile(r'Server\(\s*socketPath:\s*"([^"]*)"')

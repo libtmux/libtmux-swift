@@ -13,11 +13,12 @@ struct WorkspaceTests {
             let session = try await buildItOnAServer(server, describeAWorkspaceInSwift())
             #expect(session.name == "work")
 
-            let windows = try await server.windows().filter { $0.sessionID == session.id }
+            let snapshot = try await server.snapshot()
+            let windows = snapshot.windows(of: session)
             #expect(windows.map(\.name) == ["editor", "logs"])
 
             let editor = try #require(windows.first { $0.name == "editor" })
-            let panes = try await server.panes().filter { $0.windowID == editor.id }
+            let panes = snapshot.panes(of: editor)
             #expect(panes.count == 2)
         }
     }

@@ -9,11 +9,11 @@ struct SnapshotTests {
     func aSnapshotResolvesItsRelations() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
-            let snapshot = try await walkOneConsistentPicture(server, session)
+            let snapshot = try await walkOneSnapshot(server, session)
 
             #expect(!snapshot.windows(of: session).isEmpty)
             for window in snapshot.windows(of: session) {
-                #expect(snapshot.session(of: window)?.id == session.id)
+                #expect(snapshot.sessions(of: window).contains { $0.id == session.id })
                 #expect(!snapshot.panes(of: window).isEmpty)
             }
         }

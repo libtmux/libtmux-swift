@@ -8,7 +8,7 @@
 public struct FilterSchema: Sendable, Hashable, Codable {
     /// Bumped when the document's *shape* changes. Adding a field or an alias
     /// does not bump it; those are additive and old readers keep working.
-    public static let version = 1
+    public static let version = 2
 
     /// The ``version`` this document was written with, so a reader can tell
     /// whether it understands the shape before trying to use it.
@@ -87,18 +87,11 @@ extension Window {
     static let filterSchemaFields: [FilterSchema.Field] = [
         .init(id: "window.id", type: .text, aliases: ["id", "window_id"]),
         .init(id: "window.name", type: .text, aliases: ["name", "window_name"]),
-        .init(id: "window.index", type: .integer, aliases: ["index", "window_index"]),
         .init(
             id: "window.paneCount",
             type: .integer,
             aliases: ["paneCount", "window_panes"]
         ),
-        .init(
-            id: "window.active",
-            type: .flag,
-            aliases: ["active", "isActive", "window_active"]
-        ),
-        .init(id: "window.sessionID", type: .text, aliases: ["sessionID", "session_id"]),
     ]
 }
 
@@ -122,7 +115,6 @@ extension Pane {
             aliases: ["active", "isActive", "pane_active"]
         ),
         .init(id: "pane.windowID", type: .text, aliases: ["windowID", "window_id"]),
-        .init(id: "pane.sessionID", type: .text, aliases: ["sessionID", "session_id"]),
     ]
 }
 

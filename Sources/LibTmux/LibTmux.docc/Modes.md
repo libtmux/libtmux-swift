@@ -18,10 +18,9 @@ Concurrency is not on this list because it is not this library's to offer:
 `async let` over a connected server pipelines commands, and over a direct one
 spawns processes side by side, without either being a setting.
 
-Only the third dial is restricted, and the compiler is what restricts it —
-``ControlSession`` exists only inside the scope that opened a connection, so a
-`%output` reader against a server that has none does not compile rather than
-failing at runtime. The other two combine freely: a command list over a
+Only the third dial needs a live connection. ``ControlSession`` is handed out
+inside the scope that opened one; retaining it does not keep the process alive,
+and later calls fail. The other two combine freely: a command list over a
 connection costs one process for any number of commands.
 
 ## The modes
@@ -155,9 +154,9 @@ machine; run it yourself for those.
 | sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 7 round trips |
 | sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 5 round trips |
 | the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 5 round trips |
-| new-window five times, each its own command | 12 processes, 12 round trips | 1 process, 13 round trips |
+| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 8 round trips |
 | the same five as one command list | 3 processes, 3 round trips | 1 process, 4 round trips |
-| new-window then split, read back | 6 processes, 6 round trips | 1 process, 7 round trips |
+| new-window then split, read back | 5 processes, 5 round trips | 1 process, 6 round trips |
 
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |

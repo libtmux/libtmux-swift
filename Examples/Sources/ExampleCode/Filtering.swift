@@ -12,3 +12,10 @@ public func travelling(_ server: Server) async throws -> [Pane] {
     let matching = try await server.panes().filter(expression)
     return matching
 }
+
+public func travellingByPattern(_ server: Server) async throws -> [Pane] {
+    let editors = try RegexPattern("^(n?vim|hx)$", options: [.caseInsensitive])
+    let expression = try FilterExpr<Pane>.where(\.currentCommand, .matches(editors))
+    let matching = try await server.panes().filter(expression)
+    return matching
+}

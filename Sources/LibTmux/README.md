@@ -9,10 +9,12 @@ One dependency ([swift-subprocess][]), and the only product most callers need.
 .product(name: "LibTmux", package: "libtmux-swift")
 ```
 
+With tmux already running on its default socket:
+
 ```swift
 import LibTmux
 
-let server = try Server(socketPath: "/tmp/work.sock")
+let server = try Server(socketName: "default")
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
@@ -30,12 +32,13 @@ actor the value shares.
 | --- | --- |
 | `Server.swift`, `Endpoint.swift` | Addressing a server, and the listings |
 | `Session.swift`, `Window.swift`, `Pane.swift` | The model, as values |
-| `Snapshot.swift` | One consistent picture, with the relationships resolved |
+| `Snapshot.swift` | A bounded aggregate, with the relationships resolved |
 | `Mutations.swift`, `Navigation.swift` | Creating, splitting, renaming, selecting |
 | `Options.swift`, `Environment.swift` | tmux options, hooks, and its two environments |
 | `Filter*.swift` | `FilterExpr`, the filter that encodes and travels |
+| `Regex*.swift` | Bounded pattern syntax, compilation, and matching |
 | `TmuxMode.swift`, `ControlMode.swift` | Direct and connected, and the switch between |
-| `Wait.swift` | `wait-for` channels |
+| `Wait.swift`, `WaitForOutput.swift` | Channels and event-driven pane output waits |
 | `TmuxVersion.swift` | What the server runs, compared properly |
 
 ## Documentation

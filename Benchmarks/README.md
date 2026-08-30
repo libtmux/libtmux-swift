@@ -20,12 +20,11 @@ built rather than from a copy of it:
 dependencies: [.package(name: "libtmux", path: "..")]
 ```
 
-`Sources/TmuxFixture` is a symlink to [`Tests/TmuxFixture`][fixture], the same
-fixture every suite provisions servers through. A target path cannot leave its
-own package root, and vending the fixture as a product just to reach it would
-widen the library's public surface to serve a benchmark. Because it is the same
-directory rather than a copy, this package provisions and reaps servers exactly
-as the suites do — including reaping them when a run is killed outright.
+The root package's `TmuxFixture` product comes from
+[`Tests/TmuxFixture`][fixture], the same fixture every suite provisions servers
+through. The benchmark consumes that product rather than copying the fixture,
+so it provisions and reaps servers exactly as the suites do — including reaping
+them when a run is killed outright.
 
 ## Running it
 

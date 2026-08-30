@@ -20,20 +20,40 @@ public protocol Filterable: Sendable {
 
     /// Reads the field an id names, or `nil` if this model has no such field.
     static func filterValue(_ id: String, of root: Self) -> FilterValue?
+
+    /// The value kind an id names, or `nil` when this model does not know it.
+    static func filterFieldType(_ id: String) -> FilterSchema.ValueType?
 }
 
 /// Why a filter could not be built.
 public enum QueryConstructionError: Error, Sendable, Hashable {
     /// The key path does not name a filterable field of this model.
     case unknownField
+    /// The field and operator could not form a safe expression.
+    case invalidOperation(FilterValidationError)
+}
+
+/// Why a decoded filter cannot be evaluated safely.
+public enum FilterValidationError: Error, Sendable, Hashable {
+    case unknownField(String)
+    case incompatibleOperation(
+        field: String,
+        type: FilterSchema.ValueType,
+        operation: FilterOperation
+    )
+}
+
+/// Why selecting one result from a filter failed.
+public enum FilterSelectionError: Error, Sendable, Hashable {
+    case matching(RegexMatchError)
+    case cardinality(CardinalityError)
 }
 
 /// How a filter compares one field.
 ///
 /// Written as a wire value rather than a closure, so an expression can be
 /// stored, sent, inspected, and later compiled to a tmux `-f` predicate.
-/// A regular expression travels as its pattern and flags; compiling one is the
-/// evaluator's business and never crosses a boundary.
+/// A regular expression travels in compiled, bounded form.
 public enum FilterOperation: Sendable, Hashable, Codable {
     case equals(FilterValue)
     case caseInsensitiveEquals(String)
@@ -42,7 +62,7 @@ public enum FilterOperation: Sendable, Hashable, Codable {
     case hasPrefix(String)
     case hasSuffix(String)
     case isIn([FilterValue])
-    case matches(pattern: String, caseInsensitive: Bool)
+    case matches(pattern: RegexPattern)
 }
 
 /// A typed operator. The `Value` it is built for is the projected type of the
@@ -87,13 +107,34 @@ public struct FilterOperator<Value>: Sendable {
         Self(.isIn(values.map(FilterValue.text)))
     }
 
-    /// Pattern and flags, never a compiled `Regex`: the expression has to stay
-    /// `Codable`, and the dialect is decided where it is evaluated.
-    public static func matches(
-        _ pattern: String,
-        caseInsensitive: Bool = false
-    ) -> Self where Value == String {
-        Self(.matches(pattern: pattern, caseInsensitive: caseInsensitive))
+    public static func matches(_ pattern: RegexPattern) -> Self where Value == String {
+        Self(.matches(pattern: pattern))
+    }
+
+    // MARK: Typed identifiers
+
+    public static func equals(_ value: SessionID) -> Self where Value == SessionID {
+        Self(.equals(.text(value.rawValue)))
+    }
+
+    public static func isIn(_ values: [SessionID]) -> Self where Value == SessionID {
+        Self(.isIn(values.map { .text($0.rawValue) }))
+    }
+
+    public static func equals(_ value: WindowID) -> Self where Value == WindowID {
+        Self(.equals(.text(value.rawValue)))
+    }
+
+    public static func isIn(_ values: [WindowID]) -> Self where Value == WindowID {
+        Self(.isIn(values.map { .text($0.rawValue) }))
+    }
+
+    public static func equals(_ value: PaneID) -> Self where Value == PaneID {
+        Self(.equals(.text(value.rawValue)))
+    }
+
+    public static func isIn(_ values: [PaneID]) -> Self where Value == PaneID {
+        Self(.isIn(values.map { .text($0.rawValue) }))
     }
 
     // MARK: Integer
@@ -137,6 +178,12 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
         guard let fieldID = Root.filterFieldID(for: keyPath) else {
             throw .unknownField
         }
+        guard let type = Root.filterFieldType(fieldID) else { throw .unknownField }
+        do {
+            try operation.operation.validate(field: fieldID, type: type)
+        } catch {
+            throw .invalidOperation(error)
+        }
         return .comparison(field: fieldID, operation: operation.operation)
     }
 
@@ -144,25 +191,81 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
     ///
     /// Evaluated against a value already in hand. Matching never reaches tmux,
     /// so iterating results cannot spawn a process.
-    public func matches(_ root: Root) -> Bool {
+    public func matches(_ root: Root) throws(RegexMatchError) -> Bool {
+        try matches(root, budget: RegexMatchBudget())
+    }
+
+    package func matches(
+        _ root: Root,
+        budget: RegexMatchBudget
+    ) throws(RegexMatchError) -> Bool {
         switch self {
         case let .comparison(fieldID, operation):
             guard let value = Root.filterValue(fieldID, of: root) else {
                 return false
             }
-            return operation.matches(value)
+            return try operation.matches(value, budget: budget)
         case let .and(children):
-            return children.allSatisfy { $0.matches(root) }
+            for child in children {
+                if try !child.matches(root, budget: budget) { return false }
+            }
+            return true
         case let .or(children):
-            return children.contains { $0.matches(root) }
+            for child in children {
+                if try child.matches(root, budget: budget) { return true }
+            }
+            return false
         case let .not(child):
-            return !child.matches(root)
+            return try !child.matches(root, budget: budget)
+        }
+    }
+
+    /// Rejects field ids this build does not understand anywhere in the tree.
+    public func validate() throws(FilterValidationError) {
+        switch self {
+        case let .comparison(fieldID, operation):
+            guard let type = Root.filterFieldType(fieldID) else {
+                throw .unknownField(fieldID)
+            }
+            try operation.validate(field: fieldID, type: type)
+        case let .and(children), let .or(children):
+            for child in children { try child.validate() }
+        case let .not(child):
+            try child.validate()
         }
     }
 }
 
 extension FilterOperation {
-    func matches(_ value: FilterValue) -> Bool {
+    func validate(
+        field: String,
+        type: FilterSchema.ValueType
+    ) throws(FilterValidationError) {
+        switch self {
+        case let .equals(value):
+            guard value.schemaType == type else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+        case let .isIn(values):
+            guard values.allSatisfy({ $0.schemaType == type }) else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+        case .caseInsensitiveEquals, .contains, .caseInsensitiveContains, .hasPrefix,
+            .hasSuffix:
+            guard type == .text else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+        case .matches:
+            guard type == .text else {
+                throw .incompatibleOperation(field: field, type: type, operation: self)
+            }
+        }
+    }
+
+    func matches(
+        _ value: FilterValue,
+        budget: RegexMatchBudget
+    ) throws(RegexMatchError) -> Bool {
         switch self {
         case let .equals(expected):
             return value == expected
@@ -183,14 +286,19 @@ extension FilterOperation {
             return text.hasSuffix(expected)
         case let .isIn(expected):
             return expected.contains(value)
-        case let .matches(pattern, caseInsensitive):
+        case let .matches(pattern):
             guard case let .text(text) = value else { return false }
-            return text.range(
-                of: pattern,
-                options: caseInsensitive
-                    ? [.regularExpression, .caseInsensitive]
-                    : [.regularExpression]
-            ) != nil
+            return try pattern.containsMatch(in: text, budget: budget)
+        }
+    }
+}
+
+extension FilterValue {
+    fileprivate var schemaType: FilterSchema.ValueType {
+        switch self {
+        case .text: .text
+        case .integer: .integer
+        case .flag: .flag
         }
     }
 }
@@ -202,8 +310,21 @@ extension Sequence where Element: Filterable {
     ///
     /// Returns a plain array: ordered, replayable, and free of any live
     /// connection to tmux.
-    public func filter(_ expression: FilterExpr<Element>) -> [Element] {
-        filter { expression.matches($0) }
+    public func filter(
+        _ expression: FilterExpr<Element>
+    ) throws(RegexMatchError) -> [Element] {
+        try filter(expression, regexBudget: RegexMatchBudget())
+    }
+
+    package func filter(
+        _ expression: FilterExpr<Element>,
+        regexBudget: RegexMatchBudget
+    ) throws(RegexMatchError) -> [Element] {
+        var result: [Element] = []
+        for element in self where try expression.matches(element, budget: regexBudget) {
+            result.append(element)
+        }
+        return result
     }
 
     /// The one element the filter matches.
@@ -212,12 +333,17 @@ extension Sequence where Element: Filterable {
     /// that meant to address one object needs to know which mistake it made.
     public func exactlyOne(
         _ expression: FilterExpr<Element>
-    ) throws(CardinalityError) -> Element {
-        let matches = filter(expression)
+    ) throws(FilterSelectionError) -> Element {
+        let matches: [Element]
+        do {
+            matches = try filter(expression)
+        } catch {
+            throw .matching(error)
+        }
         switch matches.count {
-        case 0: throw .noMatch
+        case 0: throw .cardinality(.noMatch)
         case 1: return matches[0]
-        default: throw .multipleMatches(count: matches.count)
+        default: throw .cardinality(.multipleMatches(count: matches.count))
         }
     }
 
@@ -226,12 +352,17 @@ extension Sequence where Element: Filterable {
     /// Only ambiguity is an error here; absence is an ordinary answer.
     public func oneOrNil(
         _ expression: FilterExpr<Element>
-    ) throws(CardinalityError) -> Element? {
-        let matches = filter(expression)
+    ) throws(FilterSelectionError) -> Element? {
+        let matches: [Element]
+        do {
+            matches = try filter(expression)
+        } catch {
+            throw .matching(error)
+        }
         switch matches.count {
         case 0: return nil
         case 1: return matches[0]
-        default: throw .multipleMatches(count: matches.count)
+        default: throw .cardinality(.multipleMatches(count: matches.count))
         }
     }
 }

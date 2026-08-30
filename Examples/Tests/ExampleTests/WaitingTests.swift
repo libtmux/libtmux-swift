@@ -26,9 +26,8 @@ struct WaitingTests {
     )
     func documentedChannelWaitReturns() async throws {
         try await withTmuxServer { server in
-            // The example runs `make`, so it needs something to make. A target
-            // that does nothing is enough: what is being checked is that the
-            // channel released, not what the build did.
+            // Failure must still signal the channel; otherwise this wait is
+            // exactly where the recipe deadlocks.
             let directory = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("libtmux-swift-waiting-\(UUID().uuidString.prefix(8))")
             try FileManager.default.createDirectory(
@@ -36,7 +35,7 @@ struct WaitingTests {
                 withIntermediateDirectories: true
             )
             defer { try? FileManager.default.removeItem(at: directory) }
-            try "all:\n\t@true\n".write(
+            try "all:\n\t@false\n".write(
                 to: directory.appendingPathComponent("Makefile"),
                 atomically: true,
                 encoding: .utf8
@@ -49,18 +48,6 @@ struct WaitingTests {
             let pane = try #require(
                 try await server.snapshot().panes(of: session).first
             )
-            // The example signals through a bare `tmux`, which for a reader is
-            // the one on their PATH and the one running their server. A run
-            // pointed at a particular build by LIBTMUX_TMUX_BIN has neither, so
-            // the precondition the example documents is established here — a
-            // client of a different protocol version is refused outright.
-            let binary = URL(fileURLWithPath: tmuxExecutablePath())
-            if binary.path.contains("/") {
-                try await server.run(
-                    "PATH=\(binary.deletingLastPathComponent().path):$PATH; export PATH",
-                    in: pane
-                )
-            }
             // No assertion beyond returning: the wait either releases or the
             // suite's limit ends it, and a channel nobody signals never
             // releases.
@@ -111,15 +98,16 @@ struct WaitingTests {
         try await withTmuxServer { server in
             let pane = try await onlyPane(server)
             let waited = try await withThrowingTaskGroup(of: OutputWait?.self) { group in
-                group.addTask { try await waitingOnOutput(server, pane: pane) }
+                group.addTask {
+                    try await waitingOnOutput(server, pane: pane)
+                }
                 group.addTask {
                     var round = 0
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .milliseconds(250))
                         round += 1
-                        // Numbered because a match must be a row that was not
-                        // already on screen, and repeating one identical line
-                        // would never once count as new.
+                        // Numbered so each attempt is visible in a failed test's
+                        // captured tail.
                         try? await server.run(
                             "printf '\\nListening on 80\\(round)\\n'",
                             in: pane

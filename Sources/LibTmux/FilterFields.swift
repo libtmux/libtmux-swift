@@ -10,6 +10,10 @@
 /// `-f` predicate — so renaming a property must not renumber a wire schema.
 
 extension Session: Filterable {
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
+    }
+
     public static func filterFieldID(for keyPath: PartialKeyPath<Session>) -> String? {
         switch keyPath {
         case \Session.id: "session.id"
@@ -22,7 +26,7 @@ extension Session: Filterable {
 
     public static func filterValue(_ id: String, of root: Session) -> FilterValue? {
         switch id {
-        case "session.id": .text(root.id)
+        case "session.id": .text(root.id.rawValue)
         case "session.name": .text(root.name)
         case "session.windowCount": .integer(root.windowCount)
         case "session.attached": .flag(root.isAttached)
@@ -32,32 +36,34 @@ extension Session: Filterable {
 }
 
 extension Window: Filterable {
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
+    }
+
     public static func filterFieldID(for keyPath: PartialKeyPath<Window>) -> String? {
         switch keyPath {
         case \Window.id: "window.id"
         case \Window.name: "window.name"
-        case \Window.index: "window.index"
         case \Window.paneCount: "window.paneCount"
-        case \Window.isActive: "window.active"
-        case \Window.sessionID: "window.sessionID"
         default: nil
         }
     }
 
     public static func filterValue(_ id: String, of root: Window) -> FilterValue? {
         switch id {
-        case "window.id": .text(root.id)
+        case "window.id": .text(root.id.rawValue)
         case "window.name": .text(root.name)
-        case "window.index": .integer(root.index)
         case "window.paneCount": .integer(root.paneCount)
-        case "window.active": .flag(root.isActive)
-        case "window.sessionID": .text(root.sessionID)
         default: nil
         }
     }
 }
 
 extension Pane: Filterable {
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
+    }
+
     public static func filterFieldID(for keyPath: PartialKeyPath<Pane>) -> String? {
         switch keyPath {
         case \Pane.id: "pane.id"
@@ -66,26 +72,28 @@ extension Pane: Filterable {
         case \Pane.currentPath: "pane.path"
         case \Pane.isActive: "pane.active"
         case \Pane.windowID: "pane.windowID"
-        case \Pane.sessionID: "pane.sessionID"
         default: nil
         }
     }
 
     public static func filterValue(_ id: String, of root: Pane) -> FilterValue? {
         switch id {
-        case "pane.id": .text(root.id)
+        case "pane.id": .text(root.id.rawValue)
         case "pane.index": .integer(root.index)
         case "pane.command": .text(root.currentCommand)
         case "pane.path": .text(root.currentPath)
         case "pane.active": .flag(root.isActive)
-        case "pane.windowID": .text(root.windowID)
-        case "pane.sessionID": .text(root.sessionID)
+        case "pane.windowID": .text(root.windowID.rawValue)
         default: nil
         }
     }
 }
 
 extension Client: Filterable {
+    public static func filterFieldType(_ id: String) -> FilterSchema.ValueType? {
+        filterSchemaFields.first { $0.id == id }?.type
+    }
+
     public static func filterFieldID(for keyPath: PartialKeyPath<Client>) -> String? {
         switch keyPath {
         case \Client.name: "client.name"
@@ -101,7 +109,7 @@ extension Client: Filterable {
         case "client.name": .text(root.name)
         case "client.tty": .text(root.tty)
         case "client.controlMode": .flag(root.isControlMode)
-        case "client.sessionID": .text(root.sessionID)
+        case "client.sessionID": .text(root.sessionID.rawValue)
         default: nil
         }
     }

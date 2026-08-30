@@ -1,8 +1,7 @@
 # `LibTmuxMCP`
 
-tmux as [Model Context Protocol][MCP] tools, as a library. The tool definitions
-and their handlers, with no server and no transport — embed them in a server of
-your own.
+tmux as [Model Context Protocol][MCP] tools you can embed: `TmuxTools`,
+`MCPRequestHandler`, and `MCPService`, without the stdio executable.
 
 To *run* one rather than embed it, use [`libtmux-mcp`](../libtmux-mcp), which is
 these tools served over stdio.
@@ -12,25 +11,44 @@ these tools served over stdio.
 ```
 
 ```swift
+import LibTmux
 import LibTmuxMCP
-
-let tools = TmuxTools(server: server)
-for definition in TmuxTools.definitions {
-    print(definition.name, definition.summary)
-}
-let result = try await tools.call(ToolCall(name: "list_panes"))
 ```
+
+```swift
+public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
+    let tools = TmuxTools(server: server)
+    for definition in tools.visibleDefinitions {
+        print(definition.name, definition.summary)
+    }
+    let result = try await tools.call(ToolCall(name: "list_panes"))
+    return result.structured["panes"]?.arrayValue?.count ?? 0
+}
+```
+
+`TmuxTools(server:)` permits readonly tools. Pass `tier: .mutating` or
+`tier: .destructive` explicitly when the embedding should expose writes.
+Those tiers classify tool intent; they do not sandbox the host. `.mutating`
+includes `run_shell` and `send_keys`, so expose it only to callers trusted to
+act as the tmux user.
+
+For least authority, pass a typed exact selection:
+
+```swift
+let authority = ToolAuthority(
+    tier: .mutating,
+    enabledTools: [.listSessions, .newWindow]
+)
+let tools = TmuxTools(server: server, authority: authority)
+```
+
+The tier remains an upper bound, and adding a future tool does not add it to an
+exact selection.
 
 ## The tools
 
-| Tool | What it does |
-| --- | --- |
-| `list_sessions` | Every session, optionally selected by what its panes run |
-| `list_windows` | Every window on the server |
-| `list_panes` | Every pane, optionally filtered |
-| `describe_filters` | The filterable fields, their types, and their aliases |
-| `read_format` | Evaluates a tmux format, reaching fields the listings do not carry |
-| `run_command` | Runs one tmux command and returns what tmux said |
+The [root tool catalogue](../../README.md#the-tools) groups every tool by
+safety tier and names the limits each one enforces.
 
 `describe_filters` is what makes the rest usable. A client that does not speak
 Swift learns the filterable vocabulary from it at runtime, instead of hard
@@ -38,7 +56,28 @@ coding field names that a rename would break — the same `FilterExpr` vocabular
 [`LibTmux`](../LibTmux) offers in-process, which is why it can travel to a
 client at all.
 
+Hierarchy rows carry opaque references for follow-up reads. They bind the row
+to the current tmux daemon and expire when the MCP process restarts; re-list to
+replace one that has expired. Exact window occurrences carry both a global
+`windowRef` and session-local `linkRef`.
+
 `TmuxTools` is written against `Server` and never mentions a mode, so it works
 the same directly or over a connection.
+
+## Adding a tool
+
+A tool is three declarations, and the compiler holds them together:
+
+- a case on `ToolOperation`, whose raw value is the name a client calls;
+- a `ToolDefinition` in one of the `ToolDefinitions+*.swift` files, carrying
+  the schema and the safety tier;
+- a method on `TmuxTools` in one of the `Tools*.swift` files, which
+  `ToolOperation.execute` dispatches to.
+
+The dispatch is an exhaustive switch, so a case without a method does not
+compile, and `ToolCatalogTests` fails a case without a definition or a
+definition without a case. Behaviour lives in the operation rather than in a
+closure on the definition because a definition is `Hashable` and a closure is
+not.
 
 [MCP]: https://modelcontextprotocol.io

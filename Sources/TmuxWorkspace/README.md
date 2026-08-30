@@ -16,7 +16,9 @@ family names it the same way — [`tmux-workspace`][rs], [`@libtmux/workspace`][
 
 ```swift
 import TmuxWorkspace
+```
 
+```swift
 let workspace = Workspace(
     sessionName: "work",
     windows: [
@@ -24,14 +26,23 @@ let workspace = Workspace(
             windowName: "editor",
             layout: "even-horizontal",
             panes: [PanePlan(), PanePlan()]
-        )
+        ),
+        WindowPlan(
+            windowName: "logs",
+            panes: [PanePlan(shellCommands: ["tail -f /tmp/build.log"])]
+        ),
     ]
 )
+```
+
+```swift
 let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
 Building refuses rather than adopting a session that already has the name: two
-callers building the same workspace should not silently share one.
+callers building the same workspace should not silently share one. A later
+failure removes the exact session this build created; a rollback failure
+reports both errors.
 
 ## YAML is behind a trait
 
@@ -47,20 +58,24 @@ behind it — appears only when the `YAMLWorkspaces` trait is enabled:
 )
 ```
 
-With the trait off, nothing here resolves Yams at all. That is measurable: a
-consumer of this package without the trait fetches `swift-subprocess` and
-`swift-system`, and nothing else.
+With the trait off, nothing here resolves Yams at all.
 
 ## Which of tmuxp this covers
 
-The keys match tmuxp's, so an existing workspace file is readable without
-translation. This is a useful subset rather than a reimplementation: tmuxp's
-runtime — plugins, before/after hooks, environment inheritance — is not
-modelled, and a file using them builds its windows and ignores the rest.
+The modelled keys use tmuxp's spelling, so files limited to this structural
+subset need no translation:
 
-The suite decodes tmuxp's own example files both ways and compares them, which
-tests the two readers against each other over files this project did not write.
-See [the fixtures' notice](../../Tests/TmuxWorkspaceTests/Fixtures/NOTICE.md).
+- workspace: `session_name`, `start_directory`, `windows`
+- window: `window_name`, `start_directory`, `layout`, `panes`
+- pane: `start_directory`, `shell_command`; commands may be strings or
+  `{cmd:, enter:}` objects
+
+Unknown keys are ignored. tmuxp's plugins, before/after hooks, environment
+inheritance, and other runtime behavior are not modelled.
+
+The suite compares JSON and YAML forms of selected upstream examples. The
+fixtures cover representative data shapes, not tmuxp's full feature set; see
+[their notice](../../Tests/TmuxWorkspaceTests/Fixtures/NOTICE.md).
 
 [tmuxp]: https://tmuxp.git-pull.com/
 [rs]: https://github.com/libtmux/libtmux-rs

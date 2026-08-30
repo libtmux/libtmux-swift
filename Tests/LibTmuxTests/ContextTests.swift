@@ -16,7 +16,7 @@ struct ContextTests {
             ("/tmp/od,d/s,9,2", "/tmp/od,d/s", 9, "$2"),
         ]
     )
-    func contextParses(_ value: String, _ path: String, _ pid: Int, _ session: String) throws {
+    func contextParses(_ value: String, _ path: String, _ pid: Int, _ session: SessionID) throws {
         let context = try #require(TmuxContext(parsing: value))
         #expect(context.socketPath == path)
         #expect(context.serverProcessID == pid)
@@ -25,10 +25,23 @@ struct ContextTests {
 
     @Test(
         "anything that is not that shape reports nothing",
-        arguments: ["", "/tmp/s", "/tmp/s,1", ",1,2", "/tmp/s,x,2", "/tmp/s,1,$2", "/tmp/s,1,"]
+        arguments: [
+            "", "/tmp/s", "/tmp/s,1", ",1,2", "/tmp/s,x,2", "/tmp/s,1,$2",
+            "/tmp/s,1,", "/tmp/s,1,01", "/tmp/s,1,٠",
+        ]
     )
     func nonContextsAreRefused(_ value: String) {
         #expect(TmuxContext(parsing: value) == nil)
+    }
+
+    @Test("decoding refuses an invalid session id")
+    func decodingRefusesAnInvalidSessionID() {
+        let data = Data(
+            #"{"socketPath":"/tmp/s","serverProcessID":1,"sessionID":"$01"}"#.utf8
+        )
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(TmuxContext.self, from: data)
+        }
     }
 
     @Test("a process outside tmux has no context")

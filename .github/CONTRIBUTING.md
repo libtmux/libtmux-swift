@@ -6,7 +6,7 @@ The package is the repository: `Package.swift` at the root, `Sources/` and
 `Tests/` beside it, because SwiftPM resolves a package from a repository root
 and cannot be pointed at a subdirectory. Five products ship from it —
 `LibTmux`, `TmuxWorkspace`, `LibTmuxMCP`, the `libtmux-mcp` executable, and
-`TmuxTestSupport` — and `Examples/`, `Benchmarks/`, and `dev/Spikes/` are
+`TmuxFixture` — and `Examples/`, `Benchmarks/`, and `dev/Spikes/` are
 packages of their own, so the shipped manifest names only what ships.
 
 How this project writes prose — README, changelog, release notes, commit
@@ -23,11 +23,30 @@ $ export PATH="$(mise where swift)/usr/bin:$PATH"
 
 `Scripts/update_mode_matrix.py` reads `$SWIFT` for the same reason.
 
+SwiftPM compiles with one job per core, and the suite starts a tmux server per
+case on top of that, so a full run makes the machine it is running on unusable
+for anything else. Half the cores leaves it responsive and costs little, because
+these builds are not compile-bound:
+
+```console
+$ swift build --jobs 5 --force-resolved-versions
+```
+
+Hosted CI gets a runner to itself and should keep the default; this is for a
+machine someone is also working on. Serial tests are worth pairing with it —
+they keep a loaded machine from being the reason a timing case fails — and one
+lock file keeps two runs from overlapping:
+
+```console
+$ nice -n 10 flock /tmp/libtmux-swift-test/.swift.lock \
+    swift test --jobs 5 --no-parallel --force-resolved-versions
+```
+
 That the default configuration builds is its own check, because the trait-on
 test below covers a different graph:
 
 ```console
-$ swift build
+$ swift build --force-resolved-versions
 ```
 
 **On Darwin, build with Xcode's toolchain rather than one from swift.org.**
@@ -44,11 +63,12 @@ The suite runs against real tmux — no mocks of the server — one private sock
 per case, with servers reaped even when a run is killed outright.
 
 The `YAMLWorkspaces` trait is off by default and six tests come with it, the
-YAML reader and everything that exercises it. A bare `swift test` passes while
-covering less, which is why the gate names the trait:
+YAML reader and everything that exercises it. A bare
+`swift test --force-resolved-versions` passes while covering less, which is why
+the gate names the trait:
 
 ```console
-$ swift test --traits YAMLWorkspaces
+$ swift test --traits YAMLWorkspaces --force-resolved-versions
 ```
 
 The named-socket cases resolve a socket *name*, which tmux looks up inside
@@ -57,7 +77,10 @@ the other ports' included. Name the directory and those cases run; without it
 they skip and say why:
 
 ```console
-$ TMUX_TMPDIR=/tmp/libtmux-swift-test/named swift test --traits YAMLWorkspaces
+$ TMUX_TMPDIR=/tmp/libtmux-swift-test/named \
+    swift test \
+    --traits YAMLWorkspaces \
+    --force-resolved-versions
 ```
 
 The fixture does not set that variable itself: `setenv` writes to `environ`
@@ -69,20 +92,22 @@ resolves its binary through it, so this exercises the release named rather than
 whichever one the machine ships:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
+$ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux \
+    swift test \
+    --force-resolved-versions
 ```
 
 The examples are their own package and are run separately:
 
 ```console
-$ swift test --package-path Examples
+$ swift test --package-path Examples --force-resolved-versions
 ```
 
-**Run the trait-on command last.** A default-trait resolve drops the Yams pin
-from `Package.resolved`, and SwiftPM will not put it back into a file that is
-missing it. Committing that deletion is the mistake to avoid. `swift build` and
-the DocC command are both default-trait resolves, so both do it; the examples
-package has its own `Package.resolved` and leaves this one alone.
+`Package.resolved` tracks a superset that includes Yams even when the trait is
+off. Root commands use `--force-resolved-versions` to take the pinned revisions
+for the dependencies they resolve and leave the unused Yams pin intact.
+Downstream packages that use the libraries resolve independently. The examples
+package enforces its own `Package.resolved` and leaves the root file alone.
 
 ## Flaky, or broken?
 
@@ -96,7 +121,7 @@ a wrong value, and the commit touched nothing the case reads. Re-running the one
 case in a loop is cheaper than another round of CI:
 
 ```console
-$ for _ in $(seq 20); do swift test --filter observersDoNotDivideNotifications || break; done
+$ for _ in $(seq 20); do swift test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
 ```
 
 All three can hold and it can still be a defect. A run where every cell from
@@ -127,7 +152,24 @@ The documentation. DocC warnings fail the job, so a broken symbol link is an
 error rather than a note:
 
 ```console
-$ swift package generate-documentation --target LibTmux
+$ swift package \
+    --force-resolved-versions \
+    generate-documentation \
+    --target LibTmux
+```
+
+```console
+$ swift package \
+    --force-resolved-versions \
+    generate-documentation \
+    --target TmuxWorkspace
+```
+
+```console
+$ swift package \
+    --force-resolved-versions \
+    generate-documentation \
+    --target LibTmuxMCP
 ```
 
 Python under `Scripts/` is held to the ruff configuration beside it, in
@@ -138,11 +180,12 @@ lane on an unrelated commit:
 $ ruff check Scripts/
 ```
 
-Every documented example is compiled, and the floor keeps the number that
-actually run from sliding:
+Every documented example maps to consumer source, and the floor keeps its
+live-test call sites from sliding. The trait-on test later compiles and runs
+that package:
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 36
+$ python3 Scripts/check_examples.py --min-executed 40
 ```
 
 Every socket this repository names by literal lives under one of this port's
@@ -152,13 +195,12 @@ two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 $ python3 Scripts/check_socket_namespace.py
 ```
 
-That script reads every `Server(socketPath:)` given a literal, which is where a
-stray root gets written down. It does not read `Server(socketName:)`: tmux
-resolves a name inside `TMUX_TMPDIR`, so the literal says nothing about where
-the socket lands, and `namedSocketsAvailable` is what gates that instead. Nor
-can it see whether a server was *started* — nothing reaches the filesystem
-until a command runs against it — so the few cases that name a path outside the
-roots and never create one are listed in the script rather than detected.
+That script reads literal `Server(socketPath:)` and `Server(socketName:)` calls.
+A path records its root; a name must identify this port, while
+`namedSocketsAvailable` separately proves the suite placed it under the test
+root. The script cannot see whether a server was *started* — nothing reaches
+the filesystem until a command runs against it — so deliberate exceptions are
+listed beside their reason.
 
 Every tracked file with a shebang is executable in git, so a script that CI
 invokes directly does not fail only there:
@@ -171,6 +213,13 @@ Every `exact:` pin in the documentation names the version the package claims:
 
 ```console
 $ python3 Scripts/check_version.py
+```
+
+Every symbol `CHANGELOG.md` names on a type this package declares still exists
+on it:
+
+```console
+$ python3 Scripts/check_changelog_symbols.py
 ```
 
 The generated tables still match what the benchmark measures:
@@ -205,12 +254,10 @@ bitten: it needs macOS 15.
 
 ## Documented examples
 
-Anything inside a `swift` fenced block in the top-level `README.md` or the DocC
-catalogue must also appear in a file under `Examples/Sources/`. Add the example
-there rather than writing it twice — `Scripts/check_examples.py` fails when a
-fence appears in no example. Those two documents are the whole of what the
-check scans: a `swift` fence added to a product README under `Sources/` is
-compiled by nothing.
+Anything inside a `swift` fenced block in the top-level `README.md`, a product
+README under `Sources/`, or the DocC catalogue must also appear in a file under
+`Examples/Sources/`. Add the example there rather than writing it twice —
+`Scripts/check_examples.py` fails when a fence appears in no example.
 
 `Examples/` is a package of its own that depends on this one, so an example
 reaches the library the way a reader does: through the products, with no
@@ -218,10 +265,11 @@ reaches the library the way a reader does: through the products, with no
 cannot and still pass, which is the thing that split is there to prevent.
 
 Every example is a function, so a test in `Examples/Tests/` calling it by name
-is what makes it *executed*. That is worth more than compiling: a renamed call
+marks it for the live suite. That is worth more than compiling: a renamed call
 stops the build either way, but a call that kept its name and changed its answer
-is only caught by running it. The check reports the split, so the number that
-run is a fact rather than a claim, and `--min-executed` keeps it from sliding.
+is only caught by running it. The check reports those call sites and
+`--min-executed` keeps the count from sliding; the Examples test run proves the
+code actually executes.
 
 Edit the example, never the block on the page, then run the check:
 

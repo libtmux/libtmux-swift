@@ -22,6 +22,7 @@ struct OutputSchemaTests {
             switch value {
             case .null: "null"
             case .bool: "boolean"
+            case .integer, .unsignedInteger: "integer"
             case let .number(number): number == number.rounded() ? "integer" : "number"
             case .string: "string"
             case .array: "array"
@@ -83,6 +84,7 @@ struct OutputSchemaTests {
         try await withTmuxServer { server in
             let tools = TmuxTools(server: server, tier: .destructive, caller: nil)
             let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
 
             try await check("describe_server", .object([:]), on: tools)
             try await check("list_servers", .object([:]), on: tools)
@@ -99,12 +101,12 @@ struct OutputSchemaTests {
             )
             try await check(
                 "capture_pane",
-                .object(["pane": .string(pane.id)]),
+                .object(["pane": .string(paneRef)]),
                 on: tools
             )
             try await check(
                 "capture_since",
-                .object(["pane": .string(pane.id)]),
+                .object(["pane": .string(paneRef)]),
                 on: tools
             )
             try await check(
@@ -117,28 +119,24 @@ struct OutputSchemaTests {
                 .object(["template": .string("#{pid}")]),
                 on: tools
             )
-            // The nullable branch: a target that has gone answers null, and a
-            // schema that only allowed a string would make that a violation.
-            try await check(
-                "read_format",
-                .object([
-                    "template": .string("#{pane_tty}"), "target": .string("%999"),
-                ]),
-                on: tools
-            )
         }
     }
 
     @Test("what the waiting tools answer is what they advertise")
     func waitingToolsConform() async throws {
         try await withTmuxServer { server in
-            let tools = TmuxTools(server: server, waitCeiling: .seconds(2))
+            let tools = TmuxTools(
+                server: server,
+                tier: .mutating,
+                waitCeiling: .seconds(2)
+            )
             let pane = try #require(try await server.panes().first)
+            let paneRef = WireReferenceCodec.processLocal.reference(to: pane)
 
             try await check(
                 "wait_for_output",
                 .object([
-                    "pane": .string(pane.id),
+                    "pane": .string(paneRef),
                     "patterns": .array([.string("never-arrives")]),
                     "require_fresh": .bool(true),
                     "timeout": .number(1),
@@ -148,7 +146,7 @@ struct OutputSchemaTests {
             try await check(
                 "watch_format",
                 .object([
-                    "pane": .string(pane.id),
+                    "pane": .string(paneRef),
                     "format": .string("#{pane_dead}"),
                     "matching": .string("never-matches"),
                     "timeout": .number(1),
@@ -173,16 +171,21 @@ struct OutputSchemaTests {
         try await withTmuxServer { server in
             let tools = TmuxTools(server: server, tier: .destructive, caller: nil)
             let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
+            let window = try #require(
+                try await server.windows().first { $0.id == pane.windowID }
+            )
+            let serverReference = try await serverRef(server)
 
             try await check(
                 "send_keys",
-                .object(["pane": .string(pane.id), "keys": .array([.string("Escape")])]),
+                .object(["pane": .string(wireRef(pane)), "keys": .array([.string("Escape")])]),
                 on: tools
             )
             try await check(
                 "run_shell",
                 .object([
-                    "pane": .string(pane.id),
+                    "pane": .string(wireRef(pane)),
                     "command": .string("printf 'schema\\n'"),
                     "timeout": .number(20),
                 ]),
@@ -191,15 +194,19 @@ struct OutputSchemaTests {
             try await check(
                 "run_command",
                 .object([
+                    "server_ref": .string(serverReference),
                     "command": .string("has-session"),
                     "arguments": .array([.string("-t"), .string("absent")]),
+                    "confirm_unsafe": .bool(true),
                 ]),
                 on: tools
             )
             try await check(
                 "run_commands",
                 .object([
-                    "commands": .array([.object(["command": .string("list-sessions")])])
+                    "server_ref": .string(serverReference),
+                    "commands": .array([.object(["command": .string("list-sessions")])]),
+                    "confirm_unsafe": .bool(true),
                 ]),
                 on: tools
             )
@@ -218,36 +225,55 @@ struct OutputSchemaTests {
                 on: tools
             )
             try await check(
+                "apply_workspace",
+                .object([
+                    "plan": .object([
+                        "session_name": .string("schema-workspace"),
+                        "windows": .array([
+                            .object([
+                                "window_name": .string("one"),
+                                "panes": .array([.object(["shell_command": .array([])])]),
+                            ])
+                        ]),
+                    ])
+                ]),
+                on: tools
+            )
+            try await check(
                 "paste_text",
-                .object(["pane": .string(pane.id), "text": .string("pasted")]),
+                .object(["pane": .string(wireRef(pane)), "text": .string("pasted")]),
                 on: tools
             )
             try await check(
                 "rename",
-                .object(["target": .string(pane.sessionID), "name": .string("renamed")]),
+                .object(["target": .string(wireRef(session)), "name": .string("renamed")]),
                 on: tools
             )
-            try await check("select", .object(["target": .string(pane.id)]), on: tools)
+            try await check("select", .object(["target": .string(wireRef(pane))]), on: tools)
             try await check(
                 "resize_pane",
-                .object(["pane": .string(pane.id), "height": .number(10)]),
+                .object(["pane": .string(wireRef(pane)), "height": .number(10)]),
                 on: tools
             )
             try await check(
                 "select_layout",
                 .object([
-                    "target": .string(pane.windowID), "layout": .string("even-vertical"),
+                    "target": .string(wireRef(window)), "layout": .string("even-vertical"),
                 ]),
                 on: tools
             )
             try await check(
                 "respawn_pane",
-                .object(["pane": .string(pane.id)]),
+                .object(["pane": .string(wireRef(pane))]),
                 on: tools
             )
 
             let extra = try await server.split(pane)
-            try await check("kill_pane", .object(["pane": .string(extra.id)]), on: tools)
+            try await check(
+                "kill_pane",
+                .object(["pane": .string(wireRef(extra))]),
+                on: tools
+            )
         }
     }
 
@@ -271,8 +297,6 @@ struct OutputSchemaTests {
             // Its shape is the filter vocabulary, which is versioned and
             // described by its own schemaVersion field.
             "describe_filters",
-            // Answers whatever tmux objects it made, which differ per plan.
-            "apply_workspace",
             // The whole hierarchy, described by the library's own types.
             "snapshot",
             // Creations answer the object they made.

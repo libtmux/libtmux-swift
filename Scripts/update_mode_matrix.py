@@ -14,10 +14,10 @@ different places, and each takes the tables its own subject calls for. All are
 written from one benchmark run — a second copy maintained by hand is the one
 that goes stale.
 
-Only the counts are written — processes started and round trips made. They are
-exact and repeat every run; the timings alongside them are medians that move
-with the machine, and pinning those would make the check fail for reasons that
-say nothing about the code.
+Only stable work counts are written — processes, round trips, and captures.
+They repeat every run; the timings alongside them are medians that move with
+the machine, and pinning those would make the check fail for reasons that say
+nothing about the code.
 """
 
 from __future__ import annotations

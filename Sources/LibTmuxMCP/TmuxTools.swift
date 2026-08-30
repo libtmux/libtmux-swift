@@ -1,5 +1,6 @@
 import Foundation
 import LibTmux
+import TmuxWorkspace
 
 /// The tmux tools an MCP client can call.
 ///
@@ -8,11 +9,14 @@ import LibTmux
 /// data and the tool evaluates it here, rather than the client asking for
 /// everything and filtering at home.
 public struct TmuxTools: Sendable {
+    /// The one `run_shell` lock. See ``PaneRunCoordinator`` for why it is not
+    /// per-instance; `Self.` at every use site is the reminder.
+    static let paneRuns = PaneRunCoordinator()
+
     let server: Server
-    /// The highest tier a call may reach. Anything above it is hidden from
-    /// `tools/list` as well as refused, so a client configured for reading is
-    /// never shown a way to write.
-    public let tier: SafetyTier
+    /// The authority shared by tool listing and invocation.
+    public let authority: ToolAuthority
+    public var tier: SafetyTier { authority.tier }
     /// The ceiling every wait is clamped to.
     ///
     /// What an unbounded wait costs is not the transport — calls are served
@@ -22,21 +26,37 @@ public struct TmuxTools: Sendable {
     public let waitCeiling: Duration
     let caller: CallerIdentity?
 
+    /// Creates a read-only tool set unless a higher tier is selected.
     public init(
         server: Server,
-        tier: SafetyTier = .mutating,
+        tier: SafetyTier = .readonly,
+        waitCeiling: Duration = .seconds(120),
+        caller: CallerIdentity? = CallerIdentity.current()
+    ) {
+        self.init(
+            server: server,
+            authority: ToolAuthority(tier: tier),
+            waitCeiling: waitCeiling,
+            caller: caller
+        )
+    }
+
+    /// Creates a tool set with explicit authority.
+    public init(
+        server: Server,
+        authority: ToolAuthority,
         waitCeiling: Duration = .seconds(120),
         caller: CallerIdentity? = CallerIdentity.current()
     ) {
         self.server = server
-        self.tier = tier
-        self.waitCeiling = waitCeiling
+        self.authority = authority
+        self.waitCeiling = max(.zero, waitCeiling)
         self.caller = caller
     }
 
-    /// The tools visible at this server's tier.
+    /// The tools visible under this server's authority.
     public var visibleDefinitions: [ToolDefinition] {
-        Self.definitions.filter { $0.tier <= tier }
+        Self.definitions.filter { authority.rejection(for: $0) == nil }
     }
 
     /// Runs a tool and returns its result.
@@ -46,96 +66,118 @@ public struct TmuxTools: Sendable {
     public func call(
         _ request: ToolCall,
         reporting progress: ProgressReporter = .silent
+    ) async throws(ToolError) -> ToolOutcome {
+        do {
+            return try await dispatch(request, reporting: progress)
+        } catch let error as ToolError {
+            throw error
+        } catch let error as TmuxError {
+            throw .tmux(error)
+        } catch let error as WorkspaceBuilderError {
+            throw .workspace(error)
+        } catch is DecodingError {
+            throw .wrongArgumentType(
+                "arguments",
+                expected: "values matching \(request.name)'s schema"
+            )
+        } catch is CancellationError {
+            throw .tmux(.cancelled)
+        } catch {
+            if Task.isCancelled { throw .tmux(.cancelled) }
+            throw .internalFailure(String(describing: error))
+        }
+    }
+
+    private func dispatch(
+        _ request: ToolCall,
+        reporting progress: ProgressReporter
     ) async throws -> ToolOutcome {
         guard let definition = Self.byName[request.name] else {
             throw ToolError.unknownTool(request.name)
         }
-        guard definition.tier <= tier else {
-            throw ToolError.deniedByTier(
-                request.name,
-                needs: definition.tier,
-                allowed: tier
-            )
-        }
+        if let rejection = authority.rejection(for: definition) { throw rejection }
         let arguments = try Arguments(request, for: definition)
 
-        switch request.name {
-        case "describe_server": return try await describeServer()
-        case "describe_filters": return .init(FilterSchema.current)
-        case "list_servers": return try await listServers(arguments)
-        case "show_options": return try await showOptions(arguments)
-        case "show_environment": return try await showEnvironment(arguments)
-        case "show_hooks": return try await showHooks(arguments)
-
-        case "list_sessions": return try await listSessions(arguments)
-        case "list_windows": return try await listWindows(arguments)
-        case "list_panes": return try await listPanes(arguments)
-        case "snapshot": return try await readSnapshot()
-        case "capture_pane": return try await capturePane(arguments)
-        case "capture_since": return try await captureSince(arguments)
-        case "search_panes": return try await searchPanes(arguments, progress)
-        case "read_format": return try await readFormat(arguments)
-
-        case "wait_for_output": return try await waitForOutput(arguments, progress)
-        case "watch_format": return try await watchFormat(arguments, progress)
-        case "wait_for_channel": return try await waitForChannel(arguments, progress)
-        case "signal_channel": return try await signalChannel(arguments)
-
-        case "run_shell": return try await runShell(arguments, progress)
-        case "send_keys": return try await sendKeys(arguments)
-        case "new_session": return try await newSession(arguments)
-        case "new_window": return try await newWindow(arguments)
-        case "split_pane": return try await splitPane(arguments)
-        case "apply_workspace": return try await applyWorkspace(arguments)
-        case "set_option": return try await setOption(arguments)
-        case "set_environment": return try await setEnvironment(arguments)
-        case "rename": return try await rename(arguments)
-        case "select": return try await select(arguments)
-        case "resize_pane": return try await resizePane(arguments)
-        case "select_layout": return try await selectLayout(arguments)
-        case "respawn_pane": return try await respawnPane(arguments)
-        case "paste_text": return try await pasteText(arguments)
-
-        case "kill_pane": return try await killPane(arguments)
-        case "kill_window": return try await killWindow(arguments)
-        case "kill_session": return try await killSession(arguments)
-        case "kill_server": return try await killServer(arguments)
-
-        case "run_command": return try await runCommand(arguments)
-        case "run_commands": return try await runCommands(arguments)
-
-        default: throw ToolError.unknownTool(request.name)
-        }
+        return try await definition.operation.execute(
+            on: self,
+            arguments: arguments,
+            reporting: progress
+        )
     }
 
     /// Clamps a requested wait to the ceiling, and says what was enforced.
     func bounded(_ seconds: Double) -> (duration: Duration, enforced: Double) {
-        let ceiling = Double(waitCeiling.components.seconds)
-        let enforced = max(0.1, min(seconds, ceiling))
-        return (.milliseconds(Int(enforced * 1000)), enforced)
+        let ceiling = max(Duration.zero, waitCeiling)
+        let floor = min(Duration.milliseconds(100), ceiling)
+        if seconds <= floor.secondsValue { return (floor, floor.secondsValue) }
+        if seconds >= ceiling.secondsValue { return (ceiling, ceiling.secondsValue) }
+        let requested = Duration.seconds(seconds)
+        return (requested, requested.secondsValue)
     }
 
-    /// Resolves a pane id to the pane, so a stale id fails with the id in the
-    /// message rather than as an opaque tmux error three calls later.
-    func pane(_ id: String) async throws -> Pane {
-        guard let found = try await server.panes().first(where: { $0.id == id }) else {
-            throw ToolError.refusedForSafety(
-                "no pane \(id) on this server. Call list_panes for what is there."
+    /// Resolves an MCP pane reference to the current typed model.
+    func pane(_ reference: String) async throws -> Pane {
+        try WireReferenceCodec.processLocal.resolve(
+            reference,
+            among: try await server.panes(),
+            argument: "pane",
+            refreshWith: "list_panes"
+        )
+    }
+
+    /// Resolves a server reference against the daemon answering now.
+    func serverIncarnation(_ reference: String) async throws -> ServerIncarnation {
+        let current = try await server.incarnation()
+        return try WireReferenceCodec.processLocal.resolve(
+            reference,
+            among: [current],
+            argument: "server_ref",
+            refreshWith: "describe_server"
+        )
+    }
+
+    /// Resolves the exact window appearance used for pane-scoped waits.
+    func windowLink(for pane: Pane, matching requestedTarget: String?) async throws -> WindowLink {
+        let links = try await server.windowLinks()
+            .filter { $0.windowID == pane.windowID && $0.incarnation == pane.incarnation }
+            .sorted { $0.target < $1.target }
+        guard !links.isEmpty else {
+            throw ToolError.refusedForSafety("pane \(pane.id) has gone")
+        }
+
+        if let requestedTarget {
+            return try WireReferenceCodec.processLocal.resolve(
+                requestedTarget,
+                among: links,
+                argument: "window_link",
+                refreshWith: "list_windows"
             )
         }
-        return found
+
+        if links.count == 1 { return links[0] }
+        let guardForCaller = try await guardForCaller()
+        if guardForCaller.isSameServer, let sessionID = guardForCaller.identity?.sessionID {
+            let callerLinks = links.filter { $0.sessionID == sessionID }
+            if callerLinks.count == 1 { return callerLinks[0] }
+        }
+        throw ToolError.refusedForSafety(
+            "pane \(pane.id) has several window links; pass a linkRef from list_windows"
+        )
     }
 
     /// Whether the caller is on this server. One tmux command, so it is only
     /// asked by the tools whose answer depends on it.
-    func guardForCaller() async -> CallerGuard {
+    func guardForCaller() async throws -> CallerGuard {
         guard caller != nil else {
             return CallerGuard(identity: nil, isSameServer: false)
         }
-        let processID = try? await server.serverProcessID()
+        return guardForCaller(serverProcessID: try await server.serverProcessID())
+    }
+
+    func guardForCaller(serverProcessID: Int?) -> CallerGuard {
         return CallerGuard(
             identity: caller,
-            isSameServer: caller?.isOn(serverProcessID: processID) ?? false
+            isSameServer: caller?.isOn(serverProcessID: serverProcessID) ?? false
         )
     }
 }

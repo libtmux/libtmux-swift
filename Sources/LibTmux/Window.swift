@@ -1,77 +1,104 @@
-/// A tmux window, as it was when the listing was read.
+/// One tmux window, independent of every session that links it.
 public struct Window: Sendable, Hashable, Codable, Identifiable {
-    /// tmux's own window id — `@0`, `@1`. Stable for the window's lifetime;
-    /// the index is not, because windows renumber when one is closed.
-    public let id: String
-    /// What tmux shows in the status line. Renameable and not unique, so it
-    /// identifies a window to a person, not to code.
+    public let id: WindowID
+    public let incarnation: ServerIncarnation
     public let name: String
-    /// Position within its session. Renumbering makes this a display value,
-    /// not an identity.
-    public let index: Int
-    /// tmux's own count, so a caller that needs only the number does not have
-    /// to list the panes to get it.
     public let paneCount: Int
-    /// The window a command reaches when it names the session and stops there.
-    public let isActive: Bool
-    /// The width tmux is drawing this window at, in cells. It follows
-    /// whichever client is attached to the session, so it can differ between a
-    /// session someone is looking at and one nobody is.
     public let width: Int
-    /// The height tmux is drawing this window at, in cells, and on the same
-    /// terms as ``width``.
     public let height: Int
-    /// The session this window belongs to. A window can be linked into more
-    /// than one session, in which case it appears once per session with the
-    /// same ``id``.
-    public let sessionID: String
 
     public init(
-        id: String,
+        id: WindowID,
         name: String,
-        index: Int,
         paneCount: Int,
-        isActive: Bool,
         width: Int,
         height: Int,
-        sessionID: String
+        incarnation: ServerIncarnation
     ) {
         self.id = id
         self.name = name
-        self.index = index
         self.paneCount = paneCount
-        self.isActive = isActive
         self.width = width
         self.height = height
-        self.sessionID = sessionID
+        self.incarnation = incarnation
     }
 }
 
-extension Window {
-    private static let idField = FormatField("window_id")
+/// One session-local link to a window.
+public struct WindowLink: Sendable, Hashable, Codable, Identifiable {
+    public var id: WindowLinkID {
+        WindowLinkID(sessionID: sessionID, index: index, windowID: windowID)
+    }
+    public let incarnation: ServerIncarnation
+    public let sessionID: SessionID
+    public let windowID: WindowID
+    public let index: Int
+    public let isActive: Bool
+
+    public init(
+        sessionID: SessionID,
+        windowID: WindowID,
+        index: Int,
+        isActive: Bool,
+        incarnation: ServerIncarnation
+    ) {
+        self.sessionID = sessionID
+        self.windowID = windowID
+        self.index = index
+        self.isActive = isActive
+        self.incarnation = incarnation
+    }
+
+    /// The exact link target tmux resolves in this session.
+    public var target: String { "\(sessionID.rawValue):\(index)" }
+}
+
+/// One window and one session-local appearance, read from the same tmux reply.
+///
+/// Both properties are snapshots from one instant. ``Window/id`` identifies
+/// the global window for its lifetime, while ``WindowLink/id`` identifies this
+/// appearance only until tmux removes or reindexes the link.
+public struct WindowAppearance: Sendable, Hashable, Codable {
+    public let window: Window
+    public let link: WindowLink
+}
+
+extension WindowAppearance {
+    private static let idField = FormatField("window_id", .identifier(WindowID.sigil))
     private static let nameField = FormatField("window_name")
     private static let indexField = FormatField("window_index", .integer)
     private static let panesField = FormatField("window_panes", .integer)
     private static let activeField = FormatField("window_active", .flag)
     private static let widthField = FormatField("window_width", .integer)
     private static let heightField = FormatField("window_height", .integer)
-    private static let sessionField = FormatField("session_id")
+    private static let sessionField = FormatField(
+        "session_id", .identifier(SessionID.sigil))
 
-    static let projection = FormatProjection([
-        idField, nameField, indexField, panesField, activeField, widthField,
-        heightField, sessionField,
-    ])
+    static let projection = FormatProjection(
+        [
+            idField, nameField, indexField, panesField, activeField, widthField,
+            heightField, sessionField,
+        ] + ServerIncarnation.projectionFields)
 
-    init(row: FormatRow) {
+    init(row: FormatRow, endpoint: Endpoint) {
+        let incarnation = ServerIncarnation(row: row, endpoint: endpoint)
+        let windowID = row.identifier(Self.idField, as: WindowID.self)
         self.init(
-            id: row.text(Window.idField),
-            name: row.text(Window.nameField),
-            index: row.integer(Window.indexField),
-            paneCount: row.integer(Window.panesField),
-            isActive: row.flag(Window.activeField),
-            width: row.integer(Window.widthField),
-            height: row.integer(Window.heightField),
-            sessionID: row.text(Window.sessionField)
+            window: Window(
+                id: windowID,
+                name: row.text(Self.nameField),
+                paneCount: row.integer(Self.panesField),
+                width: row.integer(Self.widthField),
+                height: row.integer(Self.heightField),
+                incarnation: incarnation
+            ),
+            link: WindowLink(
+                sessionID: row.identifier(Self.sessionField, as: SessionID.self),
+                windowID: windowID,
+                index: row.integer(Self.indexField),
+                isActive: row.flag(Self.activeField),
+                incarnation: incarnation
+            )
         )
     }
 }

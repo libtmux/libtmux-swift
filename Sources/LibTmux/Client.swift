@@ -1,7 +1,14 @@
 /// A client attached to a tmux server.
+///
+/// tmux targets a client by its current name or tty, not by `client_pid`. A
+/// disconnect followed by name reuse can therefore make a held value name a
+/// replacement within the same daemon. The process id remains useful metadata,
+/// but it is not a stable client-target key.
 public struct Client: Sendable, Hashable, Codable, Identifiable {
     /// The client's name, which is its terminal path for an ordinary client.
     public var id: String { name }
+    /// The daemon this value was read from.
+    public let incarnation: ServerIncarnation
     /// tmux's name for the client, which for a terminal is the path of its
     /// tty. It is what a command targeting a client has to say.
     public let name: String
@@ -21,7 +28,7 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
     public let isControlMode: Bool
     /// The session the client is looking at. A client attaches to exactly one,
     /// and switching sessions changes this rather than making a new client.
-    public let sessionID: String
+    public let sessionID: SessionID
 
     public init(
         name: String,
@@ -30,7 +37,8 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
         width: Int?,
         height: Int?,
         isControlMode: Bool,
-        sessionID: String
+        sessionID: SessionID,
+        incarnation: ServerIncarnation
     ) {
         self.name = name
         self.tty = tty
@@ -39,6 +47,7 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
         self.height = height
         self.isControlMode = isControlMode
         self.sessionID = sessionID
+        self.incarnation = incarnation
     }
 }
 
@@ -49,14 +58,16 @@ extension Client {
     private static let widthField = FormatField("client_width", .optionalInteger)
     private static let heightField = FormatField("client_height", .optionalInteger)
     private static let controlField = FormatField("client_control_mode", .flag)
-    private static let sessionField = FormatField("session_id")
+    private static let sessionField = FormatField(
+        "session_id", .identifier(SessionID.sigil))
 
-    static let projection = FormatProjection([
-        nameField, ttyField, pidField, widthField, heightField, controlField,
-        sessionField,
-    ])
+    static let projection = FormatProjection(
+        [
+            nameField, ttyField, pidField, widthField, heightField, controlField,
+            sessionField,
+        ] + ServerIncarnation.projectionFields)
 
-    init(row: FormatRow) {
+    init(row: FormatRow, endpoint: Endpoint) {
         self.init(
             name: row.text(Client.nameField),
             tty: row.text(Client.ttyField),
@@ -64,7 +75,8 @@ extension Client {
             width: row.optionalInteger(Client.widthField),
             height: row.optionalInteger(Client.heightField),
             isControlMode: row.flag(Client.controlField),
-            sessionID: row.text(Client.sessionField)
+            sessionID: row.identifier(Client.sessionField, as: SessionID.self),
+            incarnation: ServerIncarnation(row: row, endpoint: endpoint)
         )
     }
 }

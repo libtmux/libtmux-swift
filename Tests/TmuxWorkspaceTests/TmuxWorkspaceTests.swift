@@ -1,8 +1,8 @@
 import Foundation
-import LibTmux
 import Testing
 import TmuxFixture
 
+@testable import LibTmux
 @testable import TmuxWorkspace
 
 @Suite("workspace decoding", .timeLimit(.minutes(1)))
@@ -171,6 +171,69 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("a failed build removes the exact session it created")
+    func failedBuildRollsBackItsSession() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "rollback",
+                windows: [
+                    WindowPlan(
+                        layout: "not-a-tmux-layout",
+                        panes: [PanePlan(), PanePlan()]
+                    )
+                ]
+            )
+
+            await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(workspace, on: server)
+            }
+            let remains = try await server.hasSession("rollback")
+            #expect(!remains)
+        }
+    }
+
+    @Test("a rollback returns at its deadline when cleanup ignores cancellation")
+    func stuckRollbackReturnsAtDeadline() async throws {
+        let socketPath = "/tmp/libtmux-swift-test/workspace-rollback/socket"
+        let endpoint = try Endpoint(socketPath: socketPath)
+        let transport = StuckRollbackTransport()
+        let server = Server(endpoint: endpoint, transport: transport)
+        let session = Session(
+            id: "$1",
+            name: "rollback",
+            windowCount: 1,
+            isAttached: false,
+            createdAt: 1,
+            incarnation: ServerIncarnation(
+                endpoint: endpoint,
+                socketPath: socketPath,
+                processID: 1,
+                startedAt: 1
+            )
+        )
+
+        let started = ContinuousClock.now
+        let rollback = Task {
+            await WorkspaceBuilder.rollback(
+                session,
+                on: server,
+                timeout: .milliseconds(20)
+            )
+        }
+        rollback.cancel()
+        let cleanup = await rollback.value
+
+        guard case let .invocationFailed(reason) = cleanup else {
+            Issue.record("rollback cleanup = \(String(describing: cleanup)), want timeout")
+            return
+        }
+        #expect(reason == "workspace rollback timed out")
+        #expect(ContinuousClock.now - started < .seconds(1))
+
+        await transport.releaseAndWait()
+        #expect(await transport.cancelled)
+    }
+
     @Test("a command that declines enter is typed but not run")
     func declinedEnterIsTypedNotRun() async throws {
         try await withTmuxServer { server in
@@ -223,5 +286,44 @@ struct WorkspaceBuildingTests {
             }
             #expect(running)
         }
+    }
+}
+
+private actor StuckRollbackTransport: ProcessTransport {
+    private(set) var cancelled = false
+    private var released = false
+    private var finished = false
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    private var finishWaiter: CheckedContinuation<Void, Never>?
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        await withCheckedContinuation { continuation in
+            if released {
+                continuation.resume()
+            } else {
+                releaseWaiter = continuation
+            }
+        }
+        cancelled = Task.isCancelled
+        finished = true
+        finishWaiter?.resume()
+        finishWaiter = nil
+        if cancelled {
+            throw .cancelled
+        }
+        return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
+    }
+
+    func releaseAndWait() async {
+        released = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+        if finished { return }
+        await withCheckedContinuation { finishWaiter = $0 }
     }
 }

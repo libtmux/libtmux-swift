@@ -6,10 +6,12 @@
 Drive tmux from Swift. A port of [libtmux][] for Python, in the same family of
 ports and holding to what that library established about tmux.
 
+With tmux already running on its default socket:
+
 ```swift
 import LibTmux
 
-let server = try Server(socketName: "libtmux-swift")
+let server = try Server(socketName: "default")
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
@@ -40,9 +42,9 @@ harness, a dashboard, an agent that needs somewhere to run things — and you wa
 tmux's own vocabulary rather than a wrapper around shelling out.
 
 **Yes, if** you care that `Session`, `Window`, `Pane`, and `Client` are
-`Sendable` and `Codable` values, that every call states what it throws, and that
-the package builds under Swift 6 language mode with complete strict concurrency
-and no unsafe flags.
+`Sendable` and `Codable` values, that core tmux I/O reports `TmuxError`
+explicitly, and that the package builds under Swift 6 language mode with
+complete strict concurrency and no unsafe flags.
 
 **Not yet, if** you need a stable API. Every release so far is an alpha and
 names are still moving — see [Project status](#project-status).
@@ -52,7 +54,7 @@ not draw one.
 
 ## Products
 
-Four things ship from this one package. Take only what you need — the core has
+Five things ship from this one package. Take only what you need — the core has
 one dependency, and the YAML reader is behind a trait so you do not pay for it
 unless you ask.
 
@@ -60,8 +62,9 @@ unless you ask.
 | --- | --- | --- | --- |
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
-| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
+| **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
 
 Each has its own README with an install snippet, a usage example, and what it
 does and does not cover.
@@ -75,7 +78,7 @@ Every tag until `0.1.0` is a prerelease, and a prerelease has to be named
 exactly. `from: "0.1.0"` matches none of them — SwiftPM keeps prereleases out
 of a range whose bound has none — and `from: "0.1.0-alpha.2"` errs the other
 way, resolving forward into `0.2.0-alpha.1` and every prerelease after it.
-Neither is what you want from alpha software, so name the one you tested:
+Neither is what you want from alpha software, so name an exact release:
 
 ```swift
 .package(
@@ -88,7 +91,10 @@ Neither is what you want from alpha software, so name the one you tested:
 .product(name: "LibTmux", package: "libtmux-swift")
 ```
 
-To follow unreleased work instead, depend on the branch:
+> [!NOTE]
+> This page documents unreleased `master`. The exact dependency above installs
+> the released alpha.2 API; [read that tag's README][alpha2-readme] for matching
+> examples. To compile the examples on this page, depend on `master`:
 
 ```swift
 .package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
@@ -142,10 +148,10 @@ let reply = try await server.run(
 print(reply.isSuccess ? reply.text : reply.errorText)
 ```
 
-### One consistent picture
+### Snapshots
 
-Three listings are three moments. `snapshot()` takes one, and the relationships
-are resolved inside it rather than by matching ids yourself:
+`snapshot()` collects sessions, windows, panes, and clients into one value. The
+relationships resolve inside that value rather than by matching ids yourself:
 
 ```swift
 let snapshot = try await server.snapshot()
@@ -154,11 +160,17 @@ for window in snapshot.windows(of: session) {
 }
 ```
 
+The listings are separate tmux commands. `snapshot()` checks the daemon
+incarnation before and after them and reports a replacement, but another client
+can still mutate the same daemon between listings. The result is not a tmux
+transaction.
+
 ## Change what is there
 
 ```swift
 let session = try await server.newSession(named: "work", windowName: "editor")
-let logs = try await server.newWindow(in: session, named: "logs")
+_ = try await server.setOption("@purpose", to: "development", scope: .session(session))
+let logs = try await server.newWindow(in: session, named: "logs").window
 let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)
 ```
@@ -265,9 +277,9 @@ that check.
 | sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 7 round trips |
 | sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 5 round trips |
 | the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 5 round trips |
-| new-window five times, each its own command | 12 processes, 12 round trips | 1 process, 13 round trips |
+| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 8 round trips |
 | the same five as one command list | 3 processes, 3 round trips | 1 process, 4 round trips |
-| new-window then split, read back | 6 processes, 6 round trips | 1 process, 7 round trips |
+| new-window then split, read back | 5 processes, 5 round trips | 1 process, 6 round trips |
 
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |
@@ -293,7 +305,7 @@ without being asked:
 
 ```swift
 let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-    for await notification in events.notifications
+    for try await notification in events.notifications
     where notification.name == "output" {
         return notification.arguments
     }
@@ -313,7 +325,10 @@ and returns on the signal itself, so nothing is inferred from what the screen
 looks like.
 
 ```swift
-try await server.run("make && tmux wait-for -S built", in: pane)
+try await server.run(
+    "make; \(server.shellInvocation) wait-for -S built",
+    in: pane
+)
 try await server.wait(for: "built")
 ```
 
@@ -330,7 +345,7 @@ try await server.connected(attachingTo: "work") { server, control in
             format: "#{pane_current_command}"
         )
     )
-    for await change in control.changes(named: "cmd") {
+    for try await change in control.changes(named: "cmd") {
         return change.value
     }
     return nil
@@ -339,14 +354,16 @@ try await server.connected(attachingTo: "work") { server, control in
 
 **You did not write the command.** For a daemon printing `ready` or a dev
 server someone else started, wait on the pane's output. `%output` wakes the
-wait as the pane writes, and the matching runs against the rendered grid, so a
-quiet pane costs nothing while this waits:
+wait as the pane writes, and the matching runs against the rendered grid. A
+small liveness check detects a pane removed while it is quiet:
 
 ```swift
+let ready = try RegexPattern("Listening on")
+let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
 let waited = try await server.waitForOutput(
     in: pane,
-    matching: ["Listening on"],
-    stoppingAt: ["EADDRINUSE", "error"]
+    matching: [ready],
+    stoppingAt: [failed]
 )
 ```
 
@@ -359,9 +376,14 @@ predicate works: text already on screen returns at once with
 `matchedAtEntry: true`, because "wait until it is listening" is answered by
 something already listening. Pass `requiringFreshOutput` when only a new
 occurrence counts. When a wait does end without a match, the result says which
-of the three things happened: `sawNewOutput: false` means the pane stayed quiet
-and no pattern will fix it, and otherwise `tail` holds what actually arrived so
-the pattern can be fixed from the output rather than from memory.
+thing happened: `timedOut` with `sawNewOutput: false` means the pane stayed
+quiet and no pattern will fix it, `timedOut` with output means `tail` holds what
+actually arrived so the pattern can be fixed from that rather than from memory,
+`expiredWhileReading` means the timeout ended before the pane could be read
+at all, so nothing was established either way, and `alternateScreen` means a
+pager, editor, or other full-screen program held the pane, which tmux fills
+from a grid it keeps out of history — matching is suppressed there rather than
+run against what the program painted.
 
 The DocC catalogue's `Waiting` article covers why the output stream is a
 doorbell rather than the text being matched.
@@ -372,7 +394,7 @@ doorbell rather than the text being matched.
 Written in Swift, it is ordinary values:
 
 ```swift
-Workspace(
+let workspace = Workspace(
     sessionName: "work",
     windows: [
         WindowPlan(
@@ -393,7 +415,9 @@ let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
 Building refuses rather than adopting a session that already has the name: two
-callers building the same workspace should not silently share one.
+callers building the same workspace should not silently share one. A later
+failure removes the exact session this build created; a rollback failure
+reports both errors.
 
 JSON needs no trait, because tmuxp's keys decode straight into these types.
 Reading the YAML that tmuxp files are usually written in needs a parser, which
@@ -419,6 +443,9 @@ $ swift build --product libtmux-mcp
 Point a client at the built binary. It takes no flags — which tmux it talks to
 is environment, so a client config is where you say so:
 
+The server starts read-only. This example explicitly enables tools that create
+and change tmux state:
+
 ```json
 {
   "mcpServers": {
@@ -438,8 +465,16 @@ is environment, so a client config is where you say so:
 | `LIBTMUX_SOCKET` | `default` | The socket *name*, in tmux's own socket directory |
 | `LIBTMUX_SOCKET_PATH` | — | A socket *path*, when a name will not do |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
-| `LIBTMUX_SAFETY` | `mutating` | The highest tier of tool served: `readonly`, `mutating`, `destructive` |
+| `LIBTMUX_SAFETY` | `readonly` | The highest tier of tool served: `readonly`, `mutating`, `destructive` |
+| `LIBTMUX_MCP_TOOLS` | all within the tier | A comma-separated exact tool allowlist, intersected with `LIBTMUX_SAFETY` |
 | `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The ceiling every wait is clamped to, itself capped at 300 |
+
+The tiers classify tool intent; they do not sandbox the host. `mutating`
+exposes `run_shell` and `send_keys`, which can execute commands through a pane.
+Grant it only to clients trusted to act as the tmux user.
+
+Use `LIBTMUX_MCP_TOOLS=new_window,list_sessions` to expose only those tools.
+An unknown or malformed name serves no tools and reports the problem on stderr.
 
 All are optional. Anything the server wants to tell a human goes to stderr,
 because stdout is the protocol and a stray line there corrupts it.
@@ -456,20 +491,21 @@ package that it means to you.
 | `describe_server` `list_servers` | Which tmux this is and which pane is your own; what other servers are running |
 | `describe_filters` | The filterable fields, their types, and their aliases |
 | `list_sessions` `list_windows` `list_panes` | Listings, filtered, projected to the fields you asked for |
-| `snapshot` | Every level at once, proven to have existed together |
+| `snapshot` | Every level as one aggregate; detects daemon replacement during capture |
 | `capture_pane` `capture_since` | What a pane is showing; what it has printed since last time |
 | `search_panes` | Which pane mentions something |
 | `read_format` | Any tmux format, reaching fields the listings do not carry |
 | `show_options` `show_environment` `show_hooks` | What tmux has been configured to do |
 | `run_shell` | Runs a command, waits for it, reports its exit status |
-| `wait_for_output` `watch_format` `wait_for_channel` `signal_channel` | The four waits, all bounded and cancellable |
+| `wait_for_output` `watch_format` `wait_for_channel` | Three bounded, cancellable waits |
+| `signal_channel` | Releases processes waiting on a tmux channel |
 | `send_keys` `paste_text` | Keystrokes a program should interpret; text that should not be |
 | `new_session` `new_window` `split_pane` | Building |
-| `rename` `select` `resize_pane` `select_layout` `respawn_pane` | Rearranging, and restarting a pane that wedged |
+| `rename` `select` `resize_pane` `select_layout` | Rearranging |
 | `set_option` `set_environment` | Configuring |
 | `apply_workspace` | A whole session from one declarative plan |
-| `kill_pane` `kill_window` `kill_session` `kill_server` | Ending things, at the destructive tier only |
-| `run_command` `run_commands` | One tmux command, or a batch that says which step failed |
+| `respawn_pane` `kill_pane` `kill_window` `kill_session` `kill_server` | Restarting or ending processes, at the destructive tier |
+| `run_command` `run_commands` | Confirmed destructive-tier raw escape hatches, bounded by daemon, time, and output |
 
 Alongside them, `tmux://` resources for a client that would rather browse than
 call, and four prompts packaging the sequences that are easy to get wrong.
@@ -481,7 +517,7 @@ can know its fields without spending a call to find out. Answers travel as
 
 ### Three things it does that a wrapper does not
 
-**It will not get stuck.** Every wait is clamped to a ceiling and reports what
+**Waits have deadlines.** Every wait is clamped to a ceiling and reports what
 was actually enforced. Requests are served concurrently, so a thirty-second
 wait does not hold up the `ping` beside it, and `notifications/cancelled` stops
 one that the client has stopped caring about. The tmux commands that block
@@ -491,13 +527,18 @@ job safely.
 
 **It will not spend context you did not ask it to.** Listings take a `fields`
 argument, so one field can be one field rather than every record in full.
-`capture_pane` caps its lines and says how many it dropped. `run_shell` returns
-only what that command printed, not the whole screen. `capture_since` returns a
-cursor, so watching something across turns sends the difference rather than the
-screen — a pane that has been quiet answers nothing at all.
+Pane reads collect at most 262,144 bytes per stream and return at most 128,000
+UTF-8 bytes in whole rows. No encoded protocol line exceeds 1,000,000 bytes.
+Pane captures, incremental reads, output waits, and shell runs say how many
+older rows they dropped.
+`run_shell` returns only what that command printed, not its echoed wrapper or
+the shell prompt. `capture_since` returns a cursor, so watching something across
+turns sends the difference rather than the screen — a pane that has been quiet
+answers nothing at all.
 
-**It will tell you it is still there.** A wait that runs for a minute reports
-progress the whole time, when the client asks for it with a `progressToken`.
+**Long waits report life signs.** When a client sends a `progressToken`, a long
+wait sends advisory progress while output has capacity. Final answers and
+protocol errors take priority when the client stops draining output.
 
 **It will not end the conversation.** When the server runs inside tmux it knows
 which pane is its own: `list_panes` marks that row, `describe_server` names it,
@@ -577,11 +618,13 @@ executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-39 documented examples, each compiled; 36 of them run against a real tmux
+46 documented examples mapped to consumer sources
+40 have live-test call sites
 ```
 
-That check fails if a fence here has no example behind it, so what you read
-above is what the compiler accepted and, mostly, what tmux actually did.
+That check fails if a fence here has no example behind it. The Examples test
+run is what compiles those sources and exercises the 40 live call sites; CI
+runs both gates.
 [`Examples/README.md`](Examples/) says how a fence is matched, and what the
 check cannot see.
 
@@ -608,8 +651,8 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 
 | Path | What is in it |
 | --- | --- |
-| [`Sources/`][sources] | The four products |
-| [`Tests/`][tests] | The suite, and the fixture every suite provisions servers through |
+| [`Sources/`][sources] | The four runtime products |
+| [`Tests/`][tests] | The suite, and the `TmuxFixture` product every suite provisions servers through |
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
 | [`Parity/`][parity] | What Python libtmux exposes, recorded, and what this port does about each of it |
@@ -680,6 +723,8 @@ MIT. See [LICENSE](LICENSE).
 [p-ws]: Sources/TmuxWorkspace/
 [p-mcp]: Sources/LibTmuxMCP/
 [p-server]: Sources/libtmux-mcp/
+[p-test]: Tests/TmuxFixture/
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
+[alpha2-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.2/README.md

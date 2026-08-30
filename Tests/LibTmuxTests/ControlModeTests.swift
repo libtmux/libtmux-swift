@@ -3,8 +3,87 @@ import TmuxFixture
 
 @testable import LibTmux
 
+private actor ControlBodyProbe {
+    private(set) var entered = false
+    private(set) var wasCancelled = false
+
+    func recordEntry() {
+        entered = true
+    }
+
+    func recordCancellation() {
+        wasCancelled = true
+    }
+}
+
 @Suite("control mode", .timeLimit(.minutes(1)))
 struct ControlModeTests {
+    @Test("a rejected attachment never enters the body")
+    func rejectedAttachmentNeverEntersBody() async throws {
+        try await withTmuxServer { server in
+            let probe = ControlBodyProbe()
+            var attachmentError: TmuxError?
+
+            do {
+                try await server.withControlMode(attachingTo: "missing-control-session") { _ in
+                    await probe.recordEntry()
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                Issue.record("a rejected attachment returned successfully")
+            } catch let error as TmuxError {
+                attachmentError = error
+            }
+
+            guard case let .invocationFailed(reason)? = attachmentError else {
+                Issue.record(
+                    "expected an invocation failure, got \(String(describing: attachmentError))"
+                )
+                return
+            }
+            #expect(reason.contains("missing-control-session"))
+            #expect(!(await probe.entered))
+        }
+    }
+
+    @Test("losing the output stream cancels a sleeping body")
+    func outputLossCancelsSleepingBody() async throws {
+        try await withTmuxServer { server in
+            let probe = ControlBodyProbe()
+            let (started, startWitness) = AsyncStream.makeStream(of: Void.self)
+            var startIterator = started.makeAsyncIterator()
+            let connection = Task { () -> TmuxError? in
+                do {
+                    try await server.withControlMode(attachingTo: "bootstrap") { control in
+                        _ = try await control.send(
+                            TmuxCommand("display-message", ["-p", "attached"])
+                        )
+                        await probe.recordEntry()
+                        startWitness.yield()
+                        do {
+                            try await Task.sleep(for: .milliseconds(500))
+                            Issue.record("the body was not cancelled")
+                        } catch is CancellationError {
+                            await probe.recordCancellation()
+                        }
+                    }
+                    return nil
+                } catch let error as TmuxError {
+                    return error
+                } catch {
+                    Issue.record("unexpected connection error: \(error)")
+                    return nil
+                }
+            }
+
+            _ = await startIterator.next()
+            _ = try await server.run(TmuxCommand("kill-server"))
+
+            #expect(await connection.value == .connectionClosed)
+            #expect(await probe.entered)
+            #expect(await probe.wasCancelled)
+        }
+    }
+
     @Test("a reply belongs to the command that produced it")
     func replyBelongsToItsCommand() async throws {
         try await withTmuxServer { server in
@@ -71,7 +150,7 @@ struct ControlModeTests {
                 _ = try await control.send(
                     TmuxCommand("new-window", ["-d", "-t", "bootstrap"])
                 )
-                return await [first, second]
+                return try await [first, second]
             }
             // Iterating one AsyncStream twice hands each iterator a share of
             // the elements, so the notification only one of them needed can
@@ -81,9 +160,9 @@ struct ControlModeTests {
     }
 
     private static func namesUntilWindow(
-        _ notifications: AsyncStream<ControlNotification>
-    ) async -> Bool {
-        for await notification in notifications
+        _ notifications: ControlNotificationStream
+    ) async throws -> Bool {
+        for try await notification in notifications
         where notification.name.hasPrefix("window") {
             return true
         }
@@ -105,7 +184,7 @@ struct ControlModeTests {
                         ["-t", "bootstrap", "echo \(marker)", "Enter"]
                     )
                 )
-                for await notification in control.notifications
+                for try await notification in control.notifications
                 where notification.name == "output" {
                     if notification.arguments.contains(marker) { return true }
                 }
@@ -124,7 +203,7 @@ struct ControlModeTests {
                     TmuxCommand("new-window", ["-d", "-t", "bootstrap"])
                 )
                 var seen: [String] = []
-                for await notification in control.notifications {
+                for try await notification in control.notifications {
                     seen.append(notification.name)
                     if seen.contains(where: { $0.hasPrefix("window") }) { break }
                 }

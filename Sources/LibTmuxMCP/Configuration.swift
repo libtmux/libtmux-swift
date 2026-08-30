@@ -10,7 +10,8 @@ public struct ServerConfiguration: Sendable, Hashable {
     public let socketName: String?
     public let socketPath: String?
     public let tmuxExecutable: String
-    public let tier: SafetyTier
+    public let authority: ToolAuthority
+    public var tier: SafetyTier { authority.tier }
     public let waitCeiling: Duration
     /// Anything the environment asked for that could not be honoured, to be
     /// reported on standard error rather than silently applied differently.
@@ -29,9 +30,10 @@ public struct ServerConfiguration: Sendable, Hashable {
             socketPath == nil ? (environment["LIBTMUX_SOCKET"] ?? "default") : nil
         self.tmuxExecutable = environment["LIBTMUX_TMUX_BIN"] ?? "tmux"
 
+        let resolvedTier: SafetyTier
         if let requested = environment["LIBTMUX_SAFETY"] {
             if let tier = SafetyTier(rawValue: requested) {
-                self.tier = tier
+                resolvedTier = tier
             } else {
                 // Falling back to the *lowest* tier rather than the default:
                 // a misspelt value is a configuration the operator did not
@@ -42,18 +44,46 @@ public struct ServerConfiguration: Sendable, Hashable {
                         + SafetyTier.allCases.map(\.rawValue).joined(separator: ", ")
                         + "; serving readonly tools only"
                 )
-                self.tier = .readonly
+                resolvedTier = .readonly
             }
         } else {
-            self.tier = .mutating
+            resolvedTier = .readonly
         }
 
-        let requestedCeiling = environment["LIBTMUX_MCP_WAIT_MAX_SECONDS"]
-            .flatMap(Double.init)
+        if let exactNames = environment["LIBTMUX_MCP_TOOLS"] {
+            let configured = ToolAuthority.configured(
+                tier: resolvedTier,
+                exactNames: exactNames
+            )
+            self.authority = configured.authority
+            if let warning = configured.warning { warnings.append(warning) }
+        } else {
+            self.authority = ToolAuthority(tier: resolvedTier)
+        }
+
+        let rawCeiling = environment["LIBTMUX_MCP_WAIT_MAX_SECONDS"]
+        var requestedCeiling: Double?
+        if let rawCeiling {
+            if let parsed = Double(rawCeiling), parsed.isFinite {
+                requestedCeiling = parsed
+            } else {
+                warnings.append(
+                    "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(rawCeiling) is not a finite number; "
+                        + "using 120s"
+                )
+            }
+        }
         if let requestedCeiling, requestedCeiling > Self.hardWaitCeiling {
             warnings.append(
-                "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(Int(requestedCeiling)) exceeds the "
+                "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(rawCeiling ?? String(requestedCeiling)) "
+                    + "exceeds the "
                     + "\(Int(Self.hardWaitCeiling))s hard ceiling; using that instead"
+            )
+        }
+        if let requestedCeiling, requestedCeiling < 1 {
+            warnings.append(
+                "LIBTMUX_MCP_WAIT_MAX_SECONDS=\(rawCeiling ?? String(requestedCeiling)) "
+                    + "is below the 1s floor; using that instead"
             )
         }
         let ceiling = min(requestedCeiling ?? 120, Self.hardWaitCeiling)

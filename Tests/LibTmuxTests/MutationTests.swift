@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -10,15 +11,16 @@ struct MutationTests {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "made", windowName: "first")
             #expect(session.name == "made")
-            #expect(session.id.hasPrefix("$"))
+            #expect(session.id.rawValue.hasPrefix("$"))
 
-            let window = try await server.newWindow(in: session, named: "second")
-            #expect(window.name == "second")
-            #expect(window.sessionID == session.id)
+            let created = try await server.newWindow(in: session, named: "second")
+            #expect(created.window.name == "second")
+            #expect(created.link.sessionID == session.id)
+            #expect(created.link.windowID == created.window.id)
 
-            let pane = try await server.splitWindow(window)
-            #expect(pane.windowID == window.id)
-            #expect(pane.id.hasPrefix("%"))
+            let pane = try await server.splitWindow(created.window)
+            #expect(pane.windowID == created.window.id)
+            #expect(pane.id.rawValue.hasPrefix("%"))
         }
     }
 
@@ -28,7 +30,7 @@ struct MutationTests {
             // base-index is configurable, so the first window need not be 0.
             _ = try await server.run(TmuxCommand("set-option", ["-g", "base-index", "7"]))
             let session = try await server.newSession(named: "based")
-            let window = try await server.newWindow(in: session, named: "seven")
+            let window = try await server.newWindow(in: session, named: "seven").window
 
             // Renaming through the id works regardless of where tmux numbered it.
             try await server.rename(window, to: "renamed")
@@ -46,7 +48,7 @@ struct MutationTests {
             // sent, which is the only way to tell a direction that works from
             // one that was merely spelled correctly.
             for direction in [PaneDirection.right, .left, .above, .below] {
-                let window = try await server.newWindow(in: session)
+                let window = try await server.newWindow(in: session).window
                 let pane = try await server.splitWindow(window, direction: direction)
                 let edges =
                     "top=\(pane.isAtTop) bottom=\(pane.isAtBottom) "
@@ -69,7 +71,7 @@ struct MutationTests {
     func splitDefaultsToBelow() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "default")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
 
             let pane = try await server.splitWindow(window)
 
@@ -82,21 +84,38 @@ struct MutationTests {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "place")
             let anchor = try await server.newWindow(in: session, named: "anchor")
-            _ = try await server.newWindow(.after, anchor, named: "after")
-            _ = try await server.newWindow(.before, anchor, named: "before")
+            _ = try await server.newWindow(.after, anchor.link, named: "after")
+            _ = try await server.newWindow(.before, anchor.link, named: "before")
 
             // Read back in tmux's order rather than trusting the indices each
             // window had when it was made: inserting before one renumbers it
             // and everything after it.
-            let names = try await server.windows()
-                .filter { $0.sessionID == session.id }
+            let snapshot = try await server.snapshot()
+            let names = snapshot.windowLinks(of: session)
                 .sorted { $0.index < $1.index }
-                .map(\.name)
+                .compactMap { link in
+                    snapshot.windows.first { $0.id == link.windowID }?.name
+                }
             let before = try #require(names.firstIndex(of: "before"))
             let middle = try #require(names.firstIndex(of: "anchor"))
             let after = try #require(names.firstIndex(of: "after"))
             #expect(before < middle, "\(names)")
             #expect(middle < after, "\(names)")
+        }
+    }
+
+    @Test("relative creation uses the selected link's session")
+    func relativeCreationUsesTheSelectedLinkSession() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.windows().first)
+            let destination = try await server.newSession(named: "place-linked")
+            let destinationLink = try await server.link(source, into: destination)
+
+            let created = try await server.newWindow(
+                .after, destinationLink, named: "beside-link")
+
+            #expect(created.link.sessionID == destination.id)
+            #expect(created.link.index == destinationLink.index + 1)
         }
     }
 
@@ -129,7 +148,7 @@ struct MutationTests {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "sized")
 
-            let byCells = try await server.newWindow(in: session)
+            let byCells = try await server.newWindow(in: session).window
             let narrow = try await server.splitWindow(
                 byCells,
                 direction: .right,
@@ -137,7 +156,7 @@ struct MutationTests {
             )
             #expect(narrow.width == 20)
 
-            let byShare = try await server.newWindow(in: session)
+            let byShare = try await server.newWindow(in: session).window
             let half = try await server.splitWindow(
                 byShare,
                 direction: .below,
@@ -163,8 +182,8 @@ struct MutationTests {
     func killingRemovesExactlyItsTarget() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "doomed")
-            let keep = try await server.newWindow(in: session, named: "keep")
-            let go = try await server.newWindow(in: session, named: "go")
+            let keep = try await server.newWindow(in: session, named: "keep").window
+            let go = try await server.newWindow(in: session, named: "go").window
 
             try await server.kill(go)
             let windows = try await server.windows()
@@ -181,7 +200,7 @@ struct MutationTests {
     func killingTheLastPaneTakesItsWindow() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "panes")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             let extra = try await server.splitWindow(window)
 
             try await server.kill(extra)
@@ -195,7 +214,7 @@ struct MutationTests {
     func paneOutputCanBeCaptured() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "capture")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             let pane = try #require(
                 try await server.snapshot().panes(of: window).first
             )
@@ -214,7 +233,7 @@ struct MutationTests {
     func literalKeysAreCharacters() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "literal")
-            let window = try await server.newWindow(in: session)
+            let window = try await server.newWindow(in: session).window
             let pane = try #require(
                 try await server.snapshot().panes(of: window).first
             )
@@ -242,4 +261,45 @@ struct MutationTests {
             #expect(try await server.sessions().contains { $0.id == session.id })
         }
     }
+    @Test("a name carrying format syntax is stored as written")
+    func namesAreNotExpanded() async throws {
+        try await withTmuxServer { server in
+            // tmux expands a name before storing it, so an unescaped one would
+            // come back naming the session, or carrying the machine's hostname.
+            let window = try #require(try await server.windows().first)
+            try await server.rename(window, to: "w-#{session_name}")
+            #expect(try await server.windows().first?.name == "w-#{session_name}")
+
+            let session = try #require(try await server.sessions().first)
+            try await server.rename(session, to: "s-#{host_short}")
+            #expect(try await server.sessions().first?.name == "s-#{host_short}")
+
+            let created = try await server.newWindow(in: session, named: "n-#{host}")
+            #expect(created.window.name == "n-#{host}")
+
+            // A start directory is expanded the same way, and there `#(...)`
+            // runs rather than merely substituting.
+            let directory = NSTemporaryDirectory() + "libtmux-swift-test-dir-#H"
+            try FileManager.default.createDirectory(
+                atPath: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(atPath: directory) }
+            let placed = try await server.newWindow(
+                in: session, named: "cwd", startDirectory: directory)
+            let currentDirectory = try #require(
+                try await server.format("#{pane_current_path}", for: placed.link))
+            let resolved = { (path: String) in
+                URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            }
+            #expect(resolved(currentDirectory) == resolved(directory))
+
+            // tmux expands a buffer path too, so a file whose name contains
+            // format syntax could not be reached at all.
+            let path = NSTemporaryDirectory() + "libtmux-swift-test-#{host_short}.txt"
+            defer { try? FileManager.default.removeItem(atPath: path) }
+            try "buffered\n".write(toFile: path, atomically: true, encoding: .utf8)
+            try await server.loadBuffer(from: path, named: "literal")
+            #expect(try await server.buffer(named: "literal") == "buffered")
+        }
+    }
+
 }

@@ -46,51 +46,100 @@ private let socketRoot = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
 /// assertions to the objects the case created rather than to the server being
 /// otherwise empty.
 public func withTmuxServer<Result>(
+    socketFileName: String = "s",
     _ body: (Server) async throws -> Result
 ) async throws -> Result {
-    _ = sigpipeIgnoredOnce
-    let root = socketRoot.appendingPathComponent("\(UUID().uuidString.prefix(8))")
-    // The shared root may already be there from an earlier case; this case's own
-    // directory may not, so a collision fails here rather than putting two
-    // servers on one socket.
-    try FileManager.default.createDirectory(
-        at: socketRoot,
-        withIntermediateDirectories: true,
-        attributes: [.posixPermissions: 0o700]
-    )
-    try FileManager.default.createDirectory(
-        at: root,
-        withIntermediateDirectories: false,
-        attributes: [.posixPermissions: 0o700]
-    )
-    defer { try? FileManager.default.removeItem(at: root) }
+    try await withTmuxFixtureCapacity {
+        _ = sigpipeIgnoredOnce
+        let root = socketRoot.appendingPathComponent("\(UUID().uuidString.prefix(8))")
+        // The shared root may already be there from an earlier case; this case's own
+        // directory may not, so a collision fails here rather than putting two
+        // servers on one socket.
+        try FileManager.default.createDirectory(
+            at: socketRoot,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
 
-    let server = try Server(
-        socketPath: root.appendingPathComponent("s").path,
-        tmuxExecutable: tmuxExecutablePath()
-    )
-    _ = try await server.run([
-        // Before the first session, so even the bootstrap pane gets it.
-        //
-        // A pane otherwise runs whoever's shell the machine is configured
-        // with, which makes a test's speed and its behaviour someone's dotfiles
-        // rather than the library's. An interactive shell with a line editor
-        // also discards input typed before it has finished starting, so a case
-        // that sends keys races that startup and loses on a busy machine. `sh`
-        // starts promptly, reads what it is given, and is on both supported
-        // systems.
-        TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
-        TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-        reaperCommand(root: root),
-    ])
-    do {
-        let result = try await body(server)
-        _ = try await server.run(TmuxCommand("kill-server"))
-        return result
-    } catch {
-        _ = try? await server.run(TmuxCommand("kill-server"))
-        throw error
+        let server = try Server(
+            socketPath: root.appendingPathComponent(socketFileName).path,
+            tmuxExecutable: tmuxExecutablePath()
+        )
+        _ = try await server.run([
+            // Before the first session, so even the bootstrap pane gets it.
+            //
+            // A pane otherwise runs whoever's shell the machine is configured
+            // with, which makes a test's speed and its behaviour someone's dotfiles
+            // rather than the library's. An interactive shell with a line editor
+            // also discards input typed before it has finished starting, so a case
+            // that sends keys races that startup and loses on a busy machine. `sh`
+            // starts promptly, reads what it is given, and is on both supported
+            // systems.
+            TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+            // `default-shell` alone is still run as a *login* shell — tmux
+            // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
+            // so it reads `/etc/profile` and the runner's own profile: exactly
+            // the dotfiles the line above exists to keep out, and enough startup
+            // to delay the first prompt past the keys a case sends. Naming the
+            // command drops the login pass. `ENV` is the remaining rc hook, and
+            // is set in the server environment rather than in front of the
+            // command, where it would become the window's name.
+            TmuxCommand("set-environment", ["-g", "ENV", ""]),
+            // `exec` so the pane holds one process: without it tmux keeps the
+            // `-c` wrapper alive, and a case that `exec`s its own command still
+            // reports the wrapper as the pane's command.
+            TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
+            TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
+            try reaperCommand(root: root),
+        ])
+        try await waitForShellPrompt(on: server)
+        do {
+            let result = try await body(server)
+            _ = try await server.run(TmuxCommand("kill-server"))
+            return result
+        } catch {
+            _ = try? await server.run(TmuxCommand("kill-server"))
+            throw error
+        }
     }
+}
+
+/// Waits until a pane's shell has drawn its first prompt.
+///
+/// Keys sent before that are echoed with no prompt in front of them, which
+/// leaves the prompt to land on the row the command's own output wants. A case
+/// looking for a row equal to what it printed is then waiting for something
+/// that cannot arrive, and reports it as a timeout naming nothing. One capture
+/// settles it for every case that follows.
+///
+/// What the prompt *says* is not portable — `sh` is dash on Linux and bash on
+/// macOS, which prints `sh-3.2$` — so readiness is that the pane has drawn
+/// anything at all. Until the shell starts it has drawn nothing.
+///
+/// This reads the pane directly rather than through the wait machinery: a
+/// fixture that bootstrapped itself with the code under test would make every
+/// unrelated case depend on it.
+public func waitForShellPrompt(
+    on server: Server,
+    within timeout: Duration = .seconds(20)
+) async throws {
+    guard let pane = try await server.panes().first else {
+        throw TmuxFixtureError.shellNeverPrompted
+    }
+    let ready = try await waitUntil(within: timeout) {
+        try await server.capture(pane).contains { !$0.isEmpty }
+    }
+    guard ready else { throw TmuxFixtureError.shellNeverPrompted }
+}
+
+enum TmuxFixtureError: Error {
+    case shellNeverPrompted
 }
 
 /// The directory a socket *name* resolves inside, when the run provides one.
@@ -113,10 +162,16 @@ public func withTmuxServer<Result>(
 public let namedSocketRoot: URL? = ProcessInfo.processInfo.environment["TMUX_TMPDIR"]
     .map { URL(fileURLWithPath: $0) }
 
+func isAllowedNamedSocketRoot(_ root: URL) -> Bool {
+    let allowed = socketRoot.standardizedFileURL.resolvingSymlinksInPath().path
+    let candidate = root.standardizedFileURL.resolvingSymlinksInPath().path
+    return candidate == allowed || candidate.hasPrefix("\(allowed)/")
+}
+
 /// Whether this run can address servers by socket name inside the suite's root.
 public var namedSocketsAvailable: Bool {
     guard let root = namedSocketRoot else { return false }
-    return root.path.hasPrefix(socketRoot.path)
+    return isAllowedNamedSocketRoot(root)
 }
 
 /// Thrown when a name-addressed case runs without a directory to put it in.
@@ -135,51 +190,76 @@ public struct NamedSocketRootMissing: Error, CustomStringConvertible {
 public func withNamedTmuxServer<Result>(
     _ body: (Server) async throws -> Result
 ) async throws -> Result {
-    _ = sigpipeIgnoredOnce
-    guard let root = namedSocketRoot, namedSocketsAvailable else {
-        // Reached only if a case forgot its `.enabled(if:)`; better to say so
-        // than to put a socket in the machine-wide directory.
-        throw NamedSocketRootMissing()
+    try await withTmuxFixtureCapacity {
+        _ = sigpipeIgnoredOnce
+        guard let root = namedSocketRoot, namedSocketsAvailable else {
+            // Reached only if a case forgot its `.enabled(if:)`; better to say so
+            // than to put a socket in the machine-wide directory.
+            throw NamedSocketRootMissing()
+        }
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let name = "libtmux-swift-\(UUID().uuidString.prefix(8))"
+        // tmux does not put the socket in `TMUX_TMPDIR` itself: it creates a
+        // `tmux-<uid>` directory inside it and puts the socket there, so that one
+        // directory can be shared between users without their sockets colliding.
+        // The reaper has to be told the path tmux will actually use, or it removes
+        // nothing and every case leaves its socket behind.
+        let socket =
+            root
+            .appendingPathComponent("tmux-\(getuid())")
+            .appendingPathComponent(name)
+
+        // The reaper covers a run that is killed outright; it cannot cover the
+        // ordinary exit, because `kill-server` takes tmux's background jobs with
+        // it before the job can remove anything. tmux does not reliably unlink a
+        // socket on its way out, so the ordinary path is cleaned here — the same
+        // division of labour the path-addressed fixture uses for its directory.
+        defer { try? FileManager.default.removeItem(at: socket) }
+
+        let server = try Server(
+            socketName: name,
+            tmuxExecutable: tmuxExecutablePath()
+        )
+        _ = try await server.run([
+            TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+            // `default-shell` alone is still run as a *login* shell — tmux
+            // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
+            // so it reads `/etc/profile` and the runner's own profile: exactly
+            // the dotfiles the line above exists to keep out, and enough startup
+            // to delay the first prompt past the keys a case sends. Naming the
+            // command drops the login pass. `ENV` is the remaining rc hook, and
+            // is set in the server environment rather than in front of the
+            // command, where it would become the window's name.
+            TmuxCommand("set-environment", ["-g", "ENV", ""]),
+            // `exec` so the pane holds one process: without it tmux keeps the
+            // `-c` wrapper alive, and a case that `exec`s its own command still
+            // reports the wrapper as the pane's command.
+            TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
+            TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
+            try reaperCommand(root: socket),
+        ])
+        try await waitForShellPrompt(on: server)
+        do {
+            let result = try await body(server)
+            _ = try await server.run(TmuxCommand("kill-server"))
+            return result
+        } catch {
+            _ = try? await server.run(TmuxCommand("kill-server"))
+            throw error
+        }
     }
-    try FileManager.default.createDirectory(
-        at: root,
-        withIntermediateDirectories: true,
-        attributes: [.posixPermissions: 0o700]
-    )
-    let name = "libtmux-swift-\(UUID().uuidString.prefix(8))"
-    // tmux does not put the socket in `TMUX_TMPDIR` itself: it creates a
-    // `tmux-<uid>` directory inside it and puts the socket there, so that one
-    // directory can be shared between users without their sockets colliding.
-    // The reaper has to be told the path tmux will actually use, or it removes
-    // nothing and every case leaves its socket behind.
-    let socket =
-        root
-        .appendingPathComponent("tmux-\(getuid())")
-        .appendingPathComponent(name)
+}
 
-    // The reaper covers a run that is killed outright; it cannot cover the
-    // ordinary exit, because `kill-server` takes tmux's background jobs with
-    // it before the job can remove anything. tmux does not reliably unlink a
-    // socket on its way out, so the ordinary path is cleaned here — the same
-    // division of labour the path-addressed fixture uses for its directory.
-    defer { try? FileManager.default.removeItem(at: socket) }
+/// The reaper was asked to remove a path outside this port's owned roots.
+public struct UnsafeReaperRoot: Error, Sendable, Hashable, CustomStringConvertible {
+    public init() {}
 
-    let server = try Server(
-        socketName: name,
-        tmuxExecutable: tmuxExecutablePath()
-    )
-    _ = try await server.run([
-        TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
-        TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-        reaperCommand(root: socket),
-    ])
-    do {
-        let result = try await body(server)
-        _ = try await server.run(TmuxCommand("kill-server"))
-        return result
-    } catch {
-        _ = try? await server.run(TmuxCommand("kill-server"))
-        throw error
+    public var description: String {
+        "a reaper root must be below /tmp/libtmux-swift-test or /tmp/libtmux-swift-dev"
     }
 }
 
@@ -213,11 +293,16 @@ public func withNamedTmuxServer<Result>(
 ///   POSIX does not require, and a `sleep` that rejects its argument turns this
 ///   into a busy loop per server rather than a slower one. Reaping a second
 ///   later costs nothing here.
-public func reaperCommand(root: URL) -> TmuxCommand {
+public func reaperCommand(root: URL) throws(UnsafeReaperRoot) -> TmuxCommand {
+    let candidate = root.standardizedFileURL.resolvingSymlinksInPath().path
+    let allowedRoots = ["/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev"]
+    guard allowedRoots.contains(where: { candidate.hasPrefix("\($0)/") }) else {
+        throw UnsafeReaperRoot()
+    }
     let owner = ProcessInfo.processInfo.processIdentifier
     let script = """
         while kill -0 \(owner) 2>/dev/null; do sleep 1; done; \
-        rm -rf '\(root.path)'; \
+        rm -rf \(shellQuoted(candidate)); \
         kill #{pid} 2>/dev/null
         """
     return TmuxCommand("run-shell", ["-b", script])

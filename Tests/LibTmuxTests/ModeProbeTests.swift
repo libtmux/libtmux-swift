@@ -25,8 +25,7 @@ struct ModeProbeTests {
                 try await server.sessions()
             }
 
-            // Same sessions, same order, same ids — including a name whose
-            // non-ASCII bytes have to survive the connection's `LC_ALL=C`.
+            // Same sessions, same order, same ids, including non-ASCII bytes.
             #expect(connected.map(\.id) == direct.map(\.id))
             #expect(connected.map(\.name) == direct.map(\.name))
             #expect(direct.contains { $0.name == "béta ✓" })
@@ -44,14 +43,63 @@ struct ModeProbeTests {
             let session = try await server.newSession(named: "work")
 
             let window = try await server.connected(attachingTo: "bootstrap") { server, _ in
-                try await server.newWindow(in: session, named: "made-over-the-wire")
+                try await server.newWindow(in: session, named: "made-over-the-wire;").window
             }
-            #expect(window.name == "made-over-the-wire")
+            #expect(window.name == "made-over-the-wire;")
+
+            try await server.rename(window, to: "renamed-direct;")
 
             // Visible to a plain process afterwards: the connection did the
             // work, not a copy of it.
             let windows = try await server.windows()
-            #expect(windows.contains { $0.id == window.id })
+            #expect(windows.contains { $0.id == window.id && $0.name == "renamed-direct;" })
+        }
+    }
+
+    @Test("a local option reaches the same session over either mode")
+    func localOptionTargetsCarryOverTheConnection() async throws {
+        try await withTmuxServer { server in
+            // Distinct activity times make a missing `-t` fail deterministically.
+            try await Task.sleep(for: .milliseconds(10))
+            let target = try await server.newSession(named: "option-target")
+
+            let direct = try await server.setOption(
+                "@mode-target",
+                to: "direct",
+                scope: .session(target)
+            )
+            #expect(direct.isSuccess, Comment(rawValue: direct.errorText))
+            let directValue = try await server.run(
+                TmuxCommand(
+                    "show-options",
+                    ["-t", target.id.rawValue, "-v", "@mode-target"]
+                )
+            )
+            #expect(directValue.text == "direct\n")
+
+            _ = try await server.run(
+                TmuxCommand(
+                    "set-option",
+                    ["-t", target.id.rawValue, "-u", "@mode-target"]
+                )
+            )
+            let connected = try await server.connected(attachingTo: "bootstrap") {
+                server,
+                _ in
+                try await server.setOption(
+                    "@mode-target",
+                    to: "connected",
+                    scope: .session(target)
+                )
+            }
+            #expect(connected.isSuccess, Comment(rawValue: connected.errorText))
+            let connectedValue = try await server.run(
+                TmuxCommand(
+                    "show-options",
+                    ["-t", target.id.rawValue, "-v", "@mode-target"]
+                )
+            )
+            #expect(connectedValue.text == "connected\n")
         }
     }
 
@@ -101,7 +149,7 @@ struct ModeProbeTests {
             for index in 0..<4 {
                 list = list.then(
                     "new-window",
-                    ["-d", "-t", session.id, "-n", "listed\(index)"]
+                    ["-d", "-t", session.id.rawValue, "-n", "listed\(index)"]
                 )
             }
 
@@ -126,12 +174,15 @@ struct ModeProbeTests {
     func formatsCarryOverTheConnection() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
+            let link = try #require(
+                try await server.windowLinks().first { $0.windowID == pane.windowID }
+            )
 
-            let direct = try await server.format("#{pane_tty}", for: pane)
+            let direct = try await server.format("#{pane_tty}", for: pane, through: link)
             let connected = try await server.connected(attachingTo: "bootstrap") {
                 server,
                 _ in
-                try await server.format("#{pane_tty}", for: pane)
+                try await server.format("#{pane_tty}", for: pane, through: link)
             }
             #expect(connected == direct)
             #expect(connected?.hasPrefix("/dev/") == true)

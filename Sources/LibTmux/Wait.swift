@@ -6,7 +6,10 @@
 /// point rather than on a timer.
 ///
 /// ```swift
-/// try await server.run("make && tmux wait-for -S built", in: pane)
+/// try await server.run(
+///     "make; \(server.shellInvocation) wait-for -S built",
+///     in: pane
+/// )
 /// try await server.wait(for: "built")
 /// ```
 ///
@@ -36,7 +39,7 @@ extension Server {
             throw .invocationFailed(reason: reply.errorText)
         }
         let after = try await serverProcessID()
-        guard let before, let after, before == after else {
+        guard before == after else {
             throw .serverRestarted
         }
     }

@@ -44,11 +44,23 @@ struct OptionsTests {
         }
     }
 
+    @Test("a deliberately empty window option is present")
+    func emptyWindowOptionIsPresent() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            _ = try await server.setOption("@empty", to: "", scope: .window(window))
+
+            #expect(try await server.option("@empty", scope: .window(window)) == "")
+            #expect(try await server.option("@absent", scope: .window(window)) == nil)
+        }
+    }
+
     @Test("session options are a different table from server options")
     func sessionOptionsAreADifferentTable() async throws {
         try await withTmuxServer { server in
-            _ = try await server.setOption("@scoped", to: "session", scope: .session)
-            let session = try await server.option("@scoped", scope: .session)
+            let target = try #require(try await server.sessions().first)
+            _ = try await server.setOption("@scoped", to: "session", scope: .session(target))
+            let session = try await server.option("@scoped", scope: .session(target))
             let server_ = try await server.option("@scoped", scope: .server)
             #expect(session == "session")
             #expect(server_ == nil)
@@ -81,19 +93,19 @@ struct OptionsTests {
             _ = try await server.setHook(
                 "alert-bell",
                 to: "display-message local",
-                in: .session(session.id)
+                in: .session(session.id.rawValue)
             )
 
             let global = try #require(
                 try await server.hooks().first { $0.name == "alert-bell" }
             )
             let local = try #require(
-                try await server.hooks(.session(session.id))
+                try await server.hooks(.session(session.id.rawValue))
                     .first { $0.name == "alert-bell" }
             )
             #expect(global.command.contains("global"))
             #expect(local.command.contains("local"))
-            #expect(local.scope == .session(session.id))
+            #expect(local.scope == .session(session.id.rawValue))
         }
     }
 

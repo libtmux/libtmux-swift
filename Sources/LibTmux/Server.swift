@@ -95,7 +95,7 @@ public struct Server: Sendable, Hashable {
     ///
     /// A nonzero status is a reply, not an error: `has-session` answers a
     /// question with its exit code, and a rejected command carries its reason
-    /// on standard error.
+    /// on standard error. Each output stream is capped at 1 MiB.
     public func run(_ command: TmuxCommand) async throws(TmuxError) -> TmuxReply {
         try await run(rawArguments: command.argumentVector)
     }
@@ -118,39 +118,126 @@ public struct Server: Sendable, Hashable {
         try await runtime.run(rawArguments: rawArguments)
     }
 
+    package func runIsolated(
+        _ command: TmuxCommand,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        try await runtime.run(
+            rawArguments: command.argumentVector,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+    }
+
+    package func runIsolated(
+        _ command: TmuxCommand,
+        expecting incarnation: ServerIncarnation,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let expected = try expectedIncarnation([incarnation])
+        let request = GuardedRequest(
+            command: command,
+            incarnation: expected,
+            targets: []
+        )
+        let reply = try await runtime.run(
+            rawArguments: request.commands.argumentVector,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        return try request.validate(reply)
+    }
+
+    func runIsolated(
+        _ command: TmuxCommand,
+        guarding pane: Pane,
+        matching bounds: PaneCaptureBounds,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let boundsGuard = GuardedTarget(
+            target: pane.id.rawValue,
+            condition: .all(
+                .equals("history_size", bounds.historySize),
+                .equals("history_bytes", bounds.historyBytes),
+                .equals("pane_height", bounds.paneHeight),
+                .equals("cursor_y", bounds.cursorRow)
+            )
+        )
+        let request = GuardedRequest(
+            command: command,
+            incarnation: try expectedIncarnation([pane.incarnation]),
+            targets: [GuardedValue.pane(pane).targetGuard, boundsGuard].compactMap { $0 }
+        )
+        let reply = try await runtime.run(
+            rawArguments: request.commands.argumentVector,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        return try request.validate(reply)
+    }
+
+    package func runTerminatingIsolated(
+        _ command: TmuxCommand,
+        expecting incarnation: ServerIncarnation,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let expected = try expectedIncarnation([incarnation])
+        let request = GuardedRequest(
+            command: command,
+            incarnation: expected,
+            targets: []
+        )
+        let reply = try await runtime.run(
+            rawArguments: request.commands.argumentVector,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        return try request.validateTerminating(reply)
+    }
+
     /// Every session on this server, in tmux's own order.
     ///
-    /// Returns an empty array when the server is not running — the same answer
-    /// as a running server with no sessions. Use ``isRunning()`` when the
-    /// difference matters.
+    /// Use ``isRunning()`` when absence is an expected probe; a failed listing
+    /// throws rather than impersonating a running server with no sessions.
     public func sessions() async throws(TmuxError) -> [Session] {
         try await list(
             TmuxCommand("list-sessions", ["-F", Session.projection.template]),
             projection: Session.projection,
-            row: Session.init(row:)
+            row: { Session(row: $0, endpoint: endpoint) }
         )
     }
 
     /// Every window on this server, in tmux's own order.
     ///
-    /// A window linked into more than one session appears once per session,
-    /// carrying the same ``Window/id`` — that repetition is tmux's model, not
-    /// a duplicate.
+    /// A window linked into more than one session appears once here. Use
+    /// ``windowLinks()`` for each session-local appearance.
     public func windows() async throws(TmuxError) -> [Window] {
+        var seen: Set<WindowID> = []
+        return try await windowListingRows().compactMap { row in
+            seen.insert(row.window.id).inserted ? row.window : nil
+        }
+    }
+
+    /// Every session-local link to a window, in tmux's own order.
+    public func windowLinks() async throws(TmuxError) -> [WindowLink] {
+        try await windowListingRows().map(\.link)
+    }
+
+    private func windowListingRows() async throws(TmuxError) -> [WindowAppearance] {
         try await list(
-            TmuxCommand("list-windows", ["-a", "-F", Window.projection.template]),
-            projection: Window.projection,
-            row: Window.init(row:)
+            TmuxCommand("list-windows", ["-a", "-F", WindowAppearance.projection.template]),
+            projection: WindowAppearance.projection,
+            row: { WindowAppearance(row: $0, endpoint: endpoint) }
         )
     }
 
-    /// Every pane on this server, in tmux's own order.
+    /// Every pane on this server, in tmux's own order. A pane whose window has
+    /// several session links appears once.
     public func panes() async throws(TmuxError) -> [Pane] {
-        try await list(
+        var seen: Set<PaneID> = []
+        return try await list(
             TmuxCommand("list-panes", ["-a", "-F", Pane.projection.template]),
             projection: Pane.projection,
-            row: Pane.init(row:)
-        )
+            row: { Pane(row: $0, endpoint: endpoint) }
+        ).compactMap { pane in
+            seen.insert(pane.id).inserted ? pane : nil
+        }
     }
 
     /// Every client attached to this server.
@@ -158,60 +245,82 @@ public struct Server: Sendable, Hashable {
         try await list(
             TmuxCommand("list-clients", ["-F", Client.projection.template]),
             projection: Client.projection,
-            row: Client.init(row:)
+            row: { Client(row: $0, endpoint: endpoint) }
         )
     }
 
-    /// Reads every object on this server as one consistent picture.
+    /// Reads every object from one daemon incarnation.
     ///
     /// The listings are separate tmux commands, so the server's identity is
     /// read before and after them. If a daemon died and a replacement bound the
-    /// same socket in between, the reads describe two different servers and
-    /// this throws ``TmuxError/serverRestarted`` rather than returning a
-    /// picture that never existed. A partial snapshot is never returned.
+    /// same socket in between, this throws ``TmuxError/serverRestarted``.
+    /// Another client can still mutate the same daemon between listings.
     public func snapshot() async throws(TmuxError) -> Snapshot {
-        let before = try await serverProcessID()
+        let before = try await incarnation()
         let sessions = try await sessions()
-        let windows = try await windows()
+        let windowRows = try await windowListingRows()
+        var seen: Set<WindowID> = []
+        let windows = windowRows.compactMap { row in
+            seen.insert(row.window.id).inserted ? row.window : nil
+        }
+        let windowLinks = windowRows.map(\.link)
         let panes = try await panes()
         let clients = try await clients()
-        let after = try await serverProcessID()
-        guard let before, let after, before == after else {
+        let after = try await incarnation()
+        guard before == after else {
             throw .serverRestarted
         }
         return Snapshot(
-            serverProcessID: before,
+            incarnation: before,
             sessions: sessions,
             windows: windows,
+            windowLinks: windowLinks,
             panes: panes,
             clients: clients
         )
     }
 
-    /// The running server's process id, or `nil` if nothing is listening.
+    /// The running server's process id.
     ///
     /// A restart changes it, which is what lets a multi-command capture prove
     /// it came from one server.
-    public func serverProcessID() async throws(TmuxError) -> Int? {
+    public func serverProcessID() async throws(TmuxError) -> Int {
+        try await incarnation().processID
+    }
+
+    /// The running daemon at this endpoint.
+    ///
+    /// Use ``isRunning()`` for a Boolean probe. This read throws when tmux
+    /// cannot answer so absence cannot look like an empty identity.
+    public func incarnation() async throws(TmuxError) -> ServerIncarnation {
+        let projection = FormatProjection(ServerIncarnation.projectionFields)
+        let command = TmuxCommand("display-message", ["-p", projection.template])
         let reply = try await run(
-            rawArguments: TmuxCommand("display-message", ["-p", "#{pid}"]).argumentVector
+            rawArguments: command.argumentVector
         )
-        guard reply.isSuccess else { return nil }
-        return Int(reply.text.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard reply.isSuccess else { throw reply.failure(for: command) }
+        let rows: [FormatRow]
+        do {
+            rows = try projection.decode(reply.standardOutput)
+        } catch {
+            throw .decodingFailed(error)
+        }
+        guard let row = rows.first else {
+            throw .invocationFailed(reason: "tmux returned no server identity")
+        }
+        return ServerIncarnation(row: row, endpoint: endpoint)
     }
 
     /// Runs a listing and decodes it.
     ///
-    /// A failed tmux command yields an empty array: a server that is not
-    /// running has no windows, and callers that need to tell that apart from a
-    /// running-but-empty server have ``isRunning()``.
+    /// A failed tmux command throws; only a successful empty listing is empty.
     private func list<Element: Sendable>(
         _ command: TmuxCommand,
         projection: FormatProjection,
         row: (FormatRow) -> Element
     ) async throws(TmuxError) -> [Element] {
         let reply = try await run(rawArguments: command.argumentVector)
-        guard reply.isSuccess else { return [] }
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         do {
             return try projection.decode(reply.standardOutput).map(row)
         } catch {
@@ -263,20 +372,28 @@ actor ServerRuntime {
         self.transport = transport
     }
 
-    func run(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
+    func run(
+        rawArguments: [String],
+        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit
+    ) async throws(TmuxError) -> TmuxReply {
+        guard perStreamOutputLimit >= 0 else {
+            throw .invocationFailed(reason: "output limit cannot be negative")
+        }
+        try requireTmuxCommandFits(rawArguments)
         // Copied out of isolation before the await so the actor is not held for
         // the lifetime of a tmux process.
         let transport = self.transport
         let executable = tmuxExecutable
-        // `-u` forces UTF-8 regardless of locale. Without it, `LC_ALL=C` makes
-        // tmux rewrite any non-ASCII byte in a format — including the record
-        // separator — to `_`, which is itself legal in a session name, so a
-        // listing would silently split on the wrong character.
+        // `-u` keeps format bytes in UTF-8 without changing the environment a
+        // newly started daemon passes to panes.
         let arguments = ["-u"] + endpoint.addressArguments + rawArguments
-        return try await transport.run(
+        let reply = try await transport.run(
             executable: executable,
             arguments: arguments,
-            environment: TmuxProcessEnvironment.variables()
+            environment: TmuxProcessEnvironment.variables(),
+            perStreamOutputLimit: perStreamOutputLimit
         )
+        try requireReplyFitsLimit(reply, perStreamOutputLimit)
+        return reply
     }
 }

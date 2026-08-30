@@ -17,6 +17,13 @@ private func handler(
     )
 }
 
+private func handler(authority: ToolAuthority) throws -> MCPRequestHandler {
+    let server = try Server(socketPath: "/tmp/libtmux-swift-test/unstarted")
+    return MCPRequestHandler(
+        tools: TmuxTools(server: server, authority: authority, caller: nil)
+    )
+}
+
 private func visible(tier: SafetyTier = .mutating) throws -> [ToolDefinition] {
     let server = try Server(socketPath: "/tmp/libtmux-swift-test/unstarted")
     return TmuxTools(server: server, tier: tier).visibleDefinitions
@@ -26,13 +33,21 @@ private func object(_ text: String) throws -> JSONValue {
     try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
 }
 
+private func encoded(_ value: JSONValue) throws -> String {
+    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+}
+
+private func initializeRequest(
+    protocolVersion: String = MCPRequestHandler.protocolVersion
+) -> String {
+    #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"\#(protocolVersion)","capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}"#
+}
+
 @Suite("MCP protocol")
 struct MCPProtocolTests {
     @Test("initialize answers with the protocol version and who is serving")
     func initializeAnswers() async throws {
-        let reply = try #require(
-            await handler().respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
-        )
+        let reply = try #require(await handler().respond(to: initializeRequest()))
         let body = try object(reply)
         let result = try #require(body["result"])
         #expect(result["protocolVersion"]?.stringValue == MCPRequestHandler.protocolVersion)
@@ -40,6 +55,30 @@ struct MCPProtocolTests {
         // What a client is told this server is, which is the package's
         // own version rather than a number kept beside it.
         #expect(result["serverInfo"]?["version"]?.stringValue == LibTmuxVersion.current)
+    }
+
+    @Test(
+        "initialize requires its schema's fields and types",
+        arguments: [
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":[],"clientInfo":{"name":"tests","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":[]}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":1,"version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tests"}}}"#,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tests","version":1}}}"#,
+        ]
+    )
+    func invalidInitializeParametersAreRefused(_ request: String) async throws {
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["error"]?["code"] == .number(-32602))
+        #expect(body["result"] == nil)
     }
 
     @Test("an integer id comes back an integer, not a float")
@@ -52,6 +91,18 @@ struct MCPProtocolTests {
         )
         #expect(reply.contains(#""id":7"#))
         #expect(!reply.contains("7.0"))
+    }
+
+    @Test("large integer ids are echoed without Double rounding")
+    func largeIntegerIdsSurvive() async throws {
+        for id in ["9007199254740993", "18446744073709551615"] {
+            let reply = try #require(
+                await handler().respond(
+                    to: #"{"jsonrpc":"2.0","id":\#(id),"method":"ping"}"#
+                )
+            )
+            #expect(reply.contains(#""id":\#(id)"#))
+        }
     }
 
     @Test("a string id is echoed as the string it arrived as")
@@ -137,48 +188,219 @@ struct MCPProtocolTests {
         #expect(try object(reply)["error"]?["code"] == .number(-32602))
     }
 
-    @Test("a notification expects no reply, and neither does a line that is not one")
-    func silenceWhereSilenceIsCorrect() async throws {
-        let handler = try handler()
-        // No id: a notification by JSON-RPC, which must not be answered.
-        #expect(await handler.respond(to: #"{"jsonrpc":"2.0","method":"ping"}"#) == nil)
-        #expect(await handler.respond(to: "") == nil)
-        #expect(await handler.respond(to: "not json at all") == nil)
-        #expect(await handler.respond(to: "{") == nil)
+    @Test("an unknown tool is an invalid-params protocol error")
+    func unknownToolIsAProtocolError() async throws {
+        let reply = try #require(
+            await handler().respond(
+                to: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope"}}"#
+            )
+        )
+        let body = try object(reply)
+
+        #expect(body["error"]?["code"] == .number(-32602))
+        #expect(body["error"]?["message"]?.stringValue?.contains("nope") == true)
+        #expect(body["result"] == nil)
     }
 
-    @Test("the client's protocol revision is echoed when this server speaks it")
-    func protocolRevisionIsNegotiated() async throws {
-        for requested in MCPRequestHandler.protocolVersions {
+    @Test(
+        "tools/call requires an arguments object",
+        arguments: ["[]", "true", #""x""#]
+    )
+    func toolCallArgumentsNeedAnObject(_ arguments: String) async throws {
+        let reply = try #require(
+            await handler().respond(
+                to: #"""
+                    {"jsonrpc":"2.0","id":1,"method":"tools/call",
+                    "params":{"name":"describe_filters","arguments":\#(arguments)}}
+                    """#.replacingOccurrences(of: "\n", with: "")
+            )
+        )
+        #expect(try object(reply)["error"]?["code"] == .number(-32602))
+    }
+
+    @Test("encoded tool responses have a wire limit")
+    func toolResponsesAreBoundedAfterJSONEscaping() throws {
+        let outcome = ToolOutcome(
+            structured: .object([
+                "text": .string(String(repeating: "\\", count: 500_000))
+            ])
+        )
+        let reply = try #require(try handler().toolResponse(id: .number(1), outcome: outcome))
+        let result = try #require(try object(reply)["result"])
+
+        #expect(result["isError"]?.boolValue == true)
+        #expect(try object(reply)["id"] == .number(1))
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
+    }
+
+    @Test("oversized unknown-tool errors use a bounded protocol failure")
+    func toolErrorsAreBoundedAfterJSONEscaping() async throws {
+        let name = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .number(2),
+                "method": .string("tools/call"),
+                "params": .object(["name": .string(name)]),
+            ])
+        )
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["id"] == .number(2))
+        #expect(body["error"]?["code"] == .number(-32001))
+        #expect(body["result"] == nil)
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
+    }
+
+    @Test("a tool call with an unanswerable id is not answered under another id")
+    func unanswerableToolIDIsNotReplaced() async throws {
+        let id = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .string(id),
+                "method": .string("tools/call"),
+                "params": .object(["name": .string("unknown")]),
+            ])
+        )
+        #expect(try await handler().respond(to: request) == nil)
+    }
+
+    @Test("oversized non-tool results become bounded protocol errors")
+    func protocolResultsAreBounded() async throws {
+        let command = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .number(3),
+                "method": .string("prompts/get"),
+                "params": .object([
+                    "name": .string("run_and_wait"),
+                    "arguments": .object([
+                        "command": .string(command), "pane": .string("%1"),
+                    ]),
+                ]),
+            ])
+        )
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["id"] == .number(3))
+        #expect(body["error"]?["code"] == .number(-32001))
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
+    }
+
+    @Test("oversized protocol errors retry with a fixed bounded message")
+    func protocolErrorsAreBounded() async throws {
+        let method = String(repeating: "\\", count: 600_000)
+        let request = try encoded(
+            .object([
+                "jsonrpc": .string("2.0"),
+                "id": .number(4),
+                "method": .string(method),
+            ]))
+        let reply = try #require(await handler().respond(to: request))
+        let body = try object(reply)
+
+        #expect(body["id"] == .number(4))
+        #expect(body["error"]?["message"]?.stringValue == "response exceeds the encoded byte limit")
+        #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
+    }
+
+    @Test(
+        "malformed JSON receives a parse error",
+        arguments: ["", "not json at all", "{"]
+    )
+    func malformedJSONIsAnswered(_ line: String) async throws {
+        let reply = try #require(await handler().respond(to: line))
+        let body = try object(reply)
+        #expect(body["id"] == .null)
+        #expect(body["error"]?["code"] == .number(-32700))
+        #expect(body["error"]?["message"]?.stringValue == "Parse error")
+    }
+
+    @Test("stdio framing failures receive bounded protocol errors")
+    func framingFailuresAreAnswered() async throws {
+        let handler = try handler()
+        for (event, code) in [
+            (BoundedLineFramer.Event.invalidUTF8, -32700),
+            (.oversized, -32600),
+        ] {
             let reply = try #require(
-                await handler().respond(
-                    to: #"""
-                        {"jsonrpc":"2.0","id":1,"method":"initialize",
-                        "params":{"protocolVersion":"\#(requested)"}}
-                        """#.replacingOccurrences(of: "\n", with: "")
-                )
+                await handler.respond(to: MCPInput.requestLine(for: event))
+            )
+            let body = try object(reply)
+            #expect(body["id"] == .null)
+            #expect(body["error"]?["code"] == .number(Double(code)))
+            #expect(reply.utf8.count <= MCPRequestHandler.maximumResponseBytes)
+        }
+    }
+
+    @Test(
+        "a JSON value that is not a request receives an invalid-request error",
+        arguments: [
+            "null",
+            "[]",
+            #"{"method":"ping"}"#,
+            #"{"jsonrpc":"1.0","method":"ping"}"#,
+            #"{"jsonrpc":"2.0"}"#,
+            #"{"jsonrpc":"2.0","method":1}"#,
+            #"{"jsonrpc":"2.0","method":"ping","params":true}"#,
+            #"{"jsonrpc":"2.0","method":"ping","params":[]}"#,
+        ]
+    )
+    func invalidRequestsAreAnswered(_ line: String) async throws {
+        let reply = try #require(await handler().respond(to: line))
+        let body = try object(reply)
+        #expect(body["id"] == .null)
+        #expect(body["error"]?["code"] == .number(-32600))
+        #expect(body["error"]?["message"]?.stringValue == "Invalid Request")
+    }
+
+    @Test(
+        "only string and integer request ids are valid",
+        arguments: ["null", "1.5", "true", "false", "[]", "{}"]
+    )
+    func invalidRequestIDsAreRefused(_ id: String) async throws {
+        let reply = try #require(
+            await handler().respond(
+                to: #"{"jsonrpc":"2.0","id":\#(id),"method":"ping"}"#
+            )
+        )
+        let body = try object(reply)
+        #expect(body["id"] == .null)
+        #expect(body["error"]?["code"] == .number(-32600))
+    }
+
+    @Test("a valid notification expects no reply")
+    func notificationsAreSilent() async throws {
+        let handler = try handler()
+        #expect(await handler.respond(to: #"{"jsonrpc":"2.0","method":"ping"}"#) == nil)
+    }
+
+    @Test("only revisions whose message shapes are implemented are negotiated")
+    func protocolRevisionIsNegotiated() async throws {
+        for requested in ["2025-11-25", "2025-06-18", "2024-11-05"] {
+            let reply = try #require(
+                await handler().respond(to: initializeRequest(protocolVersion: requested))
             )
             #expect(try object(reply)["result"]?["protocolVersion"]?.stringValue == requested)
         }
-        // An unrecognised revision gets this server's newest rather than an
-        // error: the specification says to answer with what is supported.
-        let reply = try #require(
-            await handler().respond(
-                to:
-                    #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}"#
+
+        for unsupported in ["2025-03-26", "1999-01-01"] {
+            let reply = try #require(
+                await handler().respond(to: initializeRequest(protocolVersion: unsupported))
             )
-        )
-        #expect(
-            try object(reply)["result"]?["protocolVersion"]?.stringValue
-                == MCPRequestHandler.protocolVersion
-        )
+            #expect(
+                try object(reply)["result"]?["protocolVersion"]?.stringValue == "2025-11-25"
+            )
+        }
     }
 
     @Test("initialize carries the instructions a model reads before choosing a tool")
     func initializeCarriesInstructions() async throws {
-        let reply = try #require(
-            await handler().respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
-        )
+        let reply = try #require(await handler().respond(to: initializeRequest()))
         let instructions = try #require(
             try object(reply)["result"]?["instructions"]?.stringValue
         )
@@ -186,6 +408,22 @@ struct MCPProtocolTests {
         // The two mistakes the blurb exists to prevent.
         #expect(instructions.contains("NOT FOR"))
         #expect(instructions.contains("WAIT, DON'T POLL"))
+    }
+
+    @Test("exact authority instructions name only available tools")
+    func exactAuthorityInstructionsMatchAvailableTools() async throws {
+        let authority = ToolAuthority(tier: .mutating, enabledTools: [.newWindow])
+        let reply = try #require(
+            await handler(authority: authority).respond(to: initializeRequest())
+        )
+        let instructions = try #require(
+            try object(reply)["result"]?["instructions"]?.stringValue
+        )
+
+        #expect(instructions.contains("new_window"))
+        for unavailable in ["run_shell", "describe_server", "capture_pane", "apply_workspace"] {
+            #expect(!instructions.contains(unavailable))
+        }
     }
 
     @Test("the caller's own pane reaches the client without a call spent on it")
@@ -199,7 +437,7 @@ struct MCPProtocolTests {
                     serverProcessID: 1
                 )
             )
-            .respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+            .respond(to: initializeRequest())
         )
         let instructions = try #require(
             try object(reply)["result"]?["instructions"]?.stringValue
@@ -209,9 +447,7 @@ struct MCPProtocolTests {
 
     @Test("capabilities name every surface this server actually serves")
     func capabilitiesMatchTheSurfaces() async throws {
-        let reply = try #require(
-            await handler().respond(to: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
-        )
+        let reply = try #require(await handler().respond(to: initializeRequest()))
         let capabilities = try #require(try object(reply)["result"]?["capabilities"])
         // Declaring a surface that answers nothing is worse than not declaring
         // it: a client lists it once and gets an error.
@@ -271,6 +507,14 @@ struct MCPProtocolTests {
     @Test("every prompt renders with the arguments it declares")
     func promptsRender() async throws {
         let handler = try handler()
+        let paneReference = "tmux1_TEST_ONLY_OPAQUE_REF"
+        let samples = [
+            "command": "printf ready",
+            "pane": paneReference,
+            "ready": "ready",
+            "session": "work",
+            "directory": ".",
+        ]
         let listed = try #require(
             await handler.respond(to: #"{"jsonrpc":"2.0","id":1,"method":"prompts/list"}"#)
         )
@@ -282,17 +526,46 @@ struct MCPProtocolTests {
 
         for prompt in prompts {
             let name = try #require(prompt["name"]?.stringValue)
+            let arguments = Dictionary(
+                uniqueKeysWithValues: (prompt["arguments"]?.arrayValue ?? []).compactMap {
+                    argument -> (String, JSONValue)? in
+                    guard
+                        let argumentName = argument["name"]?.stringValue,
+                        let sample = samples[argumentName]
+                    else { return nil }
+                    return (argumentName, .string(sample))
+                }
+            )
             let reply = try #require(
                 await handler.respond(
-                    to: #"""
-                        {"jsonrpc":"2.0","id":1,"method":"prompts/get",
-                        "params":{"name":"\#(name)","arguments":{}}}
-                        """#.replacingOccurrences(of: "\n", with: "")
+                    to: try encoded(
+                        .object([
+                            "jsonrpc": .string("2.0"),
+                            "id": .number(1),
+                            "method": .string("prompts/get"),
+                            "params": .object([
+                                "name": .string(name),
+                                "arguments": .object(arguments),
+                            ]),
+                        ])
+                    )
                 )
             )
             let messages = try #require(try object(reply)["result"]?["messages"]?.arrayValue)
             let text = try #require(messages.first?["content"]?["text"]?.stringValue)
             #expect(!text.isEmpty, "\(name) rendered nothing")
+            if arguments["pane"] != nil {
+                #expect(text.contains(paneReference))
+                #expect(!text.contains("%1"))
+                let pane = try #require(
+                    prompt["arguments"]?.arrayValue?.first {
+                        $0["name"]?.stringValue == "pane"
+                    }
+                )
+                let description = try #require(pane["description"]?.stringValue)
+                #expect(description.contains("list_panes"))
+                #expect(!description.contains("%1"))
+            }
             // A recipe that calls a tool this server does not have sends the
             // model somewhere it cannot go, and the failure surfaces as a
             // confused agent rather than as an error here.
@@ -302,6 +575,48 @@ struct MCPProtocolTests {
                     "prompt \(name) calls \(called), which is not a tool"
                 )
             }
+        }
+    }
+
+    @Test("required prompt arguments are protocol errors when absent")
+    func promptsRequireTheirArguments() async throws {
+        for name in ["run_and_wait", "watch_until_ready", "build_workspace"] {
+            let reply = try #require(
+                await handler().respond(
+                    to: #"""
+                        {"jsonrpc":"2.0","id":1,"method":"prompts/get",
+                        "params":{"name":"\#(name)","arguments":{}}}
+                        """#.replacingOccurrences(of: "\n", with: "")
+                )
+            )
+            #expect(try object(reply)["error"]?["code"] == .number(-32602))
+        }
+    }
+
+    @Test("prompt arguments are a declared string map")
+    func promptArgumentsAreValidated() async throws {
+        let invalid: [(String, JSONValue)] = [
+            ("find_my_pane", .array([])),
+            ("find_my_pane", .object(["typo": .string("x")])),
+            ("watch_until_ready", .object(["pane": .string("ref"), "ready": .number(1)])),
+        ]
+        for (name, arguments) in invalid {
+            let reply = try #require(
+                await handler().respond(
+                    to: try encoded(
+                        .object([
+                            "jsonrpc": .string("2.0"),
+                            "id": .number(1),
+                            "method": .string("prompts/get"),
+                            "params": .object([
+                                "name": .string(name),
+                                "arguments": arguments,
+                            ]),
+                        ])
+                    )
+                )
+            )
+            #expect(try object(reply)["error"]?["code"] == .number(-32602))
         }
     }
 
