@@ -1,8 +1,8 @@
 import Foundation
-import LibTmux
 import Testing
 import TmuxFixture
 
+@testable import LibTmux
 @testable import TmuxWorkspace
 
 @Suite("workspace decoding", .timeLimit(.minutes(1)))
@@ -192,6 +192,46 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("a stuck rollback is cancelled and reaped at its deadline")
+    func stuckRollbackIsCancelledAndReaped() async throws {
+        let socketPath = "/tmp/libtmux-swift-test/workspace-rollback/socket"
+        let endpoint = try Endpoint(socketPath: socketPath)
+        let transport = StuckRollbackTransport()
+        let server = Server(endpoint: endpoint, transport: transport)
+        let session = Session(
+            id: "$1",
+            name: "rollback",
+            windowCount: 1,
+            isAttached: false,
+            createdAt: 1,
+            incarnation: ServerIncarnation(
+                endpoint: endpoint,
+                socketPath: socketPath,
+                processID: 1,
+                startedAt: 1
+            )
+        )
+
+        let started = ContinuousClock.now
+        let rollback = Task {
+            await WorkspaceBuilder.rollback(
+                session,
+                on: server,
+                timeout: .milliseconds(20)
+            )
+        }
+        rollback.cancel()
+        let cleanup = await rollback.value
+
+        guard case let .invocationFailed(reason) = cleanup else {
+            Issue.record("rollback cleanup = \(String(describing: cleanup)), want timeout")
+            return
+        }
+        #expect(reason == "workspace rollback timed out")
+        #expect(ContinuousClock.now - started < .seconds(1))
+        #expect(await transport.cancelled)
+    }
+
     @Test("a command that declines enter is typed but not run")
     func declinedEnterIsTypedNotRun() async throws {
         try await withTmuxServer { server in
@@ -244,5 +284,24 @@ struct WorkspaceBuildingTests {
             }
             #expect(running)
         }
+    }
+}
+
+private actor StuckRollbackTransport: ProcessTransport {
+    private(set) var cancelled = false
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        do {
+            try await Task.sleep(for: .seconds(2))
+        } catch {
+            cancelled = true
+            throw .cancelled
+        }
+        return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
     }
 }

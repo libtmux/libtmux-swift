@@ -76,18 +76,45 @@ public enum WorkspaceBuilder {
         }
     }
 
-    private static func rollback(_ session: Session, on server: Server) async -> TmuxError? {
-        // Caller cancellation must not cancel the rollback it made necessary.
-        let cleanup = Task.detached {
-            try await server.kill(session)
+    static func rollback(
+        _ session: Session,
+        on server: Server,
+        timeout: Duration = .seconds(5)
+    ) async -> TmuxError? {
+        let cleanup = Task.detached { () -> TmuxError? in
+            do {
+                try await server.kill(session)
+                return nil
+            } catch let error as TmuxError {
+                return error
+            } catch {
+                return .invocationFailed(reason: String(describing: error))
+            }
         }
-        do {
-            try await cleanup.value
-            return nil
-        } catch let error as TmuxError {
+        let deadline = Task.detached {
+            try? await Task.sleep(for: max(.zero, timeout))
+        }
+        let winner = await withTaskGroup(of: RollbackRace.self) { group in
+            group.addTask { .cleanup(await cleanup.value) }
+            group.addTask {
+                await deadline.value
+                return .deadline
+            }
+            let winner = await group.next() ?? .deadline
+            switch winner {
+            case .cleanup:
+                deadline.cancel()
+            case .deadline:
+                cleanup.cancel()
+            }
+            group.cancelAll()
+            return winner
+        }
+        switch winner {
+        case let .cleanup(error):
             return error
-        } catch {
-            return .invocationFailed(reason: String(describing: error))
+        case .deadline:
+            return .invocationFailed(reason: "workspace rollback timed out")
         }
     }
 
@@ -137,6 +164,11 @@ public enum WorkspaceBuilder {
         }
     }
 
+}
+
+private enum RollbackRace: Sendable {
+    case cleanup(TmuxError?)
+    case deadline
 }
 
 public indirect enum WorkspaceBuilderError: Error, Sendable, Hashable {
