@@ -285,9 +285,12 @@ struct MutationTests {
             defer { try? FileManager.default.removeItem(atPath: directory) }
             let placed = try await server.newWindow(
                 in: session, named: "cwd", startDirectory: directory)
-            #expect(
-                try await server.format(
-                    "#{pane_current_path}", for: placed.link) == directory)
+            let currentDirectory = try #require(
+                try await server.format("#{pane_current_path}", for: placed.link))
+            let resolved = { (path: String) in
+                URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            }
+            #expect(resolved(currentDirectory) == resolved(directory))
 
             // tmux expands a buffer path too, so a file whose name contains
             // format syntax could not be reached at all.
