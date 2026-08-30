@@ -76,14 +76,14 @@ neither mentions a mode, which is how the mode switch below is kept honest.
 
 Every tag until `0.1.0` is a prerelease, and a prerelease has to be named
 exactly. `from: "0.1.0"` matches none of them — SwiftPM keeps prereleases out
-of a range whose bound has none — and `from: "0.1.0-alpha.2"` errs the other
+of a range whose bound has none — and `from: "0.1.0-alpha.3"` errs the other
 way, resolving forward into `0.2.0-alpha.1` and every prerelease after it.
 Neither is what you want from alpha software, so name an exact release:
 
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.2"
+    exact: "0.1.0-alpha.3"
 )
 ```
 
@@ -93,7 +93,7 @@ Neither is what you want from alpha software, so name an exact release:
 
 > [!NOTE]
 > This page documents unreleased `master`. The exact dependency above installs
-> the released alpha.2 API; [read that tag's README][alpha2-readme] for matching
+> the released alpha.3 API; [read that tag's README][alpha3-readme] for matching
 > examples. To compile the examples on this page, depend on `master`:
 
 ```swift
@@ -107,7 +107,7 @@ with it, `Workspace.decode(yaml:)` exists:
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.2",
+    exact: "0.1.0-alpha.3",
     traits: ["YAMLWorkspaces"]
 )
 ```
@@ -727,4 +727,4 @@ MIT. See [LICENSE](LICENSE).
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
-[alpha2-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.2/README.md
+[alpha3-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.3/README.md

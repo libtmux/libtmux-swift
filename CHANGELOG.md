@@ -11,6 +11,8 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-08-30
+
 ### Added
 
 - `PaneCapture` reports captured content and any trailing bytes discarded to
