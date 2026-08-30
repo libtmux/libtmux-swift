@@ -1,7 +1,10 @@
 name: ci
 
+# Pull requests already test their head commit. Running every branch push too
+# duplicates the eight real-tmux jobs and makes both suites compete for runners.
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -30,9 +33,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Sixteen jobs building the same eight releases from source, on every
-      # push, is most of this workflow's runtime. A release tarball never
-      # changes, so the version and the runner are the whole key.
+      # Eight jobs building the same releases from source is most of this
+      # workflow's runtime. A release tarball never changes, so the version and
+      # the runner are the whole key.
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
         uses: actions/cache@v6

@@ -14,8 +14,11 @@ name: macos
 permissions:
   contents: read
 
+# Pull requests already test their head commit. Running every branch push too
+# duplicates both real-tmux jobs and makes both suites compete for runners.
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
