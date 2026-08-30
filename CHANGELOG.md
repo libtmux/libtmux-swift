@@ -11,6 +11,88 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `PaneCapture` reports captured content and any trailing bytes discarded to
+  satisfy a caller's limit. (#7)
+
+- `ToolAuthority` provides an exact MCP tool allowlist, including
+  `LIBTMUX_MCP_TOOLS` configuration. (#7)
+
+### Changed
+
+- **Breaking.** Public session, window, pane, client, and server identifiers
+  are typed values tied to a `ServerIncarnation`; use `rawValue` only when a
+  textual identifier is required. (#7)
+
+- **Breaking.** Window-placement APIs use `WindowLink`, and window creation
+  returns `WindowAppearance`; use its `window` property when only the
+  underlying window is needed. (#7)
+
+- **Breaking.** Regex filters take `RegexPattern` and can throw
+  `RegexMatchError`; construct the pattern with `try` and handle filtering as
+  a throwing operation. (#7)
+
+- **Breaking.** Control notifications use a throwing stream; consume them with
+  `for try await` and handle terminal transport failures. (#7)
+
+- **Breaking.** `TmuxServers.discover` returns `ServerDiscovery`; read
+  `servers`, inspect truncation, and handle cancellation as an error. (#7)
+
+- **Breaking.** The package product `TmuxTestSupport` is renamed
+  `TmuxFixture`; update package dependencies and imports. (#7)
+
+- **Breaking.** MCP targets and results use process-local opaque references
+  instead of raw tmux identifiers; clients must list resources again after
+  the MCP process restarts. (#7)
+
+- MCP starts read-only by default, and an empty tool allowlist grants no
+  mutation authority. (#7)
+
+- Output waits preserve the final partial snapshot and report
+  `expiredWhileReading` when the deadline expires during capture. (#7)
+
+- MCP and control-mode reads return typed limit and transport failures instead
+  of unbounded or silently truncated data. (#7)
+
+### Security
+
+- Format-reading and format-watching APIs reject shell interpolation syntax
+  such as `#()` before invoking tmux. (#7)
+
+- Session names, working directories, buffer paths, and command arguments are
+  passed as literal data rather than reinterpreted as shell or tmux syntax.
+  (#7)
+
+- MCP mutation tools enforce caller authority and exact resource identity
+  before changing tmux state. (#7)
+
+### Fixed
+
+- Alternate-screen output waits retain split escape sequences, honor the
+  remaining deadline, and return the last complete snapshot. (#7)
+
+- Waits apply death, match, and timeout precedence consistently and read their
+  initial pane state only once. (#7)
+
+- Control-mode blocks preserve notification order and literal semicolons.
+  (#7)
+
+- Workspace rollback requests cancellation and returns after a five-second
+  cleanup deadline even when the transport ignores cancellation. Cleanup
+  failure is reported without hiding the original error. (#7)
+
+- Option reads and writes resolve the requested tmux scope instead of falling
+  through to a similarly named option elsewhere. (#7)
+
+- `run_shell` preserves literal command text and reports the command's actual
+  completion outcome. (#7)
+
+### Removed
+
+- **Breaking.** Obsolete public MCP result-carrier structs are removed; read
+  the typed structured value from `ToolOutcome` instead. (#7)
+
 ## [0.1.0-alpha.2] - 2026-08-16
 
 ### Added
