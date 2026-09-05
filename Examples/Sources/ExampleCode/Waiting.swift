@@ -3,11 +3,13 @@
 import LibTmux
 
 public func waitingOnAChannel(_ server: Server, pane: Pane) async throws {
+    // region: guides-capturing-output-176
     try await server.run(
         "make; \(server.shellInvocation) wait-for -S built",
         in: pane
     )
     try await server.wait(for: "built")
+    // endregion
 }
 
 public func watchingAFormat(_ server: Server, pane: Pane) async throws -> String? {
