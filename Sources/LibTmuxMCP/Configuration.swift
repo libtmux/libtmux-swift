@@ -40,6 +40,32 @@ package struct StartupPin: Sendable {
     package let authority: ToolAuthority
     package let provenance: ServerProvenance
     package let ownsLaunch: Bool
+    private let ownerNonce: String?
+    private let ownedIncarnation: ServerIncarnation?
+
+    package init(
+        server: Server,
+        authority: ToolAuthority,
+        provenance: ServerProvenance,
+        ownsLaunch: Bool,
+        ownerNonce: String?,
+        ownedIncarnation: ServerIncarnation?
+    ) {
+        self.server = server
+        self.authority = authority
+        self.provenance = provenance
+        self.ownsLaunch = ownsLaunch
+        self.ownerNonce = ownerNonce
+        self.ownedIncarnation = ownedIncarnation
+    }
+
+    package func cleanupOwnedLaunch() async {
+        guard ownsLaunch, let ownerNonce, let ownedIncarnation,
+            (try? await server.option("@libtmux_mcp_owner", scope: .globalSession))
+                == ownerNonce
+        else { return }
+        try? await server.killServer(expecting: ownedIncarnation)
+    }
 }
 
 /// How the executable is configured, read from the environment.
@@ -261,7 +287,9 @@ public struct ServerConfiguration: Sendable, Hashable {
                     wasRunning: wasRunning,
                     resolvedSocketPath: resolvedSocketPath
                 ),
-                ownsLaunch: false
+                ownsLaunch: false,
+                ownerNonce: nil,
+                ownedIncarnation: nil
             )
         }
 
@@ -270,7 +298,8 @@ public struct ServerConfiguration: Sendable, Hashable {
         )
         let ownsLaunch =
             try await server.option("@libtmux_mcp_owner", scope: .globalSession) == ownerNonce
-        let resolvedSocketPath = try await server.incarnation().socketPath
+        let incarnation = try await server.incarnation()
+        let resolvedSocketPath = incarnation.socketPath
         let pinnedProvenance = ServerProvenance(
             selector: "name:\(socketName ?? "default")",
             selectionProvenance: "default-dedicated",
@@ -283,7 +312,9 @@ public struct ServerConfiguration: Sendable, Hashable {
             server: server,
             authority: authorityForStartup(ownsLaunch: ownsLaunch),
             provenance: pinnedProvenance,
-            ownsLaunch: ownsLaunch
+            ownsLaunch: ownsLaunch,
+            ownerNonce: ownsLaunch ? ownerNonce : nil,
+            ownedIncarnation: ownsLaunch ? incarnation : nil
         )
     }
 

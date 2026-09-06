@@ -794,13 +794,40 @@ struct CapabilityManifestTests {
             scope: .globalSession
         )
         let leakedOwner = try? await firstServer.environmentValue("LIBTMUX_MCP_OWNER")
-        try? await firstServer.killServer()
+        let owner = try #require(pins.first(where: { $0.ownsLaunch }))
+        let observer = try #require(pins.first(where: { !$0.ownsLaunch }))
+        await observer.cleanupOwnedLaunch()
+        let survivedObserver = try await firstServer.isRunning()
+        await owner.cleanupOwnedLaunch()
+        let removedByOwner = !(try await firstServer.isRunning())
+        let replacementNonce = "33333333333333333333333333333333"
+        let replacementSurvived: Bool
+        let retainedReplacementOwner: String?
+        do {
+            try await firstServer.startServer(
+                launchEnvironment: ["LIBTMUX_MCP_OWNER": replacementNonce]
+            )
+            await owner.cleanupOwnedLaunch()
+            retainedReplacementOwner = try await firstServer.option(
+                "@libtmux_mcp_owner",
+                scope: .globalSession
+            )
+            replacementSurvived = try await firstServer.isRunning()
+            try? await firstServer.killServer()
+        } catch {
+            try? await firstServer.killServer()
+            throw error
+        }
 
         #expect(pins.filter(\.ownsLaunch).count == 1)
         #expect(pins.filter { $0.provenance.configurationProvenance == "minimal" }.count == 1)
         #expect(pins.filter { $0.authority.toolsets.contains(.teardown) }.count == 1)
         #expect(pins.filter { $0.provenance.serverState == "created" }.count == 1)
         #expect(pins.filter { $0.provenance.serverState == "existing" }.count == 1)
+        #expect(survivedObserver)
+        #expect(removedByOwner)
+        #expect(replacementSurvived)
+        #expect(retainedReplacementOwner == replacementNonce)
         #expect(leakedOwner == nil)
         #expect(
             retainedOwner.map {

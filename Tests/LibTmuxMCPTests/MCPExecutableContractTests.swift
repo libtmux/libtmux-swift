@@ -11,11 +11,7 @@ import Testing
 struct MCPExecutableContractTests {
     @Test("the shipped executable answers over stdio while input stays open")
     func executableAnswersOverStdio() throws {
-        let binary = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(".build/debug/libtmux-mcp")
+        let binary = executableURL
         try #require(FileManager.default.isExecutableFile(atPath: binary.path))
 
         let input = Pipe()
@@ -44,6 +40,78 @@ struct MCPExecutableContractTests {
         let reply = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
         #expect(reply?["id"] as? Int == 1)
         #expect(process.isRunning)
+    }
+
+    @Test("the owned default daemon exits when standard input closes")
+    func ownedDefaultDaemonExitsWithInput() throws {
+        let socketDirectory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("mcp-owned-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: socketDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: socketDirectory) }
+
+        var environment = ProcessInfo.processInfo.environment
+        for key in environment.keys where key.hasPrefix("LIBTMUX_") {
+            environment.removeValue(forKey: key)
+        }
+        environment["TMUX_TMPDIR"] = socketDirectory.path
+
+        let input = Pipe()
+        let output = Pipe()
+        let process = Process()
+        process.executableURL = executableURL
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = Pipe()
+        process.environment = environment
+        try process.run()
+        defer {
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+
+        try input.fileHandleForWriting.write(
+            contentsOf: Data(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.utf8 + [10])
+        )
+        _ = try #require(readLine(from: output.fileHandleForReading, within: .seconds(3)))
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+
+        let retained =
+            try tmuxStatus(
+                ["show-options", "-gqv", "@libtmux_mcp_owner"],
+                environment: environment
+            ) == 0
+        if retained {
+            _ = try? tmuxStatus(["kill-server"], environment: environment)
+        }
+        #expect(!retained)
+    }
+
+    private var executableURL: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(".build/debug/libtmux-mcp")
+    }
+
+    private func tmuxStatus(
+        _ arguments: [String],
+        environment: [String: String]
+    ) throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["tmux", "-L", "libtmux-mcp"] + arguments
+        process.environment = environment
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
     }
 
     private func readLine(from handle: FileHandle, within duration: Duration) -> String? {

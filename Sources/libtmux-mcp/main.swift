@@ -127,6 +127,7 @@ do {
     writer = try NonblockingLineWriter(fileDescriptor: STDOUT_FILENO)
 } catch {
     note("cannot configure standard output: \(error)")
+    await pin.cleanupOwnedLaunch()
     exit(1)
 }
 
@@ -144,3 +145,4 @@ await MCPService(handler: MCPRequestHandler(tools: tools)).serveUntilWriteFails(
         }
     }
 )
+await pin.cleanupOwnedLaunch()
