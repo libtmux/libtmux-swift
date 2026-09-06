@@ -173,6 +173,42 @@ def _assert_resolved_swift(command: str) -> None:
     assert path.name == "swift"
 
 
+def _seed_cli_config(info: mcp_swap.CLIInfo) -> None:
+    """Write one representative config in each supported client dialect."""
+    if info.fmt == "toml":
+        info.config_path.parent.mkdir(parents=True, exist_ok=True)
+        info.config_path.write_text(
+            "# keep this comment\n"
+            "[mcp_servers.libtmux]\n"
+            'command = "uvx"\n'
+            'args = ["libtmux-mcp==0.1.0a2"]\n'
+            "\n[unrelated]\nkeep = true\n"
+        )
+    elif info.fmt == "jsonc":
+        container = info.container[0]
+        if info.dialect == "opencode":
+            entry = '{"type": "local", "command": ["uvx", "libtmux-mcp==0.1.0a2"]}'
+        else:
+            entry = '{"command": "uvx", "args": ["libtmux-mcp==0.1.0a2"]}'
+        info.config_path.parent.mkdir(parents=True, exist_ok=True)
+        info.config_path.write_text(
+            "{\n"
+            "  // keep this comment\n"
+            f'  "{container}": {{"libtmux": {entry}}},\n'
+            '  "unrelated": true\n'
+            "}\n"
+        )
+    else:
+        entry = (
+            _pinned_claude_entry() if info.dialect == "claude" else _pinned_json_entry()
+        )
+        _write_json(
+            info.config_path,
+            {info.container[0]: {"libtmux": entry}, "unrelated": True},
+        )
+    info.config_path.chmod(0o640)
+
+
 # ---------------------------------------------------------------------------
 # resolve_repo_meta
 # ---------------------------------------------------------------------------
@@ -265,6 +301,180 @@ def test_missing_swift_aborts_before_config_write(
     assert info.config_path.read_bytes() == original
     assert not list(info.config_path.parent.glob("*.bak.mcp-swap-*"))
     assert not mcp_swap.STATE_FILE.exists()
+
+
+def test_multi_cli_swap_validates_every_config_before_first_write(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """A malformed later config cannot leave an earlier client swapped."""
+    first = mcp_swap.CLIS["cursor"]
+    later = mcp_swap.CLIS["gemini"]
+    _write_json(first.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
+    first.config_path.chmod(0o640)
+    later.config_path.parent.mkdir(parents=True)
+    later.config_path.write_bytes(b'{"mcpServers": {')
+    later.config_path.chmod(0o600)
+    originals = {
+        first.config_path: (
+            first.config_path.read_bytes(),
+            first.config_path.stat().st_mode,
+        ),
+        later.config_path: (
+            later.config_path.read_bytes(),
+            later.config_path.stat().st_mode,
+        ),
+    }
+
+    args = mcp_swap.build_parser().parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--cli",
+            "gemini",
+        ]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    for path, (body, mode) in originals.items():
+        assert path.read_bytes() == body
+        assert path.stat().st_mode == mode
+        assert not list(path.parent.glob(f"{path.name}.bak.mcp-swap-*"))
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+def test_multi_cli_swap_renders_every_config_before_first_write(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later render failure leaves all selected configs untouched."""
+    first = mcp_swap.CLIS["cursor"]
+    later = mcp_swap.CLIS["gemini"]
+    for info in (first, later):
+        _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
+    originals = {
+        info.config_path: info.config_path.read_bytes() for info in (first, later)
+    }
+    real_dump = mcp_swap.dump_config_bytes
+
+    def fail_later_render(
+        info: mcp_swap.CLIInfo, config: t.Any, *, original: bytes
+    ) -> bytes:
+        if info.name == "gemini":
+            message = "render refused"
+            raise RuntimeError(message)
+        return real_dump(info, config, original=original)
+
+    monkeypatch.setattr(mcp_swap, "dump_config_bytes", fail_later_render)
+    args = mcp_swap.build_parser().parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--cli",
+            "gemini",
+        ]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert all(path.read_bytes() == body for path, body in originals.items())
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+@pytest.mark.parametrize("cli", mcp_swap.ALL_CLIS)
+def test_each_supported_cli_reverts_byte_and_mode_identically(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    cli: str,
+) -> None:
+    """Every supported client survives an isolated swap and exact revert."""
+    info = mcp_swap.CLIS[cli]
+    _seed_cli_config(info)
+    original = info.config_path.read_bytes()
+    mode = info.config_path.stat().st_mode
+    parser = mcp_swap.build_parser()
+
+    swap = parser.parse_args(["use-local", "--repo", str(fake_repo), "--cli", cli])
+    assert mcp_swap.cmd_use_local(swap) == 0
+    assert info.config_path.read_bytes() != original
+    assert info.config_path.stat().st_mode == mode
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", cli])) == 0
+    assert info.config_path.read_bytes() == original
+    assert info.config_path.stat().st_mode == mode
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+def test_all_supported_clis_swap_and_revert_as_one_transaction(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """The combined eight-client path restores every original byte and mode."""
+    originals: dict[pathlib.Path, tuple[bytes, int]] = {}
+    for cli in mcp_swap.ALL_CLIS:
+        info = mcp_swap.CLIS[cli]
+        _seed_cli_config(info)
+        originals[info.config_path] = (
+            info.config_path.read_bytes(),
+            info.config_path.stat().st_mode,
+        )
+    parser = mcp_swap.build_parser()
+    arguments = ["use-local", "--repo", str(fake_repo)]
+    for cli in mcp_swap.ALL_CLIS:
+        arguments.extend(["--cli", cli])
+
+    assert mcp_swap.cmd_use_local(parser.parse_args(arguments)) == 0
+    assert set(mcp_swap.load_state()) == {
+        (cli, "project" if cli == "claude" else "user") for cli in mcp_swap.ALL_CLIS
+    }
+    assert all(path.read_bytes() != body for path, (body, _mode) in originals.items())
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert"])) == 0
+    for path, (body, mode) in originals.items():
+        assert path.read_bytes() == body
+        assert path.stat().st_mode == mode
+        assert not list(path.parent.glob(f"{path.name}.bak.mcp-swap-*"))
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+def test_failed_server_preflight_writes_no_config_or_recovery_file(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A PR server that cannot initialize is refused before config planning."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    original = info.config_path.read_bytes()
+    monkeypatch.setattr(
+        mcp_swap,
+        "remote_https_url",
+        lambda _repo: "https://github.com/example/libtmux-swift",
+    )
+    monkeypatch.setattr(mcp_swap, "gh_pr_summary", lambda _repo, _pr: None)
+    monkeypatch.setattr(mcp_swap, "preflight_spec", lambda _spec: "initialize failed")
+    args = mcp_swap.build_parser().parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--pr",
+            "1",
+        ]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert info.config_path.read_bytes() == original
+    assert not mcp_swap.STATE_FILE.exists()
+    assert not list(info.config_path.parent.glob("*.bak.mcp-swap-*"))
 
 
 # ---------------------------------------------------------------------------
@@ -2589,11 +2799,11 @@ def test_unreadable_config_reports_instead_of_crashing(
     test_id: str,
     body: bytes,
 ) -> None:
-    """A config that will not parse is reported and skipped, not raised through.
+    """A config that will not parse is reported, not raised through.
 
     ``load_config`` raises ``ValueError`` for every unparseable form —
     JSON, TOML and UTF-8 decode errors all derive from it — which the
-    per-CLI handler has to catch for the run to survive one bad file.
+    per-CLI handler catches before the write phase.
     """
     assert test_id
     info = mcp_swap.CLIS["cursor"]
@@ -2609,24 +2819,25 @@ def test_unreadable_config_reports_instead_of_crashing(
     assert info.config_path.read_bytes() == body
 
 
-def test_unreadable_config_does_not_stop_the_other_clis(
+def test_unreadable_config_aborts_the_combined_transaction(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
 ) -> None:
-    """One bad config does not prevent the remaining CLIs from swapping."""
+    """One bad config keeps every selected client's bytes unchanged."""
     bad = mcp_swap.CLIS["cursor"]
     bad.config_path.parent.mkdir(parents=True, exist_ok=True)
     bad.config_path.write_bytes(b"{ not json")
     good = mcp_swap.CLIS["gemini"]
     _write_json(good.config_path, {"mcpServers": {}})
+    original = good.config_path.read_bytes()
     args = mcp_swap.build_parser().parse_args(
         ["use-local", "--repo", str(fake_repo), "--cli", "cursor", "--cli", "gemini"]
     )
 
     assert mcp_swap.cmd_use_local(args) == 1
 
-    written = json.loads(good.config_path.read_text())
-    assert "libtmux" in written["mcpServers"]
+    assert good.config_path.read_bytes() == original
+    assert not mcp_swap.STATE_FILE.exists()
 
 
 class CorruptStateCase(t.NamedTuple):
@@ -2759,11 +2970,11 @@ def test_unwritable_directory_aborts_before_swapping(
         info.config_path.parent.chmod(0o700)
 
 
-def test_unwritable_directory_does_not_stop_the_other_clis(
+def test_unwritable_directory_aborts_the_combined_transaction(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
 ) -> None:
-    """One unwritable config directory does not abort the whole run."""
+    """Every backup must be feasible before any selected config changes."""
     if os.geteuid() == 0:
         pytest.skip("root ignores directory permissions")
     blocked = mcp_swap.CLIS["grok"]
@@ -2772,14 +2983,15 @@ def test_unwritable_directory_does_not_stop_the_other_clis(
     blocked.config_path.parent.chmod(0o500)
     reachable = mcp_swap.CLIS["cursor"]
     _write_json(reachable.config_path, {"mcpServers": {}})
+    original = reachable.config_path.read_bytes()
     args = mcp_swap.build_parser().parse_args(
-        ["use-local", "--repo", str(fake_repo), "--cli", "grok", "--cli", "cursor"]
+        ["use-local", "--repo", str(fake_repo), "--cli", "cursor", "--cli", "grok"]
     )
 
     try:
         assert mcp_swap.cmd_use_local(args) == 1
-        written = json.loads(reachable.config_path.read_text())
-        assert "libtmux" in written["mcpServers"]
+        assert reachable.config_path.read_bytes() == original
+        assert not mcp_swap.STATE_FILE.exists()
     finally:
         blocked.config_path.parent.chmod(0o700)
 
@@ -2809,6 +3021,47 @@ def test_state_write_failure_leaves_the_config_unchanged(
     assert mcp_swap.cmd_use_local(args) == 1
     assert info.config_path.read_bytes() == original
     assert not mcp_swap.STATE_FILE.exists()
+
+
+def test_later_config_write_failure_rolls_back_the_combined_transaction(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unexpected later write failure restores every earlier config."""
+    infos = [mcp_swap.CLIS["cursor"], mcp_swap.CLIS["gemini"]]
+    for info in infos:
+        _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
+    originals = {info.config_path: info.config_path.read_bytes() for info in infos}
+    later_target = infos[1].config_path.resolve()
+    real_atomic_write = mcp_swap.atomic_write
+    failed = False
+
+    def fail_later_once(path: pathlib.Path, data: bytes) -> None:
+        nonlocal failed
+        if path == later_target and not failed:
+            failed = True
+            message = "later config is read-only"
+            raise PermissionError(message)
+        real_atomic_write(path, data)
+
+    monkeypatch.setattr(mcp_swap, "atomic_write", fail_later_once)
+    args = mcp_swap.build_parser().parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--cli",
+            "gemini",
+        ]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert all(path.read_bytes() == body for path, body in originals.items())
+    assert not mcp_swap.STATE_FILE.exists()
+    assert not any(fake_home.rglob("*.bak.mcp-swap-*"))
 
 
 def test_swap_write_failure_keeps_recovery_state_without_raising(

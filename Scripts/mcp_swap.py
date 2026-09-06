@@ -34,6 +34,11 @@ Scope
 -----
 This script is best-effort and intentionally narrow:
 
+- **One selected transaction.** ``use-local`` reads, parses, and renders every
+  selected config and reserves every required backup before the first config
+  write. A later write failure rolls earlier files back; if recovery itself
+  fails, the durable state and backups remain for ``revert``.
+
 - **Global configs only.** Writes to ``~/.cursor/mcp.json``,
   ``~/.claude.json``, ``~/.codex/config.toml``,
   ``~/.gemini/settings.json``, ``~/.grok/config.toml`` (TOML
@@ -475,6 +480,21 @@ class SwapEntry:
     #: identity. Older state entries omit this field and fall back to
     #: ``config_path`` during revert.
     target_path: str | None = None
+
+
+@dataclasses.dataclass
+class SwapPlan:
+    """One fully rendered config change awaiting backup and commit."""
+
+    cli: CLIName
+    scope: Scope
+    label: str
+    info: CLIInfo
+    target_path: pathlib.Path
+    original_bytes: bytes
+    new_bytes: bytes
+    action: t.Literal["replaced", "added"]
+    backup_note: str = ""
 
 
 class SwapStateError(RuntimeError):
@@ -1777,14 +1797,11 @@ def _points_at(
 
 
 def _cmd_use_local(args: argparse.Namespace) -> int:
-    """Rewrite each target CLI's config to run the repo, or a pull request.
+    """Rewrite every selected CLI config as one planned transaction.
 
-    Without ``--pr`` the entry runs the repo's checkout via ``uv``; with
-    it, the pull request's head via ``uvx``.
-
-    The optional ``--scope`` flag selects Claude's user-level fallback
-    vs. per-project override; see :data:`Scope`. The flag is silently
-    coerced to ``"user"`` for non-Claude CLIs by :func:`_normalize_scope`.
+    Without --pr the entry runs the repository checkout; with it, the pull
+    request head. Every selected config is read, parsed, rendered, and backed
+    up before the first config write.
     """
     repo = pathlib.Path(args.repo).resolve()
     server, default_entry = resolve_repo_meta(repo)
@@ -1818,13 +1835,11 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
     if hint:
         print(hint, file=sys.stderr)
 
-    targets = args.cli or present_clis()
+    targets = list(dict.fromkeys(args.cli or present_clis()))
     if not targets:
         print("no CLIs detected — nothing to do", file=sys.stderr)
         return 1
 
-    # Runs under --dry-run too: resolving the ref is the only signal a
-    # dry run can give about whether the swap would actually start.
     if pr is not None and not args.no_preflight:
         print(f"preflight: {spec.command} {' '.join(spec.args)}", file=sys.stderr)
         failure = preflight_spec(spec)
@@ -1832,8 +1847,8 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
             print(f"preflight failed, nothing written:\n{failure}", file=sys.stderr)
             return 1
 
-    ts = time.strftime("%Y%m%d%H%M%S")
     state = load_state(strict=True)
+    plans: list[SwapPlan] = []
     had_error = 0
     for cli in targets:
         scope = _normalize_scope(cli, args.scope)
@@ -1845,13 +1860,6 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
             continue
         target_path = info.config_path.resolve()
         target_info = dataclasses.replace(info, config_path=target_path)
-        # Wrap the read + shape-guarded mutation so an unreadable config
-        # surfaces as a clean per-CLI error instead of an uncaught traceback.
-        # The three arms are the three ways it fails: a shape this script
-        # rejects raises RuntimeError, an unparseable one raises ValueError
-        # (JSON, TOML and UTF-8 decode errors all derive from it), and an
-        # unopenable one raises OSError. Same trio ``doctor`` catches, and
-        # the same per-CLI continuation the write-failure handler below uses.
         try:
             original_bytes = target_path.read_bytes()
             config = load_config(target_info)
@@ -1864,11 +1872,6 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
                 where = "local (this repo)" if pr is None else f"PR #{pr}"
                 print(f"[{label}] already {where} — no change")
                 continue
-            # Preserve the existing entry's env on replacement. ``build_local_spec``
-            # writes an empty env, so without this merge a swap would silently drop
-            # client-side settings (LIBTMUX_TOOLSETS, LIBTMUX_SOCKET, custom dev
-            # knobs). Symmetric with ``_spec_from_entry`` which round-trips env on
-            # the read side.
             base_env = dict(current.env) if current else {}
             base_env.update(extra_env)
             cli_spec = (
@@ -1882,118 +1885,167 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
             print(f"[{label}] {exc}", file=sys.stderr)
             had_error = 1
             continue
+        plans.append(
+            SwapPlan(
+                cli=cli,
+                scope=scope,
+                label=label,
+                info=info,
+                target_path=target_path,
+                original_bytes=original_bytes,
+                new_bytes=new_bytes,
+                action=action,
+            )
+        )
 
-        if args.dry_run:
-            print(f"--- {info.config_path} (current)")
-            print(f"+++ {info.config_path} (proposed)")
+    if had_error:
+        return had_error
+
+    if args.dry_run:
+        for plan in plans:
+            print(f"--- {plan.info.config_path} (current)")
+            print(f"+++ {plan.info.config_path} (proposed)")
             diff = difflib.unified_diff(
-                original_bytes.decode(errors="replace").splitlines(keepends=True),
-                new_bytes.decode(errors="replace").splitlines(keepends=True),
+                plan.original_bytes.decode(errors="replace").splitlines(keepends=True),
+                plan.new_bytes.decode(errors="replace").splitlines(keepends=True),
                 lineterm="",
             )
             sys.stdout.writelines(diff)
-            continue
+        return 0
 
-        # Re-swapping a layer that was never reverted must NOT re-back-up:
-        # ``original_bytes`` is this script's own earlier output, so
-        # recording it would make ``revert`` restore a swapped config and
-        # strand the pristine one. Keep the first backup — it is the only
-        # copy of what the user had — and leave its ``seq_no`` /
-        # ``swapped_at`` untouched so the LIFO unwind order (which is
-        # pinned by what each backup captured, not by when it was last
-        # rewritten) stays correct.
-        prior = state.get((cli, scope))
+    if not plans:
+        return 0
+
+    timestamp = time.strftime("%Y%m%d%H%M%S")
+    previous_state = dict(state)
+    next_state = dict(state)
+    created_backups: list[pathlib.Path] = []
+    next_seq = max((item.seq_no for item in state.values()), default=-1) + 1
+
+    def discard_backup(path: pathlib.Path) -> str | None:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            return f"{path}: {exc}"
+        return None
+
+    def discard_created_backups() -> list[str]:
+        return [
+            failure for path in created_backups if (failure := discard_backup(path))
+        ]
+
+    for plan in plans:
+        prior = state.get((plan.cli, plan.scope))
         prior_backup = pathlib.Path(prior.backup_path) if prior is not None else None
         if prior_backup is not None and prior_backup.exists():
             backup_path = prior_backup
             backup_note = f"pre-swap backup kept: {backup_path}"
+            seq_no = prior.seq_no
+            swapped_at = prior.swapped_at
         else:
             if prior is not None:
                 print(
-                    f"[{label}] recorded backup is gone ({prior.backup_path}); the "
-                    "new backup captures the already-swapped config, not the "
+                    f"[{plan.label}] recorded backup is gone ({prior.backup_path}); "
+                    "the new backup captures the already-swapped config, not the "
                     "original",
                     file=sys.stderr,
                 )
-            # Claude is the only CLI where two swaps (different scopes) can
-            # touch the same config file in one second; embed the scope so
-            # the two backups read distinctly. Non-Claude backup filenames
-            # carry no scope suffix. Collisions past that are resolved by
-            # ``write_new_backup``, which never overwrites.
-            backup_suffix = f"{BACKUP_SUFFIX_PREFIX}{ts}"
-            if cli == "claude":
-                backup_suffix += f"-{scope}"
-            # A backup that cannot be written must abort this CLI rather
-            # than degrade into a swap with nothing to revert to — an
-            # unwritable directory is the case that produces both.
+            suffix = f"{BACKUP_SUFFIX_PREFIX}{timestamp}"
+            if plan.cli == "claude":
+                suffix += f"-{plan.scope}"
             try:
                 backup_path = write_new_backup(
-                    info.config_path.with_suffix(
-                        info.config_path.suffix + backup_suffix
+                    plan.info.config_path.with_suffix(
+                        plan.info.config_path.suffix + suffix
                     ),
-                    original_bytes,
+                    plan.original_bytes,
                 )
             except OSError as exc:
-                print(f"[{label}] cannot write backup: {exc}", file=sys.stderr)
-                had_error = 1
-                continue
+                cleanup_failures = discard_created_backups()
+                cleanup_note = (
+                    f"; backup cleanup failed ({'; '.join(cleanup_failures)})"
+                    if cleanup_failures
+                    else ""
+                )
+                print(
+                    f"[{plan.label}] cannot write backup: {exc}{cleanup_note}",
+                    file=sys.stderr,
+                )
+                return 1
+            created_backups.append(backup_path)
             backup_note = f"backup: {backup_path}"
-        if prior is not None and backup_path == prior_backup:
-            # ``swapped_at`` mirrors the timestamp in the backup filename
-            # and ``seq_no`` fixes the backup's place in the unwind
-            # stack; both describe the kept backup, not this run.
-            seq_no, swapped_at = prior.seq_no, prior.swapped_at
-        else:
-            seq_no = max((e.seq_no for e in state.values()), default=-1) + 1
-            swapped_at = ts
-        next_state = dict(state)
-        next_state[(cli, scope)] = SwapEntry(
-            config_path=str(info.config_path),
+            seq_no = next_seq
+            next_seq += 1
+            swapped_at = timestamp
+
+        plan.backup_note = backup_note
+        next_state[(plan.cli, plan.scope)] = SwapEntry(
+            config_path=str(plan.info.config_path),
             backup_path=str(backup_path),
             server=server,
-            action=action,
+            action=plan.action,
             swapped_at=swapped_at,
             seq_no=seq_no,
-            target_path=str(target_path),
+            target_path=str(plan.target_path),
         )
+
+    try:
+        save_state(next_state)
+    except OSError as exc:
+        cleanup_failures = discard_created_backups()
+        cleanup_note = (
+            f"; backup cleanup failed ({'; '.join(cleanup_failures)})"
+            if cleanup_failures
+            else ""
+        )
+        print(
+            f"cannot save recovery state ({exc}); configs unchanged{cleanup_note}",
+            file=sys.stderr,
+        )
+        return 1
+
+    written: list[SwapPlan] = []
+
+    def restore_original(plan: SwapPlan) -> str | None:
         try:
-            save_state(next_state)
-        except OSError as exc:
-            print(
-                f"[{label}] cannot save recovery state ({exc}); config unchanged; "
-                f"backup at {backup_path}",
-                file=sys.stderr,
-            )
-            had_error = 1
-            continue
-        previous_state = state
-        state = next_state
-        try:
-            atomic_write(target_path, new_bytes)
-            _revalidate(target_info)
+            atomic_write(plan.target_path, plan.original_bytes)
         except Exception as exc:
-            try:
-                atomic_write(target_path, original_bytes)
-            except Exception as rollback_exc:
-                rollback_note = f"; rollback failed ({rollback_exc})"
-            else:
-                rollback_note = "; original config restored"
+            return f"{plan.label}: {exc}"
+        return None
+
+    for plan in plans:
+        try:
+            atomic_write(plan.target_path, plan.new_bytes)
+            _revalidate(dataclasses.replace(plan.info, config_path=plan.target_path))
+        except Exception as exc:
+            rollback_failures = [
+                failure
+                for changed in reversed([*written, plan])
+                if (failure := restore_original(changed))
+            ]
+            if not rollback_failures:
                 try:
                     _save_or_clear_state(previous_state)
                 except OSError as state_exc:
-                    rollback_note += f"; recovery state cleanup failed ({state_exc})"
+                    rollback_failures.append(f"recovery state: {state_exc}")
                 else:
-                    state = previous_state
+                    rollback_failures.extend(discard_created_backups())
+            rollback_note = (
+                f"; rollback incomplete ({'; '.join(rollback_failures)})"
+                if rollback_failures
+                else "; original configs restored"
+            )
+            recovery_note = "; recovery backups retained" if rollback_failures else ""
             print(
-                f"[{label}] write failed ({exc}){rollback_note}; "
-                f"backup at {backup_path}",
+                f"[{plan.label}] write failed ({exc}){rollback_note}{recovery_note}",
                 file=sys.stderr,
             )
-            had_error = 1
-            continue
-        print(f"[{label}] {action}; {backup_note}")
+            return 1
+        written.append(plan)
 
-    return had_error
+    for plan in plans:
+        print(f"[{plan.label}] {plan.action}; {plan.backup_note}")
+    return 0
 
 
 def cmd_use_local(args: argparse.Namespace) -> int:
