@@ -254,6 +254,28 @@ struct RunShellResult: Sendable, Hashable, Codable {
     let droppedLines: Int
     let seconds: Double
     let effectiveTimeout: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case paneRef, pane, exitStatus, timedOut, output, linesMissed, droppedLines
+        case seconds, effectiveTimeout
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(paneRef, forKey: .paneRef)
+        try container.encode(pane, forKey: .pane)
+        if let exitStatus {
+            try container.encode(exitStatus, forKey: .exitStatus)
+        } else {
+            try container.encodeNil(forKey: .exitStatus)
+        }
+        try container.encode(timedOut, forKey: .timedOut)
+        try container.encode(output, forKey: .output)
+        try container.encode(linesMissed, forKey: .linesMissed)
+        try container.encode(droppedLines, forKey: .droppedLines)
+        try container.encode(seconds, forKey: .seconds)
+        try container.encode(effectiveTimeout, forKey: .effectiveTimeout)
+    }
 }
 
 struct SentKeys: Sendable, Hashable, Codable {

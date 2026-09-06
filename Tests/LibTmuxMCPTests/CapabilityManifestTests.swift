@@ -882,6 +882,26 @@ struct CapabilityManifestTests {
         }
     }
 
+    @Test("a timed-out run encodes its required null exit status")
+    func timedOutRunEncodesNullExitStatus() throws {
+        let outcome = ToolOutcome(
+            RunShellResult(
+                paneRef: "pane-ref",
+                pane: "%1",
+                exitStatus: nil,
+                timedOut: true,
+                output: [],
+                linesMissed: false,
+                droppedLines: 0,
+                seconds: 1,
+                effectiveTimeout: 1
+            )
+        )
+        #expect(try #require(outcome.structured["exitStatus"]).isNull)
+        let schema = try #require(TmuxTools.byName["run_shell_command"]?.outputSchema)
+        try ToolSchemaValidator.validate(outcome.structured, against: schema)
+    }
+
     @Test("the root README names every manifest tool")
     func readmeNamesEveryManifestTool() throws {
         let repository = URL(fileURLWithPath: #filePath)
