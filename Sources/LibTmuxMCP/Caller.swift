@@ -13,9 +13,8 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
     /// From `TMUX`, in the same `$…` spelling as a session id.
     public let sessionID: SessionID?
     public let socketPath: String?
-    /// The surrounding server's process id. The socket first distinguishes the
-    /// selected server from a foreign one; its process id then rejects a daemon
-    /// that replaced this process's surrounding server on the same socket.
+    /// The surrounding server's process id. It authenticates alternate routes
+    /// to one socket and rejects a daemon that replaced one exact route.
     public let serverProcessID: Int?
 
     /// Reads the surrounding tmux, or `nil` when both context variables are absent.
@@ -50,10 +49,18 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
         )
     }
 
-    /// Whether `server` is the tmux this process is running inside.
+    /// Whether `server` is the tmux this process is running inside, including
+    /// when caller and server reached its socket through different links.
     public func isOn(_ server: ServerIncarnation) -> Bool {
-        guard let serverProcessID, let socketPath else { return false }
-        return socketPath == server.socketPath && serverProcessID == server.processID
+        guard let serverProcessID, let socketPath, Self.isSafeSocketPath(socketPath) else {
+            return false
+        }
+        return serverProcessID == server.processID
+    }
+
+    fileprivate static func isSafeSocketPath(_ path: String) -> Bool {
+        path.utf8.first == 0x2f
+            && !path.utf8.contains(where: { $0 < 0x20 || $0 == 0x7f })
     }
 }
 
@@ -83,23 +90,25 @@ struct CallerGuard: Sendable {
         guard let paneID = identity.paneID,
             let sessionID = identity.sessionID,
             let socketPath = identity.socketPath,
-            !socketPath.isEmpty,
+            CallerIdentity.isSafeSocketPath(socketPath),
             let processID = identity.serverProcessID,
             processID > 0
         else {
             throw ToolError.refusedForSafety("caller context is incomplete or malformed")
         }
 
-        guard socketPath == snapshot.incarnation.socketPath else {
+        if socketPath == snapshot.incarnation.socketPath,
+            processID != snapshot.serverProcessID
+        {
+            throw ToolError.refusedForSafety(
+                "caller context names a stale selected tmux daemon"
+            )
+        }
+        guard processID == snapshot.serverProcessID else {
             guard !isSameServer else {
                 throw ToolError.refusedForSafety("caller context is inconsistent")
             }
             return
-        }
-        guard processID == snapshot.serverProcessID else {
-            throw ToolError.refusedForSafety(
-                "caller context names a stale selected tmux daemon"
-            )
         }
         guard isSameServer else {
             throw ToolError.refusedForSafety("caller context is inconsistent")

@@ -10,8 +10,59 @@ enum PaneInputScope: Sendable {
 struct PaneInputResolution: Sendable {
     let source: Pane
     let configuredPanes: [Pane]
+    fileprivate let signature: PaneInputSignature
 
     var configuredPaneIDs: [PaneID] { configuredPanes.map(\.id) }
+}
+
+fileprivate struct PaneInputMemberSignature: Sendable, Hashable {
+    let incarnation: ServerIncarnation
+    let id: PaneID
+    let windowID: WindowID
+    let isSynchronized: Bool
+    let isDead: Bool
+    let isInputOff: Bool
+    let modeCount: Int
+    let currentCommand: String?
+
+    init(_ pane: Pane, includeCommand: Bool) {
+        self.incarnation = pane.incarnation
+        self.id = pane.id
+        self.windowID = pane.windowID
+        self.isSynchronized = pane.isSynchronized
+        self.isDead = pane.isDead
+        self.isInputOff = pane.isInputOff
+        self.modeCount = pane.modeCount
+        self.currentCommand = includeCommand ? pane.currentCommand : nil
+    }
+}
+
+fileprivate struct PaneInputLinkSignature: Sendable, Hashable {
+    let incarnation: ServerIncarnation
+    let sessionID: SessionID
+    let windowID: WindowID
+    let index: Int
+    let isActive: Bool
+
+    init(_ link: WindowLink) {
+        self.incarnation = link.incarnation
+        self.sessionID = link.sessionID
+        self.windowID = link.windowID
+        self.index = link.index
+        self.isActive = link.isActive
+    }
+}
+
+fileprivate struct PaneInputCallerSignature: Sendable, Hashable {
+    let identity: CallerIdentity?
+    let isSameServer: Bool
+}
+
+fileprivate struct PaneInputSignature: Sendable, Hashable {
+    let source: PaneInputMemberSignature
+    let configuredPanes: [PaneInputMemberSignature]
+    let windowLinks: [PaneInputLinkSignature]
+    let caller: PaneInputCallerSignature
 }
 
 extension TmuxTools {
@@ -45,9 +96,19 @@ extension TmuxTools {
         let attended = try attendedPaneIDs(in: snapshot)
 
         for pane in configured {
+            guard pane.incarnation == snapshot.incarnation else {
+                throw ToolError.refusedForSafety(
+                    "pane \(pane.id.rawValue) input context is incomplete or inconsistent"
+                )
+            }
             guard !pane.isDead else {
                 throw ToolError.refusedForSafety(
                     "pane \(pane.id.rawValue) input is refused because its process is dead"
+                )
+            }
+            guard !pane.isInputOff else {
+                throw ToolError.refusedForSafety(
+                    "pane \(pane.id.rawValue) input is refused because tmux disabled input"
                 )
             }
             guard pane.modeCount == 0 else {
@@ -77,7 +138,67 @@ extension TmuxTools {
                 )
             }
         }
-        return PaneInputResolution(source: source, configuredPanes: configured)
+        let windowLinks = try paneInputWindowLinks(
+            for: Set(configured.map(\.windowID)),
+            in: snapshot
+        )
+        let includeCommand = scope == .singularPOSIXShell
+        return PaneInputResolution(
+            source: source,
+            configuredPanes: configured,
+            signature: PaneInputSignature(
+                source: PaneInputMemberSignature(source, includeCommand: includeCommand),
+                configuredPanes: configured.map {
+                    PaneInputMemberSignature($0, includeCommand: includeCommand)
+                },
+                windowLinks: windowLinks.map(PaneInputLinkSignature.init),
+                caller: PaneInputCallerSignature(
+                    identity: callerGuard.identity,
+                    isSameServer: callerGuard.isSameServer
+                )
+            )
+        )
+    }
+
+    private static func paneInputWindowLinks(
+        for windowIDs: Set<WindowID>,
+        in snapshot: Snapshot
+    ) throws -> [WindowLink] {
+        for windowID in windowIDs {
+            guard
+                snapshot.windows.filter({
+                    $0.incarnation == snapshot.incarnation && $0.id == windowID
+                }).count == 1
+            else {
+                throw ToolError.refusedForSafety(
+                    "pane input window placement is incomplete or inconsistent"
+                )
+            }
+        }
+        let links = snapshot.windowLinks.filter { windowIDs.contains($0.windowID) }
+        guard !links.isEmpty,
+            links.allSatisfy({ $0.incarnation == snapshot.incarnation }),
+            Set(links.map(\.id)).count == links.count,
+            links.allSatisfy({ link in
+                snapshot.sessions.filter {
+                    $0.incarnation == snapshot.incarnation && $0.id == link.sessionID
+                }.count == 1
+            })
+        else {
+            throw ToolError.refusedForSafety(
+                "pane input window placement is incomplete or inconsistent"
+            )
+        }
+        return links.sorted { left, right in
+            if left.sessionID != right.sessionID {
+                return left.sessionID.rawValue < right.sessionID.rawValue
+            }
+            if left.index != right.index { return left.index < right.index }
+            if left.windowID != right.windowID {
+                return left.windowID.rawValue < right.windowID.rawValue
+            }
+            return !left.isActive && right.isActive
+        }
     }
 
     private static func attendedPaneIDs(in snapshot: Snapshot) throws -> Set<PaneID> {
@@ -170,11 +291,7 @@ extension TmuxTools {
                 force: force
             )
             if let expected {
-                guard resolved.source.incarnation == expected.source.incarnation,
-                    resolved.source.id == expected.source.id,
-                    resolved.source.currentCommand == expected.source.currentCommand,
-                    resolved.configuredPaneIDs == expected.configuredPaneIDs
-                else {
+                guard resolved.signature == expected.signature else {
                     throw ToolError.refusedForSafety("pane identity or input cohort changed")
                 }
             }

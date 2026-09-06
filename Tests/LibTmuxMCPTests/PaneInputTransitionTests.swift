@@ -9,7 +9,8 @@ import TmuxFixture
 struct PaneInputTransitionTests {
     @Test("run rechecks once after setup and refuses every observed transition")
     func runRefusesPostSetupTransitions() async throws {
-        for mutation in TransitionMutation.allCases where mutation != .none {
+        for mutation in TransitionMutation.allCases
+        where mutation != .none && mutation != .inputOff {
             try await withTmuxServer { fixture in
                 let source = try #require(try await fixture.panes().first)
                 let peer = try await fixture.split(source, direction: .right)
@@ -81,6 +82,51 @@ struct PaneInputTransitionTests {
                 )
                 #expect(!options.text.contains("@libtmux_mcp_"))
             }
+        }
+    }
+
+    @Test("run rejects an authenticated caller placement transition")
+    func runRefusesCallerPlacementTransition() async throws {
+        try await withTmuxServer { fixture in
+            let source = try #require(try await fixture.panes().first)
+            let session = try #require(try await fixture.sessions().first)
+            let incarnation = try await fixture.incarnation()
+            let transport = TransitionTransport(
+                fixture: fixture,
+                source: source,
+                peer: source,
+                mutation: .windowLinkIndex
+            )
+            let tools = TmuxTools(
+                server: Server(
+                    endpoint: fixture.endpoint,
+                    tmuxExecutable: fixture.tmuxExecutable,
+                    transport: transport
+                ),
+                authority: ToolAuthority(toolsets: [.execute]),
+                caller: CallerIdentity(
+                    paneID: source.id,
+                    sessionID: session.id,
+                    socketPath: incarnation.socketPath,
+                    serverProcessID: incarnation.processID
+                )
+            )
+
+            await #expect(throws: ToolError.self) {
+                _ = try await tools.call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string("true"),
+                            "force": .bool(true),
+                            "paneId": .string(source.id.rawValue),
+                        ])
+                    )
+                )
+            }
+            #expect(await transport.listPaneCount == 2)
+            #expect(await transport.inputDispatchCount == 0)
+            #expect(!(await TmuxTools.paneRuns.isHeld(source)))
         }
     }
 
@@ -178,6 +224,50 @@ struct PaneInputTransitionTests {
         }
     }
 
+    @Test(
+        "send and batch recheck after reservation and before dispatch",
+        arguments: [ReservedInput.send, .batch], [TransitionMutation.mode, .inputOff]
+    )
+    func sendRefusesPostReservationTransition(
+        _ operation: ReservedInput,
+        _ mutation: TransitionMutation
+    ) async throws {
+        try await withTmuxServer { fixture in
+            let source = try #require(try await fixture.panes().first)
+            let transport = TransitionTransport(
+                fixture: fixture,
+                source: source,
+                peer: source,
+                mutation: mutation
+            )
+            let tools = TmuxTools(
+                server: Server(
+                    endpoint: fixture.endpoint,
+                    tmuxExecutable: fixture.tmuxExecutable,
+                    transport: transport
+                ),
+                authority: ToolAuthority(toolsets: [.execute]),
+                caller: nil
+            )
+
+            switch operation {
+            case .send:
+                await #expect(throws: ToolError.self) {
+                    _ = try await tools.call(operation.call(for: source))
+                }
+            case .batch:
+                let outcome = try await tools.call(operation.call(for: source))
+                #expect(outcome.structured["completed"]?.intValue == 0)
+                #expect(outcome.structured["failures"]?.arrayValue?.count == 1)
+            case .paste:
+                Issue.record("paste is not part of this test")
+            }
+            #expect(await transport.listPaneCount == 2)
+            #expect(await transport.inputDispatchCount == 0)
+            #expect(!(await TmuxTools.paneRuns.isHeld(source)))
+        }
+    }
+
     @Test("empty paste stops after its required initial preflight")
     func emptyPasteStopsAfterInitialPreflight() async throws {
         try await withTmuxServer { fixture in
@@ -216,11 +306,15 @@ struct PaneInputTransitionTests {
     }
 }
 
-private enum TransitionMutation: String, CaseIterable, Sendable {
+enum TransitionMutation: String, CaseIterable, Sendable {
     case mode
     case dead
     case shell
     case cohortWidens
+    case synchronizationOnly
+    case windowPlacement
+    case windowLinkIndex
+    case inputOff
     case callerJoins
     case clientAttends
     case sourceDisappears
@@ -234,6 +328,7 @@ private actor TransitionTransport: ProcessTransport {
     private let peer: Pane
     private let mutation: TransitionMutation
     private(set) var listPaneCount = 0
+    private var listWindowCount = 0
     private(set) var inputDispatchCount = 0
     private(set) var pasteDispatchCount = 0
     private(set) var waitCount = 0
@@ -258,9 +353,13 @@ private actor TransitionTransport: ProcessTransport {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         let commandLine = arguments.joined(separator: " ")
+        if arguments.contains("list-windows") {
+            listWindowCount += 1
+            if listWindowCount == 2, mutation == .windowLinkIndex { try await mutate() }
+        }
         if arguments.contains("list-panes") {
             listPaneCount += 1
-            if listPaneCount == 2 { try await mutate() }
+            if listPaneCount == 2, mutation != .windowLinkIndex { try await mutate() }
         }
         if commandLine.contains("send-keys") { inputDispatchCount += 1 }
         if commandLine.contains("paste-buffer") { pasteDispatchCount += 1 }
@@ -302,6 +401,34 @@ private actor TransitionTransport: ProcessTransport {
                     )
                 )
             }
+        case .synchronizationOnly:
+            _ = try await fixture.run(
+                TmuxCommand(
+                    "set-option",
+                    ["-p", "-t", source.id.rawValue, "synchronize-panes", "on"]
+                )
+            )
+        case .windowPlacement:
+            _ = try await fixture.run(
+                TmuxCommand("break-pane", ["-d", "-s", source.id.rawValue])
+            )
+        case .windowLinkIndex:
+            guard let session = try await fixture.sessions().first else {
+                throw .invocationFailed(reason: "fixture session disappeared")
+            }
+            _ = try await fixture.run(
+                TmuxCommand(
+                    "move-window",
+                    [
+                        "-s", source.windowID.rawValue,
+                        "-t", "\(session.id.rawValue):9",
+                    ]
+                )
+            )
+        case .inputOff:
+            _ = try await fixture.run(
+                TmuxCommand("select-pane", ["-d", "-t", source.id.rawValue])
+            )
         case .sourceDisappears:
             try await fixture.kill(source)
         case .clientAttends, .none:

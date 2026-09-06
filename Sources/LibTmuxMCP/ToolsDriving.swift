@@ -22,11 +22,13 @@ extension TmuxTools {
                 )
             )
         }
+        let reservation = try await Self.reservePaneInput(initial, operation: "paste_text")
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         do {
             try await server.setBuffer(staged, named: buffer)
         } catch {
             try? await server.deleteBuffer(named: buffer)
+            await Self.paneRuns.release(reservation)
             throw error
         }
         let paste: Result<Void, TmuxError>
@@ -36,20 +38,17 @@ extension TmuxTools {
                 scope: .targetOnly,
                 force: force,
                 transitionFrom: initial,
+                reservation: reservation,
                 operation: "paste_text"
             )
-            let reservation = try await Self.reservePaneInput(final, operation: "paste_text")
-            do {
-                try await server.paste(buffer: buffer, into: final.source)
-            } catch {
-                await Self.paneRuns.release(reservation)
-                throw error
-            }
+            try await server.paste(buffer: buffer, into: final.source)
             await Self.paneRuns.release(reservation)
             paste = .success(())
         } catch let error as TmuxError {
+            await Self.paneRuns.release(reservation)
             paste = .failure(error)
         } catch {
+            await Self.paneRuns.release(reservation)
             let cleanup = Task { try await server.deleteBuffer(named: buffer) }
             try await cleanup.value
             throw error

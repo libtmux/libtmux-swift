@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -18,6 +19,7 @@ struct PaneInputGuardTests {
         window: WindowID = "@1",
         active: Bool? = nil,
         dead: Bool = false,
+        inputOff: Bool = false,
         mode: Int = 0,
         synchronized: Bool = false,
         command: String = "zsh",
@@ -25,7 +27,8 @@ struct PaneInputGuardTests {
     ) -> Pane {
         Pane(
             id: id, index: Int(id.rawValue.dropFirst()) ?? 0, width: 80, height: 24,
-            isActive: active ?? (id == "%1"), isDead: dead, isInputOff: false, modeCount: mode,
+            isActive: active ?? (id == "%1"), isDead: dead, isInputOff: inputOff,
+            modeCount: mode,
             isSynchronized: synchronized, currentCommand: command,
             currentPath: "/tmp", windowID: window, incarnation: incarnation ?? self.incarnation
         )
@@ -152,12 +155,14 @@ struct PaneInputGuardTests {
             ["TMUX_PANE": "%1"],
             ["TMUX": "", "TMUX_PANE": ""],
             ["TMUX": "malformed", "TMUX_PANE": "%1"],
+            ["TMUX": "relative/caller,42,1", "TMUX_PANE": "%1"],
+            ["TMUX": "/tmp/caller\nname,42,1", "TMUX_PANE": "%1"],
+            ["TMUX": "/tmp/caller\u{7f}name,42,1", "TMUX_PANE": "%1"],
             ["TMUX": "/tmp/caller,42,1", "TMUX_PANE": "1"],
         ] {
-            #expect(
-                CallerIdentity.current(environment: environment) != nil,
-                Comment(rawValue: "malformed caller was treated as detached: \(environment)")
-            )
+            let identity = CallerIdentity.current(environment: environment)
+            #expect(identity != nil)
+            #expect(identity?.socketPath == nil)
         }
 
         let identity = try #require(
@@ -225,14 +230,14 @@ struct PaneInputGuardTests {
         )
     }
 
-    @Test("caller endpoint is classified before its daemon pid")
-    func callerEndpointPrecedesProcessIdentity() throws {
+    @Test("caller route and pid distinguish foreign and stale daemons")
+    func callerRouteAndProcessIdentityAreClassifiedTogether() throws {
         let source = pane("%1")
         let foreign = CallerIdentity(
             paneID: source.id,
             sessionID: "$1",
             socketPath: "/tmp/libtmux-swift-test/foreign-caller",
-            serverProcessID: incarnation.processID
+            serverProcessID: incarnation.processID + 1
         )
         #expect(
             try resolve(
@@ -252,6 +257,55 @@ struct PaneInputGuardTests {
                 source.id, panes: [source], caller: stale,
                 sameServer: false, force: true
             )
+        }
+    }
+
+    @Test(
+        "a physical caller socket alias still protects its pane",
+        arguments: SocketAliasKind.allCases
+    )
+    func callerSocketAliasesAuthenticate(_ kind: SocketAliasKind) async throws {
+        try await withTmuxServer { fixture in
+            let incarnation = try await fixture.incarnation()
+            let source = try #require(try await fixture.panes().first)
+            let session = try #require(try await fixture.sessions().first)
+            let aliasPath = "\(incarnation.socketPath).caller-\(kind.rawValue)"
+            switch kind {
+            case .symbolic:
+                try FileManager.default.createSymbolicLink(
+                    atPath: aliasPath,
+                    withDestinationPath: incarnation.socketPath
+                )
+            case .hard:
+                try FileManager.default.linkItem(
+                    atPath: incarnation.socketPath,
+                    toPath: aliasPath
+                )
+            }
+            defer { try? FileManager.default.removeItem(atPath: aliasPath) }
+
+            let tools = TmuxTools(
+                server: fixture,
+                authority: ToolAuthority(toolsets: [.execute]),
+                caller: CallerIdentity(
+                    paneID: source.id,
+                    sessionID: session.id,
+                    socketPath: aliasPath,
+                    serverProcessID: incarnation.processID
+                )
+            )
+
+            await #expect(throws: ToolError.self) {
+                _ = try await tools.call(
+                    ToolCall(
+                        name: "send_keys",
+                        arguments: .object([
+                            "keys": .array([.string("Space")]),
+                            "paneId": .string(source.id.rawValue),
+                        ])
+                    )
+                )
+            }
         }
     }
 
@@ -460,8 +514,8 @@ struct PaneInputGuardTests {
         }
     }
 
-    @Test("only exact zero mode and live panes accept input")
-    func onlyExactZeroModeAndLivePanesAcceptInput() {
+    @Test("only exact zero mode and input-enabled live panes accept input")
+    func onlyExactZeroModeAndInputEnabledLivePanesAcceptInput() {
         for mode in [1, 2, 1_000_000] {
             #expect(throws: ToolError.self) {
                 try resolve("%1", panes: [pane("%1", mode: mode)])
@@ -469,6 +523,32 @@ struct PaneInputGuardTests {
         }
         #expect(throws: ToolError.self) {
             try resolve("%1", panes: [pane("%1", dead: true)], force: true)
+        }
+        #expect(throws: ToolError.self) {
+            try resolve("%1", panes: [pane("%1", inputOff: true)], force: true)
+        }
+    }
+
+    @Test("every configured pane belongs to the captured daemon incarnation")
+    func configuredPanesRequireSnapshotIncarnation() {
+        let foreign = ServerIncarnation(
+            endpoint: incarnation.endpoint,
+            socketPath: incarnation.socketPath,
+            processID: incarnation.processID,
+            startedAt: incarnation.startedAt + 1
+        )
+        #expect(throws: ToolError.self) {
+            try resolve("%1", panes: [pane("%1", incarnation: foreign)], force: true)
+        }
+        #expect(throws: ToolError.self) {
+            try resolve(
+                "%1",
+                panes: [
+                    pane("%1", synchronized: true),
+                    pane("%2", synchronized: true, incarnation: foreign),
+                ],
+                force: true
+            )
         }
     }
 

@@ -674,15 +674,24 @@ extension TmuxTools {
         if try arguments.bool("enter", or: false) { keys.append("Enter") }
         let force = try arguments.bool("force", or: false)
         let literal = try arguments.bool("literal", or: false)
-        let preflight = try await preflightPaneInput(
+        let initial = try await preflightPaneInput(
             requested,
             scope: .configuredCohort,
             force: force,
             operation: "send_keys"
         )
-        let reservation = try await Self.reservePaneInput(preflight, operation: "send_keys")
+        let reservation = try await Self.reservePaneInput(initial, operation: "send_keys")
+        let final: PaneInputResolution
         do {
-            try await server.sendKeys(keys, to: preflight.source, literally: literal)
+            final = try await preflightPaneInput(
+                requested,
+                scope: .configuredCohort,
+                force: force,
+                transitionFrom: initial,
+                reservation: reservation,
+                operation: "send_keys"
+            )
+            try await server.sendKeys(keys, to: final.source, literally: literal)
         } catch {
             await Self.paneRuns.release(reservation)
             throw error
@@ -690,10 +699,10 @@ extension TmuxTools {
         await Self.paneRuns.release(reservation)
         return .init(
             SentKeys(
-                paneRef: WireReferenceCodec.processLocal.reference(to: preflight.source),
-                pane: preflight.source.id.rawValue,
+                paneRef: WireReferenceCodec.processLocal.reference(to: final.source),
+                pane: final.source.id.rawValue,
                 keys: keys,
-                resolvedPaneIds: preflight.configuredPaneIDs.map(\.rawValue)
+                resolvedPaneIds: final.configuredPaneIDs.map(\.rawValue)
             ))
     }
 

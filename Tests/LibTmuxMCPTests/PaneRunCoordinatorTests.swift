@@ -7,8 +7,12 @@ import TmuxFixture
 
 @Suite("pane input reservations", .timeLimit(.minutes(1)))
 struct PaneRunCoordinatorTests {
-    private func pane(_ id: PaneID, processID: Int = 42, socket: String = "shared") -> Pane {
-        let path = "/tmp/libtmux-swift-test/\(socket)"
+    private func pane(
+        _ id: PaneID,
+        socketPath: String,
+        processID: Int = 42,
+        startedAt: Int? = nil
+    ) -> Pane {
         return Pane(
             id: id,
             index: 0,
@@ -23,19 +27,21 @@ struct PaneRunCoordinatorTests {
             currentPath: "/tmp",
             windowID: "@1",
             incarnation: ServerIncarnation(
-                endpoint: try! Endpoint(socketPath: path),
-                socketPath: path,
+                endpoint: try! Endpoint(socketPath: socketPath),
+                socketPath: socketPath,
                 processID: processID,
-                startedAt: processID
+                startedAt: startedAt ?? processID
             )
         )
     }
 
     @Test("reservations are atomic, nonqueueing, and token-owned")
     func atomicTokenOwnership() async throws {
+        let socket = socketIdentityPath()
+        defer { try? FileManager.default.removeItem(atPath: socket) }
         let coordinator = PaneRunCoordinator()
-        let first = pane("%1")
-        let second = pane("%2")
+        let first = pane("%1", socketPath: socket)
+        let second = pane("%2", socketPath: socket)
         let owner = try #require(await coordinator.reserve([first, second]))
 
         #expect(await coordinator.reserve([second]) == nil)
@@ -49,18 +55,69 @@ struct PaneRunCoordinatorTests {
         #expect(!(await coordinator.isHeld(second)))
     }
 
-    @Test("one endpoint and pane stay reserved across daemon replacement")
-    func endpointAndPaneAreTheReservationKey() async throws {
+    @Test("daemon generations own independent pane reservations")
+    func daemonIncarnationAndPaneAreTheReservationKey() async throws {
+        let shared = socketIdentityPath()
+        let otherPath = socketIdentityPath()
+        defer {
+            try? FileManager.default.removeItem(atPath: shared)
+            try? FileManager.default.removeItem(atPath: otherPath)
+        }
         let coordinator = PaneRunCoordinator()
-        let original = pane("%1", processID: 42)
-        let replacement = pane("%1", processID: 43)
-        let otherEndpoint = pane("%1", processID: 43, socket: "other")
+        let original = pane("%1", socketPath: shared, processID: 42)
+        let replacement = pane("%1", socketPath: shared, startedAt: 43)
+        let otherEndpoint = pane("%1", socketPath: otherPath, processID: 43)
         let owner = try #require(await coordinator.reserve([original]))
 
-        #expect(await coordinator.reserve([replacement]) == nil)
-        let other = try #require(await coordinator.reserve([otherEndpoint]))
-        await coordinator.release(other)
+        let replacementOwner = try #require(await coordinator.reserve([replacement]))
+        let otherOwner = try #require(await coordinator.reserve([otherEndpoint]))
+        await coordinator.release(otherOwner)
+        await coordinator.release(replacementOwner)
         await coordinator.release(owner)
+    }
+
+    private func socketIdentityPath() -> String {
+        let path = "/tmp/libtmux-swift-test/coordinator-\(UUID().uuidString)"
+        precondition(FileManager.default.createFile(atPath: path, contents: Data()))
+        return path
+    }
+
+    @Test(
+        "physical socket aliases share one pane reservation",
+        arguments: SocketAliasKind.allCases
+    )
+    func physicalSocketAliasesConflict(_ kind: SocketAliasKind) async throws {
+        try await withTmuxServer { fixture in
+            let original = try #require(try await fixture.panes().first)
+            let aliasPath = "\(original.incarnation.socketPath).\(kind.rawValue)"
+            switch kind {
+            case .symbolic:
+                try FileManager.default.createSymbolicLink(
+                    atPath: aliasPath,
+                    withDestinationPath: original.incarnation.socketPath
+                )
+            case .hard:
+                try FileManager.default.linkItem(
+                    atPath: original.incarnation.socketPath,
+                    toPath: aliasPath
+                )
+            }
+            defer { try? FileManager.default.removeItem(atPath: aliasPath) }
+
+            let aliasServer = try Server(
+                socketPath: aliasPath,
+                tmuxExecutable: fixture.tmuxExecutable
+            )
+            let alias = try #require(try await aliasServer.panes().first)
+            #expect(alias.id == original.id)
+            #expect(alias.incarnation.processID == original.incarnation.processID)
+            #expect(alias.incarnation.startedAt == original.incarnation.startedAt)
+
+            let coordinator = PaneRunCoordinator()
+            let owner = try #require(await coordinator.reserve([original]))
+            #expect(await coordinator.reserve([alias]) == nil)
+            await coordinator.release(owner)
+        }
     }
 
     @Test(
@@ -68,6 +125,23 @@ struct PaneRunCoordinatorTests {
         arguments: ReservedInput.allCases
     )
     func toolsReserveDispatch(_ operation: ReservedInput) async throws {
+        try await assertReservation(for: operation, through: .dispatch)
+    }
+
+    @Test(
+        "pane writers reserve before setup and through final preflight",
+        arguments: ReservedInput.allCases
+    )
+    func toolsReserveBeforeDispatch(_ operation: ReservedInput) async throws {
+        let checkpoint: InputReservationCheckpoint =
+            operation == .paste ? .bufferSetup : .finalPreflight
+        try await assertReservation(for: operation, through: checkpoint)
+    }
+
+    private func assertReservation(
+        for operation: ReservedInput,
+        through checkpoint: InputReservationCheckpoint
+    ) async throws {
         try await withTmuxServer { fixture in
             let source = try #require(try await fixture.panes().first)
             let peer = try await fixture.split(source, direction: .right)
@@ -80,7 +154,11 @@ struct PaneRunCoordinatorTests {
                 )
             }
             let gate = InputDispatchGate()
-            let transport = BlockingInputTransport(operation: operation, gate: gate)
+            let transport = ReservationGateTransport(
+                operation: operation,
+                checkpoint: checkpoint,
+                gate: gate
+            )
             let server = Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
@@ -95,7 +173,8 @@ struct PaneRunCoordinatorTests {
             for _ in 0..<200 where !(await gate.isBlocked) {
                 try await Task.sleep(for: .milliseconds(5))
             }
-            let reachedDispatch = await gate.isBlocked
+            let reachedCheckpoint = await gate.isBlocked
+            if !reachedCheckpoint { await gate.open() }
 
             let competing = operation == .paste ? ReservedInput.send : .paste
             let competingPane = operation == .paste ? source : peer
@@ -109,7 +188,7 @@ struct PaneRunCoordinatorTests {
             await gate.open()
             _ = try await first.value
 
-            #expect(reachedDispatch)
+            #expect(reachedCheckpoint)
             #expect(refused)
             #expect(!(await TmuxTools.paneRuns.isHeld(source)))
             #expect(!(await TmuxTools.paneRuns.isHeld(peer)))
@@ -118,6 +197,11 @@ struct PaneRunCoordinatorTests {
                     == false)
         }
     }
+}
+
+enum SocketAliasKind: String, CaseIterable, Sendable {
+    case symbolic = "symlink"
+    case hard = "hardlink"
 }
 
 enum ReservedInput: String, CaseIterable, Sendable {
@@ -170,13 +254,26 @@ private actor InputDispatchGate {
     func open() { isOpen = true }
 }
 
-private actor BlockingInputTransport: ProcessTransport {
+private enum InputReservationCheckpoint: Sendable {
+    case bufferSetup
+    case finalPreflight
+    case dispatch
+}
+
+private actor ReservationGateTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private let operation: ReservedInput
+    private let checkpoint: InputReservationCheckpoint
     private let gate: InputDispatchGate
+    private var listPaneCount = 0
 
-    init(operation: ReservedInput, gate: InputDispatchGate) {
+    init(
+        operation: ReservedInput,
+        checkpoint: InputReservationCheckpoint,
+        gate: InputDispatchGate
+    ) {
         self.operation = operation
+        self.checkpoint = checkpoint
         self.gate = gate
     }
 
@@ -186,8 +283,15 @@ private actor BlockingInputTransport: ProcessTransport {
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
-        let command = operation == .paste ? "paste-buffer" : "send-keys"
-        if arguments.contains(where: { $0.contains(command) }) { await gate.block() }
+        if checkpoint == .finalPreflight, arguments.contains("list-panes") {
+            listPaneCount += 1
+            if listPaneCount == 2 { await gate.block() }
+        } else if checkpoint == .bufferSetup, arguments.contains("set-buffer") {
+            await gate.block()
+        } else if checkpoint == .dispatch {
+            let command = operation == .paste ? "paste-buffer" : "send-keys"
+            if arguments.contains(where: { $0.contains(command) }) { await gate.block() }
+        }
         return try await underlying.run(
             executable: executable,
             arguments: arguments,

@@ -51,20 +51,20 @@ extension TmuxTools {
                 )
             )
             try Task.checkCancellation()
-            let final = try await preflightPaneInput(
+            try Self.requireSafeShellRoute(
+                executable: server.tmuxExecutable,
+                socketPath: pane.incarnation.socketPath,
+                requiringTrapCapture: Self.capturesInheritedTraps(
+                    pane.currentCommand
+                )
+            )
+            _ = try await preflightPaneInput(
                 requested,
                 scope: .singularPOSIXShell,
                 force: force,
                 transitionFrom: initial,
                 reservation: reservation,
                 operation: "run_shell_command"
-            )
-            try Self.requireSafeShellRoute(
-                executable: server.tmuxExecutable,
-                socketPath: final.source.incarnation.socketPath,
-                requiringTrapCapture: Self.capturesInheritedTraps(
-                    final.source.currentCommand
-                )
             )
             lifetime = .submitting(cleanup)
             try await dispatchRunShell(with: cleanup)
