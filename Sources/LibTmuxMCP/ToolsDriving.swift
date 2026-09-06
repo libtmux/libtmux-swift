@@ -26,12 +26,17 @@ extension TmuxTools {
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         do {
             try await server.setBuffer(staged, named: buffer)
-        } catch {
-            try? await server.deleteBuffer(named: buffer)
+        } catch let primaryError {
+            do {
+                try await deletePasteBuffer(named: buffer)
+            } catch {
+                await Self.paneRuns.release(reservation)
+                throw combinedPasteFailure(primaryError, cleanup: error)
+            }
             await Self.paneRuns.release(reservation)
-            throw error
+            throw primaryError
         }
-        let paste: Result<Void, TmuxError>
+        var primaryError: (any Error)?
         do {
             let final = try await preflightPaneInput(
                 requested,
@@ -42,28 +47,76 @@ extension TmuxTools {
                 operation: "paste_text"
             )
             try await server.paste(buffer: buffer, into: final.source)
-            await Self.paneRuns.release(reservation)
-            paste = .success(())
-        } catch let error as TmuxError {
-            await Self.paneRuns.release(reservation)
-            paste = .failure(error)
         } catch {
-            await Self.paneRuns.release(reservation)
-            let cleanup = Task { try await server.deleteBuffer(named: buffer) }
-            try await cleanup.value
+            primaryError = error
+        }
+        await Self.paneRuns.release(reservation)
+        do {
+            try await deletePasteBuffer(named: buffer)
+        } catch {
+            if let primaryError {
+                throw combinedPasteFailure(primaryError, cleanup: error)
+            }
             throw error
         }
-        let cleanup = Task {
-            try await server.deleteBuffer(named: buffer)
-        }
-        try await cleanup.value
-        try paste.get()
+        if let primaryError { throw primaryError }
         return .init(
             Pasted(
                 paneRef: WireReferenceCodec.processLocal.reference(to: initial.source),
                 pane: initial.source.id.rawValue,
                 characters: text.count
             )
+        )
+    }
+
+    private func deletePasteBuffer(named buffer: String) async throws {
+        let server = server
+        let cleanup = Task.detached { () throws -> Void in
+            let (events, continuation) = AsyncStream<Result<Void, TmuxError>>.makeStream()
+            let deletion = Task.detached {
+                do {
+                    try await server.deleteBuffer(named: buffer)
+                    continuation.yield(.success(()))
+                } catch let error as TmuxError {
+                    continuation.yield(.failure(error))
+                } catch is CancellationError {
+                    continuation.yield(.failure(.cancelled))
+                } catch {
+                    continuation.yield(
+                        .failure(.invocationFailed(reason: String(describing: error)))
+                    )
+                }
+            }
+            let timeout = Task.detached {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                    continuation.yield(
+                        .failure(
+                            .invocationFailed(reason: "paste buffer cleanup timed out")
+                        )
+                    )
+                } catch {}
+            }
+            var iterator = events.makeAsyncIterator()
+            let result =
+                await iterator.next()
+                ?? .failure(.invocationFailed(reason: "paste buffer cleanup ended unexpectedly"))
+            continuation.finish()
+            deletion.cancel()
+            timeout.cancel()
+            try result.get()
+        }
+        try await cleanup.value
+    }
+
+    private func combinedPasteFailure(
+        _ primary: any Error,
+        cleanup: any Error
+    ) -> TmuxError {
+        .invocationFailed(
+            reason:
+                "paste operation failed: \(primary); "
+                + "paste buffer cleanup also failed: \(cleanup)"
         )
     }
 }
