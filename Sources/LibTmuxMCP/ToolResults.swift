@@ -107,6 +107,9 @@ struct PaneResult: Sendable, Hashable, Codable {
     let width: Int
     let height: Int
     let isActive: Bool
+    let isDead: Bool
+    let modeCount: Int
+    let isSynchronized: Bool
     let currentCommand: String
     let currentPath: String
     let isAtTop: Bool
@@ -122,6 +125,9 @@ struct PaneResult: Sendable, Hashable, Codable {
         self.width = pane.width
         self.height = pane.height
         self.isActive = pane.isActive
+        self.isDead = pane.isDead
+        self.modeCount = pane.modeCount
+        self.isSynchronized = pane.isSynchronized
         self.currentCommand = pane.currentCommand
         self.currentPath = pane.currentPath
         self.isAtTop = pane.isAtTop

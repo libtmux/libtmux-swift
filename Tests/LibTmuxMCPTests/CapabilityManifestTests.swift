@@ -181,39 +181,6 @@ struct CapabilityManifestTests {
             }
         )
 
-        let incarnation = ServerIncarnation(
-            endpoint: try Endpoint(socketName: "capability-targets"),
-            socketPath: "/tmp/capability-targets",
-            processID: 42,
-            startedAt: 7
-        )
-        let paneOne = Pane(
-            id: "%1", index: 0, width: 80, height: 24, isActive: true,
-            currentCommand: "sh", currentPath: "/tmp", windowID: "@1",
-            incarnation: incarnation
-        )
-        let paneTwo = Pane(
-            id: "%2", index: 1, width: 80, height: 24, isActive: false,
-            currentCommand: "sh", currentPath: "/tmp", windowID: "@1",
-            incarnation: incarnation
-        )
-        #expect(
-            TmuxTools.resolvedPaneInputTargets(
-                requested: paneTwo.id,
-                inWindow: paneTwo.windowID,
-                panes: [paneTwo, paneOne],
-                synchronized: false
-            ) == [paneTwo.id]
-        )
-        #expect(
-            TmuxTools.resolvedPaneInputTargets(
-                requested: paneTwo.id,
-                inWindow: paneTwo.windowID,
-                panes: [paneTwo, paneOne],
-                synchronized: true
-            ) == [paneOne.id, paneTwo.id]
-        )
-
         for mask in 0..<(1 << toolsByToolset.count) {
             let selected = toolsByToolset.enumerated().compactMap { index, entry in
                 mask & (1 << index) == 0 ? nil : entry.0

@@ -51,6 +51,7 @@ enum CapabilityOutputSchemas {
     private static let pane = object([
         "ref": string, "id": string, "index": integer, "width": integer,
         "height": integer, "isActive": boolean, "currentCommand": string,
+        "isDead": boolean, "modeCount": integer, "isSynchronized": boolean,
         "currentPath": string, "isAtTop": boolean, "isAtBottom": boolean,
         "isAtLeft": boolean, "isAtRight": boolean, "windowID": string,
     ])

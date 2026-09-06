@@ -68,6 +68,13 @@ struct CallerGuard: Sendable {
         )
     }
 
+    func checkPaneInput(_ paneID: PaneID, override: Bool) throws {
+        guard !override, let own = ownPane, own == paneID else { return }
+        throw ToolError.refusedForSafety(
+            "\(paneID) is the pane this MCP server runs in; pass force=true to send input there"
+        )
+    }
+
     func checkWindow(_ windowID: WindowID, override: Bool) throws {
         try checkContainer(
             "window \(windowID)",

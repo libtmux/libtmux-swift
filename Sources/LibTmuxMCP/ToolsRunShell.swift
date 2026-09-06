@@ -8,21 +8,25 @@ extension TmuxTools {
         _ arguments: Arguments,
         _ progress: ProgressReporter = .silent
     ) async throws -> ToolOutcome {
-        let pane = try await capabilityPane(try arguments.string("paneId"))
-        try await guardForCaller().checkPane(
-            pane.id, override: try arguments.bool("force", or: false))
+        let requested = try arguments.string("paneId")
+        let force = try arguments.bool("force", or: false)
         let command = try arguments.string("command")
         let timeoutMs = try arguments.integer("timeoutMs", or: 30_000)
         let (timeout, enforced) = bounded(Double(timeoutMs) / 1_000)
         let maxLines = try arguments.integer("maxLines", or: 200)
         let started = ContinuousClock.now
         let deadline = started.advanced(by: timeout)
-
-        if await Self.paneRuns.isHeld(pane),
-            try await server.formatGlobal("#{pane_dead}", for: pane) == "1"
-        {
-            throw ToolError.refusedForSafety("pane \(pane.id.rawValue) has exited")
-        }
+        let initial = try await preflightPaneInput(
+            requested,
+            scope: .singularPOSIXShell,
+            force: force,
+            operation: "run_shell_command"
+        )
+        try Self.requireSafeShellRoute(
+            executable: server.tmuxExecutable,
+            socketPath: initial.source.incarnation.socketPath
+        )
+        let pane = initial.source
 
         let acquired = await progress.whileRunning(
             upTo: timeout,
@@ -44,10 +48,28 @@ extension TmuxTools {
                     "pane \(pane.id.rawValue) did not become available before the timeout"
                 )
             }
-            let cleanup = try await prepareRunShell(in: pane)
+            let cleanup = try await prepareRunShell(
+                in: pane,
+                command: command,
+                tmuxInvocation: Self.pinnedTmuxInvocation(
+                    executable: server.tmuxExecutable,
+                    socketPath: pane.incarnation.socketPath
+                )
+            )
             try Task.checkCancellation()
+            let final = try await preflightPaneInput(
+                requested,
+                scope: .singularPOSIXShell,
+                force: force,
+                transitionFrom: initial,
+                operation: "run_shell_command"
+            )
+            try Self.requireSafeShellRoute(
+                executable: server.tmuxExecutable,
+                socketPath: final.source.incarnation.socketPath
+            )
             lifetime = .submitting(cleanup)
-            try await dispatchRunShell(command, with: cleanup)
+            try await dispatchRunShell(with: cleanup)
             lifetime = .started(cleanup)
             let finished = try await waitForRunShell(
                 cleanup,
@@ -94,7 +116,11 @@ extension TmuxTools {
         }
     }
 
-    private func prepareRunShell(in pane: Pane) async throws -> RunShellCleanup {
+    private func prepareRunShell(
+        in pane: Pane,
+        command: String,
+        tmuxInvocation: String
+    ) async throws -> RunShellCleanup {
         let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         let markerNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let channel = "libtmux-mcp-done-\(nonce)"
@@ -117,40 +143,36 @@ extension TmuxTools {
         // Leave the last column unused so tmux never delays a wrap between chunks.
         let markerWidth = max(1, min(paneWidth - 1, markerNonce.count + 1))
 
-        return RunShellCleanup(
+        let partial = RunShellCleanup(
             pane: pane,
             channel: channel,
             releaseChannel: releaseChannel,
             statusOption: "\(optionPrefix)_status",
             cursor: cursor,
             startMarker: Self.markerRows("S\(markerNonce)", width: markerWidth),
-            endMarker: Self.markerRows("E\(markerNonce)", width: markerWidth)
+            endMarker: Self.markerRows("E\(markerNonce)", width: markerWidth),
+            payload: ""
+        )
+        return RunShellCleanup(
+            pane: partial.pane,
+            channel: partial.channel,
+            releaseChannel: partial.releaseChannel,
+            statusOption: partial.statusOption,
+            cursor: partial.cursor,
+            startMarker: partial.startMarker,
+            endMarker: partial.endMarker,
+            payload: Self.runShellPayload(
+                command,
+                tmuxInvocation: tmuxInvocation,
+                nonce: nonce,
+                cleanup: partial
+            )
         )
     }
 
-    private func dispatchRunShell(
-        _ command: String,
-        with cleanup: RunShellCleanup
-    ) async throws {
-        // Concealed cells survive capture; shellInvocation keeps bookkeeping on this server.
-        let tmux = server.shellInvocation
-        let target = shellQuoted(cleanup.pane.id.rawValue)
-        let startMarker = Self.markerCommand(cleanup.startMarker)
-        let endMarker = Self.markerCommand(cleanup.endMarker)
+    private func dispatchRunShell(with cleanup: RunShellCleanup) async throws {
         try await server.using(.direct) { server in
-            try await server.sendKeys(
-                [
-                    "printf '\\r\\n'; \(startMarker); eval \(shellQuoted(command)); "
-                        + "\(tmux) set-option -p -t \(target) "
-                        + "\(cleanup.statusOption) $?; "
-                        + "printf '\\r\\n'; \(endMarker); "
-                        + "\(tmux) wait-for -S \(cleanup.channel); "
-                        + "\(tmux) wait-for \(cleanup.releaseChannel); "
-                        + "\(tmux) set-option -pu -t \(target) \(cleanup.statusOption)",
-                    "Enter",
-                ],
-                to: cleanup.pane
-            )
+            try await server.sendKeys([cleanup.payload, "Enter"], to: cleanup.pane)
         }
     }
 
@@ -454,6 +476,7 @@ extension TmuxTools {
         let cursor: CaptureCursor
         let startMarker: [String]
         let endMarker: [String]
+        let payload: String
 
         func captureLineLimit(for maximumLines: Int) throws -> Int {
             // Separator, cursor row, and one row that proves truncation.
@@ -503,8 +526,47 @@ extension TmuxTools {
             let middle = row.index(row.startIndex, offsetBy: row.count / 2)
             return "'\(row[..<middle])''\(row[middle...])'"
         }
-        return "printf '\\033[8m%s\\033[28m\\r\\n' "
+        return "/usr/bin/printf '\\033[8m%s\\033[28m\\r\\n' "
             + arguments.joined(separator: " ")
+    }
+
+    private static func pinnedTmuxInvocation(
+        executable: String,
+        socketPath: String
+    ) -> String {
+        [executable, "-u", "-S", socketPath].map(shellQuoted).joined(separator: " ")
+    }
+
+    private static func runShellPayload(
+        _ command: String,
+        tmuxInvocation: String,
+        nonce: String,
+        cleanup: RunShellCleanup
+    ) -> String {
+        let flags = "__libtmux_mcp_flags_\(nonce)"
+        let status = "__libtmux_mcp_status_\(nonce)"
+        let target = shellQuoted(cleanup.pane.id.rawValue)
+        let start = markerCommand(cleanup.startMarker)
+        let end = markerCommand(cleanup.endMarker)
+        let finish =
+            "\(status)=$?; "
+            + "\(tmuxInvocation) set-option -p -t \(target) "
+            + "\(shellQuoted(cleanup.statusOption)) \"$\(status)\"; "
+            + "/usr/bin/printf '\\r\\n'; \(end); "
+            + "\(tmuxInvocation) wait-for -S \(shellQuoted(cleanup.channel)); "
+            + "\(tmuxInvocation) wait-for \(shellQuoted(cleanup.releaseChannel)); "
+            + "\(tmuxInvocation) set-option -pu -t \(target) "
+            + "\(shellQuoted(cleanup.statusOption)); \\exit 0"
+        let remember =
+            "case $- in *e*x*|*x*e*) \(flags)=ex ;; *e*) \(flags)=e ;; "
+            + "*x*) \(flags)=x ;; *) \(flags)=none ;; esac"
+        let restore =
+            "case \"$\(flags)\" in ex) \\set -e; \\set -x ;; "
+            + "e) \\set -e ;; x) \\set -x ;; esac"
+        return "( \(remember); \\set +e; \\set +x; "
+            + "\\trap \(shellQuoted(finish)) 0; "
+            + "/usr/bin/printf '\\r\\n'; \(start); "
+            + "( \(restore); \\eval \(shellQuoted(command)) ); \\exit \"$?\" )"
     }
 
     private static func runShellOutput(

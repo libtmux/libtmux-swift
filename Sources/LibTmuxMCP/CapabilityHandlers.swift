@@ -668,54 +668,29 @@ extension TmuxTools {
     }
 
     func capabilitySendKeys(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await capabilityPane(try arguments.string("paneId"))
+        let requested = try arguments.string("paneId")
         var keys = try arguments.strings("keys")
         guard !keys.isEmpty else { throw ToolError.missingArgument("keys") }
         if try arguments.bool("enter", or: false) { keys.append("Enter") }
-        let resolvedPaneIds = try await paneInputTargetIDs(for: pane)
         let force = try arguments.bool("force", or: false)
-        let callerGuard = try await guardForCaller()
-        for paneID in resolvedPaneIds {
-            try callerGuard.checkPane(paneID, override: force)
-        }
+        let preflight = try await preflightPaneInput(
+            requested,
+            scope: .configuredCohort,
+            force: force,
+            operation: "send_keys"
+        )
         try await server.sendKeys(
-            keys, to: pane, literally: try arguments.bool("literal", or: false))
+            keys,
+            to: preflight.source,
+            literally: try arguments.bool("literal", or: false)
+        )
         return .init(
             SentKeys(
-                paneRef: WireReferenceCodec.processLocal.reference(to: pane),
-                pane: pane.id.rawValue,
+                paneRef: WireReferenceCodec.processLocal.reference(to: preflight.source),
+                pane: preflight.source.id.rawValue,
                 keys: keys,
-                resolvedPaneIds: resolvedPaneIds.map(\.rawValue)
+                resolvedPaneIds: preflight.configuredPaneIDs.map(\.rawValue)
             ))
-    }
-
-    static func resolvedPaneInputTargets(
-        requested: PaneID,
-        inWindow windowID: WindowID,
-        panes: [Pane],
-        synchronized: Bool
-    ) -> [PaneID] {
-        guard synchronized else { return [requested] }
-        return panes.filter { $0.windowID == windowID }.map(\.id).sorted {
-            $0.rawValue < $1.rawValue
-        }
-    }
-
-    private func paneInputTargetIDs(for pane: Pane) async throws -> [PaneID] {
-        let snapshot = try await server.snapshot()
-        guard let window = snapshot.windows.first(where: { $0.id == pane.windowID }) else {
-            return [pane.id]
-        }
-        let value = try await server.resolvedOption(
-            "synchronize-panes",
-            scope: .window(window)
-        )
-        return Self.resolvedPaneInputTargets(
-            requested: pane.id,
-            inWindow: pane.windowID,
-            panes: snapshot.panes,
-            synchronized: value == "on" || value == "1"
-        )
     }
 
     func sendKeysBatch(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -760,12 +735,7 @@ extension TmuxTools {
     }
 
     func capabilityPasteText(_ arguments: Arguments) async throws -> ToolOutcome {
-        let outcome = try await pasteText(arguments)
-        if try arguments.bool("enter", or: false) {
-            let pane = try await capabilityPane(try arguments.string("paneId"))
-            try await server.sendKeys(["Enter"], to: pane)
-        }
-        return outcome
+        try await pasteText(arguments)
     }
 
     func capabilityRespawnPane(_ arguments: Arguments) async throws -> ToolOutcome {

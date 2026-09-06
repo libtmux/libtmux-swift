@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -207,6 +208,198 @@ struct CapabilityBehaviorTests {
         }
     }
 
+    @Test("run_shell_command refuses a synchronized multi-pane cohort before input")
+    func runRequiresSingularConfiguredPane() async throws {
+        try await withTmuxServer { server in
+            let first = try #require(try await server.panes().first)
+            let second = try await server.split(first, direction: .right)
+            _ = try await server.run(
+                TmuxCommand(
+                    "set-option", ["-p", "-t", first.id.rawValue, "synchronize-panes", "on"])
+            )
+            _ = try await server.run(
+                TmuxCommand(
+                    "set-option", ["-p", "-t", second.id.rawValue, "synchronize-panes", "on"])
+            )
+            let marker = "must-not-reach-a-pane"
+
+            await #expect(throws: ToolError.self) {
+                _ = try await tools(server).call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string("printf '\(marker)\\n'"),
+                            "paneId": .string(first.id.rawValue),
+                            "timeoutMs": .integer(1_000),
+                        ])
+                    )
+                )
+            }
+            #expect(try await server.capture(first).contains { $0.contains(marker) } == false)
+            #expect(try await server.capture(second).contains { $0.contains(marker) } == false)
+        }
+    }
+
+    @Test("run_shell_command contains exit, syntax, and shell state")
+    func runContainsShellState() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let surface = tools(server)
+            let exited = try await surface.call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("exit 23"),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(2_000),
+                    ])
+                )
+            )
+            #expect(exited.structured["exitStatus"]?.intValue == 23)
+
+            let invalid = try await surface.call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("if then"),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(2_000),
+                    ])
+                )
+            )
+            #expect(invalid.structured["exitStatus"]?.intValue != 0)
+
+            let alive = try await surface.call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("pwd; cd /; export LIBTMUX_FRAME_LEAK=1; trap : 0"),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(2_000),
+                    ])
+                )
+            )
+            #expect(alive.structured["exitStatus"]?.intValue == 0)
+            let after = try await surface.call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("test -z \"${LIBTMUX_FRAME_LEAK+x}\""),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(2_000),
+                    ])
+                )
+            )
+            #expect(after.structured["exitStatus"]?.intValue == 0)
+        }
+    }
+
+    @Test("shell framing preserves inherited state across supported installed shells")
+    func shellFramingAcrossInstalledShells() async throws {
+        try await withTmuxServer { server in
+            let original = try #require(try await server.panes().first)
+            let candidates: [(String, [String])] = [
+                ("/bin/sh", []),
+                ("/bin/dash", []),
+                ("/bin/bash", ["--noprofile", "--norc"]),
+                ("/bin/zsh", ["-f"]),
+            ]
+            for (path, flags) in candidates
+            where FileManager.default.isExecutableFile(atPath: path) {
+                try await server.respawn(original, running: [path] + flags)
+                let shell = URL(fileURLWithPath: path).lastPathComponent
+                #expect(
+                    try await waitUntil {
+                        try await server.panes().first(where: { $0.id == original.id })?
+                            .currentCommand == shell
+                    },
+                    Comment(rawValue: shell)
+                )
+                let ready = "libtmux-swift-frame-ready-\(UUID().uuidString)"
+                let setup =
+                    "cd /tmp; export LIBTMUX_FRAME_PARENT=kept; "
+                    + "readonly __libtmux_mcp_status=parent __libtmux_mcp_flags=parent; "
+                    + "printf(){ :; }; alias printf=:; trap ':' 0; "
+                    + (shell == "bash" ? "trap ':' DEBUG; trap ':' ERR; " : "")
+                    + "set -e; set -x; \(server.shellInvocation) wait-for -S \(ready)"
+                try await server.sendKeys([setup, "Enter"], to: original)
+                try await server.wait(for: ready)
+
+                let surface = tools(server)
+                let run = try await surface.call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string(
+                                "cd /; export LIBTMUX_FRAME_PARENT=changed; "
+                                    + "trap ':' 0; "
+                                    + "/usr/bin/printf 'frame-\(shell)\\n'; false; "
+                                    + "/usr/bin/printf 'unreachable\\n'"
+                            ),
+                            "maxLines": .integer(2_000),
+                            "paneId": .string(original.id.rawValue),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
+                )
+                #expect(run.structured["exitStatus"]?.intValue != 0, Comment(rawValue: shell))
+                #expect(
+                    run.structured["output"]?.arrayValue?.compactMap(\.stringValue)
+                        .contains("frame-\(shell)") == true,
+                    Comment(rawValue: shell)
+                )
+                #expect(
+                    run.structured["output"]?.arrayValue?.compactMap(\.stringValue)
+                        .contains("unreachable") == false,
+                    Comment(rawValue: shell)
+                )
+
+                let parent = try await surface.call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string(
+                                "test \"$PWD\" = /tmp && test \"$LIBTMUX_FRAME_PARENT\" = kept"
+                            ),
+                            "paneId": .string(original.id.rawValue),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
+                )
+                #expect(parent.structured["exitStatus"]?.intValue == 0, Comment(rawValue: shell))
+
+                let unaliased = "libtmux-swift-frame-unalias-\(UUID().uuidString)"
+                try await server.sendKeys(
+                    [
+                        "unalias printf; \(server.shellInvocation) wait-for -S \(unaliased)",
+                        "Enter",
+                    ],
+                    to: original
+                )
+                try await server.wait(for: unaliased)
+                let function = try await surface.call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string(
+                                "printf(){ :; }; /usr/bin/printf 'function-\(shell)\\n'"
+                            ),
+                            "maxLines": .integer(2_000),
+                            "paneId": .string(original.id.rawValue),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
+                )
+                #expect(function.structured["exitStatus"]?.intValue == 0)
+                #expect(
+                    function.structured["output"]?.arrayValue?.compactMap(\.stringValue)
+                        .contains("function-\(shell)") == true,
+                    Comment(rawValue: shell)
+                )
+            }
+        }
+    }
+
     @Test("validated dispatch precedes mutation and synchronized sends disclose all targets")
     func validatedDispatchAndSynchronizedTargets() async throws {
         try await withTmuxServer { server in
@@ -250,6 +443,121 @@ struct CapabilityBehaviorTests {
                 sent.structured["resolvedPaneIds"]?.arrayValue?.compactMap(\.stringValue) ?? []
             )
             #expect(resolved == [first.id.rawValue, second.id.rawValue])
+        }
+    }
+
+    @Test("synchronized input refuses modal members and every batch row rechecks")
+    func synchronizedInputRefusesModalMembers() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.panes().first)
+            let peer = try await server.split(source, direction: .right)
+            _ = try await server.run(
+                TmuxCommand(
+                    "set-option", ["-p", "-t", peer.id.rawValue, "synchronize-panes", "on"])
+            )
+            try await server.enterCopyMode(peer)
+            let surface = tools(server)
+            let marker = "modal-member-must-not-receive-input"
+
+            _ = try await server.run(
+                TmuxCommand(
+                    "set-option", ["-p", "-t", source.id.rawValue, "synchronize-panes", "on"])
+            )
+            await #expect(throws: ToolError.self) {
+                _ = try await surface.call(
+                    ToolCall(
+                        name: "send_keys",
+                        arguments: .object([
+                            "keys": .array([.string(marker)]),
+                            "literal": .bool(true),
+                            "paneId": .string(source.id.rawValue),
+                        ])
+                    )
+                )
+            }
+            #expect(try await server.capture(source).contains { $0.contains(marker) } == false)
+            #expect(try await server.capture(peer).contains { $0.contains(marker) } == false)
+            _ = try await server.run(
+                TmuxCommand(
+                    "set-option", ["-p", "-t", source.id.rawValue, "synchronize-panes", "off"])
+            )
+
+            _ = try await surface.call(
+                ToolCall(
+                    name: "send_keys",
+                    arguments: .object([
+                        "keys": .array([.string("safe-source-row")]),
+                        "literal": .bool(true),
+                        "paneId": .string(source.id.rawValue),
+                    ])
+                )
+            )
+            let batch = try await surface.call(
+                ToolCall(
+                    name: "send_keys_batch",
+                    arguments: .object([
+                        "onError": .string("continue"),
+                        "operations": .array([
+                            .object([
+                                "keys": .array([.string("one")]),
+                                "literal": .bool(true),
+                                "paneId": .string(source.id.rawValue),
+                            ]),
+                            .object([
+                                "keys": .array([.string(marker)]),
+                                "literal": .bool(true),
+                                "paneId": .string(peer.id.rawValue),
+                            ]),
+                        ]),
+                    ])
+                )
+            )
+            #expect(batch.structured["completed"]?.intValue == 1)
+            #expect(batch.structured["failures"]?.arrayValue?.count == 1)
+            #expect(try await server.capture(peer).contains { $0.contains(marker) } == false)
+            #expect(try await server.capture(source).contains { $0.contains("safe-source-rowone") })
+        }
+    }
+
+    @Test("paste_text keeps text and Enter target-only in one private buffer")
+    func pasteTextKeepsEnterTargetOnly() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.panes().first)
+            let peer = try await server.split(source, direction: .right)
+            let peerMarker = "peer-enter-must-not-run"
+            try await server.sendKeys(
+                ["/usr/bin/printf '\(peerMarker)\\n'"],
+                to: peer,
+                literally: true
+            )
+            for pane in [source, peer] {
+                _ = try await server.run(
+                    TmuxCommand(
+                        "set-option",
+                        ["-p", "-t", pane.id.rawValue, "synchronize-panes", "on"]
+                    )
+                )
+            }
+            let targetMarker = "target-paste-ran"
+            _ = try await tools(server).call(
+                ToolCall(
+                    name: "paste_text",
+                    arguments: .object([
+                        "enter": .bool(true),
+                        "paneId": .string(source.id.rawValue),
+                        "text": .string("/usr/bin/printf '\(targetMarker)\\n'"),
+                    ])
+                )
+            )
+
+            #expect(
+                try await waitUntil {
+                    try await server.capture(source).contains { $0.contains(targetMarker) }
+                }
+            )
+            #expect(try await server.capture(peer).contains { $0.contains(peerMarker) } == false)
+            #expect(
+                try await server.buffers().contains { $0.name.hasPrefix("libtmux-mcp-") } == false)
         }
     }
 }

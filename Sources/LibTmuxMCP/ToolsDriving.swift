@@ -3,18 +3,40 @@ import LibTmux
 
 extension TmuxTools {
     func pasteText(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await capabilityPane(try arguments.string("paneId"))
-        try await guardForCaller().checkPane(
-            pane.id, override: try arguments.bool("force", or: false))
+        let requested = try arguments.string("paneId")
         let text = try arguments.string("text")
+        let force = try arguments.bool("force", or: false)
+        let initial = try await preflightPaneInput(
+            requested,
+            scope: .targetOnly,
+            force: force,
+            operation: "paste_text"
+        )
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
-        try await server.setBuffer(text, named: buffer)
+        let staged = text + (try arguments.bool("enter", or: false) ? "\n" : "")
+        do {
+            try await server.setBuffer(staged, named: buffer)
+        } catch {
+            try? await server.deleteBuffer(named: buffer)
+            throw error
+        }
         let paste: Result<Void, TmuxError>
         do {
-            try await server.paste(buffer: buffer, into: pane)
+            let final = try await preflightPaneInput(
+                requested,
+                scope: .targetOnly,
+                force: force,
+                transitionFrom: initial,
+                operation: "paste_text"
+            )
+            try await server.paste(buffer: buffer, into: final.source)
             paste = .success(())
-        } catch {
+        } catch let error as TmuxError {
             paste = .failure(error)
+        } catch {
+            let cleanup = Task { try await server.deleteBuffer(named: buffer) }
+            try await cleanup.value
+            throw error
         }
         let cleanup = Task {
             try await server.deleteBuffer(named: buffer)
@@ -23,8 +45,8 @@ extension TmuxTools {
         try paste.get()
         return .init(
             Pasted(
-                paneRef: WireReferenceCodec.processLocal.reference(to: pane),
-                pane: pane.id.rawValue,
+                paneRef: WireReferenceCodec.processLocal.reference(to: initial.source),
+                pane: initial.source.id.rawValue,
                 characters: text.count
             )
         )
