@@ -322,6 +322,7 @@ extension Server {
     ///     the pane was created with.
     ///   - killingExisting: replaces whatever is still running, rather
     ///     than refusing while the pane is busy.
+    ///   - startDirectory: where to start the replacement command.
     public func respawn(
         _ pane: Pane,
         running command: [String] = [],
