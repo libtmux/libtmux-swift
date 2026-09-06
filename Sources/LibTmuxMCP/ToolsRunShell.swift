@@ -551,7 +551,7 @@ extension TmuxTools {
         return name == "bash" || name == "zsh"
     }
 
-    private static func inheritedTrapCapture(
+    static func inheritedTrapCapture(
         currentCommand: String,
         nonce: String,
         declarations: String,
@@ -564,6 +564,8 @@ extension TmuxTools {
         let file = "__libtmux_mcp_trap_file_\(nonce)"
         let readDescriptor = 9
         let writeDescriptor = 8
+        let readOwned = "__libtmux_mcp_trap_read_owned_\(nonce)"
+        let writeOwned = "__libtmux_mcp_trap_write_owned_\(nonce)"
         let prefix = "/tmp/libtmux-mcp-traps-\(nonce)"
         let template = shellQuoted("\(prefix).XXXXXX")
         // Unlink before writing so every later path owns only open descriptors.
@@ -588,6 +590,7 @@ extension TmuxTools {
 
         let maximumBytes = 64 * 1_024
         return "\(declarations)=; \(captureStatus)=125; \(file)=; "
+            + "\(readOwned)=0; \(writeOwned)=0; "
             + "\\umask 077; \(acquire); "
             + "if [ -n \"$\(file)\" ] && [ -f \"$\(file)\" ] "
             + "&& [ -O \"$\(file)\" ] "
@@ -596,18 +599,25 @@ extension TmuxTools {
             + "&& ! ( : >&\(readDescriptor) ) 2>/dev/null "
             + "&& ! ( : <&\(readDescriptor) ) 2>/dev/null "
             + "&& \\exec \(writeDescriptor)<> \"$\(file)\" "
+            + "&& \(writeOwned)=1 "
             + "&& \\exec \(readDescriptor)< \"$\(file)\" "
+            + "&& \(readOwned)=1 "
             + "&& /bin/rm -f \"$\(file)\"; then "
             + "if \(query) >&\(writeDescriptor); then \(captureStatus)=0; fi; fi; "
             + "\\trap - ERR DEBUG; "
-            + "if [ \"$\(captureStatus)\" -eq 0 ]; then "
-            + "\\exec \(writeDescriptor)>&-; LC_ALL=C; "
+            + "if [ \"$\(writeOwned)\" -eq 1 ]; then "
+            + "if ! \\exec \(writeDescriptor)>&-; then \(captureStatus)=125; fi; "
+            + "\(writeOwned)=0; fi; "
+            + "if [ \"$\(captureStatus)\" -eq 0 ] "
+            + "&& [ \"$\(readOwned)\" -eq 1 ]; then LC_ALL=C; "
             + "if \(declarations)=$(/usr/bin/head -c \(maximumBytes + 1) "
             + "<&\(readDescriptor)); then "
             + "if [ \"${#\(declarations)}\" -gt \(maximumBytes) ]; then "
             + "\(declarations)=; \(captureStatus)=125; fi; "
-            + "else \(declarations)=; \(captureStatus)=125; fi; "
-            + "\\exec \(readDescriptor)<&-; fi; "
+            + "else \(declarations)=; \(captureStatus)=125; fi; fi; "
+            + "if [ \"$\(readOwned)\" -eq 1 ]; then "
+            + "if ! \\exec \(readDescriptor)<&-; then \(captureStatus)=125; fi; "
+            + "\(readOwned)=0; fi; "
             + "if [ -n \"$\(file)\" ]; then /bin/rm -f \"$\(file)\"; fi"
     }
 

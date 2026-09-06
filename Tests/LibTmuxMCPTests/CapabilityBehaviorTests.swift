@@ -573,6 +573,56 @@ struct CapabilityBehaviorTests {
         }
     }
 
+    @Test("trap capture closes owned descriptors on failure")
+    func trapCaptureClosesOwnedDescriptorsOnFailure() throws {
+        let cases = [
+            """
+            if ( : >&8 ) 2>/dev/null && ! ( : <&9 ) 2>/dev/null; then
+                /bin/rm -f "$LIBTMUX_TRAP_PREFIX".??????
+                \\trap - DEBUG
+            fi
+            """,
+            """
+            if ( : >&8 ) 2>/dev/null && ( : <&9 ) 2>/dev/null; then
+                \\exec 8>&-
+                \\trap - DEBUG
+            fi
+            """,
+        ]
+
+        for action in cases {
+            let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            let status = "__libtmux_test_status_\(nonce)"
+            let declarations = "__libtmux_test_traps_\(nonce)"
+            let prefix = "/tmp/libtmux-mcp-traps-\(nonce)"
+            let capture = TmuxTools.inheritedTrapCapture(
+                currentCommand: "bash",
+                nonce: nonce,
+                declarations: declarations,
+                captureStatus: status
+            )
+            let script = """
+                \\exec 8>&- 9<&-
+                LIBTMUX_TRAP_PREFIX=\(shellQuoted(prefix))
+                \\trap \(shellQuoted(action)) DEBUG
+                \(capture)
+                [ "$\(status)" -eq 125 ] || exit 90
+                ! ( : >&8 ) 2>/dev/null || exit 91
+                ! ( : <&8 ) 2>/dev/null || exit 92
+                ! ( : >&9 ) 2>/dev/null || exit 93
+                ! ( : <&9 ) 2>/dev/null || exit 94
+                ! /usr/bin/test -e \(shellQuoted(prefix)).?????? || exit 95
+                """
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            process.arguments = ["--noprofile", "--norc", "-c", script]
+            process.standardError = Pipe()
+            try process.run()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0, Comment(rawValue: action))
+        }
+    }
+
     @Test(
         "leading-dash MCP operands remain literal",
         arguments: LeadingDashOperand.allCases
