@@ -220,6 +220,11 @@ public struct ToolArgument: Sendable, Hashable {
     }
 }
 
+/// One MCP tool as a client sees it: what to call it, and what it is for.
+///
+/// The prose fields are the model's only basis for choosing between tools, so
+/// they carry the distinction rather than restating the name — see
+/// ``summary`` and the guidance after it.
 public struct ToolDefinition: Sendable {
     static let capabilityMetadataKey = "com.git-pull.libtmux-mcp/capability"
     let operation: ToolOperation
