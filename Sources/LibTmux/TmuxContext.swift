@@ -50,7 +50,9 @@ public struct TmuxContext: Sendable, Hashable, Codable {
         else { return nil }
 
         let path = parts[0..<(parts.count - 2)].joined(separator: ",")
-        guard !path.isEmpty else { return nil }
+        guard path.utf8.first == 0x2f,
+            !path.utf8.contains(where: { $0 < 0x20 || $0 == 0x7f })
+        else { return nil }
 
         guard
             let sessionID = SessionID(

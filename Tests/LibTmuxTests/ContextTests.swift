@@ -36,6 +36,14 @@ struct ContextTests {
         #expect(TmuxContext(parsing: value) == nil)
     }
 
+    @Test(
+        "a reported socket route is absolute and contains no ASCII controls",
+        arguments: ["relative/socket", "/tmp/socket\nname", "/tmp/socket\u{7f}name"]
+    )
+    func unsafeSocketRoutesAreRefused(_ path: String) {
+        #expect(TmuxContext(parsing: "\(path),1,0") == nil)
+    }
+
     @Test("decoding refuses an invalid session id")
     func decodingRefusesAnInvalidSessionID() {
         let data = Data(
