@@ -41,7 +41,7 @@ extension Server {
         var arguments = ["-t", pane.id.rawValue]
         if literally { arguments.append("-l") }
         try await expectSuccess(
-            TmuxCommand("send-keys", arguments + keys),
+            TmuxCommand("send-keys", arguments + ["--"] + keys),
             guardedBy: [.pane(pane)]
         )
     }

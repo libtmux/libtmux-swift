@@ -400,6 +400,124 @@ struct CapabilityBehaviorTests {
         }
     }
 
+    @Test(
+        "leading-dash MCP operands remain literal",
+        arguments: LeadingDashOperand.allCases
+    )
+    func leadingDashMCPOperandsRemainLiteral(_ operand: LeadingDashOperand) async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let surface = tools(server)
+            let marker = "-libtmux-\(operand)"
+
+            switch operand {
+            case .sendKeys:
+                try await server.sendKeys(
+                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
+                )
+                _ = try await surface.call(
+                    ToolCall(
+                        name: "send_keys",
+                        arguments: .object([
+                            "keys": .array([.string(marker)]),
+                            "literal": .bool(true),
+                            "paneId": .string(pane.id.rawValue),
+                        ])
+                    )
+                )
+                try await server.sendKeys(["Enter"], to: pane)
+                #expect(try await waitUntil { try await server.capture(pane).contains(marker) })
+
+            case .sendKeysBatch:
+                try await server.sendKeys(
+                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
+                )
+                let result = try await surface.call(
+                    ToolCall(
+                        name: "send_keys_batch",
+                        arguments: .object([
+                            "operations": .array([
+                                .object([
+                                    "keys": .array([.string(marker)]),
+                                    "literal": .bool(true),
+                                    "paneId": .string(pane.id.rawValue),
+                                ])
+                            ])
+                        ])
+                    )
+                )
+                #expect(result.structured["completed"]?.intValue == 1)
+                try await server.sendKeys(["Enter"], to: pane)
+                #expect(try await waitUntil { try await server.capture(pane).contains(marker) })
+
+            case .pasteText:
+                try await server.sendKeys(
+                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
+                )
+                _ = try await surface.call(
+                    ToolCall(
+                        name: "paste_text",
+                        arguments: .object([
+                            "enter": .bool(true),
+                            "paneId": .string(pane.id.rawValue),
+                            "text": .string(marker),
+                        ])
+                    )
+                )
+                #expect(try await waitUntil { try await server.capture(pane).contains(marker) })
+
+            case .renameSession:
+                let session = try #require(try await server.sessions().first)
+                _ = try await surface.call(
+                    ToolCall(
+                        name: "rename_session",
+                        arguments: .object([
+                            "name": .string(marker),
+                            "session": .string(session.id.rawValue),
+                        ])
+                    )
+                )
+                #expect(try await server.sessions().first { $0.id == session.id }?.name == marker)
+
+            case .renameWindow:
+                let window = try #require(try await server.windows().first)
+                _ = try await surface.call(
+                    ToolCall(
+                        name: "rename_window",
+                        arguments: .object([
+                            "name": .string(marker),
+                            "windowId": .string(window.id.rawValue),
+                        ])
+                    )
+                )
+                #expect(try await server.windows().first { $0.id == window.id }?.name == marker)
+
+            case .waitForChannel:
+                _ = try await server.run(TmuxCommand("wait-for", ["-S", "--", marker]))
+                let result = try await surface.call(
+                    ToolCall(
+                        name: "wait_for_channel",
+                        arguments: .object([
+                            "channel": .string(marker),
+                            "timeoutMs": .integer(1_000),
+                        ])
+                    )
+                )
+                #expect(result.structured["released"]?.boolValue == true)
+
+            case .signalChannel:
+                _ = try await surface.call(
+                    ToolCall(
+                        name: "signal_channel",
+                        arguments: .object(["channel": .string(marker)])
+                    )
+                )
+                let reply = try await server.run(TmuxCommand("wait-for", ["--", marker]))
+                #expect(reply.isSuccess)
+            }
+        }
+    }
+
     @Test("validated dispatch precedes mutation and synchronized sends disclose all targets")
     func validatedDispatchAndSynchronizedTargets() async throws {
         try await withTmuxServer { server in
@@ -560,4 +678,16 @@ struct CapabilityBehaviorTests {
                 try await server.buffers().contains { $0.name.hasPrefix("libtmux-mcp-") } == false)
         }
     }
+}
+
+enum LeadingDashOperand: String, CaseIterable, CustomStringConvertible, Sendable {
+    case pasteText = "paste"
+    case renameSession = "session"
+    case renameWindow = "window"
+    case sendKeys = "send"
+    case sendKeysBatch = "batch"
+    case signalChannel = "signal"
+    case waitForChannel = "wait"
+
+    var description: String { rawValue }
 }

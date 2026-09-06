@@ -28,14 +28,16 @@ extension Server {
 
     public func rename(_ session: Session, to name: String) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("rename-session", ["-t", session.id.rawValue, tmuxLiteralArgument(name)]),
+            TmuxCommand(
+                "rename-session", ["-t", session.id.rawValue, "--", tmuxLiteralArgument(name)]),
             guardedBy: [.session(session)]
         )
     }
 
     public func rename(_ window: Window, to name: String) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("rename-window", ["-t", window.id.rawValue, tmuxLiteralArgument(name)]),
+            TmuxCommand(
+                "rename-window", ["-t", window.id.rawValue, "--", tmuxLiteralArgument(name)]),
             guardedBy: [.window(window)]
         )
     }
