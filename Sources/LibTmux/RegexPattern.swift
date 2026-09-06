@@ -84,10 +84,24 @@ public struct RegexPattern: Sendable, Hashable, Codable {
         _ source: String,
         options: Options = []
     ) throws(RegexCompileError) {
+        try self.init(
+            source,
+            options: options,
+            maximumSourceUTF8Bytes: Self.maximumSourceUTF8Bytes,
+            maximumCompiledStates: Self.maximumCompiledStates
+        )
+    }
+
+    package init(
+        _ source: String,
+        options: Options = [],
+        maximumSourceUTF8Bytes: Int,
+        maximumCompiledStates: Int
+    ) throws(RegexCompileError) {
         let sourceBytes = source.utf8.count
-        guard sourceBytes <= Self.maximumSourceUTF8Bytes else {
+        guard sourceBytes <= maximumSourceUTF8Bytes else {
             throw .sourceTooLong(
-                maximumUTF8Bytes: Self.maximumSourceUTF8Bytes,
+                maximumUTF8Bytes: maximumSourceUTF8Bytes,
                 actualUTF8Bytes: sourceBytes
             )
         }
@@ -98,7 +112,7 @@ public struct RegexPattern: Sendable, Hashable, Codable {
 
         var parser = RegexParser(source)
         let syntax = try parser.parse()
-        var compiler = RegexCompiler(maximumStates: Self.maximumCompiledStates)
+        var compiler = RegexCompiler(maximumStates: maximumCompiledStates)
 
         self.source = source
         self.options = options

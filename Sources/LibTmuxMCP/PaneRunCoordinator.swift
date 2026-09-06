@@ -1,7 +1,7 @@
 import Foundation
 import LibTmux
 
-/// One `run_shell` per pane at a time.
+/// One `run_shell_command` per pane at a time.
 ///
 /// Shared by every ``TmuxTools`` in the process, because the README and the
 /// embedding example both build one at the point of use: an instance property

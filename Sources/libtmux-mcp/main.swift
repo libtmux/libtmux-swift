@@ -98,23 +98,28 @@ let configuration = ServerConfiguration(
     environment: ProcessInfo.processInfo.environment
 )
 for warning in configuration.warnings { note(warning) }
+if !configuration.errors.isEmpty {
+    for error in configuration.errors { note(error) }
+    exit(2)
+}
 
-let server: Server
+let pin: StartupPin
 do {
-    server = try configuration.makeServer()
+    pin = try await configuration.pinForStartup()
 } catch {
-    note("cannot address a tmux server: \(error)")
+    note("cannot pin tmux server provenance: \(error)")
     exit(1)
 }
 
 let tools = TmuxTools(
-    server: server,
-    authority: configuration.authority,
-    waitCeiling: configuration.waitCeiling
+    server: pin.server,
+    authority: pin.authority,
+    waitCeiling: configuration.waitCeiling,
+    provenance: pin.provenance
 )
 note(
     "serving \(configuration.endpointSummary) through \(configuration.tmuxExecutable) "
-        + "with \(configuration.authority.summary)"
+        + "with \(tools.authority.summary)"
 )
 
 private let writer: NonblockingLineWriter

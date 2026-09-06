@@ -1856,7 +1856,7 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
                 continue
             # Preserve the existing entry's env on replacement. ``build_local_spec``
             # writes an empty env, so without this merge a swap would silently drop
-            # client-side settings (LIBTMUX_SAFETY, LIBTMUX_SOCKET, custom dev
+            # client-side settings (LIBTMUX_TOOLSETS, LIBTMUX_SOCKET, custom dev
             # knobs). Symmetric with ``_spec_from_entry`` which round-trips env on
             # the read side.
             base_env = dict(current.env) if current else {}

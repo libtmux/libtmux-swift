@@ -6,7 +6,7 @@ import TmuxFixture
 
 @Suite("paste_text cleanup", .timeLimit(.minutes(1)))
 struct PasteTextCleanupTests {
-    @Test("a staging-buffer cleanup failure is reported")
+    @Test("a private staging-buffer cleanup failure is reported")
     func cleanupFailureIsReported() async throws {
         try await withTmuxServer { fixture in
             let transport = FailingPasteCleanupTransport()
@@ -17,26 +17,27 @@ struct PasteTextCleanupTests {
             )
             let pane = try #require(try await server.panes().first)
             let text = "must not remain in paste history"
+            let tools = TmuxTools(
+                server: server,
+                authority: ToolAuthority(toolsets: [.execute]),
+                caller: nil
+            )
 
             await #expect(
                 throws: ToolError.tmux(.invocationFailed(reason: "cleanup rejected"))
             ) {
-                try await TmuxTools(server: server, tier: .mutating).call(
+                try await tools.call(
                     ToolCall(
                         name: "paste_text",
                         arguments: .object([
-                            "pane": .string(WireReferenceCodec.processLocal.reference(to: pane)),
+                            "paneId": .string(pane.id.rawValue),
                             "text": .string(text),
                         ])
                     )
                 )
             }
 
-            #expect(
-                try await waitUntil {
-                    await transport.failedBuffer != nil
-                }
-            )
+            #expect(try await waitUntil { await transport.failedBuffer != nil })
             let failedBuffer = try #require(await transport.failedBuffer)
             #expect(try await fixture.buffer(named: failedBuffer) == text)
             try await fixture.deleteBuffer(named: failedBuffer)

@@ -43,8 +43,8 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
 
 /// Refuses the calls that would end the conversation.
 ///
-/// Not a tier decision: an agent that legitimately runs at the destructive tier
-/// still must not kill the pane it is talking through, and being told why is
+/// Not a toolset decision: an agent with teardown authority still must not kill
+/// the pane it is talking through, and being told why is
 /// more useful than watching the transport go quiet. Every guard names an
 /// escape hatch, because "kill the pane I am in" is a legitimate thing to ask
 /// for — it just has to be asked for on purpose.
@@ -63,7 +63,7 @@ struct CallerGuard: Sendable {
             """
             \(paneID) is the pane this MCP server runs in. Killing it ends the \
             session you are talking through, and nothing would come back to say \
-            so. Pass confirm_self=true if that is genuinely the intent.
+            so. Pass force=true if that is genuinely the intent.
             """
         )
     }
@@ -79,17 +79,6 @@ struct CallerGuard: Sendable {
         try checkContainer("session \(sessionID)", override: override)
     }
 
-    func checkServer(override: Bool) throws {
-        guard !override, isSameServer else { return }
-        throw ToolError.refusedForSafety(
-            """
-            This is the tmux server the MCP runs inside, and killing it takes \
-            every session on it — the one you are talking through included. Pass \
-            confirm_self=true if that is genuinely the intent.
-            """
-        )
-    }
-
     private func checkContainer(
         _ described: String,
         override: Bool
@@ -100,7 +89,7 @@ struct CallerGuard: Sendable {
             \(described) is on the server containing \(own), the pane this MCP runs \
             in. Pane membership can change between inspection and a separate kill, \
             so this cannot safely prove the container will still exclude the caller. \
-            Pass confirm_self=true if killing it is genuinely the intent.
+            Pass force=true if killing it is genuinely the intent.
             """
         )
     }

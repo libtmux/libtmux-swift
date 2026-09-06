@@ -6,6 +6,7 @@ struct OutputWaitSession: Sendable {
     let patterns: [RegexPattern]
     let stops: [RegexPattern]
     let requireFresh: Bool
+    let startingCursor: CaptureCursor?
     let started: ContinuousClock.Instant
     let deadline: ContinuousClock.Instant
     let tailLimit: Int
@@ -16,14 +17,21 @@ struct OutputWaitSession: Sendable {
         // One read establishes the cursor and the entry screen together, so
         // they describe the same instant. The catch-up scan below still covers
         // anything that arrives while the event connection opens.
-        let entryRace = await raceOrdinaryWaitOperation(until: deadline) {
-            try await self.retryingStaleOutputRead(until: deadline) {
-                try await withOutputWaitErrorMapping {
-                    try await self.server.captureEntry(
-                        pane,
-                        historyLines: Self.waitHistoryLines,
-                        perStreamOutputLimit: Self.waitCaptureOutputLimit
-                    )
+        let entryRace: WaitDeadlineRace<EntryCapture>
+        if let startingCursor {
+            entryRace = .completed(
+                EntryCapture(rows: [], cursor: startingCursor, alternateScreen: false)
+            )
+        } else {
+            entryRace = await raceOrdinaryWaitOperation(until: deadline) {
+                try await self.retryingStaleOutputRead(until: deadline) {
+                    try await withOutputWaitErrorMapping {
+                        try await self.server.captureEntry(
+                            pane,
+                            historyLines: Self.waitHistoryLines,
+                            perStreamOutputLimit: Self.waitCaptureOutputLimit
+                        )
+                    }
                 }
             }
         }
@@ -71,7 +79,8 @@ struct OutputWaitSession: Sendable {
             matched: String? = nil,
             matchedIndex: Int? = nil,
             sawNewOutput: Bool = false,
-            tail: [String] = []
+            tail: [String] = [],
+            cursor: CaptureCursor? = nil
         ) -> OutputWait {
             OutputWait(
                 outcome: outcome,
@@ -80,6 +89,7 @@ struct OutputWaitSession: Sendable {
                 sawNewOutput: sawNewOutput,
                 matchedAtEntry: wasAlreadyShowing,
                 tail: Array(tail.suffix(keptTail)),
+                cursor: cursor,
                 seconds: Self.elapsed(since: started)
             )
         }
@@ -92,7 +102,8 @@ struct OutputWaitSession: Sendable {
                 entryHit.outcome,
                 matched: entryHit.matched,
                 matchedIndex: entryHit.matchedIndex,
-                tail: entryRows
+                tail: entryRows,
+                cursor: entryRead.cursor
             )
         }
 
@@ -141,7 +152,7 @@ struct OutputWaitSession: Sendable {
         // would have seen new output was cut short, so the outcome must not
         // present its silence as a quiet pane.
         guard let caughtAtEntry = try settled(caughtAtEntryRace) else {
-            return ending(.expiredWhileReading)
+            return ending(.expiredWhileReading, cursor: entryCursor)
         }
         progress.cursor = caughtAtEntry.cursor
         progress.sawNewOutput = caughtAtEntry.sawNewOutput
@@ -153,7 +164,8 @@ struct OutputWaitSession: Sendable {
             return ending(
                 expired(),
                 sawNewOutput: progress.sawNewOutput,
-                tail: progress.tail
+                tail: progress.tail,
+                cursor: progress.cursor
             )
         }
 
@@ -165,14 +177,16 @@ struct OutputWaitSession: Sendable {
                 return ending(
                     expired(),
                     sawNewOutput: progress.sawNewOutput,
-                    tail: progress.tail
+                    tail: progress.tail,
+                    cursor: progress.cursor
                 )
             }
             guard let attachment = living else {
                 return ending(
                     .paneClosed,
                     sawNewOutput: progress.sawNewOutput,
-                    tail: progress.tail
+                    tail: progress.tail,
+                    cursor: progress.cursor
                 )
             }
             let remaining = ContinuousClock.now.duration(to: deadline)
@@ -194,13 +208,15 @@ struct OutputWaitSession: Sendable {
                     return ending(
                         .paneClosed,
                         sawNewOutput: progress.sawNewOutput,
-                        tail: progress.tail
+                        tail: progress.tail,
+                        cursor: progress.cursor
                     )
                 case .expired:
                     return ending(
                         expired(),
                         sawNewOutput: progress.sawNewOutput,
-                        tail: progress.tail
+                        tail: progress.tail,
+                        cursor: progress.cursor
                     )
                 }
             }
@@ -212,12 +228,18 @@ struct OutputWaitSession: Sendable {
                 return ending(
                     outcome == .timedOut ? expired() : outcome,
                     sawNewOutput: reached.sawNewOutput,
-                    tail: reached.tail
+                    tail: reached.tail,
+                    cursor: reached.cursor
                 )
             }
         }
 
-        return ending(expired(), sawNewOutput: progress.sawNewOutput, tail: progress.tail)
+        return ending(
+            expired(),
+            sawNewOutput: progress.sawNewOutput,
+            tail: progress.tail,
+            cursor: progress.cursor
+        )
     }
 
     /// Whether a failed cycle is the wait's answer or something it can carry on
@@ -572,7 +594,7 @@ struct OutputWaitSession: Sendable {
                 cursor: scan.cursor,
                 tail: tail,
                 sawNewOutput: sawOutput,
-                output: output,
+                output: output.resuming(at: scan.cursor),
                 answerSelectedAt: answerSelectedAt,
                 hasMore: scan.hasMore,
                 deadlineReached: false,

@@ -86,11 +86,15 @@ extension Server {
     public func newSession(
         named name: String,
         startDirectory: String? = nil,
-        windowName: String? = nil
+        windowName: String? = nil,
+        width: Int? = nil,
+        height: Int? = nil
     ) async throws(TmuxError) -> Session {
         var arguments = [
             "-d", "-P", "-F", Session.projection.template, "-s", tmuxLiteralArgument(name),
         ]
+        if let width { arguments += ["-x", String(width)] }
+        if let height { arguments += ["-y", String(height)] }
         if let windowName { arguments += ["-n", tmuxLiteralArgument(windowName)] }
         if let startDirectory {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]

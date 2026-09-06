@@ -146,6 +146,24 @@ extension Server {
         return value
     }
 
+    /// The effective value after tmux resolves inherited option tables.
+    public func resolvedOption(
+        _ name: String,
+        scope: OptionScope
+    ) async throws(TmuxError) -> String? {
+        let reply = try await runOptionCommand(
+            TmuxCommand(
+                "show-options",
+                ["-A"] + scope.selectorArguments + ["-v", name]
+            ),
+            in: scope
+        )
+        guard reply.isSuccess else { return nil }
+        var value = reply.text
+        if value.hasSuffix("\n") { value.removeLast() }
+        return value
+    }
+
     /// Sets an option.
     @discardableResult
     public func setOption(

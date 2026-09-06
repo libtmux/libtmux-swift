@@ -249,6 +249,18 @@ extension Server {
         try await expectSuccess(TmuxCommand("start-server"))
     }
 
+    package func startServer(
+        launchEnvironment: [String: String]
+    ) async throws(TmuxError) {
+        let reply = try await run(
+            TmuxCommand("start-server"),
+            launchEnvironment: launchEnvironment
+        )
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
+        }
+    }
+
     public func killServer() async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("kill-server"))
     }
@@ -296,10 +308,14 @@ extension Server {
     public func respawn(
         _ pane: Pane,
         running command: [String] = [],
-        killingExisting: Bool = true
+        killingExisting: Bool = true,
+        startDirectory: String? = nil
     ) async throws(TmuxError) {
         var arguments = ["-t", pane.id.rawValue]
         if killingExisting { arguments.append("-k") }
+        if let startDirectory {
+            arguments += ["-c", tmuxLiteralArgument(startDirectory)]
+        }
         try await expectSuccess(
             TmuxCommand("respawn-pane", arguments + command),
             guardedBy: [.pane(pane)]

@@ -12,8 +12,8 @@ public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
 
 public func useExactEmbeddedTools(on server: Server) -> TmuxTools {
     let authority = ToolAuthority(
-        tier: .mutating,
-        enabledTools: [.listSessions, .newWindow]
+        toolsets: [],
+        includedTools: ["create_window", "list_sessions"]
     )
     let tools = TmuxTools(server: server, authority: authority)
     return tools

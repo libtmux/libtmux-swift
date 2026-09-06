@@ -12,6 +12,7 @@ public struct Server: Sendable, Hashable {
     /// reach the ambient server by accident.
     public let endpoint: Endpoint
     let tmuxExecutablePath: String
+    let configurationFilePath: String?
     private let runtime: ServerRuntime
     /// Where commands go, when it is not a new process each time.
     ///
@@ -43,31 +44,44 @@ public struct Server: Sendable, Hashable {
         return .connected(to: attachedSession)
     }
 
-    public init(socketPath: String, tmuxExecutable: String = "tmux") throws(TmuxError) {
+    public init(
+        socketPath: String,
+        tmuxExecutable: String = "tmux",
+        configurationFile: String? = nil
+    ) throws(TmuxError) {
         self.init(
             endpoint: try Endpoint(socketPath: socketPath),
-            tmuxExecutable: tmuxExecutable
+            tmuxExecutable: tmuxExecutable,
+            configurationFile: configurationFile
         )
     }
 
-    public init(socketName: String, tmuxExecutable: String = "tmux") throws(TmuxError) {
+    public init(
+        socketName: String,
+        tmuxExecutable: String = "tmux",
+        configurationFile: String? = nil
+    ) throws(TmuxError) {
         self.init(
             endpoint: try Endpoint(socketName: socketName),
-            tmuxExecutable: tmuxExecutable
+            tmuxExecutable: tmuxExecutable,
+            configurationFile: configurationFile
         )
     }
 
     init(
         endpoint: Endpoint,
         tmuxExecutable: String = "tmux",
+        configurationFile: String? = nil,
         transport: any ProcessTransport = SubprocessTransport()
     ) {
         let resolved = resolvedExecutable(tmuxExecutable)
         self.endpoint = endpoint
         self.tmuxExecutablePath = resolved
+        self.configurationFilePath = configurationFile
         self.runtime = ServerRuntime(
             endpoint: endpoint,
             tmuxExecutable: resolved,
+            configurationFile: configurationFile,
             transport: transport
         )
         self.connection = nil
@@ -86,6 +100,7 @@ public struct Server: Sendable, Hashable {
     ) {
         self.endpoint = other.endpoint
         self.tmuxExecutablePath = other.tmuxExecutablePath
+        self.configurationFilePath = other.configurationFilePath
         self.runtime = other.runtime
         self.connection = connection
         self.attachedSession = session
@@ -105,6 +120,16 @@ public struct Server: Sendable, Hashable {
             return try await runtime.run(rawArguments: rawArguments)
         }
         return try await connection.reply(to: rawArguments)
+    }
+
+    package func run(
+        _ command: TmuxCommand,
+        launchEnvironment: [String: String]
+    ) async throws(TmuxError) -> TmuxReply {
+        try await runtime.run(
+            rawArguments: command.argumentVector,
+            environmentOverrides: launchEnvironment
+        )
     }
 
     /// Runs a command in a process of its own, whatever mode this server is in.
@@ -364,17 +389,25 @@ public struct Server: Sendable, Hashable {
 actor ServerRuntime {
     private let endpoint: Endpoint
     private let tmuxExecutable: String
+    private let configurationFile: String?
     private let transport: any ProcessTransport
 
-    init(endpoint: Endpoint, tmuxExecutable: String, transport: any ProcessTransport) {
+    init(
+        endpoint: Endpoint,
+        tmuxExecutable: String,
+        configurationFile: String?,
+        transport: any ProcessTransport
+    ) {
         self.endpoint = endpoint
         self.tmuxExecutable = tmuxExecutable
+        self.configurationFile = configurationFile
         self.transport = transport
     }
 
     func run(
         rawArguments: [String],
-        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit
+        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit,
+        environmentOverrides: [String: String] = [:]
     ) async throws(TmuxError) -> TmuxReply {
         guard perStreamOutputLimit >= 0 else {
             throw .invocationFailed(reason: "output limit cannot be negative")
@@ -386,11 +419,14 @@ actor ServerRuntime {
         let executable = tmuxExecutable
         // `-u` keeps format bytes in UTF-8 without changing the environment a
         // newly started daemon passes to panes.
-        let arguments = ["-u"] + endpoint.addressArguments + rawArguments
+        let configurationArguments = configurationFile.map { ["-f", $0] } ?? []
+        let arguments = ["-u"] + configurationArguments + endpoint.addressArguments + rawArguments
+        var environment = TmuxProcessEnvironment.variables()
+        environment.merge(environmentOverrides) { _, override in override }
         let reply = try await transport.run(
             executable: executable,
             arguments: arguments,
-            environment: TmuxProcessEnvironment.variables(),
+            environment: environment,
             perStreamOutputLimit: perStreamOutputLimit
         )
         try requireReplyFitsLimit(reply, perStreamOutputLimit)

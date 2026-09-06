@@ -91,6 +91,14 @@ extension Server {
         )
     }
 
+    /// Toggles whether one pane fills its window.
+    public func toggleZoom(_ pane: Pane) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("resize-pane", ["-Z", "-t", pane.id.rawValue]),
+            guardedBy: [.pane(pane)]
+        )
+    }
+
     // MARK: Destroying
 
     public func kill(_ session: Session) async throws(TmuxError) {

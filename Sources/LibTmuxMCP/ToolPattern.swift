@@ -1,7 +1,9 @@
+import Foundation
 import LibTmux
 
 enum ToolPattern {
     static let maximumListCount = 32
+    static let maximumAggregateSourceBytes = 16_384
 
     static func compile(
         _ source: String,
@@ -21,23 +23,88 @@ enum ToolPattern {
         }
     }
 
+    static func compileLiteral(
+        _ source: String,
+        argument: String,
+        caseInsensitive: Bool = false
+    ) throws -> RegexPattern {
+        try validateSources([source], argument: argument)
+        let escaped = NSRegularExpression.escapedPattern(for: source)
+        do {
+            return try RegexPattern(
+                escaped,
+                options: caseInsensitive ? [.caseInsensitive] : [],
+                maximumSourceUTF8Bytes: RegexPattern.maximumSourceUTF8Bytes * 2,
+                maximumCompiledStates: RegexPattern.maximumSourceUTF8Bytes * 2
+            )
+        } catch {
+            throw ToolError.wrongArgumentType(
+                argument,
+                expected: "bounded literal text (\(error))"
+            )
+        }
+    }
+
+    static func compileLiteral(
+        _ sources: [String],
+        argument: String,
+        caseInsensitive: Bool = false
+    ) throws -> [RegexPattern] {
+        try validateSources(sources, argument: argument)
+        return try sources.enumerated().map { index, source in
+            try compileLiteral(
+                source,
+                argument: "\(argument)[\(index)]",
+                caseInsensitive: caseInsensitive
+            )
+        }
+    }
+
     static func compile(
         _ sources: [String],
         argument: String,
         caseInsensitive: Bool = false
     ) throws -> [RegexPattern] {
-        guard sources.count <= maximumListCount else {
-            throw ToolError.wrongArgumentType(
-                argument,
-                expected: "at most \(maximumListCount) bounded regular expressions"
-            )
-        }
+        try validateSources(sources, argument: argument)
         return try sources.enumerated().map { index, source in
             try compile(
                 source,
                 argument: "\(argument)[\(index)]",
                 caseInsensitive: caseInsensitive
             )
+        }
+    }
+
+    private static func validateSources(_ sources: [String], argument: String) throws {
+        guard sources.count <= maximumListCount else {
+            throw ToolError.wrongArgumentType(
+                argument,
+                expected: "at most \(maximumListCount) bounded regular expressions"
+            )
+        }
+        let aggregateBytes = try sources.reduce(0) { total, source in
+            let (sum, overflowed) = total.addingReportingOverflow(source.utf8.count)
+            guard !overflowed else {
+                throw ToolError.wrongArgumentType(
+                    argument,
+                    expected: "at most \(maximumAggregateSourceBytes) UTF-8 bytes of patterns"
+                )
+            }
+            return sum
+        }
+        guard aggregateBytes <= maximumAggregateSourceBytes else {
+            throw ToolError.wrongArgumentType(
+                argument,
+                expected: "at most \(maximumAggregateSourceBytes) UTF-8 bytes of patterns"
+            )
+        }
+        for (index, source) in sources.enumerated() {
+            guard source.utf8.count <= RegexPattern.maximumSourceUTF8Bytes else {
+                throw ToolError.wrongArgumentType(
+                    "\(argument)[\(index)]",
+                    expected: "at most \(RegexPattern.maximumSourceUTF8Bytes) UTF-8 bytes"
+                )
+            }
         }
     }
 
@@ -71,23 +138,5 @@ enum ToolPattern {
         argument: String
     ) -> ToolError {
         .refusedForSafety("bounded matching for \(argument) could not finish: \(error)")
-    }
-}
-
-extension ToolPattern {
-    /// Refuses a format that would run a shell command.
-    ///
-    /// `read_format` and `watch_format` answer questions and are offered at
-    /// the readonly tier, which promises nothing on the server changes. tmux
-    /// runs `#(command)` in any format it expands, so a template arriving from
-    /// a client reaches a shell that the tier says it cannot.
-    static func checkedFormat(_ template: String, argument: String) throws -> String {
-        guard !tmuxFormatRequestsShellJob(template) else {
-            throw ToolError.refusedForSafety(
-                "\(argument) runs a shell command with #(...), which this tool does not "
-                    + "allow. Double the # to read it as text, or use run_shell."
-            )
-        }
-        return template
     }
 }

@@ -4,7 +4,7 @@ import TmuxFixture
 
 @Suite("MCP embedding", .timeLimit(.minutes(1)))
 struct MCPEmbeddingTests {
-    @Test("the embedded readonly tools list the fixture pane")
+    @Test("the embedded inspect tools list the fixture pane")
     func embeddedToolsListPanes() async throws {
         try await withTmuxServer { server in
             let paneCount = try await useEmbeddedTools(on: server)
@@ -16,7 +16,9 @@ struct MCPEmbeddingTests {
     func exactEmbeddedSelection() async throws {
         try await withTmuxServer { server in
             let tools = useExactEmbeddedTools(on: server)
-            #expect(Set(tools.visibleDefinitions.map(\.name)) == ["list_sessions", "new_window"])
+            #expect(
+                Set(tools.visibleDefinitions.map(\.name)) == ["create_window", "list_sessions"]
+            )
         }
     }
 }

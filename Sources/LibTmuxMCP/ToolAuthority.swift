@@ -1,72 +1,38 @@
 import Foundation
 
-/// The tools this server is authorised to expose and run.
+/// The immutable selection applied to the authoritative registry.
 public struct ToolAuthority: Sendable, Hashable {
-    /// The highest tier any enabled tool may reach.
-    public let tier: SafetyTier
-    /// The exact tools enabled within `tier`, or `nil` for every tool in it.
-    public let enabledTools: Set<ToolOperation>?
+    public let toolsets: Set<Toolset>
+    public let includedTools: Set<String>
+    public let excludedTools: Set<String>
+    public let usedExplicitToolsets: Bool
 
     public init(
-        tier: SafetyTier = .readonly,
-        enabledTools: Set<ToolOperation>? = nil
+        toolsets: Set<Toolset>,
+        includedTools: Set<String> = [],
+        excludedTools: Set<String> = [],
+        usedExplicitToolsets: Bool = true
     ) {
-        self.tier = tier
-        self.enabledTools = enabledTools
+        self.toolsets = toolsets
+        self.includedTools = includedTools
+        self.excludedTools = excludedTools
+        self.usedExplicitToolsets = usedExplicitToolsets
     }
 
-    static func configured(tier: SafetyTier, exactNames value: String) -> (
-        authority: ToolAuthority,
-        warning: String?
-    ) {
-        if value.isEmpty {
-            return (ToolAuthority(tier: tier, enabledTools: []), nil)
-        }
-
-        let names = value.split(separator: ",", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard names.allSatisfy({ !$0.isEmpty }) else {
-            return (
-                ToolAuthority(tier: tier, enabledTools: []),
-                "LIBTMUX_MCP_TOOLS contains an empty tool name; serving no tools"
-            )
-        }
-
-        let unknown = names.filter { ToolOperation(rawValue: $0) == nil }
-        guard unknown.isEmpty else {
-            return (
-                ToolAuthority(tier: tier, enabledTools: []),
-                "LIBTMUX_MCP_TOOLS contains unknown tool names: "
-                    + unknown.sorted().joined(separator: ", ")
-                    + "; serving no tools"
-            )
-        }
-
-        return (
-            ToolAuthority(
-                tier: tier,
-                enabledTools: Set(names.compactMap(ToolOperation.init(rawValue:)))
-            ),
-            nil
+    func resolve(_ definitions: [ToolDefinition]) -> [ToolDefinition] {
+        var selected = Set(
+            definitions.lazy.filter { toolsets.contains($0.toolset) }.map(\.name)
         )
-    }
-
-    func rejection(for definition: ToolDefinition) -> ToolError? {
-        guard definition.tier <= tier else {
-            return .deniedByTier(
-                definition.name,
-                needs: definition.tier,
-                allowed: tier
-            )
-        }
-        if let enabledTools, !enabledTools.contains(definition.operation) {
-            return .notEnabled(definition.name)
-        }
-        return nil
+        selected.formUnion(includedTools)
+        selected.subtract(excludedTools)
+        let callableNested = definitions.filter { !excludedTools.contains($0.name) }
+        return definitions.filter { selected.contains($0.name) }
+            .map { $0.restrictingNestedAuthority(to: callableNested) }
     }
 
     package var summary: String {
-        guard let enabledTools else { return "the \(tier.rawValue) tier" }
-        return "\(enabledTools.count) exact tools within the \(tier.rawValue) tier"
+        let groups = toolsets.map(\.rawValue).sorted().joined(separator: ",")
+        return "toolsets [\(groups)], \(includedTools.count) named inclusions, "
+            + "\(excludedTools.count) exclusions"
     }
 }

@@ -23,7 +23,7 @@ enum Instructions {
             sections.insert(
                 """
                 You run inside tmux pane \(pane). Kill tools refuse it without \
-                confirm_self; list_panes marks it isCaller.
+                force=true; list_panes marks it isCaller.
                 """,
                 at: min(1, sections.count)
             )
@@ -43,11 +43,7 @@ enum Instructions {
     /// The sections, longest-lived first, so what drops under budget pressure
     /// is what a model can most easily do without.
     static func required(authority: ToolAuthority, waitCeiling: Duration) -> [String] {
-        let available = Set(
-            TmuxTools.definitions.lazy
-                .filter { authority.rejection(for: $0) == nil }
-                .map(\.operation)
-        )
+        let available = Set(authority.resolve(TmuxTools.definitions).map(\.name))
         var sections = [
             """
             tmux via libtmux for Swift. Server > Session > Window > Pane. \
@@ -67,12 +63,13 @@ enum Instructions {
         return sections
     }
 
-    private static func contentGuidance(_ available: Set<ToolOperation>) -> String? {
+    private static func contentGuidance(_ available: Set<String>) -> String? {
         let metadata = [
-            ToolOperation.listSessions, .listWindows, .listPanes, .snapshot, .readFormat,
+            "get_pane_info", "get_server_info", "get_session_info", "get_window_info",
+            "list_panes", "list_sessions", "list_windows",
         ].filter(available.contains)
         let content = [
-            ToolOperation.searchPanes, .capturePane, .captureSince,
+            "capture_pane", "capture_since", "search_panes", "snapshot_pane",
         ].filter(available.contains)
         guard !metadata.isEmpty || !content.isEmpty else { return nil }
 
@@ -85,83 +82,70 @@ enum Instructions {
         if !content.isEmpty {
             sentences.append("\(names(content)) read printed pane content.")
         }
-        if available.contains(.captureSince) {
+        if available.contains("capture_since") {
             sentences.append("Across turns, capture_since returns only the difference.")
         }
         return sentences.joined(separator: " ")
     }
 
-    private static func waitGuidance(_ available: Set<ToolOperation>) -> String? {
+    private static func waitGuidance(_ available: Set<String>) -> String? {
         var lines: [String] = []
-        if available.contains(.runShell) {
-            lines.append("- run_shell: a command you wrote; returns its exit status.")
+        if available.contains("run_shell_command") {
+            lines.append("- run_shell_command: a command you wrote; returns its exit status.")
         }
-        if available.contains(.watchFormat) {
-            lines.append("- watch_format: a question about state; reads no scrollback.")
+        if available.contains("wait_for_text") {
+            lines.append("- wait_for_text: output you did not author; bound the wait.")
         }
-        if available.contains(.waitForOutput) {
-            lines.append("- wait_for_output: output you did not author; always pass `stops`.")
-        }
-        if available.contains(.waitForChannel) {
+        if available.contains("wait_for_channel") {
             lines.append("- wait_for_channel: when the shell composition must be your own.")
         }
         guard !lines.isEmpty else { return nil }
-        if available.contains(.sendKeys), available.contains(.capturePane) {
+        if available.contains("send_keys"), available.contains("capture_pane") {
             lines.append("Never loop send_keys + capture_pane; it cannot prove completion.")
         }
         return (["WAIT, DON'T POLL. Cheapest applicable tool first:"] + lines)
             .joined(separator: "\n")
     }
 
-    private static func startingGuidance(_ available: Set<ToolOperation>) -> String? {
+    private static func startingGuidance(_ available: Set<String>) -> String? {
         var sentences: [String] = []
-        let orientation = [ToolOperation.describeServer, .describeFilters]
-            .filter(available.contains)
-        if !orientation.isEmpty { sentences.append("START WITH \(names(orientation)).") }
-        if available.contains(.snapshot) {
-            sentences.append("snapshot reads the hierarchy and detects daemon replacement.")
+        if available.contains("get_server_info") {
+            sentences.append("START WITH get_server_info when server identity matters.")
         }
-        if available.contains(.applyWorkspace) {
-            sentences.append("apply_workspace builds one workspace plan.")
+        if available.contains("snapshot_pane") {
+            sentences.append("snapshot_pane reads pane metadata and bounded content together.")
         }
         return sentences.isEmpty ? nil : sentences.joined(separator: " ")
     }
 
     private static func authorityGuidance(
         _ authority: ToolAuthority,
-        _ available: Set<ToolOperation>,
+        _ available: Set<String>,
         _ waitCeiling: Duration
     ) -> String {
         var sentences: [String] = []
-        if authority.enabledTools == nil {
-            sentences.append(
-                "Tier: \(authority.tier.rawValue); higher-tier tools are hidden and refused."
-            )
-        } else if available.isEmpty {
+        if available.isEmpty {
             sentences.append("Exact tool selection: none; every tool is hidden and refused.")
         } else {
             sentences.append(
-                "Exact tools: \(names(available)); every other tool is hidden and refused."
+                "Frozen tools: \(names(available)); every other tool is hidden and refused."
             )
         }
-        let waits: Set<ToolOperation> = [
-            .runShell, .watchFormat, .waitForOutput, .waitForChannel,
+        let waits: Set<String> = [
+            "run_shell_command", "wait_for_text", "wait_for_channel",
         ]
         if !available.isDisjoint(with: waits) {
             sentences.append("Waits clamp to \(waitCeiling.secondsText)s and report the limit.")
         }
-        if available.contains(.runCommand) || available.contains(.runCommands) {
-            sentences.append("Raw commands require confirm_unsafe, a server ref, and a deadline.")
-        }
         sentences.append(
-            "No attach, prompts or choose-*; they need a terminal. Persistent hooks belong in tmux config."
+            "No attach or choose-*; they need a terminal. Persistent hooks belong in tmux config."
         )
         return sentences.joined(separator: " ")
     }
 
     private static func names<S: Sequence>(_ operations: S) -> String
-    where S.Element == ToolOperation {
-        operations.map(\.rawValue).sorted().joined(separator: ", ")
+    where S.Element == String {
+        operations.sorted().joined(separator: ", ")
     }
 
     private static func joined(_ sections: [String]) -> String {

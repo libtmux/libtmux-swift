@@ -8,10 +8,13 @@ extension TmuxTools {
         _ arguments: Arguments,
         _ progress: ProgressReporter = .silent
     ) async throws -> ToolOutcome {
-        let pane = try await pane(try arguments.string("pane"))
+        let pane = try await capabilityPane(try arguments.string("paneId"))
+        try await guardForCaller().checkPane(
+            pane.id, override: try arguments.bool("force", or: false))
         let command = try arguments.string("command")
-        let (timeout, enforced) = bounded(try arguments.seconds("timeout", or: 30))
-        let maxLines = try arguments.integer("max_lines", or: 200)
+        let timeoutMs = try arguments.integer("timeoutMs", or: 30_000)
+        let (timeout, enforced) = bounded(Double(timeoutMs) / 1_000)
+        let maxLines = try arguments.integer("maxLines", or: 200)
         let started = ContinuousClock.now
         let deadline = started.advanced(by: timeout)
 
@@ -30,7 +33,7 @@ extension TmuxTools {
         guard acquired else {
             if Task.isCancelled { throw TmuxError.cancelled }
             throw ToolError.refusedForSafety(
-                "pane \(pane.id.rawValue) is still running an earlier run_shell call"
+                "pane \(pane.id.rawValue) is still running an earlier run_shell_command call"
             )
         }
         var lifetime = RunShellLifetime.preDispatch
@@ -231,7 +234,7 @@ extension TmuxTools {
                 }
                 guard ContinuousClock.now < captureDeadline else {
                     throw TmuxError.invocationFailed(
-                        reason: "run_shell completed without an output end"
+                        reason: "run_shell_command completed without an output end"
                     )
                 }
                 do {
@@ -249,7 +252,7 @@ extension TmuxTools {
             if finished {
                 guard status != nil else {
                     throw TmuxError.invocationFailed(
-                        reason: "run_shell completed without an exit status"
+                        reason: "run_shell_command completed without an exit status"
                     )
                 }
             }
@@ -458,7 +461,9 @@ extension TmuxTools {
             let (overhead, overheadOverflowed) = markerLines.addingReportingOverflow(3)
             let (limit, limitOverflowed) = maximumLines.addingReportingOverflow(overhead)
             guard maximumLines > 0, !overheadOverflowed, !limitOverflowed else {
-                throw TmuxError.invocationFailed(reason: "run_shell capture size overflowed")
+                throw TmuxError.invocationFailed(
+                    reason: "run_shell_command capture size overflowed"
+                )
             }
             return limit
         }

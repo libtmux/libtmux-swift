@@ -1,6 +1,5 @@
 import Foundation
 import LibTmux
-import TmuxWorkspace
 
 /// The tmux tools an MCP client can call.
 ///
@@ -9,14 +8,13 @@ import TmuxWorkspace
 /// data and the tool evaluates it here, rather than the client asking for
 /// everything and filtering at home.
 public struct TmuxTools: Sendable {
-    /// The one `run_shell` lock. See ``PaneRunCoordinator`` for why it is not
+    /// The one `run_shell_command` lock. See ``PaneRunCoordinator`` for why it is not
     /// per-instance; `Self.` at every use site is the reminder.
     static let paneRuns = PaneRunCoordinator()
 
     let server: Server
     /// The authority shared by tool listing and invocation.
     public let authority: ToolAuthority
-    public var tier: SafetyTier { authority.tier }
     /// The ceiling every wait is clamped to.
     ///
     /// What an unbounded wait costs is not the transport — calls are served
@@ -25,39 +23,39 @@ public struct TmuxTools: Sendable {
     /// mistake cheap and repeatable instead of terminal.
     public let waitCeiling: Duration
     let caller: CallerIdentity?
-
-    /// Creates a read-only tool set unless a higher tier is selected.
-    public init(
-        server: Server,
-        tier: SafetyTier = .readonly,
-        waitCeiling: Duration = .seconds(120),
-        caller: CallerIdentity? = CallerIdentity.current()
-    ) {
-        self.init(
-            server: server,
-            authority: ToolAuthority(tier: tier),
-            waitCeiling: waitCeiling,
-            caller: caller
-        )
-    }
+    private let resolvedDefinitions: [ToolDefinition]
+    private let resolvedByName: [String: ToolDefinition]
+    private let callableByName: [String: ToolDefinition]
+    public let provenance: ServerProvenance
 
     /// Creates a tool set with explicit authority.
     public init(
         server: Server,
-        authority: ToolAuthority,
+        authority: ToolAuthority = ToolAuthority(toolsets: [.inspect]),
         waitCeiling: Duration = .seconds(120),
-        caller: CallerIdentity? = CallerIdentity.current()
+        caller: CallerIdentity? = CallerIdentity.current(),
+        provenance: ServerProvenance = .unknown
     ) {
         self.server = server
         self.authority = authority
         self.waitCeiling = max(.zero, waitCeiling)
         self.caller = caller
+        let resolved = authority.resolve(Self.definitions)
+        self.resolvedDefinitions = resolved
+        self.resolvedByName = Dictionary(uniqueKeysWithValues: resolved.map { ($0.name, $0) })
+        let callableNames = Set(
+            resolved.flatMap { [$0.name] + Array($0.nestedAuthority) }
+        )
+        self.callableByName = Self.byName.filter { callableNames.contains($0.key) }
+        self.provenance = provenance
     }
 
     /// The tools visible under this server's authority.
     public var visibleDefinitions: [ToolDefinition] {
-        Self.definitions.filter { authority.rejection(for: $0) == nil }
+        resolvedDefinitions
     }
+
+    func exposes(_ name: String) -> Bool { resolvedByName[name] != nil }
 
     /// Runs a tool and returns its result.
     ///
@@ -73,8 +71,6 @@ public struct TmuxTools: Sendable {
             throw error
         } catch let error as TmuxError {
             throw .tmux(error)
-        } catch let error as WorkspaceBuilderError {
-            throw .workspace(error)
         } catch is DecodingError {
             throw .wrongArgumentType(
                 "arguments",
@@ -92,17 +88,27 @@ public struct TmuxTools: Sendable {
         _ request: ToolCall,
         reporting progress: ProgressReporter
     ) async throws -> ToolOutcome {
-        guard let definition = Self.byName[request.name] else {
+        guard let definition = resolvedByName[request.name] else {
+            if Self.byName[request.name] != nil { throw ToolError.notEnabled(request.name) }
             throw ToolError.unknownTool(request.name)
         }
-        if let rejection = authority.rejection(for: definition) { throw rejection }
         let arguments = try Arguments(request, for: definition)
 
-        return try await definition.operation.execute(
-            on: self,
-            arguments: arguments,
-            reporting: progress
-        )
+        return try await definition.handler(self, arguments, progress)
+    }
+
+    /// Runs a tool through authority declared by an exposed aggregate.
+    /// Hidden tools remain unavailable through the public dispatch path.
+    func callNested(
+        _ request: ToolCall,
+        reporting progress: ProgressReporter = .silent
+    ) async throws -> ToolOutcome {
+        guard let definition = callableByName[request.name] else {
+            if Self.byName[request.name] != nil { throw ToolError.notEnabled(request.name) }
+            throw ToolError.unknownTool(request.name)
+        }
+        let arguments = try Arguments(request, for: definition)
+        return try await definition.handler(self, arguments, progress)
     }
 
     /// Clamps a requested wait to the ceiling, and says what was enforced.
@@ -113,56 +119,6 @@ public struct TmuxTools: Sendable {
         if seconds >= ceiling.secondsValue { return (ceiling, ceiling.secondsValue) }
         let requested = Duration.seconds(seconds)
         return (requested, requested.secondsValue)
-    }
-
-    /// Resolves an MCP pane reference to the current typed model.
-    func pane(_ reference: String) async throws -> Pane {
-        try WireReferenceCodec.processLocal.resolve(
-            reference,
-            among: try await server.panes(),
-            argument: "pane",
-            refreshWith: "list_panes"
-        )
-    }
-
-    /// Resolves a server reference against the daemon answering now.
-    func serverIncarnation(_ reference: String) async throws -> ServerIncarnation {
-        let current = try await server.incarnation()
-        return try WireReferenceCodec.processLocal.resolve(
-            reference,
-            among: [current],
-            argument: "server_ref",
-            refreshWith: "describe_server"
-        )
-    }
-
-    /// Resolves the exact window appearance used for pane-scoped waits.
-    func windowLink(for pane: Pane, matching requestedTarget: String?) async throws -> WindowLink {
-        let links = try await server.windowLinks()
-            .filter { $0.windowID == pane.windowID && $0.incarnation == pane.incarnation }
-            .sorted { $0.target < $1.target }
-        guard !links.isEmpty else {
-            throw ToolError.refusedForSafety("pane \(pane.id) has gone")
-        }
-
-        if let requestedTarget {
-            return try WireReferenceCodec.processLocal.resolve(
-                requestedTarget,
-                among: links,
-                argument: "window_link",
-                refreshWith: "list_windows"
-            )
-        }
-
-        if links.count == 1 { return links[0] }
-        let guardForCaller = try await guardForCaller()
-        if guardForCaller.isSameServer, let sessionID = guardForCaller.identity?.sessionID {
-            let callerLinks = links.filter { $0.sessionID == sessionID }
-            if callerLinks.count == 1 { return callerLinks[0] }
-        }
-        throw ToolError.refusedForSafety(
-            "pane \(pane.id) has several window links; pass a linkRef from list_windows"
-        )
     }
 
     /// Whether the caller is on this server. One tmux command, so it is only
@@ -201,6 +157,11 @@ public struct ToolOutcome: Sendable {
     init(structured: JSONValue) {
         self.structured = structured
         self.text = Self.render(structured)
+    }
+
+    init(structured: JSONValue, text: String) {
+        self.structured = structured
+        self.text = text
     }
 
     /// A listing, under the name its schema promises.

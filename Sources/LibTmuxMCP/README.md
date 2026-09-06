@@ -26,58 +26,58 @@ public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
 }
 ```
 
-`TmuxTools(server:)` permits readonly tools. Pass `tier: .mutating` or
-`tier: .destructive` explicitly when the embedding should expose writes.
-Those tiers classify tool intent; they do not sandbox the host. `.mutating`
-includes `run_shell` and `send_keys`, so expose it only to callers trusted to
-act as the tmux user.
+`TmuxTools(server:)` exposes the `inspect` toolset. Pass an explicit
+`ToolAuthority` to add the independent `manage`, `execute`, or `teardown`
+groups. Toolsets shape the callable interface; they do not authorize commands
+or confine the tmux user.
 
 For least authority, pass a typed exact selection:
 
 ```swift
 let authority = ToolAuthority(
-    tier: .mutating,
-    enabledTools: [.listSessions, .newWindow]
+    toolsets: [],
+    includedTools: ["create_window", "list_sessions"]
 )
 let tools = TmuxTools(server: server, authority: authority)
 ```
 
-The tier remains an upper bound, and adding a future tool does not add it to an
-exact selection.
+Named inclusions apply after toolset expansion. Exclusions apply last and also
+remove names from aggregate authority.
 
 ## The tools
 
-The [root tool catalogue](../../README.md#the-tools) groups every tool by
-safety tier and names the limits each one enforces.
+The [root tool catalogue](../../README.md#the-tools) lists the authoritative
+registry, grouped by intent: `inspect` reads bounded state, `manage` changes
+tmux objects, `execute` starts or drives pane processes, and `teardown` deletes
+tmux state. `visibleDefinitions` exposes the effective rows, including native
+input and output schemas, process reach, tmux effects, output classes, one
+`inputLiteralization` map, and aggregate authority. Detailed input sink tables
+remain internal validation data.
 
-`describe_filters` is what makes the rest usable. A client that does not speak
-Swift learns the filterable vocabulary from it at runtime, instead of hard
-coding field names that a rename would break — the same `FilterExpr` vocabulary
-[`LibTmux`](../LibTmux) offers in-process, which is why it can travel to a
-client at all.
+`CapabilityResources` publishes that same frozen surface at
+`tmux://capabilities`. Tool registration metadata and the resource use the same
+complete capability rows. The report also marks itself frozen and carries the
+common execution boundary and connection-provenance objects.
 
 Hierarchy rows carry opaque references for follow-up reads. They bind the row
 to the current tmux daemon and expire when the MCP process restarts; re-list to
 replace one that has expired. Exact window occurrences carry both a global
 `windowRef` and session-local `linkRef`.
 
-`TmuxTools` is written against `Server` and never mentions a mode, so it works
-the same directly or over a connection.
+`TmuxTools` is written against [`LibTmux`](../LibTmux)'s `Server` and never
+mentions a mode, so it works the same directly or over a connection.
 
 ## Adding a tool
 
-A tool is three declarations, and the compiler holds them together:
+A tool has three code-native declarations, and tests hold them together:
 
 - a case on `ToolOperation`, whose raw value is the name a client calls;
-- a `ToolDefinition` in one of the `ToolDefinitions+*.swift` files, carrying
-  the schema and the safety tier;
-- a method on `TmuxTools` in one of the `Tools*.swift` files, which
-  `ToolOperation.execute` dispatches to.
+- a row in `CapabilityRegistry`, carrying its toolset, native input schema,
+  capability fields, and handler;
+- an exact structured result schema in `CapabilityOutputSchemas`.
 
-The dispatch is an exhaustive switch, so a case without a method does not
-compile, and `ToolCatalogTests` fails a case without a definition or a
-definition without a case. Behaviour lives in the operation rather than in a
-closure on the definition because a definition is `Hashable` and a closure is
-not.
+`CapabilityManifestTests` rejects a missing row, a schema/sink or tmux-format
+control mismatch, undeclared nested authority, invalid recursive input or
+output, or drift between registration metadata and the capability resource.
 
 [MCP]: https://modelcontextprotocol.io
