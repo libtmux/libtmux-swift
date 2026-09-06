@@ -191,6 +191,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_socket_namespace.py
 
+      # A continuation nobody resumes does not fail slowly, it never returns —
+      # and a `.timeLimit` cannot end it, because the limit cancels the case
+      # and then waits for it. Six hours of one lane were spent that way.
+      - name: Check every continuation answers cancellation
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_continuations.py
+
       # Ruff reports EXE001 on the runner but not locally, so the mode a file
       # was committed with is checked here too, where it can be reproduced.
       - name: Check shebanged files are executable
@@ -259,3 +266,10 @@ jobs:
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
           swift test --traits YAMLWorkspaces --force-resolved-versions
+
+      # `Package.resolved` tracks a superset that includes Yams even when the
+      # trait is off, and a trait-off resolve rewrites the file to drop that
+      # pin. Nothing above fails when it does, so the drift reaches a commit
+      # by way of whoever ran the documented trait-off command last.
+      - name: Check the resolved versions did not drift
+        run: git diff --exit-code Package.resolved Examples/Package.resolved
