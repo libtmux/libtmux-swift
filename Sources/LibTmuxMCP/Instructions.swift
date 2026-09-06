@@ -109,7 +109,9 @@ enum Instructions {
     private static func waitGuidance(_ available: Set<String>) -> String? {
         var lines: [String] = []
         if available.contains("run_shell_command") {
-            lines.append("- run_shell_command: a command you wrote; returns its exit status.")
+            lines.append(
+                "- run_shell_command: a command you wrote for one trusted POSIX shell; returns its exit status."
+            )
         }
         if available.contains("wait_for_text") {
             lines.append("- wait_for_text: output you did not author; bound the wait.")
@@ -120,6 +122,14 @@ enum Instructions {
         guard !lines.isEmpty else { return nil }
         if available.contains("send_keys"), available.contains("capture_pane") {
             lines.append("Never loop send_keys + capture_pane; it cannot prove completion.")
+        }
+        if available.contains("send_keys") {
+            lines.append(
+                "Pane input checks are observational; resolvedPaneIds reports configured synchronized membership, not delivery."
+            )
+        }
+        if available.contains("paste_text") {
+            lines.append("paste_text keeps its text and optional Enter target-only.")
         }
         return (["WAIT, DON'T POLL. Cheapest applicable tool first:"] + lines)
             .joined(separator: "\n")

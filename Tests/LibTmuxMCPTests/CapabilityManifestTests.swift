@@ -68,7 +68,7 @@ struct CapabilityManifestTests {
         )
         #expect(
             TmuxTools.definitions.first { $0.name == "set_synchronize_panes" }?.description
-                .contains("subsequent input to one pane is copied to every pane") == true
+                .contains("pane overrides determine effective synchronization") == true
         )
         for definition in TmuxTools.definitions {
             #expect(!definition.tmuxEffects.isEmpty)
@@ -520,6 +520,15 @@ struct CapabilityManifestTests {
         #expect(instructions.contains("one MCP response, not one atomic read"))
         #expect(instructions.contains("opaque cursor"))
         #expect(instructions.contains("Pane modes are human-owned"))
+
+        let executeInstructions = Instructions.text(
+            authority: ToolAuthority(toolsets: [.inspect, .execute]),
+            waitCeiling: .seconds(120),
+            caller: nil
+        )
+        #expect(executeInstructions.contains("one trusted POSIX shell"))
+        #expect(executeInstructions.contains("configured synchronized membership, not delivery"))
+        #expect(executeInstructions.contains("optional Enter target-only"))
 
         let named = ServerConfiguration(environment: ["LIBTMUX_SOCKET": "literal-name"])
         #expect(named.errors.isEmpty)

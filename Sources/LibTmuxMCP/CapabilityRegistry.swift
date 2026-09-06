@@ -602,7 +602,8 @@ extension TmuxTools {
                     "name": literalState, "session": lookup, "startDirectory": literalState,
                 ], handler: { try await $0.createWindow($1) }),
             capability(
-                .pasteText, "Paste text", "Paste literal client text into one pane process.",
+                .pasteText, "Paste text",
+                "Paste literal text and an optional newline target-only after two state checks.",
                 toolset: .execute, reach: .paneInput, effects: [.observe, .change],
                 outputs: inspectMeta,
                 arguments: [
@@ -629,7 +630,7 @@ extension TmuxTools {
                 handler: { try await $0.capabilityRespawnPane($1) }),
             capability(
                 .runShellCommand, "Run shell command",
-                "Run one client command in a selected pane and return bounded output.",
+                "Run one command in a singular trusted POSIX shell and return bounded output.",
                 toolset: .execute, reach: .paneCommand, effects: [.observe, .change],
                 outputs: terminal,
                 arguments: [
@@ -647,7 +648,8 @@ extension TmuxTools {
                 ],
                 handler: { try await $0.runShellCommand($1, $2) }),
             capability(
-                .sendKeys, "Send keys", "Send keys as client-controlled pane input.",
+                .sendKeys, "Send keys",
+                "Send keys after checking the effective synchronized-pane cohort.",
                 toolset: .execute, reach: .paneInput, effects: [.observe, .change],
                 outputs: inspectMeta,
                 arguments: [
@@ -662,7 +664,7 @@ extension TmuxTools {
                 handler: { try await $0.capabilitySendKeys($1) }),
             capability(
                 .sendKeysBatch, "Send keys batch",
-                "Send an ordered bounded batch of pane-input operations.", toolset: .execute,
+                "Send an ordered bounded batch with a fresh check for every row.", toolset: .execute,
                 reach: .paneInput, effects: [.observe, .change], outputs: inspectMeta,
                 arguments: [
                     argument("onError", allowed: ["stop", "continue"]),
@@ -676,7 +678,7 @@ extension TmuxTools {
                 handler: { try await $0.sendKeysBatch($1) }),
             capability(
                 .setSynchronizePanes, "Set synchronize panes",
-                "Set whether subsequent input to one pane is copied to every pane in the window.",
+                "Set the window input default; pane overrides determine effective synchronization.",
                 toolset: .execute,
                 reach: .none, effects: [.change], outputs: inspectMeta,
                 arguments: [argument("enabled", kind: .boolean, required: true), windowID()],

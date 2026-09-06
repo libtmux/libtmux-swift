@@ -88,6 +88,9 @@ command explains itself on standard error — so
 - ``PaneCapture``
 - ``IncrementalCapture``
 - ``CaptureCursor``
+- ``Pane/isDead``
+- ``Pane/modeCount``
+- ``Pane/isSynchronized``
 
 ### Controlling pane modes
 

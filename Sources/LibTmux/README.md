@@ -26,6 +26,10 @@ for a newer view. Every type crossing your API is `Sendable` and `Codable`, and
 the mutable part (the process boundary, the live connection) sits behind an
 actor the value shares.
 
+`Pane` also projects the input-relevant state tmux reports: `isDead`, the exact
+`modeCount`, and effective `isSynchronized`. Missing or malformed values fail
+decoding instead of being treated as writable defaults.
+
 ## What is in here
 
 | File | What it holds |
