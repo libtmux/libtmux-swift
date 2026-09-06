@@ -63,6 +63,39 @@ struct RetainedMCPBehaviorTests {
         #expect(await handler.respond(to: #"{"jsonrpc":"2.0","method":"ping"}"#) == nil)
     }
 
+    @Test("an oversized request id is rejected before tool dispatch")
+    func oversizedRequestIdFailsBeforeDispatch() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/oversized-id-\(UUID().uuidString)"
+        )
+        let handler = MCPRequestHandler(tools: tools(server))
+        let identifier = String(repeating: "i", count: 1_000_000)
+        let requestValue: JSONValue = .object([
+            "jsonrpc": .string("2.0"),
+            "id": .string(identifier),
+            "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("create_session"),
+                "arguments": .object(["name": .string("must-not-exist")]),
+            ]),
+        ])
+        let request = String(
+            decoding: try JSONEncoder().encode(requestValue),
+            as: UTF8.self
+        )
+
+        let response = await handler.respond(to: request)
+        let running = try await server.isRunning()
+        if running { try? await server.killServer() }
+
+        let reply = try #require(response)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: Data(reply.utf8))
+        #expect(decoded["id"]?.isNull == true)
+        #expect(decoded["error"]?["code"]?.intValue == -32600)
+        #expect(reply.utf8.count + 1 <= MCPRequestHandler.maximumResponseBytes)
+        #expect(!running)
+    }
+
     @Test("service cancellation stops a wait without answering it")
     func serviceCancellationStopsWait() async throws {
         try await withTmuxServer { server in

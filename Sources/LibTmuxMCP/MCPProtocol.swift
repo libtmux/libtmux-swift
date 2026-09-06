@@ -33,10 +33,10 @@ public struct MCPRequestHandler: Sendable {
 
     /// Answers one newline-delimited JSON-RPC request.
     ///
-    /// Returns the response line, or `nil` for a valid notification, an
-    /// oversized request, or a tool call whose id cannot fit in a bounded
-    /// response. Malformed JSON and invalid request objects receive the
-    /// standard JSON-RPC error with a null id.
+    /// Returns the response line, or `nil` for a valid notification or an
+    /// oversized request. Malformed JSON, invalid request objects, and request
+    /// ids that cannot fit in a bounded response receive the standard JSON-RPC
+    /// error with a null id.
     ///
     /// - Parameters:
     ///   - line: one JSON-RPC request without its trailing newline.
@@ -67,7 +67,13 @@ public struct MCPRequestHandler: Sendable {
             return nil
         }
         guard let id = request.id else { return nil }
-        guard minimalFailure(id: id) != nil else { return nil }
+        guard minimalFailure(id: id) != nil else {
+            return failure(
+                id: .null,
+                code: -32600,
+                message: "request id exceeds bounded response capacity"
+            )
+        }
 
         switch request.method {
         case "initialize":
