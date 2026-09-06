@@ -17,6 +17,7 @@ private let pane = Pane(
     height: 24,
     isActive: true,
     isDead: false,
+    isInputOff: false,
     modeCount: 0,
     isSynchronized: false,
     currentCommand: "nvim",

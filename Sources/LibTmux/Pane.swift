@@ -16,6 +16,8 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
     public let isActive: Bool
     /// Whether the pane's configured process has exited.
     public let isDead: Bool
+    /// Whether tmux has disabled input to the pane.
+    public let isInputOff: Bool
     /// The number of human-client modes stacked on the pane.
     public let modeCount: Int
     /// Whether input to this pane participates in synchronized-pane delivery.
@@ -46,6 +48,7 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
         height: Int,
         isActive: Bool,
         isDead: Bool,
+        isInputOff: Bool,
         modeCount: Int,
         isSynchronized: Bool,
         currentCommand: String,
@@ -63,6 +66,7 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
         self.height = height
         self.isActive = isActive
         self.isDead = isDead
+        self.isInputOff = isInputOff
         self.modeCount = modeCount
         self.isSynchronized = isSynchronized
         self.currentCommand = currentCommand
@@ -83,6 +87,7 @@ extension Pane {
     private static let heightField = FormatField("pane_height", .integer)
     private static let activeField = FormatField("pane_active", .flag)
     private static let deadField = FormatField("pane_dead", .flag)
+    private static let inputOffField = FormatField("pane_input_off", .flag)
     private static let modeCountField = FormatField("pane_in_mode", .integer)
     private static let synchronizedField = FormatField("pane_synchronized", .flag)
     private static let commandField = FormatField("pane_current_command")
@@ -97,7 +102,7 @@ extension Pane {
     static let projection = FormatProjection(
         [
             idField, indexField, widthField, heightField, activeField, deadField,
-            modeCountField, synchronizedField,
+            inputOffField, modeCountField, synchronizedField,
             commandField, pathField, atTopField, atBottomField, atLeftField,
             atRightField, windowField,
         ] + ServerIncarnation.projectionFields)
@@ -110,6 +115,7 @@ extension Pane {
             height: row.integer(Pane.heightField),
             isActive: row.flag(Pane.activeField),
             isDead: row.flag(Pane.deadField),
+            isInputOff: row.flag(Pane.inputOffField),
             modeCount: row.integer(Pane.modeCountField),
             isSynchronized: row.flag(Pane.synchronizedField),
             currentCommand: row.text(Pane.commandField),

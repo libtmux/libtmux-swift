@@ -64,7 +64,7 @@ private func pane(
 ) -> Pane {
     Pane(
         id: id, index: 0, width: 80, height: 24, isActive: true,
-        isDead: false, modeCount: 0, isSynchronized: false,
+        isDead: false, isInputOff: false, modeCount: 0, isSynchronized: false,
         currentCommand: command,
         currentPath: "/",
         windowID: window,
@@ -488,7 +488,8 @@ private actor SnapshotReplacementTransport: ProcessTransport {
             "window_height": "24",
             "pane_id": "%0", "pane_index": "0", "pane_width": "80",
             "pane_height": "24", "pane_active": "1", "pane_current_command": "sh",
-            "pane_dead": "0", "pane_in_mode": "0", "pane_synchronized": "0",
+            "pane_dead": "0", "pane_input_off": "0", "pane_in_mode": "0",
+            "pane_synchronized": "0",
             "pane_current_path": "/tmp", "pane_at_top": "1", "pane_at_bottom": "1",
             "pane_at_left": "1", "pane_at_right": "1",
         ]

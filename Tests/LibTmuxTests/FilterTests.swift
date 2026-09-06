@@ -25,6 +25,7 @@ private func makePane(
         height: 24,
         isActive: isActive,
         isDead: false,
+        isInputOff: false,
         modeCount: 0,
         isSynchronized: false,
         currentCommand: command,

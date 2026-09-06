@@ -22,7 +22,7 @@ struct PaneInputGuardTests {
     ) -> Pane {
         Pane(
             id: id, index: Int(id.rawValue.dropFirst()) ?? 0, width: 80, height: 24,
-            isActive: id == "%1", isDead: dead, modeCount: mode,
+            isActive: id == "%1", isDead: dead, isInputOff: false, modeCount: mode,
             isSynchronized: synchronized, currentCommand: command,
             currentPath: "/tmp", windowID: window, incarnation: incarnation
         )
