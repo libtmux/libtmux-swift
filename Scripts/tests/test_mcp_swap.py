@@ -111,6 +111,14 @@ def fake_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathli
     state_dir = tmp_path / "state"
     monkeypatch.setattr(mcp_swap, "STATE_DIR", state_dir)
     monkeypatch.setattr(mcp_swap, "STATE_FILE", state_dir / "state.json")
+    swift = tmp_path / "toolchain" / "bin" / "swift"
+    swift.parent.mkdir(parents=True)
+    swift.touch()
+    monkeypatch.setattr(
+        mcp_swap.shutil,
+        "which",
+        lambda name: str(swift) if name == "swift" else None,
+    )
     return tmp_path
 
 
@@ -216,14 +224,25 @@ def test_dev_spec_resolves_swift_to_an_absolute_command(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A dev entry stays recognizable after resolving the Swift executable."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_manifest(repo, "libtmux-mcp", at_root=True)
     swift = tmp_path / "toolchain" / "bin" / "swift"
-    monkeypatch.setattr(mcp_swap.shutil, "which", lambda name: str(swift))
+    swift.parent.mkdir(parents=True)
+    swift.touch()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        mcp_swap.shutil,
+        "which",
+        lambda name: str(swift.relative_to(tmp_path)) if name == "swift" else None,
+    )
 
-    spec = mcp_swap.build_local_spec(tmp_path, "libtmux-mcp")
+    spec = mcp_swap.build_local_spec(repo, "libtmux-mcp")
 
-    assert spec.command == str(swift)
+    assert spec.command == str(swift.resolve())
+    assert spec.args[2] == str(repo.resolve())
     assert spec.is_local_checkout()
-    assert spec.local_repo_path() == tmp_path.resolve()
+    assert spec.local_repo_path() == repo.resolve()
 
 
 def test_missing_swift_aborts_before_config_write(
@@ -270,6 +289,9 @@ def test_json_swap_and_revert_round_trip(
     after = json.loads(info.config_path.read_text())
     entry = after["mcpServers"]["libtmux"]
     _assert_resolved_swift(entry["command"])
+    assert entry["command"] == str(
+        (fake_home / "toolchain" / "bin" / "swift").resolve()
+    )
     assert entry["args"] == [
         "run",
         "--package-path",
