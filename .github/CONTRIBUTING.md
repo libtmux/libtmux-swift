@@ -145,8 +145,32 @@ the matrix; the tooling checks run once, on the Linux tmux 3.7b cell.
 Formatting, against `.swift-format` at the root — four spaces, 100 columns:
 
 ```console
-$ swift format lint --recursive --strict Sources Tests Examples Benchmarks Package.swift
+$ swift format lint --recursive --strict \
+    Sources Tests Examples Benchmarks \
+    Tools/McpSwap/Sources/McpSwapCore Tools/McpSwap/Sources/McpSwap \
+    Tools/McpSwap/Tests Package.swift Tools/McpSwap/Package.swift
 ```
+
+The private native MCP swap utility is a nested package, so the root build does
+not compile or archive it. Run its own locked test suite after changing it:
+
+```console
+$ swift test \
+    --package-path Tools/McpSwap \
+    --jobs 5 \
+    --force-resolved-versions
+```
+
+Its C portability shim has a package-local format policy:
+
+```console
+$ clang-format --dry-run --Werror \
+    Tools/McpSwap/Sources/CMcpSwap/mcp_swap.c \
+    Tools/McpSwap/Sources/CMcpSwap/include/mcp_swap.h
+```
+
+Its usage, recovery model, and runnable examples live in
+[`Tools/McpSwap/README.md`](../Tools/McpSwap/README.md).
 
 The documentation. DocC warnings fail the job, so a broken symbol link is an
 error rather than a note:
