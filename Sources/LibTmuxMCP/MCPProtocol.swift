@@ -253,7 +253,7 @@ public struct MCPRequestHandler: Sendable {
 
     private func encode(_ body: [String: JSONValue]) -> String? {
         guard let data = try? encoder.encode(body),
-            data.count <= Self.maximumResponseBytes
+            data.count < Self.maximumResponseBytes
         else { return nil }
         return String(decoding: data, as: UTF8.self)
     }

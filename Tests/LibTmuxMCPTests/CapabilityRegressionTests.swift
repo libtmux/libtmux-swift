@@ -152,6 +152,43 @@ struct CapabilityRegressionTests {
         )
     }
 
+    @Test("the response limit includes its newline delimiter")
+    func responseLimitIncludesNewline() throws {
+        let handler = MCPRequestHandler(
+            tools: TmuxTools(
+                server: try Server(
+                    socketPath: "/tmp/libtmux-swift-test/response-line-unstarted"
+                ),
+                authority: ToolAuthority(toolsets: []),
+                caller: nil
+            )
+        )
+        let empty = try #require(
+            handler.toolResponse(
+                id: .integer(1),
+                outcome: ToolOutcome(
+                    structured: .object(["padding": .string("")]),
+                    text: "bounded response"
+                )
+            )
+        )
+        let padding = String(
+            repeating: "x",
+            count: MCPRequestHandler.maximumResponseBytes - empty.utf8.count
+        )
+        let response = try #require(
+            handler.toolResponse(
+                id: .integer(1),
+                outcome: ToolOutcome(
+                    structured: .object(["padding": .string(padding)]),
+                    text: "bounded response"
+                )
+            )
+        )
+
+        #expect(response.utf8.count + 1 <= MCPRequestHandler.maximumResponseBytes)
+    }
+
     @Test("wait resumes from its cursor, honors output bounds, and stops on failure text")
     func waitResumesFromCursorAndHonorsBounds() async throws {
         try await withTmuxServer { server in
