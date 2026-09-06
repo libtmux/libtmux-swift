@@ -159,9 +159,22 @@ def _pinned_claude_entry() -> dict[str, t.Any]:
     }
 
 
+def _assert_resolved_swift(command: str) -> None:
+    path = pathlib.Path(command)
+    assert path.is_absolute()
+    assert path.name == "swift"
+
+
 # ---------------------------------------------------------------------------
 # resolve_repo_meta
 # ---------------------------------------------------------------------------
+
+
+def test_module_examples_use_the_repository_script_path() -> None:
+    """Pasteable examples retain the checkout's case-sensitive path."""
+    assert mcp_swap.__doc__ is not None
+    assert "scripts/mcp_swap.py" not in mcp_swap.__doc__
+    assert "Scripts/mcp_swap.py" in mcp_swap.__doc__
 
 
 def test_resolve_repo_meta_strips_mcp_suffix(fake_repo: pathlib.Path) -> None:
@@ -194,9 +207,45 @@ def test_root_package_layout_resolves_debug_binary(tmp_path: pathlib.Path) -> No
     binary.touch()
 
     assert mcp_swap.resolve_repo_meta(repo) == ("libtmux", "libtmux-mcp")
-    assert mcp_swap.build_local_spec(repo, "libtmux-mcp", "debug").command == str(
-        binary.resolve()
+    spec = mcp_swap.build_local_spec(repo, "libtmux-mcp", "debug")
+    assert spec.command == str(binary.resolve())
+    assert spec.local_repo_path() == repo.resolve()
+
+
+def test_dev_spec_resolves_swift_to_an_absolute_command(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dev entry stays recognizable after resolving the Swift executable."""
+    swift = tmp_path / "toolchain" / "bin" / "swift"
+    monkeypatch.setattr(mcp_swap.shutil, "which", lambda name: str(swift))
+
+    spec = mcp_swap.build_local_spec(tmp_path, "libtmux-mcp")
+
+    assert spec.command == str(swift)
+    assert spec.is_local_checkout()
+    assert spec.local_repo_path() == tmp_path.resolve()
+
+
+def test_missing_swift_aborts_before_config_write(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing Swift executable cannot leave a swap or backup behind."""
+    info = mcp_swap.CLIS["cursor"]
+    _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
+    original = info.config_path.read_bytes()
+    monkeypatch.setattr(mcp_swap.shutil, "which", lambda name: None)
+    args = mcp_swap.build_parser().parse_args(
+        ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
     )
+
+    with pytest.raises(RuntimeError, match=r"swift.*PATH"):
+        mcp_swap.cmd_use_local(args)
+
+    assert info.config_path.read_bytes() == original
+    assert not list(info.config_path.parent.glob("*.bak.mcp-swap-*"))
+    assert not mcp_swap.STATE_FILE.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +269,7 @@ def test_json_swap_and_revert_round_trip(
 
     after = json.loads(info.config_path.read_text())
     entry = after["mcpServers"]["libtmux"]
-    assert entry["command"] == "swift"
+    _assert_resolved_swift(entry["command"])
     assert entry["args"] == [
         "run",
         "--package-path",
@@ -312,7 +361,7 @@ def test_use_local_preserves_existing_env_when_replacing(
     assert mcp_swap.cmd_use_local(args) == 0
 
     entry = json.loads(info.config_path.read_text())["mcpServers"]["libtmux"]
-    assert entry["command"] == "swift"
+    _assert_resolved_swift(entry["command"])
     assert entry["args"] == [
         "run",
         "--package-path",
@@ -408,7 +457,7 @@ def test_claude_swap_writes_under_repo_abspath_only(
     repo_key = str(fake_repo.resolve())
     new_entry = after["projects"][repo_key]["mcpServers"]["libtmux"]
     assert new_entry["type"] == "stdio"
-    assert new_entry["command"] == "swift"
+    _assert_resolved_swift(new_entry["command"])
     assert new_entry["args"][0:2] == ["run", "--package-path"]
 
 
@@ -441,7 +490,7 @@ def test_claude_user_scope_writes_top_level_mcpServers(
 
     after = json.loads(info.config_path.read_text())
     new_entry = after["mcpServers"]["libtmux"]
-    assert new_entry["command"] == "swift"
+    _assert_resolved_swift(new_entry["command"])
     assert new_entry["args"][0:2] == ["run", "--package-path"]
     # No projects.<abs> node should have been created — user scope must
     # not bleed into the per-project layer.
@@ -553,7 +602,7 @@ def test_claude_user_and_project_swaps_coexist_independently(
     assert after["mcpServers"]["libtmux"]["command"] == "uvx"
     # Project-level still local.
     proj_entry = after["projects"][str(fake_repo.resolve())]["mcpServers"]["libtmux"]
-    assert proj_entry["command"] == "swift"
+    _assert_resolved_swift(proj_entry["command"])
 
 
 def test_claude_full_revert_unwinds_both_scopes_in_lifo_order(
@@ -759,7 +808,7 @@ def test_non_claude_scope_user_passes_through_to_global_config(
     assert mcp_swap.cmd_use_local(args) == 0
 
     after = json.loads(info.config_path.read_text())
-    assert after["mcpServers"]["libtmux"]["command"] == "swift"
+    _assert_resolved_swift(after["mcpServers"]["libtmux"]["command"])
 
     # State key reflects the normalised scope, not the raw flag value.
     state = mcp_swap.load_state()
@@ -796,7 +845,7 @@ def test_codex_swap_preserves_toml_comments(
     text = info.config_path.read_text()
     assert "# Top-level comment preserved across swap" in text
     doc = tomlkit.loads(text).unwrap()
-    assert doc["mcp_servers"]["libtmux"]["command"] == "swift"
+    _assert_resolved_swift(doc["mcp_servers"]["libtmux"]["command"])
     assert doc["other"]["keep"] is True
 
 
@@ -1622,16 +1671,8 @@ def test_status_scope_user_with_only_project_entry_shows_no_entry(
 
 
 def _local_entry(repo: pathlib.Path) -> dict[str, t.Any]:
-    """Return a local ``uv --directory <repo> run`` JSON entry (use-local shape)."""
-    return {
-        "command": "swift",
-        "args": [
-            "run",
-            "--package-path",
-            str((repo / "swift").resolve()),
-            "libtmux-mcp",
-        ],
-    }
+    """Return the JSON entry written for a local development checkout."""
+    return mcp_swap.build_local_spec(repo, "libtmux-mcp").to_entry_dict()
 
 
 def test_use_local_env_flag_injects_into_entry(
@@ -2973,7 +3014,8 @@ def test_symlinked_config_swap_and_revert_round_trip(
     backup = pathlib.Path(state.backup_path)
     assert info.config_path.is_symlink()
     assert backup.parent == info.config_path.parent
-    assert json.loads(target.read_text())["mcpServers"]["libtmux"]["command"] == "swift"
+    command = json.loads(target.read_text())["mcpServers"]["libtmux"]["command"]
+    _assert_resolved_swift(command)
 
     assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 0
     assert info.config_path.is_symlink()
@@ -3206,7 +3248,7 @@ def test_opencode_swap_preserves_jsonc_comments(
     doc = mcp_swap._jsonc_loads(text)
     assert doc["model"] == "openrouter/x"
     assert doc["mcp"]["other"]["command"] == ["echo", "keep"]
-    assert doc["mcp"]["libtmux"]["command"][0] == "swift"
+    _assert_resolved_swift(doc["mcp"]["libtmux"]["command"][0])
 
 
 def test_opencode_comment_inside_the_replaced_entry_survives(
@@ -3235,7 +3277,7 @@ def test_opencode_comment_inside_the_replaced_entry_survives(
     text = info.config_path.read_text()
     assert "// Pinned deliberately; this rationale must outlive the swap." in text
     entry = mcp_swap._jsonc_loads(text)["mcp"]["libtmux"]
-    assert entry["command"][0] == "swift"
+    _assert_resolved_swift(entry["command"][0])
     assert entry["environment"] == {"KEEP": "me"}
 
 
@@ -3306,7 +3348,8 @@ def test_opencode_symlinked_config_swap_updates_target_not_link(
     assert info.config_path.readlink() == target
     text = target.read_text()
     assert "// linked" in text
-    assert mcp_swap._jsonc_loads(text)["mcp"]["libtmux"]["command"][0] == "swift"
+    command = mcp_swap._jsonc_loads(text)["mcp"]["libtmux"]["command"][0]
+    _assert_resolved_swift(command)
 
 
 def test_pi_config_with_comments_is_readable(
@@ -3332,7 +3375,7 @@ def test_pi_config_with_comments_is_readable(
     assert "// the adapter allows comments" in text
     servers = mcp_swap._jsonc_loads(text)["mcpServers"]
     assert servers["keep"]["command"] == "echo"
-    assert servers["libtmux"]["command"] == "swift"
+    _assert_resolved_swift(servers["libtmux"]["command"])
 
 
 def test_detect_reports_the_pi_adapter_prerequisite(

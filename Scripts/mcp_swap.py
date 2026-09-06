@@ -22,12 +22,12 @@ Defaults are derived from the current repo's ``pyproject.toml``:
 Examples
 --------
 ```console
-$ uv run scripts/mcp_swap.py detect
-$ uv run scripts/mcp_swap.py status
-$ uv run scripts/mcp_swap.py use-local --dry-run
-$ uv run scripts/mcp_swap.py use-local
-$ uv run scripts/mcp_swap.py use-local --pr 115
-$ uv run scripts/mcp_swap.py revert
+$ uv run Scripts/mcp_swap.py detect
+$ uv run Scripts/mcp_swap.py status
+$ uv run Scripts/mcp_swap.py use-local --dry-run
+$ uv run Scripts/mcp_swap.py use-local
+$ uv run Scripts/mcp_swap.py use-local --pr 115
+$ uv run Scripts/mcp_swap.py revert
 ```
 
 Scope
@@ -411,15 +411,15 @@ class McpServerSpec:
         release on ``PATH`` is not one — it is a build someone installed,
         not a tree someone is editing.
         """
-        if self.command == "swift" and "--package-path" in self.args:
+        if pathlib.Path(self.command).name == "swift" and "--package-path" in self.args:
             return True
         return "/.build/" in self.command
 
     def local_repo_path(self) -> pathlib.Path | None:
         """Return the checkout a local spec runs, if it runs one.
 
-        Both shapes name the *package* directory rather than the repo, so
-        each strips the trailing ``swift``. A built binary's depth varies —
+        A nested package strips the trailing ``swift``; a root package is
+        already the repository. A built binary's depth varies —
         ``.build/debug`` is a symlink to ``.build/<triple>/debug``, and a
         resolved path has the extra component — so the ``.build`` element
         is located rather than counted back from the end.
@@ -429,13 +429,14 @@ class McpServerSpec:
         except ValueError:
             i = -1
         if i >= 0 and i + 1 < len(self.args):
-            return pathlib.Path(self.args[i + 1]).parent
+            package = pathlib.Path(self.args[i + 1])
+            return package.parent if package.name == "swift" else package
 
         parts = pathlib.Path(self.command).parts
         if ".build" not in parts:
             return None
         package = pathlib.Path(*parts[: parts.index(".build")])
-        return package.parent
+        return package.parent if package.name == "swift" else package
 
     def pr_ref(self) -> tuple[str, int] | None:
         """Return ``(repo_url, pr_number)`` for a ``uvx`` pull-request spec."""
@@ -1336,8 +1337,12 @@ def build_local_spec(
     """
     package = _swift_package_path(repo)
     if flavour == "dev":
+        swift = shutil.which("swift")
+        if swift is None:
+            msg = "swift is not available on PATH"
+            raise RuntimeError(msg)
         return McpServerSpec(
-            command="swift",
+            command=str(pathlib.Path(swift).absolute()),
             args=["run", "--package-path", str(package.resolve()), entry],
         )
     if flavour == "installed":
