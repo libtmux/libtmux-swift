@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("control connection provenance", .timeLimit(.minutes(1)))
+@Suite("control connection provenance", .timeLimit(.minutes(5)))
 struct ControlModeProvenanceTests {
     @Test("a stale attachment never enters the connection body")
     func staleAttachmentNeverEntersBody() async throws {

@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("navigation and buffers", .timeLimit(.minutes(1)))
+@Suite("navigation and buffers", .timeLimit(.minutes(5)))
 struct NavigationTests {
     @Test("selecting changes which object is active")
     func selectingChangesWhatIsActive() async throws {
@@ -372,7 +372,7 @@ struct NavigationTests {
     }
 }
 
-@Suite("pane geometry and replacement", .timeLimit(.minutes(1)))
+@Suite("pane geometry and replacement", .timeLimit(.minutes(5)))
 struct PaneGeometryTests {
     @Test("a lone pane is against all four edges")
     func lonePaneIsAgainstEveryEdge() async throws {

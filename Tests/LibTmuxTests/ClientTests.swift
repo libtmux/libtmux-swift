@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("clients and connection close", .timeLimit(.minutes(1)))
+@Suite("clients and connection close", .timeLimit(.minutes(5)))
 struct ClientTests {
     @Test("a control connection appears as a client and detaches")
     func controlConnectionIsAClientAndDetaches() async throws {

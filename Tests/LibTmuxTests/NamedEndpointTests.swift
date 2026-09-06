@@ -41,7 +41,7 @@ struct NamedSocketNamespaceTests {
 /// up only as the suite addressing the machine-wide default directory.
 @Suite(
     "addressing a server by name",
-    .timeLimit(.minutes(1)),
+    .timeLimit(.minutes(5)),
     .enabled(if: namedSocketsAvailable, "needs TMUX_TMPDIR under the suite root")
 )
 struct NamedEndpointTests {

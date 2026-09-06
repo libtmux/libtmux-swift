@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("server identity", .timeLimit(.minutes(1)))
+@Suite("server identity", .timeLimit(.minutes(5)))
 struct IdentityTests {
     @Test("typed ids reject malformed decoded values and stay compact")
     func typedIDsValidateTheirWireForm() throws {

@@ -124,6 +124,19 @@ case in a loop is cheaper than another round of CI:
 $ for _ in $(seq 20); do swift test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
 ```
 
+Every suite carries `.timeLimit(.minutes(5))`, and that number is a backstop
+rather than a stopwatch. The suite runs its cases in parallel, one tmux server
+each, so what a case reports is mostly time spent waiting for a core: on a
+macOS runner that passed, the fifteen slowest cases all measured between 47 and
+48.5 seconds while the whole run took 51. A one-minute limit against that is
+not a limit on the case, it is a limit on how loaded the runner may be, and it
+went red on a lane that had nothing wrong with it. Five minutes still catches a
+hang long before the job's own thirty.
+
+Raise it here rather than per suite. A limit that differs between suites
+invites reading it as a performance claim about the code underneath, which is
+the thing these numbers cannot support.
+
 All three can hold and it can still be a defect. A run where every cell from
 tmux 3.6 up failed and every earlier one passed read as load, and was a client
 whose protocol version differed from the server's: the example composed
