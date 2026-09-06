@@ -115,6 +115,7 @@ extension TmuxTools {
         scope: PaneInputScope,
         force: Bool,
         transitionFrom expected: PaneInputResolution? = nil,
+        reservation: PaneInputReservation? = nil,
         operation: String
     ) async throws -> PaneInputResolution {
         do {
@@ -148,6 +149,16 @@ extension TmuxTools {
                     throw ToolError.refusedForSafety("pane identity or input cohort changed")
                 }
             }
+            guard
+                await Self.paneRuns.permits(
+                    resolved.configuredPanes,
+                    owner: reservation
+                )
+            else {
+                throw ToolError.refusedForSafety(
+                    "\(operation) is refused while another pane input operation is active"
+                )
+            }
             return resolved
         } catch {
             if expected != nil {
@@ -158,6 +169,18 @@ extension TmuxTools {
             }
             throw error
         }
+    }
+
+    static func reservePaneInput(
+        _ resolved: PaneInputResolution,
+        operation: String
+    ) async throws -> PaneInputReservation {
+        guard let reservation = await paneRuns.reserve(resolved.configuredPanes) else {
+            throw ToolError.refusedForSafety(
+                "\(operation) is refused while another pane input operation is active"
+            )
+        }
+        return reservation
     }
 
     static func requireSafeShellRoute(

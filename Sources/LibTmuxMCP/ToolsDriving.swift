@@ -29,7 +29,14 @@ extension TmuxTools {
                 transitionFrom: initial,
                 operation: "paste_text"
             )
-            try await server.paste(buffer: buffer, into: final.source)
+            let reservation = try await Self.reservePaneInput(final, operation: "paste_text")
+            do {
+                try await server.paste(buffer: buffer, into: final.source)
+            } catch {
+                await Self.paneRuns.release(reservation)
+                throw error
+            }
+            await Self.paneRuns.release(reservation)
             paste = .success(())
         } catch let error as TmuxError {
             paste = .failure(error)

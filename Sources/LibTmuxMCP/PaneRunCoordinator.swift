@@ -1,84 +1,54 @@
 import Foundation
 import LibTmux
 
-/// One `run_shell_command` per pane at a time.
+struct PaneInputReservation: Sendable, Hashable {
+    fileprivate let id: UUID
+}
+
+/// Process-wide exclusion for input dispatched to one endpoint and pane.
 ///
-/// Shared by every ``TmuxTools`` in the process, because the README and the
-/// embedding example both build one at the point of use: an instance property
-/// would give two requests two coordinators and let both drive the same pane.
-/// Keyed by pane and daemon incarnation, so a reused pane id on a replacement
-/// server is a different pane. The exclusion is process-local — a second
-/// process embedding these tools is not held by it.
+/// A reservation is atomic across a synchronized cohort and never queues.
+/// Endpoint identity deliberately survives daemon replacement so cleanup for
+/// an older run cannot overlap a reused pane id on the same route.
 actor PaneRunCoordinator {
     private struct Key: Sendable, Hashable {
+        let endpoint: Endpoint
         let pane: PaneID
-        let incarnation: ServerIncarnation
 
         init(_ pane: Pane) {
+            self.endpoint = pane.incarnation.endpoint
             self.pane = pane.id
-            self.incarnation = pane.incarnation
         }
     }
 
-    private struct Waiter {
-        let token: UUID
-        let continuation: CheckedContinuation<Bool, Never>
+    private var owners: [Key: UUID] = [:]
+    private var keysByOwner: [UUID: Set<Key>] = [:]
+
+    func reserve(_ panes: [Pane]) -> PaneInputReservation? {
+        let keys = Set(panes.map(Key.init))
+        guard !keys.isEmpty, keys.allSatisfy({ owners[$0] == nil }) else { return nil }
+        let reservation = PaneInputReservation(id: UUID())
+        for key in keys { owners[key] = reservation.id }
+        keysByOwner[reservation.id] = keys
+        return reservation
     }
 
-    private var held: Set<Key> = []
-    private var waiters: [Key: [Waiter]] = [:]
+    func permits(_ panes: [Pane], owner reservation: PaneInputReservation? = nil) -> Bool {
+        let keys = Set(panes.map(Key.init))
+        guard !keys.isEmpty else { return false }
+        guard let reservation else {
+            return keys.allSatisfy { owners[$0] == nil }
+        }
+        guard keysByOwner[reservation.id] == keys else { return false }
+        return keys.allSatisfy { owners[$0] == reservation.id }
+    }
+
+    func release(_ reservation: PaneInputReservation) {
+        guard let keys = keysByOwner.removeValue(forKey: reservation.id) else { return }
+        for key in keys where owners[key] == reservation.id { owners[key] = nil }
+    }
 
     func isHeld(_ pane: Pane) -> Bool {
-        held.contains(Key(pane))
-    }
-
-    func acquire(_ pane: Pane) async throws {
-        let key = Key(pane)
-        try Task.checkCancellation()
-        if held.insert(key).inserted { return }
-
-        let token = UUID()
-        let granted = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                if Task.isCancelled {
-                    continuation.resume(returning: false)
-                } else {
-                    waiters[key, default: []].append(
-                        Waiter(token: token, continuation: continuation)
-                    )
-                }
-            }
-        } onCancel: {
-            Task { await self.cancel(key, token: token) }
-        }
-        guard granted else { throw TmuxError.cancelled }
-        if Task.isCancelled {
-            release(key)
-            throw TmuxError.cancelled
-        }
-    }
-
-    func release(_ pane: Pane) {
-        release(Key(pane))
-    }
-
-    private func release(_ key: Key) {
-        guard var queued = waiters[key], !queued.isEmpty else {
-            waiters[key] = nil
-            held.remove(key)
-            return
-        }
-        let next = queued.removeFirst()
-        waiters[key] = queued.isEmpty ? nil : queued
-        next.continuation.resume(returning: true)
-    }
-
-    private func cancel(_ key: Key, token: UUID) {
-        guard var queued = waiters[key],
-            let index = queued.firstIndex(where: { $0.token == token })
-        else { return }
-        let waiter = queued.remove(at: index)
-        waiters[key] = queued.isEmpty ? nil : queued
-        waiter.continuation.resume(returning: false)
+        owners[Key(pane)] != nil
     }
 }

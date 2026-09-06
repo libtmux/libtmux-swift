@@ -30,25 +30,16 @@ extension TmuxTools {
             )
         )
         let pane = initial.source
-
-        let acquired = await progress.whileRunning(
-            upTo: timeout,
-            describing: "waiting to run in \(pane.id.rawValue)"
-        ) {
-            await acquirePaneRun(pane, within: timeout)
-        }
-        guard acquired else {
-            if Task.isCancelled { throw TmuxError.cancelled }
-            throw ToolError.refusedForSafety(
-                "pane \(pane.id.rawValue) is still running an earlier run_shell_command call"
-            )
-        }
+        let reservation = try await Self.reservePaneInput(
+            initial,
+            operation: "run_shell_command"
+        )
         var lifetime = RunShellLifetime.preDispatch
         do {
             try Task.checkCancellation()
             guard ContinuousClock.now < deadline else {
                 throw ToolError.refusedForSafety(
-                    "pane \(pane.id.rawValue) did not become available before the timeout"
+                    "run_shell_command exceeded its timeout before setup"
                 )
             }
             let cleanup = try await prepareRunShell(
@@ -65,6 +56,7 @@ extension TmuxTools {
                 scope: .singularPOSIXShell,
                 force: force,
                 transitionFrom: initial,
+                reservation: reservation,
                 operation: "run_shell_command"
             )
             try Self.requireSafeShellRoute(
@@ -94,29 +86,42 @@ extension TmuxTools {
                 started: started
             )
             if finished {
-                await Self.paneRuns.release(pane)
+                await Self.paneRuns.release(reservation)
             } else {
                 schedulePaneRunCleanup(
                     cleanup,
                     waitForCompletion: true,
-                    releaseWhenReady: false
+                    releaseWhenReady: false,
+                    reservation: reservation
                 )
             }
             return outcome
         } catch {
             switch lifetime {
             case .preDispatch:
-                await Self.paneRuns.release(pane)
+                await Self.paneRuns.release(reservation)
             case .submitting(let cleanup):
                 if Self.definitelyDidNotDispatch(error) {
-                    await Self.paneRuns.release(pane)
+                    await Self.paneRuns.release(reservation)
                 } else {
-                    await abandonRunShell(cleanup, waitForCompletion: true)
+                    await abandonRunShell(
+                        cleanup,
+                        waitForCompletion: true,
+                        reservation: reservation
+                    )
                 }
             case .started(let cleanup):
-                await abandonRunShell(cleanup, waitForCompletion: true)
+                await abandonRunShell(
+                    cleanup,
+                    waitForCompletion: true,
+                    reservation: reservation
+                )
             case .finishing(let cleanup):
-                await abandonRunShell(cleanup, waitForCompletion: false)
+                await abandonRunShell(
+                    cleanup,
+                    waitForCompletion: false,
+                    reservation: reservation
+                )
             }
             throw error
         }
@@ -306,7 +311,8 @@ extension TmuxTools {
     private func schedulePaneRunCleanup(
         _ cleanup: RunShellCleanup,
         waitForCompletion: Bool,
-        releaseWhenReady: Bool
+        releaseWhenReady: Bool,
+        reservation: PaneInputReservation
     ) {
         let server = server
         Task {
@@ -318,26 +324,28 @@ extension TmuxTools {
                         releaseWhenComplete: releaseWhenReady
                     )
                 }
-                await Self.paneRuns.release(cleanup.pane)
+                await Self.paneRuns.release(reservation)
             } else {
                 try? await server.using(.direct) { server in
                     if releaseWhenReady { try await server.signal(cleanup.releaseChannel) }
                     await Self.clearRunShellOptions(cleanup, server: server)
                 }
-                await Self.paneRuns.release(cleanup.pane)
+                await Self.paneRuns.release(reservation)
             }
         }
     }
 
     private func abandonRunShell(
         _ cleanup: RunShellCleanup,
-        waitForCompletion: Bool
+        waitForCompletion: Bool,
+        reservation: PaneInputReservation
     ) async {
         let released = await releaseRunShellGate(cleanup)
         schedulePaneRunCleanup(
             cleanup,
             waitForCompletion: waitForCompletion,
-            releaseWhenReady: !released
+            releaseWhenReady: !released,
+            reservation: reservation
         )
     }
 
@@ -364,35 +372,6 @@ extension TmuxTools {
             true
         default:
             false
-        }
-    }
-
-    private func acquirePaneRun(_ pane: Pane, within timeout: Duration) async -> Bool {
-        return await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                do {
-                    try await Self.paneRuns.acquire(pane)
-                    return true
-                } catch {
-                    return false
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return false
-            }
-
-            let first = await group.next() ?? false
-            if first {
-                group.cancelAll()
-                return true
-            }
-
-            group.cancelAll()
-            while let acquired = await group.next() {
-                if acquired { await Self.paneRuns.release(pane) }
-            }
-            return false
         }
     }
 

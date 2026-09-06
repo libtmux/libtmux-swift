@@ -154,7 +154,7 @@ struct RetainedMCPBehaviorTests {
         #expect(second["error"]?["code"]?.intValue == -32000)
     }
 
-    @Test("a cancelled pane command keeps its lease until the command finishes")
+    @Test("a cancelled pane command blocks all input until it finishes")
     func cancelledRunKeepsPaneLease() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
@@ -186,6 +186,7 @@ struct RetainedMCPBehaviorTests {
                 _ = try await running.value
             }
             #expect(await TmuxTools.paneRuns.isHeld(pane))
+            let refusedAt = ContinuousClock.now
             await #expect(throws: ToolError.self) {
                 _ = try await surface.call(
                     ToolCall(
@@ -193,11 +194,48 @@ struct RetainedMCPBehaviorTests {
                         arguments: .object([
                             "command": .string("printf 'must-not-overlap\\n'"),
                             "paneId": .string(pane.id.rawValue),
-                            "timeoutMs": .integer(200),
+                            "timeoutMs": .integer(20_000),
                         ])
                     )
                 )
             }
+            #expect(ContinuousClock.now - refusedAt < .seconds(1))
+
+            for name in ["send_keys", "paste_text"] {
+                let arguments: JSONValue =
+                    name == "send_keys"
+                    ? .object([
+                        "force": .bool(true), "keys": .array([.string("must-not-overlap")]),
+                        "literal": .bool(true), "paneId": .string(pane.id.rawValue),
+                    ])
+                    : .object([
+                        "force": .bool(true), "paneId": .string(pane.id.rawValue),
+                        "text": .string("must-not-overlap"),
+                    ])
+                await #expect(throws: ToolError.self) {
+                    _ = try await surface.call(ToolCall(name: name, arguments: arguments))
+                }
+            }
+            let batch = try await surface.call(
+                ToolCall(
+                    name: "send_keys_batch",
+                    arguments: .object([
+                        "operations": .array([
+                            .object([
+                                "force": .bool(true),
+                                "keys": .array([.string("must-not-overlap")]),
+                                "literal": .bool(true),
+                                "paneId": .string(pane.id.rawValue),
+                            ])
+                        ])
+                    ])
+                )
+            )
+            #expect(batch.structured["completed"]?.intValue == 0)
+            #expect(batch.structured["failures"]?.arrayValue?.count == 1)
+            #expect(
+                try await server.buffers().contains { $0.name.hasPrefix("libtmux-mcp-") }
+                    == false)
 
             try await server.signal(release)
             #expect(

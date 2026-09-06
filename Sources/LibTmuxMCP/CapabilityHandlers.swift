@@ -673,17 +673,21 @@ extension TmuxTools {
         guard !keys.isEmpty else { throw ToolError.missingArgument("keys") }
         if try arguments.bool("enter", or: false) { keys.append("Enter") }
         let force = try arguments.bool("force", or: false)
+        let literal = try arguments.bool("literal", or: false)
         let preflight = try await preflightPaneInput(
             requested,
             scope: .configuredCohort,
             force: force,
             operation: "send_keys"
         )
-        try await server.sendKeys(
-            keys,
-            to: preflight.source,
-            literally: try arguments.bool("literal", or: false)
-        )
+        let reservation = try await Self.reservePaneInput(preflight, operation: "send_keys")
+        do {
+            try await server.sendKeys(keys, to: preflight.source, literally: literal)
+        } catch {
+            await Self.paneRuns.release(reservation)
+            throw error
+        }
+        await Self.paneRuns.release(reservation)
         return .init(
             SentKeys(
                 paneRef: WireReferenceCodec.processLocal.reference(to: preflight.source),

@@ -166,6 +166,7 @@ struct PaneInputTransitionTests {
             }
             #expect(await transport.listPaneCount == 2)
             #expect(await transport.pasteDispatchCount == 0)
+            #expect(!(await TmuxTools.paneRuns.isHeld(source)))
             #expect(
                 try await fixture.buffers().contains { $0.name.hasPrefix("libtmux-mcp-") } == false)
             #expect(
