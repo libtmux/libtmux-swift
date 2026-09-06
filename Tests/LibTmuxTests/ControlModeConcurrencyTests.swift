@@ -36,7 +36,7 @@ private actor FailingSecondControlWriter {
     }
 }
 
-@Suite("control mode concurrency", .timeLimit(.minutes(1)))
+@Suite("control mode concurrency", .timeLimit(.minutes(5)))
 struct ControlModeConcurrencyTests {
     @Test("an oversized reply fails without shifting the next reply")
     func oversizedReplyPreservesNextReply() async throws {

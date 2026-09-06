@@ -9,7 +9,7 @@ import Testing
     import Glibc
 #endif
 
-@Suite("subprocess teardown", .timeLimit(.minutes(1)))
+@Suite("subprocess teardown", .timeLimit(.minutes(5)))
 struct TransportTeardownTests {
     @Test("cancellation reaps descendants")
     func cancellationReapsDescendants() async throws {

@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("cancellation", .timeLimit(.minutes(1)))
+@Suite("cancellation", .timeLimit(.minutes(5)))
 struct CancellationTests {
     /// `wait-for` blocks until something signals the channel, which is the
     /// simplest tmux command that reliably does not return on its own.

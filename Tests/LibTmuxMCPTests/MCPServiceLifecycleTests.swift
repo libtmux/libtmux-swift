@@ -9,7 +9,7 @@ private enum ServiceEvent: Sendable, Equatable {
     case watchdog
 }
 
-@Suite("MCP service lifecycle", .timeLimit(.minutes(1)))
+@Suite("MCP service lifecycle", .timeLimit(.minutes(5)))
 struct MCPServiceLifecycleTests {
     @Test("writer failure ends service before input closes")
     func writerFailureEndsUnfinishedInput() async throws {

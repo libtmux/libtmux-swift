@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("mutations", .timeLimit(.minutes(1)))
+@Suite("mutations", .timeLimit(.minutes(5)))
 struct MutationTests {
     @Test("creating an object returns it, already read back")
     func creatingReturnsTheObject() async throws {

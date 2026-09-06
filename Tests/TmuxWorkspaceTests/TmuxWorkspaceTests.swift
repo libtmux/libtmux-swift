@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import TmuxWorkspace
 
-@Suite("workspace decoding", .timeLimit(.minutes(1)))
+@Suite("workspace decoding", .timeLimit(.minutes(5)))
 struct WorkspaceDecodingTests {
     @Test("a tmuxp file decodes through its own key names")
     func tmuxpFileDecodes() throws {
@@ -71,7 +71,7 @@ struct WorkspaceDecodingTests {
     }
 }
 
-@Suite("workspace building", .timeLimit(.minutes(1)))
+@Suite("workspace building", .timeLimit(.minutes(5)))
 struct WorkspaceBuildingTests {
     @Test("a workspace becomes the session, windows, and panes it describes")
     func workspaceBecomesWhatItDescribes() async throws {

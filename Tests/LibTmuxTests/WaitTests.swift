@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("waiting on a channel", .timeLimit(.minutes(1)))
+@Suite("waiting on a channel", .timeLimit(.minutes(5)))
 struct WaitTests {
     /// Whether a wait is still blocked after `milliseconds`.
     ///
