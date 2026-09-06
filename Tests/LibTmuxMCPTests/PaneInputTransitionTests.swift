@@ -13,6 +13,7 @@ struct PaneInputTransitionTests {
             try await withTmuxServer { fixture in
                 let source = try #require(try await fixture.panes().first)
                 let peer = try await fixture.split(source, direction: .right)
+                let session = try #require(try await fixture.sessions().first)
                 let transport = TransitionTransport(
                     fixture: fixture,
                     source: source,
@@ -29,7 +30,7 @@ struct PaneInputTransitionTests {
                     let incarnation = try await fixture.incarnation()
                     caller = CallerIdentity(
                         paneID: peer.id,
-                        sessionID: nil,
+                        sessionID: session.id,
                         socketPath: incarnation.socketPath,
                         serverProcessID: incarnation.processID
                     )
@@ -183,6 +184,7 @@ private enum TransitionMutation: String, CaseIterable, Sendable {
     case shell
     case cohortWidens
     case callerJoins
+    case clientAttends
     case sourceDisappears
     case none
 }
@@ -226,12 +228,18 @@ private actor TransitionTransport: ProcessTransport {
         if commandLine.contains("paste-buffer") { pasteDispatchCount += 1 }
         if arguments.contains("wait-for") { waitCount += 1 }
         if commandLine.contains("capture-pane") { captureCount += 1 }
-        return try await underlying.run(
+        let reply = try await underlying.run(
             executable: executable,
             arguments: arguments,
             environment: environment,
             perStreamOutputLimit: perStreamOutputLimit
         )
+        if arguments.contains("list-clients"), listPaneCount == 2,
+            mutation == .clientAttends
+        {
+            return try await attendedClientReply()
+        }
+        return reply
     }
 
     private func mutate() async throws(TmuxError) {
@@ -258,9 +266,37 @@ private actor TransitionTransport: ProcessTransport {
             }
         case .sourceDisappears:
             try await fixture.kill(source)
-        case .none:
+        case .clientAttends, .none:
             break
         }
+    }
+
+    private func attendedClientReply() async throws(TmuxError) -> TmuxReply {
+        guard let session = try await fixture.sessions().first else {
+            throw .invocationFailed(reason: "fixture session disappeared")
+        }
+        let values = [
+            "client_name": "/dev/pts/libtmux-test",
+            "client_tty": "/dev/pts/libtmux-test",
+            "client_pid": "77",
+            "client_width": "80",
+            "client_height": "24",
+            "client_control_mode": "0",
+            "session_id": session.id.rawValue,
+            "pane_id": source.id.rawValue,
+            "window_zoomed_flag": "1",
+            "socket_path": source.incarnation.socketPath,
+            "pid": String(source.incarnation.processID),
+            "start_time": String(source.incarnation.startedAt),
+        ]
+        let separator = String(FormatProjection.separator)
+        let row = Client.projection.fields.map { values[$0.name] ?? "" }
+            .joined(separator: separator)
+        return TmuxReply(
+            standardOutput: Array("\(row)\n".utf8),
+            standardError: [],
+            exitCode: 0
+        )
     }
 
     private func waitForFormat(_ format: String, toEqual expected: String) async throws(TmuxError) {

@@ -19,15 +19,32 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
     /// "ours" and refuse to touch panes that only reuse an id.
     public let serverProcessID: Int?
 
-    /// Reads the surrounding tmux, or `nil` when there is none.
+    /// Reads the surrounding tmux, or `nil` when both context variables are absent.
+    ///
+    /// An incomplete or malformed environment remains present as an invalid
+    /// identity so an input guard cannot mistake it for a detached process.
     public static func current(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> CallerIdentity? {
-        guard let context = TmuxContext.current(environment: environment) else {
+        let hasTmux = environment.keys.contains("TMUX")
+        let hasPane = environment.keys.contains("TMUX_PANE")
+        guard hasTmux || hasPane else {
             return nil
         }
+        guard let rawTmux = environment["TMUX"],
+            let context = TmuxContext(parsing: rawTmux),
+            let rawPane = environment["TMUX_PANE"],
+            let paneID = PaneID(rawValue: rawPane)
+        else {
+            return CallerIdentity(
+                paneID: nil,
+                sessionID: nil,
+                socketPath: nil,
+                serverProcessID: nil
+            )
+        }
         return CallerIdentity(
-            paneID: environment["TMUX_PANE"].flatMap(PaneID.init(rawValue:)),
+            paneID: paneID,
             sessionID: context.sessionID,
             socketPath: context.socketPath,
             serverProcessID: context.serverProcessID
@@ -56,6 +73,40 @@ struct CallerGuard: Sendable {
 
     /// The pane the caller occupies on *this* server, if any.
     var ownPane: PaneID? { isSameServer ? identity?.paneID : nil }
+
+    func validate(in snapshot: Snapshot) throws {
+        guard let identity else {
+            guard !isSameServer else {
+                throw ToolError.refusedForSafety("caller context is inconsistent")
+            }
+            return
+        }
+        guard let paneID = identity.paneID,
+            let sessionID = identity.sessionID,
+            let socketPath = identity.socketPath,
+            !socketPath.isEmpty,
+            let processID = identity.serverProcessID,
+            processID > 0
+        else {
+            throw ToolError.refusedForSafety("caller context is incomplete or malformed")
+        }
+
+        let belongsToSelectedServer = processID == snapshot.serverProcessID
+        guard belongsToSelectedServer == isSameServer else {
+            throw ToolError.refusedForSafety("caller context is inconsistent")
+        }
+        guard belongsToSelectedServer else { return }
+        guard snapshot.sessions.contains(where: { $0.id == sessionID }),
+            let pane = snapshot.panes.first(where: { $0.id == paneID }),
+            snapshot.windowLinks.contains(where: {
+                $0.sessionID == sessionID && $0.windowID == pane.windowID
+            })
+        else {
+            throw ToolError.refusedForSafety(
+                "caller context does not resolve in the selected tmux snapshot"
+            )
+        }
+    }
 
     func checkPane(_ paneID: PaneID, override: Bool) throws {
         guard !override, let own = ownPane, own == paneID else { return }

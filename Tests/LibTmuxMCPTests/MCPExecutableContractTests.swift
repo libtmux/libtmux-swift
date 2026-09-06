@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+import TmuxFixture
+
+@testable import LibTmux
 
 #if canImport(Darwin)
     import Darwin
@@ -9,6 +12,49 @@ import Testing
 
 @Suite("MCP executable contract", .timeLimit(.minutes(1)))
 struct MCPExecutableContractTests {
+    @Test("the executable refuses partial caller context before pane input")
+    func executableRefusesPartialCallerContext() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
+            let incarnation = try await server.incarnation()
+            let marker = "partial-caller-must-not-dispatch"
+
+            let input = Pipe()
+            let output = Pipe()
+            let process = Process()
+            process.executableURL = executableURL
+            process.standardInput = input
+            process.standardOutput = output
+            process.standardError = Pipe()
+            var environment = ProcessInfo.processInfo.environment
+            for key in environment.keys where key.hasPrefix("LIBTMUX_") {
+                environment.removeValue(forKey: key)
+            }
+            environment["LIBTMUX_SOCKET_PATH"] = incarnation.socketPath
+            environment["LIBTMUX_TOOLSETS"] = "execute"
+            environment["TMUX"] =
+                "\(incarnation.socketPath),\(incarnation.processID),"
+                + session.id.rawValue.dropFirst()
+            environment.removeValue(forKey: "TMUX_PANE")
+            process.environment = environment
+            try process.run()
+            defer {
+                try? input.fileHandleForWriting.close()
+                if process.isRunning { process.terminate() }
+                process.waitUntilExit()
+            }
+
+            let request =
+                #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_keys","arguments":{"keys":["\#(marker)"],"literal":true,"paneId":"\#(pane.id.rawValue)"}}}"#
+            try input.fileHandleForWriting.write(contentsOf: Data(request.utf8 + [10]))
+            let reply = try #require(
+                readLine(from: output.fileHandleForReading, within: .seconds(3)))
+            #expect(reply.contains("caller context is incomplete or malformed"))
+            #expect(try await server.capture(pane).contains(marker) == false)
+        }
+    }
+
     @Test("the shipped executable answers over stdio while input stays open")
     func executableAnswersOverStdio() throws {
         let binary = executableURL

@@ -28,8 +28,211 @@ struct PaneInputGuardTests {
         )
     }
 
-    private var detachedCaller: CallerGuard {
-        CallerGuard(identity: nil, isSameServer: false)
+    private func client(
+        paneID: PaneID? = "%1",
+        zoomed: Bool? = false,
+        control: Bool = false,
+        sessionID: SessionID = "$1"
+    ) -> Client {
+        Client(
+            name: control ? "control" : "/dev/pts/7",
+            tty: control ? "" : "/dev/pts/7",
+            processID: 77,
+            width: control ? nil : 80,
+            height: control ? nil : 24,
+            isControlMode: control,
+            sessionID: sessionID,
+            activePaneID: paneID,
+            isWindowZoomed: zoomed,
+            incarnation: incarnation
+        )
+    }
+
+    private func snapshot(
+        panes: [Pane],
+        clients: [Client] = [],
+        sessionIDs: [SessionID] = ["$1"],
+        linkedWindows: Set<WindowID>? = nil
+    ) -> Snapshot {
+        let sessions = sessionIDs.map {
+            Session(
+                id: $0, name: $0.rawValue, windowCount: panes.count,
+                isAttached: !clients.isEmpty, createdAt: 1, incarnation: incarnation
+            )
+        }
+        let windows = linkedWindows ?? Set(panes.map(\.windowID))
+        let links = sessionIDs.flatMap { sessionID in
+            windows.enumerated().map { index, windowID in
+                WindowLink(
+                    sessionID: sessionID,
+                    windowID: windowID,
+                    index: index,
+                    isActive: index == 0,
+                    incarnation: incarnation
+                )
+            }
+        }
+        return Snapshot(
+            incarnation: incarnation,
+            sessions: sessions,
+            windows: [],
+            windowLinks: links,
+            panes: panes,
+            clients: clients
+        )
+    }
+
+    private func resolve(
+        _ requested: PaneID,
+        panes: [Pane],
+        clients: [Client] = [],
+        sessionIDs: [SessionID] = ["$1"],
+        linkedWindows: Set<WindowID>? = nil,
+        scope: PaneInputScope = .configuredCohort,
+        caller: CallerIdentity? = nil,
+        sameServer: Bool = false,
+        force: Bool = false
+    ) throws -> PaneInputResolution {
+        try TmuxTools.resolvePaneInput(
+            requested: requested,
+            snapshot: snapshot(
+                panes: panes,
+                clients: clients,
+                sessionIDs: sessionIDs,
+                linkedWindows: linkedWindows
+            ),
+            scope: scope,
+            callerGuard: CallerGuard(identity: caller, isSameServer: sameServer),
+            force: force
+        )
+    }
+
+    @Test("caller environment distinguishes detached from malformed context")
+    func callerEnvironmentDistinguishesDetachedFromMalformed() throws {
+        #expect(CallerIdentity.current(environment: [:]) == nil)
+
+        for environment in [
+            ["TMUX": "/tmp/caller,42,1"],
+            ["TMUX_PANE": "%1"],
+            ["TMUX": "", "TMUX_PANE": ""],
+            ["TMUX": "malformed", "TMUX_PANE": "%1"],
+            ["TMUX": "/tmp/caller,42,1", "TMUX_PANE": "1"],
+        ] {
+            #expect(
+                CallerIdentity.current(environment: environment) != nil,
+                Comment(rawValue: "malformed caller was treated as detached: \(environment)")
+            )
+        }
+
+        let identity = try #require(
+            CallerIdentity.current(
+                environment: [
+                    "TMUX": "/tmp/caller,42,1",
+                    "TMUX_PANE": "%7",
+                ]
+            )
+        )
+        #expect(identity.paneID == "%7")
+        #expect(identity.sessionID == "$1")
+        #expect(identity.socketPath == "/tmp/caller")
+        #expect(identity.serverProcessID == 42)
+    }
+
+    @Test("caller context is complete and resolves in the selected snapshot")
+    func callerContextResolvesInSelectedSnapshot() throws {
+        let source = pane("%1")
+        let malformed = [
+            CallerIdentity(
+                paneID: nil, sessionID: nil, socketPath: nil, serverProcessID: nil),
+            CallerIdentity(
+                paneID: "%1", sessionID: nil, socketPath: incarnation.socketPath,
+                serverProcessID: incarnation.processID),
+        ]
+        for identity in malformed {
+            #expect(throws: ToolError.self) {
+                try resolve(source.id, panes: [source], caller: identity, force: true)
+            }
+        }
+
+        let foreign = CallerIdentity(
+            paneID: source.id,
+            sessionID: "$99",
+            socketPath: "/tmp/foreign",
+            serverProcessID: 99
+        )
+        #expect(try resolve(source.id, panes: [source], caller: foreign).source.id == source.id)
+
+        let sameDaemon = CallerIdentity(
+            paneID: source.id,
+            sessionID: "$1",
+            socketPath: incarnation.socketPath,
+            serverProcessID: incarnation.processID
+        )
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id, panes: [source], sessionIDs: [], caller: sameDaemon,
+                sameServer: true, force: true)
+        }
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id, panes: [source], linkedWindows: [], caller: sameDaemon,
+                sameServer: true, force: true)
+        }
+        #expect(throws: ToolError.self) {
+            try resolve(source.id, panes: [source], caller: sameDaemon, sameServer: true)
+        }
+        #expect(
+            try resolve(
+                source.id, panes: [source], caller: sameDaemon,
+                sameServer: true, force: true
+            ).configuredPaneIDs == [source.id]
+        )
+    }
+
+    @Test("terminal attention follows zoom and never yields to force")
+    func terminalAttentionFollowsZoom() throws {
+        let source = pane("%1", synchronized: true)
+        let peer = pane("%2", synchronized: true)
+
+        for requested in [source.id, peer.id] {
+            #expect(throws: ToolError.self) {
+                try resolve(
+                    requested, panes: [source, peer], clients: [client(paneID: source.id)],
+                    scope: .targetOnly, force: true)
+            }
+        }
+
+        #expect(
+            try resolve(
+                peer.id, panes: [source, peer],
+                clients: [client(paneID: source.id, zoomed: true)], scope: .targetOnly
+            ).configuredPaneIDs == [peer.id]
+        )
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id, panes: [source, peer],
+                clients: [client(paneID: source.id, zoomed: true)], scope: .targetOnly)
+        }
+        #expect(
+            try resolve(
+                source.id, panes: [source, peer],
+                clients: [client(paneID: source.id, control: true)], scope: .targetOnly
+            ).configuredPaneIDs == [source.id]
+        )
+
+        for invalid in [client(paneID: nil), client(zoomed: nil)] {
+            #expect(throws: ToolError.self) {
+                try resolve(
+                    source.id, panes: [source, peer], clients: [invalid],
+                    scope: .targetOnly, force: true)
+            }
+        }
+
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id, panes: [source, peer],
+                clients: [client(paneID: peer.id, zoomed: true)], force: true)
+        }
     }
 
     @Test("effective synchronization selects configured members and sorts once")
@@ -37,13 +240,8 @@ struct PaneInputGuardTests {
         let sourceOff = pane("%2")
         let modalPeer = pane("%1", mode: 2, synchronized: true)
         #expect(
-            try TmuxTools.resolvePaneInput(
-                requested: sourceOff.id,
-                panes: [modalPeer, sourceOff],
-                scope: .configuredCohort,
-                callerGuard: detachedCaller,
-                force: false
-            ).configuredPaneIDs == [sourceOff.id]
+            try resolve(sourceOff.id, panes: [modalPeer, sourceOff]).configuredPaneIDs
+                == [sourceOff.id]
         )
 
         let sourceOn = pane("%2", synchronized: true)
@@ -51,23 +249,17 @@ struct PaneInputGuardTests {
         let peerOn = pane("%10", synchronized: true)
         let otherWindow = pane("%3", window: "@2", synchronized: true)
         #expect(
-            try TmuxTools.resolvePaneInput(
-                requested: sourceOn.id,
-                panes: [sourceOn, peerOn, peerOff, peerOn, otherWindow],
-                scope: .configuredCohort,
-                callerGuard: detachedCaller,
-                force: false
+            try resolve(
+                sourceOn.id,
+                panes: [sourceOn, peerOn, peerOff, peerOn, otherWindow]
             ).configuredPaneIDs == [peerOn.id, sourceOn.id]
         )
 
         #expect(throws: ToolError.self) {
-            try TmuxTools.resolvePaneInput(
-                requested: sourceOn.id,
+            try resolve(
+                sourceOn.id,
                 panes: [sourceOn, pane("%1", mode: 2, synchronized: true)],
-                scope: .configuredCohort,
-                callerGuard: detachedCaller,
-                force: true
-            )
+                force: true)
         }
     }
 
@@ -75,17 +267,11 @@ struct PaneInputGuardTests {
     func onlyExactZeroModeAndLivePanesAcceptInput() {
         for mode in [1, 2, 1_000_000] {
             #expect(throws: ToolError.self) {
-                try TmuxTools.resolvePaneInput(
-                    requested: "%1", panes: [pane("%1", mode: mode)],
-                    scope: .configuredCohort, callerGuard: detachedCaller, force: false
-                )
+                try resolve("%1", panes: [pane("%1", mode: mode)])
             }
         }
         #expect(throws: ToolError.self) {
-            try TmuxTools.resolvePaneInput(
-                requested: "%1", panes: [pane("%1", dead: true)],
-                scope: .configuredCohort, callerGuard: detachedCaller, force: true
-            )
+            try resolve("%1", panes: [pane("%1", dead: true)], force: true)
         }
     }
 
@@ -97,15 +283,11 @@ struct PaneInputGuardTests {
         )
         let panes = [pane("%1", synchronized: true), pane("%2", synchronized: true)]
         #expect(throws: ToolError.self) {
-            try TmuxTools.resolvePaneInput(
-                requested: "%1", panes: panes, scope: .configuredCohort,
-                callerGuard: CallerGuard(identity: caller, isSameServer: true), force: false
-            )
+            try resolve("%1", panes: panes, caller: caller, sameServer: true)
         }
         #expect(
-            try TmuxTools.resolvePaneInput(
-                requested: "%1", panes: panes, scope: .configuredCohort,
-                callerGuard: CallerGuard(identity: caller, isSameServer: true), force: true
+            try resolve(
+                "%1", panes: panes, caller: caller, sameServer: true, force: true
             ).configuredPaneIDs == ["%1", "%2"]
         )
     }
@@ -115,10 +297,8 @@ struct PaneInputGuardTests {
         let source = pane("%1", synchronized: true)
         let peer = pane("%2", mode: 2, synchronized: true)
         #expect(
-            try TmuxTools.resolvePaneInput(
-                requested: source.id, panes: [source, peer], scope: .targetOnly,
-                callerGuard: detachedCaller, force: false
-            ).configuredPaneIDs == [source.id]
+            try resolve(source.id, panes: [source, peer], scope: .targetOnly).configuredPaneIDs
+                == [source.id]
         )
     }
 
@@ -126,23 +306,19 @@ struct PaneInputGuardTests {
     func runsRequireOneSupportedShell() throws {
         for shell in ["sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh", "-zsh"] {
             #expect(
-                try TmuxTools.resolvePaneInput(
-                    requested: "%1", panes: [pane("%1", command: shell)],
-                    scope: .singularPOSIXShell, callerGuard: detachedCaller, force: false
+                try resolve(
+                    "%1", panes: [pane("%1", command: shell)], scope: .singularPOSIXShell
                 ).source.currentCommand == shell
             )
         }
         #expect(throws: ToolError.self) {
-            try TmuxTools.resolvePaneInput(
-                requested: "%1", panes: [pane("%1", command: "fish")],
-                scope: .singularPOSIXShell, callerGuard: detachedCaller, force: false
-            )
+            try resolve("%1", panes: [pane("%1", command: "fish")], scope: .singularPOSIXShell)
         }
         #expect(throws: ToolError.self) {
-            try TmuxTools.resolvePaneInput(
-                requested: "%1",
+            try resolve(
+                "%1",
                 panes: [pane("%1", synchronized: true), pane("%2", synchronized: true)],
-                scope: .singularPOSIXShell, callerGuard: detachedCaller, force: false
+                scope: .singularPOSIXShell
             )
         }
     }

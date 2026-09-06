@@ -17,11 +17,13 @@ struct PaneInputResolution: Sendable {
 extension TmuxTools {
     static func resolvePaneInput(
         requested: PaneID,
-        panes: [Pane],
+        snapshot: Snapshot,
         scope: PaneInputScope,
         callerGuard: CallerGuard,
         force: Bool
     ) throws -> PaneInputResolution {
+        try callerGuard.validate(in: snapshot)
+        let panes = snapshot.panes
         guard let source = panes.first(where: { $0.id == requested }) else {
             throw ToolError.refusedForSafety(
                 "pane \(requested.rawValue) is stale; call list_panes again"
@@ -40,6 +42,8 @@ extension TmuxTools {
             configured = unique.values.sorted { $0.id.rawValue < $1.id.rawValue }
         }
 
+        let attended = try attendedPaneIDs(in: snapshot)
+
         for pane in configured {
             guard !pane.isDead else {
                 throw ToolError.refusedForSafety(
@@ -50,6 +54,11 @@ extension TmuxTools {
                 throw ToolError.refusedForSafety(
                     "pane \(pane.id.rawValue) input is refused while a human-owned mode is active; "
                         + "capture or snapshot the pane and wait for the mode to end"
+                )
+            }
+            guard !attended.contains(pane.id) else {
+                throw ToolError.refusedForSafety(
+                    "pane \(pane.id.rawValue) input is refused because a terminal client attends it"
                 )
             }
             try callerGuard.checkPaneInput(pane.id, override: force)
@@ -69,6 +78,36 @@ extension TmuxTools {
             }
         }
         return PaneInputResolution(source: source, configuredPanes: configured)
+    }
+
+    private static func attendedPaneIDs(in snapshot: Snapshot) throws -> Set<PaneID> {
+        var attended: Set<PaneID> = []
+        for client in snapshot.clients {
+            guard client.incarnation == snapshot.incarnation,
+                let paneID = client.activePaneID,
+                let isZoomed = client.isWindowZoomed,
+                snapshot.sessions.contains(where: { $0.id == client.sessionID }),
+                let activePane = snapshot.panes.first(where: { $0.id == paneID }),
+                snapshot.windowLinks.contains(where: {
+                    $0.sessionID == client.sessionID && $0.windowID == activePane.windowID
+                })
+            else {
+                throw ToolError.refusedForSafety(
+                    "client attention context is incomplete or inconsistent"
+                )
+            }
+            guard !client.isControlMode else { continue }
+            if isZoomed {
+                attended.insert(paneID)
+            } else {
+                attended.formUnion(
+                    snapshot.panes.lazy
+                        .filter { $0.windowID == activePane.windowID }
+                        .map(\.id)
+                )
+            }
+        }
+        return attended
     }
 
     func preflightPaneInput(
@@ -95,7 +134,7 @@ extension TmuxTools {
             }
             let resolved = try Self.resolvePaneInput(
                 requested: source.id,
-                panes: snapshot.panes,
+                snapshot: snapshot,
                 scope: scope,
                 callerGuard: guardForCaller(serverProcessID: snapshot.serverProcessID),
                 force: force
