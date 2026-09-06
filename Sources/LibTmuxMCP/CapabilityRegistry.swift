@@ -664,7 +664,8 @@ extension TmuxTools {
                 handler: { try await $0.capabilitySendKeys($1) }),
             capability(
                 .sendKeysBatch, "Send keys batch",
-                "Send an ordered bounded batch with a fresh check for every row.", toolset: .execute,
+                "Send an ordered bounded batch with a fresh check for every row.",
+                toolset: .execute,
                 reach: .paneInput, effects: [.observe, .change], outputs: inspectMeta,
                 arguments: [
                     argument("onError", allowed: ["stop", "continue"]),
