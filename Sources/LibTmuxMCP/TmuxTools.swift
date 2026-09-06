@@ -121,19 +121,22 @@ public struct TmuxTools: Sendable {
         return (requested, requested.secondsValue)
     }
 
-    /// Whether the caller is on this server. One tmux command, so it is only
-    /// asked by the tools whose answer depends on it.
+    /// Whether the caller is on this server, authenticated against one bounded
+    /// snapshot. Only tools whose answer depends on caller placement ask.
     func guardForCaller() async throws -> CallerGuard {
         guard caller != nil else {
             return CallerGuard(identity: nil, isSameServer: false)
         }
-        return guardForCaller(serverProcessID: try await server.serverProcessID())
+        let snapshot = try await server.snapshot()
+        let guardValue = guardForCaller(serverIncarnation: snapshot.incarnation)
+        try guardValue.validate(in: snapshot)
+        return guardValue
     }
 
-    func guardForCaller(serverProcessID: Int?) -> CallerGuard {
+    func guardForCaller(serverIncarnation: ServerIncarnation) -> CallerGuard {
         return CallerGuard(
             identity: caller,
-            isSameServer: caller?.isOn(serverProcessID: serverProcessID) ?? false
+            isSameServer: caller?.isOn(serverIncarnation) ?? false
         )
     }
 }

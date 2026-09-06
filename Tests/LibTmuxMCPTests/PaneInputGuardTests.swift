@@ -1,4 +1,5 @@
 import Testing
+import TmuxFixture
 
 @testable import LibTmux
 @testable import LibTmuxMCP
@@ -15,16 +16,18 @@ struct PaneInputGuardTests {
     private func pane(
         _ id: PaneID,
         window: WindowID = "@1",
+        active: Bool? = nil,
         dead: Bool = false,
         mode: Int = 0,
         synchronized: Bool = false,
-        command: String = "zsh"
+        command: String = "zsh",
+        incarnation: ServerIncarnation? = nil
     ) -> Pane {
         Pane(
             id: id, index: Int(id.rawValue.dropFirst()) ?? 0, width: 80, height: 24,
-            isActive: id == "%1", isDead: dead, isInputOff: false, modeCount: mode,
+            isActive: active ?? (id == "%1"), isDead: dead, isInputOff: false, modeCount: mode,
             isSynchronized: synchronized, currentCommand: command,
-            currentPath: "/tmp", windowID: window, incarnation: incarnation
+            currentPath: "/tmp", windowID: window, incarnation: incarnation ?? self.incarnation
         )
     }
 
@@ -32,7 +35,8 @@ struct PaneInputGuardTests {
         paneID: PaneID? = "%1",
         zoomed: Bool? = false,
         control: Bool = false,
-        sessionID: SessionID = "$1"
+        sessionID: SessionID = "$1",
+        incarnation: ServerIncarnation? = nil
     ) -> Client {
         Client(
             name: control ? "control" : "/dev/pts/7",
@@ -44,7 +48,23 @@ struct PaneInputGuardTests {
             sessionID: sessionID,
             activePaneID: paneID,
             isWindowZoomed: zoomed,
-            incarnation: incarnation
+            incarnation: incarnation ?? self.incarnation
+        )
+    }
+
+    private func link(
+        session: SessionID = "$1",
+        window: WindowID,
+        index: Int,
+        active: Bool,
+        incarnation: ServerIncarnation? = nil
+    ) -> WindowLink {
+        WindowLink(
+            sessionID: session,
+            windowID: window,
+            index: index,
+            isActive: active,
+            incarnation: incarnation ?? self.incarnation
         )
     }
 
@@ -52,7 +72,8 @@ struct PaneInputGuardTests {
         panes: [Pane],
         clients: [Client] = [],
         sessionIDs: [SessionID] = ["$1"],
-        linkedWindows: Set<WindowID>? = nil
+        linkedWindows: Set<WindowID>? = nil,
+        windowLinks: [WindowLink]? = nil
     ) -> Snapshot {
         let sessions = sessionIDs.map {
             Session(
@@ -60,22 +81,35 @@ struct PaneInputGuardTests {
                 isAttached: !clients.isEmpty, createdAt: 1, incarnation: incarnation
             )
         }
-        let windows = linkedWindows ?? Set(panes.map(\.windowID))
-        let links = sessionIDs.flatMap { sessionID in
-            windows.enumerated().map { index, windowID in
-                WindowLink(
-                    sessionID: sessionID,
-                    windowID: windowID,
-                    index: index,
-                    isActive: index == 0,
-                    incarnation: incarnation
-                )
-            }
+        let windowIDs = linkedWindows ?? Set(panes.map(\.windowID))
+        let windows = windowIDs.map { windowID in
+            Window(
+                id: windowID,
+                name: windowID.rawValue,
+                paneCount: panes.count { $0.windowID == windowID },
+                width: 80,
+                height: 24,
+                incarnation: incarnation
+            )
         }
+        let links =
+            windowLinks
+            ?? sessionIDs.flatMap { sessionID in
+                windowIDs.sorted { $0.rawValue < $1.rawValue }.enumerated().map {
+                    index, windowID in
+                    WindowLink(
+                        sessionID: sessionID,
+                        windowID: windowID,
+                        index: index,
+                        isActive: index == 0,
+                        incarnation: incarnation
+                    )
+                }
+            }
         return Snapshot(
             incarnation: incarnation,
             sessions: sessions,
-            windows: [],
+            windows: windows,
             windowLinks: links,
             panes: panes,
             clients: clients
@@ -88,6 +122,7 @@ struct PaneInputGuardTests {
         clients: [Client] = [],
         sessionIDs: [SessionID] = ["$1"],
         linkedWindows: Set<WindowID>? = nil,
+        windowLinks: [WindowLink]? = nil,
         scope: PaneInputScope = .configuredCohort,
         caller: CallerIdentity? = nil,
         sameServer: Bool = false,
@@ -99,7 +134,8 @@ struct PaneInputGuardTests {
                 panes: panes,
                 clients: clients,
                 sessionIDs: sessionIDs,
-                linkedWindows: linkedWindows
+                linkedWindows: linkedWindows,
+                windowLinks: windowLinks
             ),
             scope: scope,
             callerGuard: CallerGuard(identity: caller, isSameServer: sameServer),
@@ -189,6 +225,68 @@ struct PaneInputGuardTests {
         )
     }
 
+    @Test("caller endpoint is classified before its daemon pid")
+    func callerEndpointPrecedesProcessIdentity() throws {
+        let source = pane("%1")
+        let foreign = CallerIdentity(
+            paneID: source.id,
+            sessionID: "$1",
+            socketPath: "/tmp/libtmux-swift-test/foreign-caller",
+            serverProcessID: incarnation.processID
+        )
+        #expect(
+            try resolve(
+                source.id, panes: [source], caller: foreign,
+                sameServer: false
+            ).source.id == source.id
+        )
+
+        let stale = CallerIdentity(
+            paneID: source.id,
+            sessionID: "$1",
+            socketPath: incarnation.socketPath,
+            serverProcessID: incarnation.processID + 1
+        )
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id, panes: [source], caller: stale,
+                sameServer: false, force: true
+            )
+        }
+    }
+
+    @Test("force never bypasses unauthenticated caller placement")
+    func forceRequiresAuthenticatedCallerPlacement() async throws {
+        try await withTmuxServer { server in
+            let source = try #require(try await server.panes().first)
+            let peer = try await server.split(source, direction: .right)
+            let serverIdentity = try await server.incarnation()
+            let tools = TmuxTools(
+                server: server,
+                authority: ToolAuthority(toolsets: [.teardown]),
+                caller: CallerIdentity(
+                    paneID: peer.id,
+                    sessionID: "$999",
+                    socketPath: serverIdentity.socketPath,
+                    serverProcessID: serverIdentity.processID
+                )
+            )
+
+            await #expect(throws: ToolError.self) {
+                _ = try await tools.call(
+                    ToolCall(
+                        name: "kill_pane",
+                        arguments: .object([
+                            "force": .bool(true),
+                            "paneId": .string(peer.id.rawValue),
+                        ])
+                    )
+                )
+            }
+            #expect(try await server.panes().contains { $0.id == peer.id })
+        }
+    }
+
     @Test("terminal attention follows zoom and never yields to force")
     func terminalAttentionFollowsZoom() throws {
         let source = pane("%1", synchronized: true)
@@ -233,6 +331,105 @@ struct PaneInputGuardTests {
                 source.id, panes: [source, peer],
                 clients: [client(paneID: peer.id, zoomed: true)], force: true)
         }
+    }
+
+    @Test("control clients need no terminal pane or zoom state")
+    func controlClientsSkipTerminalState() throws {
+        let source = pane("%1")
+        #expect(
+            try resolve(
+                source.id,
+                panes: [source],
+                clients: [client(paneID: nil, zoomed: nil, control: true)],
+                scope: .targetOnly
+            ).configuredPaneIDs == [source.id]
+        )
+    }
+
+    @Test("terminal attention requires one consistent active placement")
+    func terminalAttentionRequiresConsistentPlacement() throws {
+        let source = pane("%1", window: "@1", active: true)
+        let peer = pane("%2", window: "@2", active: true)
+        let activeSourceLinks = [
+            link(window: source.windowID, index: 0, active: true),
+            link(window: peer.windowID, index: 1, active: false),
+        ]
+
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id,
+                panes: [source, peer],
+                clients: [client(paneID: peer.id, zoomed: true)],
+                windowLinks: activeSourceLinks,
+                scope: .targetOnly,
+                force: true
+            )
+        }
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id,
+                panes: [source],
+                clients: [client(paneID: "%9", zoomed: true)],
+                windowLinks: [link(window: source.windowID, index: 0, active: true)],
+                scope: .targetOnly,
+                force: true
+            )
+        }
+
+        let foreignIncarnation = ServerIncarnation(
+            endpoint: incarnation.endpoint,
+            socketPath: incarnation.socketPath,
+            processID: incarnation.processID,
+            startedAt: incarnation.startedAt + 1
+        )
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id,
+                panes: [
+                    source, pane("%2", window: "@2", active: true, incarnation: foreignIncarnation),
+                ],
+                clients: [client(paneID: "%2", zoomed: true)],
+                windowLinks: activeSourceLinks,
+                scope: .targetOnly,
+                force: true
+            )
+        }
+        #expect(throws: ToolError.self) {
+            try resolve(
+                source.id,
+                panes: [source, peer],
+                clients: [client(paneID: peer.id, zoomed: true)],
+                windowLinks: [
+                    link(window: source.windowID, index: 0, active: true),
+                    link(
+                        window: peer.windowID,
+                        index: 1,
+                        active: true,
+                        incarnation: foreignIncarnation
+                    ),
+                ],
+                scope: .targetOnly,
+                force: true
+            )
+        }
+
+        let linkedSession: SessionID = "$2"
+        let validLinkedPlacement = [
+            link(window: source.windowID, index: 0, active: true),
+            link(session: linkedSession, window: peer.windowID, index: 0, active: true),
+        ]
+        #expect(
+            try resolve(
+                source.id,
+                panes: [source, peer],
+                clients: [
+                    client(paneID: peer.id, zoomed: true, sessionID: linkedSession)
+                ],
+                sessionIDs: ["$1", linkedSession],
+                windowLinks: validLinkedPlacement,
+                scope: .targetOnly
+            ).configuredPaneIDs == [source.id]
+        )
     }
 
     @Test("effective synchronization selects configured members and sorts once")

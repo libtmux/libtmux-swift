@@ -13,10 +13,9 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
     /// From `TMUX`, in the same `$…` spelling as a session id.
     public let sessionID: SessionID?
     public let socketPath: String?
-    /// The surrounding server's process id. This, rather than the socket path,
-    /// is what identifies a server: a daemon that died and was replaced binds
-    /// the same path, and comparing paths would then call the replacement
-    /// "ours" and refuse to touch panes that only reuse an id.
+    /// The surrounding server's process id. The socket first distinguishes the
+    /// selected server from a foreign one; its process id then rejects a daemon
+    /// that replaced this process's surrounding server on the same socket.
     public let serverProcessID: Int?
 
     /// Reads the surrounding tmux, or `nil` when both context variables are absent.
@@ -52,9 +51,9 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
     }
 
     /// Whether `server` is the tmux this process is running inside.
-    public func isOn(serverProcessID processID: Int?) -> Bool {
-        guard let serverProcessID, let processID else { return false }
-        return serverProcessID == processID
+    public func isOn(_ server: ServerIncarnation) -> Bool {
+        guard let serverProcessID, let socketPath else { return false }
+        return socketPath == server.socketPath && serverProcessID == server.processID
     }
 }
 
@@ -91,15 +90,35 @@ struct CallerGuard: Sendable {
             throw ToolError.refusedForSafety("caller context is incomplete or malformed")
         }
 
-        let belongsToSelectedServer = processID == snapshot.serverProcessID
-        guard belongsToSelectedServer == isSameServer else {
+        guard socketPath == snapshot.incarnation.socketPath else {
+            guard !isSameServer else {
+                throw ToolError.refusedForSafety("caller context is inconsistent")
+            }
+            return
+        }
+        guard processID == snapshot.serverProcessID else {
+            throw ToolError.refusedForSafety(
+                "caller context names a stale selected tmux daemon"
+            )
+        }
+        guard isSameServer else {
             throw ToolError.refusedForSafety("caller context is inconsistent")
         }
-        guard belongsToSelectedServer else { return }
-        guard snapshot.sessions.contains(where: { $0.id == sessionID }),
-            let pane = snapshot.panes.first(where: { $0.id == paneID }),
+        let sessions = snapshot.sessions.filter {
+            $0.incarnation == snapshot.incarnation && $0.id == sessionID
+        }
+        let panes = snapshot.panes.filter {
+            $0.incarnation == snapshot.incarnation && $0.id == paneID
+        }
+        guard sessions.count == 1,
+            let pane = panes.first,
+            panes.count == 1,
+            snapshot.windows.filter({
+                $0.incarnation == snapshot.incarnation && $0.id == pane.windowID
+            }).count == 1,
             snapshot.windowLinks.contains(where: {
-                $0.sessionID == sessionID && $0.windowID == pane.windowID
+                $0.incarnation == snapshot.incarnation
+                    && $0.sessionID == sessionID && $0.windowID == pane.windowID
             })
         else {
             throw ToolError.refusedForSafety(

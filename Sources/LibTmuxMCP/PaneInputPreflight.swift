@@ -83,28 +83,57 @@ extension TmuxTools {
     private static func attendedPaneIDs(in snapshot: Snapshot) throws -> Set<PaneID> {
         var attended: Set<PaneID> = []
         for client in snapshot.clients {
-            guard client.incarnation == snapshot.incarnation,
-                let paneID = client.activePaneID,
-                let isZoomed = client.isWindowZoomed,
-                snapshot.sessions.contains(where: { $0.id == client.sessionID }),
-                let activePane = snapshot.panes.first(where: { $0.id == paneID }),
-                snapshot.windowLinks.contains(where: {
-                    $0.sessionID == client.sessionID && $0.windowID == activePane.windowID
-                })
-            else {
+            guard client.incarnation == snapshot.incarnation else {
                 throw ToolError.refusedForSafety(
                     "client attention context is incomplete or inconsistent"
                 )
             }
             guard !client.isControlMode else { continue }
+            guard
+                let paneID = client.activePaneID,
+                let isZoomed = client.isWindowZoomed,
+                snapshot.sessions.filter({
+                    $0.incarnation == snapshot.incarnation && $0.id == client.sessionID
+                }).count == 1
+            else {
+                throw ToolError.refusedForSafety(
+                    "client attention context is incomplete or inconsistent"
+                )
+            }
+
+            let activePanes = snapshot.panes.filter {
+                $0.incarnation == snapshot.incarnation && $0.id == paneID
+            }
+            let activeLinks = snapshot.windowLinks.filter {
+                $0.incarnation == snapshot.incarnation
+                    && $0.sessionID == client.sessionID && $0.isActive
+            }
+            guard activePanes.count == 1,
+                let activePane = activePanes.first,
+                activePane.isActive,
+                activeLinks.count == 1,
+                activeLinks[0].windowID == activePane.windowID,
+                snapshot.windows.filter({
+                    $0.incarnation == snapshot.incarnation && $0.id == activePane.windowID
+                }).count == 1
+            else {
+                throw ToolError.refusedForSafety(
+                    "client attention context is incomplete or inconsistent"
+                )
+            }
             if isZoomed {
                 attended.insert(paneID)
             } else {
-                attended.formUnion(
-                    snapshot.panes.lazy
-                        .filter { $0.windowID == activePane.windowID }
-                        .map(\.id)
-                )
+                let visible = snapshot.panes.filter {
+                    $0.incarnation == snapshot.incarnation
+                        && $0.windowID == activePane.windowID
+                }
+                guard !visible.isEmpty, Set(visible.map(\.id)).count == visible.count else {
+                    throw ToolError.refusedForSafety(
+                        "client attention context is incomplete or inconsistent"
+                    )
+                }
+                attended.formUnion(visible.map(\.id))
             }
         }
         return attended
@@ -137,7 +166,7 @@ extension TmuxTools {
                 requested: source.id,
                 snapshot: snapshot,
                 scope: scope,
-                callerGuard: guardForCaller(serverProcessID: snapshot.serverProcessID),
+                callerGuard: guardForCaller(serverIncarnation: snapshot.incarnation),
                 force: force
             )
             if let expected {
