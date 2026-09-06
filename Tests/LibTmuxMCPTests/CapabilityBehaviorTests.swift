@@ -400,6 +400,176 @@ struct CapabilityBehaviorTests {
         }
     }
 
+    @Test("run_shell_command preserves inherited ERR and DEBUG traps")
+    func runPreservesInheritedShellTraps() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let candidates: [(String, [String])] = [
+                ("/bin/bash", ["--noprofile", "--norc"]),
+                ("/bin/zsh", ["-f"]),
+            ]
+            for (path, flags) in candidates
+            where FileManager.default.isExecutableFile(atPath: path) {
+                try await server.respawn(pane, running: [path] + flags)
+                let shell = URL(fileURLWithPath: path).lastPathComponent
+                #expect(
+                    try await waitUntil {
+                        try await server.panes().first(where: { $0.id == pane.id })?
+                            .currentCommand == shell
+                    },
+                    Comment(rawValue: shell)
+                )
+
+                let debugOut = "trap-debug-\(shell)-\"stdout\""
+                let debugError = "trap-debug-\(shell)-'stderr'"
+                let errorOut = "trap-error-\(shell)-\"stdout\""
+                let errorError = "trap-error-\(shell)-'stderr'"
+                let debugAction = """
+                    /usr/bin/printf '%s\\n' \(shellQuoted(debugOut))
+                    /usr/bin/printf '%s\\n' \(shellQuoted(debugError)) >&2
+                    """
+                let errorAction = """
+                    /usr/bin/printf '%s\\n' \(shellQuoted(errorOut))
+                    /usr/bin/printf '%s\\n' \(shellQuoted(errorError)) >&2
+                    """
+                let ready = "libtmux-swift-traps-\(UUID().uuidString)"
+                let setup =
+                    "\\trap \(shellQuoted(debugAction)) DEBUG; "
+                    + "\\trap \(shellQuoted(errorAction)) ERR; "
+                    + "\\set -e; \\set -x; \(server.shellInvocation) wait-for -S -- "
+                    + shellQuoted(ready)
+                try await server.sendKeys([setup, "Enter"], to: pane)
+                try await server.wait(for: ready)
+                let shellProcessText = try #require(
+                    try await server.format("#{pane_pid}", addressing: pane.id.rawValue)
+                )
+                let shellProcessID = try #require(Int(shellProcessText))
+                if try shellResources(for: shellProcessID) != nil {
+                    #expect(
+                        try await waitUntil {
+                            try shellResources(for: shellProcessID)?.children.isEmpty == true
+                        }
+                    )
+                }
+                let resourcesBefore = try shellResources(for: shellProcessID)
+
+                let surface = tools(server)
+                let run: (String) async throws -> ToolOutcome = { command in
+                    try await surface.call(
+                        ToolCall(
+                            name: "run_shell_command",
+                            arguments: .object([
+                                "command": .string(command),
+                                "maxLines": .integer(2_000),
+                                "paneId": .string(pane.id.rawValue),
+                                "timeoutMs": .integer(5_000),
+                            ])
+                        )
+                    )
+                }
+
+                let successMarker = "trap-success-\(shell)"
+                let success = try await run(
+                    "/usr/bin/printf '%s\\n' \(shellQuoted(successMarker))"
+                )
+                let successLines =
+                    success.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                #expect(success.structured["exitStatus"]?.intValue == 0)
+                #expect(successLines.contains(successMarker), Comment(rawValue: shell))
+                #expect(successLines.contains(debugOut), Comment(rawValue: shell))
+                #expect(successLines.contains(debugError), Comment(rawValue: shell))
+
+                let unreachable = "trap-unreachable-\(shell)"
+                let failure = try await run(
+                    "false; /usr/bin/printf '%s\\n' \(shellQuoted(unreachable))"
+                )
+                let failureLines =
+                    failure.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                #expect(failure.structured["exitStatus"]?.intValue != 0)
+                #expect(failureLines.filter { $0 == errorOut }.count == 1)
+                #expect(failureLines.filter { $0 == errorError }.count == 1)
+                #expect(failureLines.contains(unreachable) == false)
+
+                let invalid = try await run("if then")
+                #expect(invalid.structured["exitStatus"]?.intValue != 0)
+
+                let exited = try await run("exit 23")
+                #expect(exited.structured["exitStatus"]?.intValue == 23)
+
+                let parentMarker = "trap-parent-\(shell)"
+                let parent = try await run(
+                    "case $- in *e*) ;; *) exit 90 ;; esac; "
+                        + "case $- in *x*) ;; *) exit 91 ;; esac; "
+                        + "/usr/bin/printf '%s\\n' \(shellQuoted(parentMarker)); false"
+                )
+                let parentLines =
+                    parent.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                #expect(parent.structured["exitStatus"]?.intValue != 0)
+                #expect(parentLines.contains(parentMarker), Comment(rawValue: shell))
+                #expect(parentLines.contains(debugOut), Comment(rawValue: shell))
+                #expect(parentLines.contains(debugError), Comment(rawValue: shell))
+                #expect(parentLines.filter { $0 == errorOut }.count == 1)
+                #expect(parentLines.filter { $0 == errorError }.count == 1)
+
+                let trapFilesBefore = try runShellTrapFiles()
+                let oversizedReady = "libtmux-swift-large-trap-\(UUID().uuidString)"
+                let oversizedSetup =
+                    "__libtmux_test_trap=\"true; : "
+                    + "$(/usr/bin/printf '%070000d' 0)\"; "
+                    + "\\trap \"$__libtmux_test_trap\" ERR; "
+                    + "\\unset __libtmux_test_trap; "
+                    + "\(server.shellInvocation) wait-for -S -- "
+                    + shellQuoted(oversizedReady)
+                try await server.sendKeys([oversizedSetup, "Enter"], to: pane)
+                try await server.wait(for: oversizedReady)
+
+                let refusedMarker = "trap-refused-\(shell)"
+                let refused = try await run(
+                    "/usr/bin/printf '%s\\n' \(shellQuoted(refusedMarker))"
+                )
+                let refusedLines =
+                    refused.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                #expect(
+                    refused.structured["exitStatus"]?.intValue == 125,
+                    Comment(rawValue: shell)
+                )
+                #expect(
+                    refusedLines.contains(refusedMarker) == false,
+                    Comment(rawValue: shell)
+                )
+
+                let restored = "libtmux-swift-restored-trap-\(UUID().uuidString)"
+                try await server.sendKeys(
+                    [
+                        "\\trap \(shellQuoted(errorAction)) ERR; "
+                            + "\(server.shellInvocation) wait-for -S -- "
+                            + shellQuoted(restored),
+                        "Enter",
+                    ],
+                    to: pane
+                )
+                try await server.wait(for: restored)
+                let recoveredMarker = "trap-recovered-\(shell)"
+                let recovered = try await run(
+                    "/usr/bin/printf '%s\\n' \(shellQuoted(recoveredMarker))"
+                )
+                #expect(recovered.structured["exitStatus"]?.intValue == 0)
+                #expect(
+                    recovered.structured["output"]?.arrayValue?
+                        .compactMap(\.stringValue).contains(recoveredMarker) == true
+                )
+                #expect(try runShellTrapFiles() == trapFilesBefore)
+                if let resourcesBefore {
+                    #expect(
+                        try await waitUntil {
+                            try shellResources(for: shellProcessID) == resourcesBefore
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     @Test(
         "leading-dash MCP operands remain literal",
         arguments: LeadingDashOperand.allCases
@@ -690,4 +860,28 @@ enum LeadingDashOperand: String, CaseIterable, CustomStringConvertible, Sendable
     case waitForChannel = "wait"
 
     var description: String { rawValue }
+}
+
+private func runShellTrapFiles() throws -> Set<String> {
+    Set(
+        try FileManager.default.contentsOfDirectory(atPath: "/tmp")
+            .filter { $0.hasPrefix("libtmux-mcp-traps-") }
+    )
+}
+
+private struct ShellResources: Equatable {
+    let children: String
+    let descriptors: Set<String>
+}
+
+private func shellResources(for processID: Int) throws -> ShellResources? {
+    let root = URL(fileURLWithPath: "/proc/\(processID)")
+    let descriptors = root.appendingPathComponent("fd")
+    guard FileManager.default.fileExists(atPath: descriptors.path) else { return nil }
+    let children = root.appendingPathComponent("task/\(processID)/children")
+    return try ShellResources(
+        children: String(contentsOf: children, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+        descriptors: Set(FileManager.default.contentsOfDirectory(atPath: descriptors.path))
+    )
 }

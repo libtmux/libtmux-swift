@@ -123,7 +123,8 @@ extension TmuxTools {
 
     static func requireSafeShellRoute(
         executable: String,
-        socketPath: String
+        socketPath: String,
+        requiringTrapCapture: Bool = false
     ) throws {
         guard executable.hasPrefix("/"), socketPath.hasPrefix("/") else {
             throw ToolError.refusedForSafety(
@@ -135,9 +136,13 @@ extension TmuxTools {
                 "run_shell_command refuses ASCII control bytes in its tmux route"
             )
         }
-        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/printf") else {
+        var utilities = ["/usr/bin/printf"]
+        if requiringTrapCapture {
+            utilities += ["/bin/rm", "/usr/bin/head", "/usr/bin/mktemp"]
+        }
+        guard utilities.allSatisfy(FileManager.default.isExecutableFile) else {
             throw ToolError.refusedForSafety(
-                "run_shell_command requires the supported host's /usr/bin/printf"
+                "run_shell_command requires its supported host utilities"
             )
         }
     }

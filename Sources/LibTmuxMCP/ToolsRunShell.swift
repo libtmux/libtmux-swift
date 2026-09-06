@@ -24,7 +24,10 @@ extension TmuxTools {
         )
         try Self.requireSafeShellRoute(
             executable: server.tmuxExecutable,
-            socketPath: initial.source.incarnation.socketPath
+            socketPath: initial.source.incarnation.socketPath,
+            requiringTrapCapture: Self.capturesInheritedTraps(
+                initial.source.currentCommand
+            )
         )
         let pane = initial.source
 
@@ -66,7 +69,10 @@ extension TmuxTools {
             )
             try Self.requireSafeShellRoute(
                 executable: server.tmuxExecutable,
-                socketPath: final.source.incarnation.socketPath
+                socketPath: final.source.incarnation.socketPath,
+                requiringTrapCapture: Self.capturesInheritedTraps(
+                    final.source.currentCommand
+                )
             )
             lifetime = .submitting(cleanup)
             try await dispatchRunShell(with: cleanup)
@@ -537,6 +543,72 @@ extension TmuxTools {
         [executable, "-u", "-S", socketPath].map(shellQuoted).joined(separator: " ")
     }
 
+    private static func capturesInheritedTraps(_ currentCommand: String) -> Bool {
+        var name =
+            currentCommand.split(separator: "/", omittingEmptySubsequences: false).last
+            .map(String.init) ?? currentCommand
+        if name.first == "-" { name.removeFirst() }
+        return name == "bash" || name == "zsh"
+    }
+
+    private static func inheritedTrapCapture(
+        currentCommand: String,
+        nonce: String,
+        declarations: String,
+        captureStatus: String
+    ) -> String {
+        guard capturesInheritedTraps(currentCommand) else {
+            return "\(declarations)=; \(captureStatus)=0"
+        }
+
+        let file = "__libtmux_mcp_trap_file_\(nonce)"
+        let readDescriptor = "__libtmux_mcp_trap_read_\(nonce)"
+        let writeDescriptor = "__libtmux_mcp_trap_write_\(nonce)"
+        let prefix = "/tmp/libtmux-mcp-traps-\(nonce)"
+        let template = shellQuoted("\(prefix).XXXXXX")
+        // Unlink before writing so every later path owns only open descriptors.
+        // The trap builtin's redirection excludes output from the DEBUG action.
+        let acquire: String
+        let query: String
+        if currentCommand.hasSuffix("bash") {
+            let files = "__libtmux_mcp_trap_files_\(nonce)"
+            acquire =
+                "\(files)=(); if /usr/bin/mktemp \(template) >/dev/null; then "
+                + "\(files)=(\(shellQuoted(prefix)).??????); "
+                + "if [ \"${#\(files)[@]}\" -eq 1 ]; then "
+                + "\(file)=\"${\(files)[0]}\"; "
+                + "else /bin/rm -f \"${\(files)[@]}\"; fi; fi"
+            query = "\\trap -p ERR DEBUG"
+        } else {
+            acquire =
+                "if /usr/bin/mktemp \(template) | IFS= \\read -r \(file); "
+                + "then :; else \(file)=; fi"
+            query = "\\trap"
+        }
+
+        let maximumBytes = 64 * 1_024
+        return "\(declarations)=; \(captureStatus)=125; \(file)=; "
+            + "\(readDescriptor)=; \(writeDescriptor)=; \\umask 077; \(acquire); "
+            + "if [ -n \"$\(file)\" ] && [ -f \"$\(file)\" ] "
+            + "&& [ -O \"$\(file)\" ] "
+            + "&& \\exec {\(writeDescriptor)}> \"$\(file)\" "
+            + "&& \\exec {\(readDescriptor)}< \"$\(file)\" "
+            + "&& /bin/rm -f \"$\(file)\"; then "
+            + "if \(query) >&$\(writeDescriptor); then \(captureStatus)=0; fi; fi; "
+            + "\\trap - ERR DEBUG; "
+            + "if [ -n \"${\(writeDescriptor)-}\" ]; then "
+            + "\\exec {\(writeDescriptor)}>&-; fi; "
+            + "if [ \"$\(captureStatus)\" -eq 0 ]; then LC_ALL=C; "
+            + "if \(declarations)=$(/usr/bin/head -c \(maximumBytes + 1) "
+            + "<&$\(readDescriptor)); then "
+            + "if [ \"${#\(declarations)}\" -gt \(maximumBytes) ]; then "
+            + "\(declarations)=; \(captureStatus)=125; fi; "
+            + "else \(declarations)=; \(captureStatus)=125; fi; fi; "
+            + "if [ -n \"${\(readDescriptor)-}\" ]; then "
+            + "\\exec {\(readDescriptor)}<&-; fi; "
+            + "if [ -n \"$\(file)\" ]; then /bin/rm -f \"$\(file)\"; fi"
+    }
+
     private static func runShellPayload(
         _ command: String,
         tmuxInvocation: String,
@@ -545,6 +617,9 @@ extension TmuxTools {
     ) -> String {
         let flags = "__libtmux_mcp_flags_\(nonce)"
         let status = "__libtmux_mcp_status_\(nonce)"
+        let commandText = "__libtmux_mcp_command_\(nonce)"
+        let trapDeclarations = "__libtmux_mcp_traps_\(nonce)"
+        let trapCaptureStatus = "__libtmux_mcp_trap_status_\(nonce)"
         let target = shellQuoted(cleanup.pane.id.rawValue)
         let start = markerCommand(cleanup.startMarker)
         let end = markerCommand(cleanup.endMarker)
@@ -563,10 +638,19 @@ extension TmuxTools {
         let restore =
             "case \"$\(flags)\" in ex) \\set -e; \\set -x ;; "
             + "e) \\set -e ;; x) \\set -x ;; esac"
+        let captureTraps = inheritedTrapCapture(
+            currentCommand: cleanup.pane.currentCommand,
+            nonce: nonce,
+            declarations: trapDeclarations,
+            captureStatus: trapCaptureStatus
+        )
         return "( \(remember); \\set +e; \\set +x; "
+            + "\(commandText)=\(shellQuoted(command)); \(captureTraps); "
             + "\\trap \(shellQuoted(finish)) 0; "
             + "/usr/bin/printf '\\r\\n'; \(start); "
-            + "( \(restore); \\eval \(shellQuoted(command)) ); \\exit \"$?\" )"
+            + "if [ \"$\(trapCaptureStatus)\" -ne 0 ]; then \\exit 125; fi; "
+            + "( \(restore); \\eval \"$\(trapDeclarations)\n$\(commandText)\" ); "
+            + "\\exit \"$?\" )"
     }
 
     private static func runShellOutput(
