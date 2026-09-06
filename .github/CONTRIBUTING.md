@@ -226,6 +226,32 @@ root. The script cannot see whether a server was *started* — nothing reaches
 the filesystem until a command runs against it — so deliberate exceptions are
 listed beside their reason.
 
+Every continuation the library suspends can be resumed by cancelling it:
+
+```console
+$ python3 Scripts/check_continuations.py
+```
+
+A continuation nobody resumes is not a slow call, it is one that never returns,
+and the usual ways of bounding a wait cannot end it — `.timeLimit` cancels a
+case and then waits for it, so a parked continuation turns a slow test into a
+run that cannot finish. One lane spent six hours there. The script requires
+`withTaskCancellationHandler` to open just above the continuation; where the
+*caller* releases the park instead, which is legitimate,
+`Sources/LibTmuxMCP/OrderedOutbound.swift` being the example, the exception is
+listed beside the code that resumes it.
+
+`Package.resolved` still tracks the superset it is committed with:
+
+```console
+$ git diff --exit-code Package.resolved Examples/Package.resolved
+```
+
+A trait-off resolve rewrites the root lock to drop the Yams pin, and every
+command above uses `--force-resolved-versions` precisely so it does not. Run
+one without it — `swift test` with no traits is the one that catches people —
+and the drift lands in the next commit unless this catches it first.
+
 Every tracked file with a shebang is executable in git, so a script that CI
 invokes directly does not fail only there:
 
