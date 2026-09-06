@@ -16,7 +16,12 @@ jobs:
   test:
     name: ${{ matrix.os }} / tmux ${{ matrix.tmux }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # Real tmux, real waits: a case that parks a thread is one a Swift Testing
+    # `.timeLimit` cannot cancel, so the job is the only ceiling left. The
+    # slowest cell observed is under six minutes with a warm tmux cache, and a
+    # cold one adds the tarball build; 30 leaves room for both and still turns
+    # a hang into a failure with logs rather than six hours of silence.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
