@@ -177,6 +177,43 @@ struct PaneInputTransitionTests {
             )
         }
     }
+
+    @Test("empty paste stops after its required initial preflight")
+    func emptyPasteStopsAfterInitialPreflight() async throws {
+        try await withTmuxServer { fixture in
+            let source = try #require(try await fixture.panes().first)
+            let transport = TransitionTransport(
+                fixture: fixture,
+                source: source,
+                peer: source,
+                mutation: .mode
+            )
+            let tools = TmuxTools(
+                server: Server(
+                    endpoint: fixture.endpoint,
+                    tmuxExecutable: fixture.tmuxExecutable,
+                    transport: transport
+                ),
+                authority: ToolAuthority(toolsets: [.execute]),
+                caller: nil
+            )
+
+            let outcome = try await tools.call(
+                ToolCall(
+                    name: "paste_text",
+                    arguments: .object([
+                        "paneId": .string(source.id.rawValue), "text": .string(""),
+                    ])
+                )
+            )
+            #expect(outcome.structured["characters"]?.intValue == 0)
+            #expect(await transport.listPaneCount == 1)
+            #expect(await transport.pasteDispatchCount == 0)
+            #expect(
+                try await fixture.buffers().contains { $0.name.hasPrefix("libtmux-mcp-") }
+                    == false)
+        }
+    }
 }
 
 private enum TransitionMutation: String, CaseIterable, Sendable {

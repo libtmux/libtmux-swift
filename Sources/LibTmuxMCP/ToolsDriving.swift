@@ -12,8 +12,17 @@ extension TmuxTools {
             force: force,
             operation: "paste_text"
         )
-        let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         let staged = text + (try arguments.bool("enter", or: false) ? "\n" : "")
+        if staged.isEmpty {
+            return .init(
+                Pasted(
+                    paneRef: WireReferenceCodec.processLocal.reference(to: initial.source),
+                    pane: initial.source.id.rawValue,
+                    characters: 0
+                )
+            )
+        }
+        let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         do {
             try await server.setBuffer(staged, named: buffer)
         } catch {
