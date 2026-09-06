@@ -562,8 +562,8 @@ extension TmuxTools {
         }
 
         let file = "__libtmux_mcp_trap_file_\(nonce)"
-        let readDescriptor = "__libtmux_mcp_trap_read_\(nonce)"
-        let writeDescriptor = "__libtmux_mcp_trap_write_\(nonce)"
+        let readDescriptor = 9
+        let writeDescriptor = 8
         let prefix = "/tmp/libtmux-mcp-traps-\(nonce)"
         let template = shellQuoted("\(prefix).XXXXXX")
         // Unlink before writing so every later path owns only open descriptors.
@@ -588,24 +588,26 @@ extension TmuxTools {
 
         let maximumBytes = 64 * 1_024
         return "\(declarations)=; \(captureStatus)=125; \(file)=; "
-            + "\(readDescriptor)=; \(writeDescriptor)=; \\umask 077; \(acquire); "
+            + "\\umask 077; \(acquire); "
             + "if [ -n \"$\(file)\" ] && [ -f \"$\(file)\" ] "
             + "&& [ -O \"$\(file)\" ] "
-            + "&& \\exec {\(writeDescriptor)}> \"$\(file)\" "
-            + "&& \\exec {\(readDescriptor)}< \"$\(file)\" "
+            + "&& ! ( : >&\(writeDescriptor) ) 2>/dev/null "
+            + "&& ! ( : <&\(writeDescriptor) ) 2>/dev/null "
+            + "&& ! ( : >&\(readDescriptor) ) 2>/dev/null "
+            + "&& ! ( : <&\(readDescriptor) ) 2>/dev/null "
+            + "&& \\exec \(writeDescriptor)<> \"$\(file)\" "
+            + "&& \\exec \(readDescriptor)< \"$\(file)\" "
             + "&& /bin/rm -f \"$\(file)\"; then "
-            + "if \(query) >&$\(writeDescriptor); then \(captureStatus)=0; fi; fi; "
+            + "if \(query) >&\(writeDescriptor); then \(captureStatus)=0; fi; fi; "
             + "\\trap - ERR DEBUG; "
-            + "if [ -n \"${\(writeDescriptor)-}\" ]; then "
-            + "\\exec {\(writeDescriptor)}>&-; fi; "
-            + "if [ \"$\(captureStatus)\" -eq 0 ]; then LC_ALL=C; "
+            + "if [ \"$\(captureStatus)\" -eq 0 ]; then "
+            + "\\exec \(writeDescriptor)>&-; LC_ALL=C; "
             + "if \(declarations)=$(/usr/bin/head -c \(maximumBytes + 1) "
-            + "<&$\(readDescriptor)); then "
+            + "<&\(readDescriptor)); then "
             + "if [ \"${#\(declarations)}\" -gt \(maximumBytes) ]; then "
             + "\(declarations)=; \(captureStatus)=125; fi; "
-            + "else \(declarations)=; \(captureStatus)=125; fi; fi; "
-            + "if [ -n \"${\(readDescriptor)-}\" ]; then "
-            + "\\exec {\(readDescriptor)}<&-; fi; "
+            + "else \(declarations)=; \(captureStatus)=125; fi; "
+            + "\\exec \(readDescriptor)<&-; fi; "
             + "if [ -n \"$\(file)\" ]; then /bin/rm -f \"$\(file)\"; fi"
     }
 

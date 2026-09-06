@@ -404,10 +404,13 @@ struct CapabilityBehaviorTests {
     func runPreservesInheritedShellTraps() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
-            let candidates: [(String, [String])] = [
+            var candidates: [(String, [String])] = [
                 ("/bin/bash", ["--noprofile", "--norc"]),
                 ("/bin/zsh", ["-f"]),
             ]
+            if let bash32 = ProcessInfo.processInfo.environment["LIBTMUX_BASH_32_BIN"] {
+                candidates.append((bash32, ["--noprofile", "--norc"]))
+            }
             for (path, flags) in candidates
             where FileManager.default.isExecutableFile(atPath: path) {
                 try await server.respawn(pane, running: [path] + flags)
