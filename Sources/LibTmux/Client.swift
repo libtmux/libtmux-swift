@@ -29,6 +29,10 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
     /// The session the client is looking at. A client attaches to exactly one,
     /// and switching sessions changes this rather than making a new client.
     public let sessionID: SessionID
+    /// The pane selected by this client.
+    public let activePaneID: PaneID?
+    /// Whether the client's active window is zoomed.
+    public let isWindowZoomed: Bool?
 
     public init(
         name: String,
@@ -38,6 +42,8 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
         height: Int?,
         isControlMode: Bool,
         sessionID: SessionID,
+        activePaneID: PaneID? = nil,
+        isWindowZoomed: Bool? = nil,
         incarnation: ServerIncarnation
     ) {
         self.name = name
@@ -47,6 +53,8 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
         self.height = height
         self.isControlMode = isControlMode
         self.sessionID = sessionID
+        self.activePaneID = activePaneID
+        self.isWindowZoomed = isWindowZoomed
         self.incarnation = incarnation
     }
 }
@@ -60,11 +68,14 @@ extension Client {
     private static let controlField = FormatField("client_control_mode", .flag)
     private static let sessionField = FormatField(
         "session_id", .identifier(SessionID.sigil))
+    private static let activePaneField = FormatField(
+        "pane_id", .identifier(PaneID.sigil))
+    private static let zoomedField = FormatField("window_zoomed_flag", .flag)
 
     static let projection = FormatProjection(
         [
             nameField, ttyField, pidField, widthField, heightField, controlField,
-            sessionField,
+            sessionField, activePaneField, zoomedField,
         ] + ServerIncarnation.projectionFields)
 
     init(row: FormatRow, endpoint: Endpoint) {
@@ -76,6 +87,8 @@ extension Client {
             height: row.optionalInteger(Client.heightField),
             isControlMode: row.flag(Client.controlField),
             sessionID: row.identifier(Client.sessionField, as: SessionID.self),
+            activePaneID: row.identifier(Client.activePaneField, as: PaneID.self),
+            isWindowZoomed: row.flag(Client.zoomedField),
             incarnation: ServerIncarnation(row: row, endpoint: endpoint)
         )
     }
