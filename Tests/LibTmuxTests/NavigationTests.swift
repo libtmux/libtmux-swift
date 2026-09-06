@@ -198,6 +198,40 @@ struct NavigationTests {
         }
     }
 
+    @Test("pane modes can be entered and idempotently cancelled")
+    func paneModesCanBeCancelled() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+
+            func paneInMode() async throws -> String {
+                let reply = try await server.run(
+                    TmuxCommand(
+                        "display-message",
+                        ["-p", "-t", pane.id.rawValue, "#{pane_in_mode}"]
+                    )
+                )
+                #expect(reply.isSuccess, Comment(rawValue: reply.errorText))
+                return reply.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            try await server.enterCopyMode(pane)
+            #expect(try await paneInMode() == "1")
+
+            try await server.cancelModes(in: pane)
+            #expect(try await paneInMode() == "0")
+            try await server.cancelModes(in: pane)
+            #expect(try await paneInMode() == "0")
+
+            let clock = try await server.run(
+                TmuxCommand("clock-mode", ["-t", pane.id.rawValue])
+            )
+            #expect(clock.isSuccess, Comment(rawValue: clock.errorText))
+            #expect(try await paneInMode() == "1")
+            try await server.cancelModes(in: pane)
+            #expect(try await paneInMode() == "0")
+        }
+    }
+
     @Test("a pasted buffer reaches the pane it was addressed to")
     func pasteReachesThePane() async throws {
         try await withTmuxServer { server in

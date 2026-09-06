@@ -33,7 +33,7 @@ actor the value shares.
 | `Server.swift`, `Endpoint.swift` | Addressing a server, and the listings |
 | `Session.swift`, `Window.swift`, `Pane.swift` | The model, as values |
 | `Snapshot.swift` | A bounded aggregate, with the relationships resolved |
-| `Mutations.swift`, `Navigation.swift` | Creating, splitting, renaming, selecting |
+| `Mutations.swift`, `Navigation.swift` | Creating, splitting, renaming, selecting, pane modes |
 | `Options.swift`, `Environment.swift` | tmux options, hooks, and its two environments |
 | `Filter*.swift` | `FilterExpr`, the filter that encodes and travels |
 | `Regex*.swift` | Bounded pattern syntax, compilation, and matching |

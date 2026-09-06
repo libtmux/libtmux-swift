@@ -89,6 +89,11 @@ command explains itself on standard error — so
 - ``IncrementalCapture``
 - ``CaptureCursor``
 
+### Controlling pane modes
+
+- ``Server/enterCopyMode(_:)``
+- ``Server/cancelModes(in:)``
+
 ### Laying out a window
 
 - ``WindowPlacement``
