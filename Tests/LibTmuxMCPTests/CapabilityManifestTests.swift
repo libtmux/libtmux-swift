@@ -21,10 +21,10 @@ struct CapabilityManifestTests {
         (
             "manage",
             [
-                "enter_copy_mode", "exit_copy_mode", "move_window", "rename_session",
-                "rename_window", "resize_pane", "resize_window", "select_layout",
-                "select_pane", "select_window", "set_history_limit", "set_mouse_enabled",
-                "set_pane_title", "signal_channel", "swap_pane", "wait_for_channel",
+                "move_window", "rename_session", "rename_window", "resize_pane",
+                "resize_window", "select_layout", "select_pane", "select_window",
+                "set_history_limit", "set_mouse_enabled", "set_pane_title", "signal_channel",
+                "swap_pane", "wait_for_channel",
             ]
         ),
         (
@@ -47,7 +47,9 @@ struct CapabilityManifestTests {
             socketPath: "/tmp/libtmux-swift-test/capability-manifest-unstarted"
         )
         let allExpected = Set(toolsByToolset.flatMap(\.1))
-        #expect(allExpected.count == 47)
+        #expect(allExpected.count == 45)
+        #expect(toolsByToolset.map { $0.1.count } == [18, 14, 9, 4])
+        #expect(ToolOperation.allCases.count == 45)
         #expect(Set(TmuxTools.definitions.map(\.name)) == allExpected)
         #expect(TmuxTools.definitions.map(\.name) == toolsByToolset.flatMap(\.1))
         let outputSchemas = try TmuxTools.definitions.map { definition in
@@ -139,7 +141,7 @@ struct CapabilityManifestTests {
                 "Delete tmux state; accepts no command payload."
             ),
         ]
-        #expect(controlledOpeners.reduce(0) { $0 + $1.0.count } == 47)
+        #expect(controlledOpeners.reduce(0) { $0 + $1.0.count } == 45)
         for (names, opener) in controlledOpeners {
             for name in names {
                 let definition = try #require(TmuxTools.definitions.first { $0.name == name })
@@ -538,6 +540,19 @@ struct CapabilityManifestTests {
             defaultConfiguration.tmuxConfigurationFile.map(FileManager.default.fileExists) == true
         )
         #expect(!defaultConfiguration.authority.toolsets.contains(.teardown))
+        #expect(defaultConfiguration.authority.resolve(TmuxTools.definitions).count == 41)
+        #expect(TmuxTools(server: server).visibleDefinitions.count == 18)
+
+        let instructions = Instructions.text(
+            authority: ToolAuthority(toolsets: [.inspect]),
+            waitCeiling: .seconds(120),
+            caller: nil
+        )
+        #expect(instructions.contains("capture_pane start/end"))
+        #expect(instructions.contains("search_panes"))
+        #expect(instructions.contains("one MCP response, not one atomic read"))
+        #expect(instructions.contains("opaque cursor"))
+        #expect(instructions.contains("Pane modes are human-owned"))
 
         let named = ServerConfiguration(environment: ["LIBTMUX_SOCKET": "literal-name"])
         #expect(named.errors.isEmpty)

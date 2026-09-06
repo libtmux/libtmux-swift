@@ -448,18 +448,6 @@ extension TmuxTools {
             ),
 
             capability(
-                .enterCopyMode, "Enter copy mode",
-                "Enter copy mode in a pane and optionally scroll upward.", toolset: .manage,
-                reach: .none, effects: [.observe, .change], outputs: inspectMeta,
-                arguments: [paneID(), integer("scrollUp")],
-                specialSinks: ["paneId": lookup, "scrollUp": state],
-                handler: { try await $0.enterCopyMode($1) }),
-            capability(
-                .exitCopyMode, "Exit copy mode", "Leave copy mode in one pane.", toolset: .manage,
-                reach: .none, effects: [.observe, .change], outputs: inspectMeta,
-                arguments: [paneID()], specialSinks: ["paneId": lookup],
-                handler: { try await $0.exitCopyMode($1) }),
-            capability(
                 .moveWindow, "Move window", "Move one window appearance to another session.",
                 toolset: .manage, reach: .none, effects: [.observe, .change], outputs: inspectMeta,
                 arguments: [

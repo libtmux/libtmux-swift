@@ -490,6 +490,11 @@ package that it means to you.
 
 ### The tools
 
+The registry contains 45 tools: 18 `inspect`, 14 `manage`, nine `execute`, and
+four `teardown`. A configured executable exposes the first three toolsets by
+default (41 tools); an authenticated daemon started from the bundled minimal
+configuration also receives `teardown` (45 tools).
+
 | Tool | What it answers or does |
 | --- | --- |
 | `list_sessions` `list_windows` `list_panes` | Lists the objects on the selected socket |
@@ -500,7 +505,6 @@ package that it means to you.
 | `call_read_tools_batch` | Runs up to 16 eligible inspect operations under one outer approval |
 | `rename_session` `rename_window` `select_window` `select_pane` `select_layout` | Renames or selects tmux state |
 | `resize_window` `resize_pane` `move_window` `swap_pane` `set_pane_title` | Rearranges windows and panes |
-| `enter_copy_mode` `exit_copy_mode` | Controls copy mode |
 | `wait_for_channel` `signal_channel` | Coordinates through bounded tmux channels |
 | `set_mouse_enabled` `set_history_limit` | Applies typed server settings |
 | `create_session` `create_window` `split_window` `respawn_pane` | Starts configured pane processes without command payloads |
@@ -508,6 +512,15 @@ package that it means to you.
 | `send_keys` `send_keys_batch` `paste_text` | Sends bounded input to pane programs |
 | `set_synchronize_panes` | Makes later pane input fan out across a window |
 | `clear_pane_scrollback` `kill_pane` `kill_window` `kill_session` | Deletes retained or live tmux state |
+
+Pane modes remain human-client state, not MCP automation state. Read bounded
+scrollback with `capture_pane` and its `start`/`end` range, use `search_panes` to
+discover matching output, or use `snapshot_pane` when one MCP response should
+contain both pane metadata and bounded content; the metadata and capture are
+separate reads, not an atomic snapshot. Carry the opaque `capture_since` cursor
+across turns for new output. If a pane is already in a human-owned mode, read
+`pane_in_mode` or `pane_mode` through `get_tmux_variables`, report it, and leave
+entry or cancellation to the client that owns the interaction.
 
 Every tool declares native input and output schemas and carries its complete
 capability row under `_meta["com.git-pull.libtmux-mcp/capability"]`. The same
@@ -527,10 +540,11 @@ commands, and tmux metadata may contain secrets or untrusted instructions.
 ### Migrating from the earlier MCP surface
 
 Earlier alpha releases used ordered safety tiers and different tool names.
-These names are not aliases on the frozen 47-tool surface:
+These names are not aliases on the frozen 45-tool surface:
 
 | Earlier name or URI | Current path |
 | --- | --- |
+| `enter_copy_mode`, `exit_copy_mode` | No MCP replacement. Read history through `capture_pane`, locate output with `search_panes`, continue with `capture_since`, and leave human-owned pane modes unchanged. Applications that own pane state can use the core library's `enterCopyMode` and `cancelModes` APIs. |
 | `LIBTMUX_SAFETY` | Use `LIBTMUX_TOOLSETS`; any present legacy value stops startup. |
 | `LIBTMUX_MCP_TOOLS` | Use `LIBTMUX_TOOLSETS=` with `LIBTMUX_TOOLS` to preserve its exact allowlist; any present legacy value stops startup. |
 | `tmux://snapshot` | Compose `list_sessions`, `list_windows`, `list_panes`, and `snapshot_pane`. |

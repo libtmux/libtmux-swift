@@ -78,7 +78,7 @@ enum CapabilityOutputSchemas {
             object(["session": session])
         case .getWindowInfo:
             object(["window": window, "placements": array(windowLink)])
-        case .getPaneInfo, .findPaneByPosition, .enterCopyMode, .exitCopyMode:
+        case .getPaneInfo, .findPaneByPosition:
             object(["pane": pane])
         case .capturePane:
             capture

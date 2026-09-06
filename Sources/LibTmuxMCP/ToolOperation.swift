@@ -1,4 +1,4 @@
-/// The stable protocol name of one of the 47 public MCP tools.
+/// The stable protocol name of one of the 45 public MCP tools.
 public enum ToolOperation: String, Sendable, Hashable, CaseIterable {
     case callReadToolsBatch = "call_read_tools_batch"
     case capturePane = "capture_pane"
@@ -19,8 +19,6 @@ public enum ToolOperation: String, Sendable, Hashable, CaseIterable {
     case snapshotPane = "snapshot_pane"
     case waitForText = "wait_for_text"
 
-    case enterCopyMode = "enter_copy_mode"
-    case exitCopyMode = "exit_copy_mode"
     case moveWindow = "move_window"
     case renameSession = "rename_session"
     case renameWindow = "rename_window"

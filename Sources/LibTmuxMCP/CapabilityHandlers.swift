@@ -461,26 +461,6 @@ extension TmuxTools {
         return batch.finishOutcome()
     }
 
-    func enterCopyMode(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await capabilityPane(try arguments.string("paneId"))
-        var command = ["-t", pane.id.rawValue]
-        if let count = try arguments.optionalInteger("scrollUp") {
-            command += ["-u", "-S", String(count)]
-        }
-        let reply = try await server.run(TmuxCommand("copy-mode", command))
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
-        return .init(structured: .object(["pane": JSONValue.encoding(PaneResult(pane))]))
-    }
-
-    func exitCopyMode(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await capabilityPane(try arguments.string("paneId"))
-        let reply = try await server.run(
-            TmuxCommand("send-keys", ["-X", "-t", pane.id.rawValue, "cancel"])
-        )
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
-        return .init(structured: .object(["pane": JSONValue.encoding(PaneResult(pane))]))
-    }
-
     func renameSession(_ arguments: Arguments) async throws -> ToolOutcome {
         let session = try await capabilitySession(try arguments.string("session"))
         let name = try arguments.string("name")

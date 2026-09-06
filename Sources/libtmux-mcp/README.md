@@ -46,6 +46,10 @@ socket or configuration selections require an explicit `teardown` choice.
 When stdio ends, the process removes only a default daemon whose launch nonce
 and incarnation still match; existing and replacement daemons remain.
 
+The configured default exposes 41 of the 45 tools. An authenticated default
+daemon adds the four `teardown` tools; `TmuxTools(server:)` remains the
+18-tool inspect-only embedding default.
+
 Use `LIBTMUX_TOOLSETS=inspect LIBTMUX_TOOLS=create_window` to expose the read
 surface plus one named execute tool. Empty tokens and unknown tool or toolset
 names fail startup before tmux opens. The retired `LIBTMUX_SAFETY` and

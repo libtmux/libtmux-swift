@@ -31,6 +31,9 @@ public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
 groups. Toolsets shape the callable interface; they do not authorize commands
 or confine the tmux user.
 
+The default constructor exposes 18 inspect tools. The complete registry has 45:
+18 `inspect`, 14 `manage`, nine `execute`, and four `teardown`.
+
 For least authority, pass a typed exact selection:
 
 ```swift
@@ -66,6 +69,13 @@ replace one that has expired. Exact window occurrences carry both a global
 
 `TmuxTools` is written against [`LibTmux`](../LibTmux)'s `Server` and never
 mentions a mode, so it works the same directly or over a connection.
+
+That boundary is deliberate. Use `capture_pane` ranges for bounded history,
+`search_panes` for discovery, `snapshot_pane` for metadata and content in one
+MCP response, and an opaque `capture_since` cursor for subsequent output.
+`snapshot_pane` performs separate reads; it does not promise atomicity. Read
+`pane_in_mode` or `pane_mode` with `get_tmux_variables` when mode state matters,
+then report the human-owned state without entering or cancelling it.
 
 ## Adding a tool
 

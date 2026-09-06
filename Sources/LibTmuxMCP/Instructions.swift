@@ -51,7 +51,7 @@ enum Instructions {
             """,
             """
             TRIGGERS: tmux panes, windows, sessions; 'this terminal', 'send keys', \
-            'scrollback', 'copy mode'.
+            'scrollback', pane output.
             NOT FOR: browser tabs, editor splits (VS Code, Neovim), GUI windows \
             (i3, sway), Jupyter cells, login sessions. Ask once if genuinely unclear.
             """,
@@ -83,7 +83,25 @@ enum Instructions {
             sentences.append("\(names(content)) read printed pane content.")
         }
         if available.contains("capture_since") {
-            sentences.append("Across turns, capture_since returns only the difference.")
+            sentences.append(
+                "Carry capture_since's opaque cursor across turns; linesMissed or restarted means continuity was reset."
+            )
+        }
+        if available.contains("capture_pane") {
+            sentences.append("Use capture_pane start/end for bounded history without pane modes.")
+        }
+        if available.contains("search_panes") {
+            sentences.append("Use search_panes to discover matching scrollback.")
+        }
+        if available.contains("snapshot_pane") {
+            sentences.append(
+                "snapshot_pane returns metadata and bounded content in one MCP response, not one atomic read."
+            )
+        }
+        if available.contains("get_tmux_variables") {
+            sentences.append(
+                "Pane modes are human-owned: read pane_in_mode or pane_mode, report it, and do not enter or cancel it."
+            )
         }
         return sentences.joined(separator: " ")
     }
@@ -111,9 +129,6 @@ enum Instructions {
         var sentences: [String] = []
         if available.contains("get_server_info") {
             sentences.append("START WITH get_server_info when server identity matters.")
-        }
-        if available.contains("snapshot_pane") {
-            sentences.append("snapshot_pane reads pane metadata and bounded content together.")
         }
         return sentences.isEmpty ? nil : sentences.joined(separator: " ")
     }
