@@ -527,6 +527,19 @@ class RecoveryState(t.NamedTuple):
     file: FileState | None
 
 
+class LockState(t.NamedTuple):
+    """Authenticated persistent lock path and its open descriptor."""
+
+    path: pathlib.Path
+    physical: pathlib.Path
+    parent: DirectoryState | None
+    device: int | None
+    inode: int | None
+    mode: int | None
+    links: int | None
+    descriptor: int | None
+
+
 @dataclasses.dataclass
 class SwapPlan:
     """One fully rendered config change awaiting backup and commit."""
@@ -592,6 +605,33 @@ class StagedRevert(t.NamedTuple):
     restored: pathlib.Path
     recovery: pathlib.Path
     backup_recoveries: tuple[pathlib.Path, ...]
+
+
+class OwnedConfig(t.NamedTuple):
+    """Authenticated active config and recovery stack from persisted state."""
+
+    config: ConfigState
+    chain: list[tuple[CLIName, Scope]]
+    backups: dict[tuple[CLIName, Scope], RecoveryState]
+
+
+@dataclasses.dataclass
+class OwnedPaths:
+    """Exact identities of temporary paths created by this invocation."""
+
+    files: dict[pathlib.Path, FileState] = dataclasses.field(default_factory=dict)
+
+    def add(self, path: pathlib.Path) -> None:
+        """Record the stage's current identity."""
+        self.files[path] = _file_state(path)
+
+    def rebind(self, path: pathlib.Path, state: FileState) -> None:
+        """Transfer ownership after an authenticated move."""
+        self.files[path] = state
+
+    def discard(self, path: pathlib.Path) -> None:
+        """Stop tracking a path whose ownership was transferred."""
+        self.files.pop(path, None)
 
 
 class SwapStateError(RuntimeError):
@@ -760,6 +800,88 @@ def _verify_recovery(recovery: RecoveryState, expected: FileState | None) -> Non
         _raise_changed(msg)
     if current.file != expected:
         msg = f"{recovery.path} identity, mode, or bytes changed"
+        _raise_changed(msg)
+
+
+def _lock_path() -> pathlib.Path:
+    return STATE_DIR / "state.lock"
+
+
+def _lock_state(descriptor: int | None = None) -> LockState:
+    path = _lock_path()
+    if not os.path.lexists(path.parent):
+        return LockState(
+            path,
+            path.resolve(strict=False),
+            None,
+            None,
+            None,
+            None,
+            None,
+            descriptor,
+        )
+    parent = _directory_state(path.parent)
+    if parent.symlink:
+        msg = f"swap lock directory is a symlink: {path.parent}"
+        _raise_state(msg)
+    physical = parent.physical / path.name
+    if not os.path.lexists(path):
+        return LockState(
+            path,
+            physical,
+            parent,
+            None,
+            None,
+            None,
+            None,
+            descriptor,
+        )
+    before = path.lstat()
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        msg = f"swap lock is not a regular file: {path}"
+        _raise_state(msg)
+    resolved = path.resolve(strict=True)
+    after = path.lstat()
+    before_key = (before.st_dev, before.st_ino, before.st_mode, before.st_nlink)
+    after_key = (after.st_dev, after.st_ino, after.st_mode, after.st_nlink)
+    if before_key != after_key or resolved != physical:
+        msg = f"swap lock changed while it was inspected: {path}"
+        _raise_changed(msg)
+    mode = stat.S_IMODE(after.st_mode)
+    if mode != 0o600:
+        msg = f"swap lock mode is not 0600: {path}"
+        _raise_state(msg)
+    if after.st_nlink != 1:
+        msg = f"swap lock has hard links: {path}"
+        _raise_state(msg)
+    if descriptor is not None:
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or stat.S_IMODE(opened.st_mode) != mode
+            or opened.st_nlink != after.st_nlink
+            or (opened.st_dev, opened.st_ino) != (after.st_dev, after.st_ino)
+        ):
+            msg = f"swap lock path changed after open: {path}"
+            _raise_state(msg)
+    return LockState(
+        path,
+        physical,
+        parent,
+        after.st_dev,
+        after.st_ino,
+        mode,
+        after.st_nlink,
+        descriptor,
+    )
+
+
+def _verify_lock(lock: LockState | None) -> None:
+    if lock is None:
+        return
+    current = _lock_state(lock.descriptor)
+    if current != lock:
+        msg = f"swap lock identity changed: {lock.path}"
         _raise_changed(msg)
 
 
@@ -1099,23 +1221,138 @@ def _stage_file(
 
 
 def _apply_replace(
-    staged: pathlib.Path, destination: pathlib.Path
+    staged: pathlib.Path,
+    destination: pathlib.Path,
+    *,
+    expected: FileState,
+    destination_expected: FileState,
+    lock: LockState | None,
 ) -> tuple[FileState, Exception | None]:
-    expected = _file_state(staged)
+    _verify_lock(lock)
+    if _file_state(staged) != expected:
+        msg = f"{staged} changed before atomic replacement"
+        _raise_changed(msg)
+    if _file_state(destination) != destination_expected:
+        msg = f"{destination} changed before atomic replacement"
+        _raise_changed(msg)
+    delayed_error = _apply_unlink(
+        destination,
+        expected=destination_expected,
+        lock=lock,
+    )
+    if delayed_error is not None:
+        raise delayed_error
+    return _publish_absent(
+        staged,
+        destination,
+        expected=expected,
+        lock=lock,
+    )
+
+
+def _publish_absent(
+    staged: pathlib.Path,
+    destination: pathlib.Path,
+    *,
+    expected: FileState,
+    lock: LockState | None,
+) -> tuple[FileState, Exception | None]:
+    """Publish an exact stage without replacing a concurrently-created path."""
+    _verify_lock(lock)
+    if _file_state(staged) != expected:
+        msg = f"{staged} changed before atomic publication"
+        _raise_changed(msg)
+    if os.path.lexists(destination):
+        msg = f"{destination} appeared before atomic publication"
+        _raise_changed(msg)
+    _verify_lock(lock)
     delayed_error: Exception | None = None
     try:
-        staged.replace(destination)
+        os.link(staged, destination, follow_symlinks=False)
     except Exception as exc:
-        committed = _file_state(destination)
+        try:
+            committed = _file_state(destination)
+        except (OSError, RuntimeError, ValueError):
+            raise exc from None
         if committed != expected:
-            raise
+            msg = f"atomic publication of {destination} was not exact"
+            raise RuntimeError(msg) from exc
         delayed_error = exc
     else:
         committed = _file_state(destination)
     if committed != expected:
-        msg = f"atomic replacement of {destination} was not exact"
+        msg = f"atomic publication of {destination} was not exact"
         _raise_changed(msg)
+    try:
+        removal_error = _apply_unlink(staged, expected=expected, lock=lock)
+    except Exception as exc:
+        removal_error = exc
+    if delayed_error is None:
+        delayed_error = removal_error
     return committed, delayed_error
+
+
+def _remove_exact(path: pathlib.Path, expected: FileState) -> Exception | None:
+    """Quarantine one exact inode before deleting it."""
+    quarantine_dir = pathlib.Path(
+        tempfile.mkdtemp(prefix=f".{path.name}.mcp-swap-retained-", dir=path.parent)
+    )
+    quarantine_dir.chmod(0o700)
+    quarantine = quarantine_dir / "artifact"
+    delayed_error: Exception | None = None
+    try:
+        path.rename(quarantine)
+    except Exception as exc:
+        try:
+            current = _file_state(quarantine)
+        except (OSError, RuntimeError, ValueError):
+            with contextlib.suppress(OSError):
+                quarantine_dir.rmdir()
+            raise exc from None
+        delayed_error = exc
+    else:
+        current = _file_state(quarantine)
+    if current != expected:
+        msg = f"{path} changed; retained at {quarantine_dir}"
+        _raise_changed(msg)
+    if os.path.lexists(path):
+        delayed_error = delayed_error or RuntimeError(f"{path} appeared during removal")
+    try:
+        quarantine.unlink()
+    except Exception as exc:
+        if os.path.lexists(quarantine):
+            msg = f"{path} removal failed; retained at {quarantine_dir}: {exc}"
+            raise RuntimeError(msg) from exc
+        delayed_error = delayed_error or exc
+    if os.path.lexists(quarantine):
+        msg = f"{quarantine} still exists after removal"
+        _raise_changed(msg)
+    try:
+        quarantine_dir.rmdir()
+    except Exception as exc:
+        if quarantine_dir.exists():
+            raise
+        delayed_error = delayed_error or exc
+    return delayed_error
+
+
+def _apply_unlink(
+    path: pathlib.Path,
+    *,
+    expected: FileState,
+    lock: LockState | None,
+) -> Exception | None:
+    _verify_lock(lock)
+    if _file_state(path) != expected:
+        msg = f"{path} changed before removal"
+        _raise_changed(msg)
+    _verify_lock(lock)
+    delayed_error = _remove_exact(path, expected)
+    try:
+        _verify_lock(lock)
+    except Exception as exc:
+        delayed_error = delayed_error or exc
+    return delayed_error
 
 
 def _raise_if_delayed(error: Exception | None) -> None:
@@ -1124,14 +1361,27 @@ def _raise_if_delayed(error: Exception | None) -> None:
 
 
 def _cleanup_owned(
-    owned: set[pathlib.Path], preserve: set[pathlib.Path] | None = None
+    owned: OwnedPaths,
+    preserve: set[pathlib.Path] | None = None,
+    *,
+    lock: LockState | None = None,
 ) -> list[str]:
     retained = preserve or set()
     errors: list[str] = []
-    for path in sorted(owned - retained, key=str):
+    for path, expected in sorted(owned.files.items(), key=lambda item: str(item[0])):
+        if path in retained:
+            continue
         try:
-            path.unlink(missing_ok=True)
-        except OSError as exc:  # noqa: PERF203 - cleanup must continue
+            if not os.path.lexists(path):
+                owned.discard(path)
+                continue
+            _verify_lock(lock)
+            delayed_error = _remove_exact(path, expected)
+            if delayed_error is not None:
+                raise delayed_error
+            _verify_lock(lock)
+            owned.discard(path)
+        except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"could not remove task-owned stage {path}: {exc}")
     return errors
 
@@ -2287,13 +2537,37 @@ def load_state(*, strict: bool = False) -> dict[tuple[CLIName, Scope], SwapEntry
 
 
 @contextlib.contextmanager
-def _state_lock() -> t.Iterator[None]:
-    """Serialize config mutations that share the swap state file."""
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    fd = os.open(STATE_DIR / "state.lock", os.O_RDWR | os.O_CREAT, 0o600)
-    with os.fdopen(fd, "a+b") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        yield
+def _state_lock() -> t.Iterator[LockState]:
+    """Serialize config mutations under one authenticated persistent lock."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if directory_flag is None or nofollow is None:
+        msg = "this platform cannot open the swap lock without following links"
+        _raise_state(msg)
+    directory_flags = os.O_RDONLY | directory_flag | nofollow
+    directory_flags |= getattr(os, "O_CLOEXEC", 0)
+    directory_fd = os.open(STATE_DIR, directory_flags)
+    try:
+        parent = _directory_state(STATE_DIR)
+        opened_parent = os.fstat(directory_fd)
+        if parent.symlink or (opened_parent.st_dev, opened_parent.st_ino) != (
+            parent.device,
+            parent.inode,
+        ):
+            msg = f"swap lock directory changed: {STATE_DIR}"
+            _raise_state(msg)
+        flags = os.O_RDWR | os.O_CREAT | nofollow | getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(_lock_path().name, flags, 0o600, dir_fd=directory_fd)
+        with os.fdopen(fd, "a+b") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            lock = _lock_state(lock_file.fileno())
+            try:
+                yield lock
+            finally:
+                _verify_lock(lock)
+    finally:
+        os.close(directory_fd)
 
 
 def save_state(entries: dict[tuple[CLIName, Scope], SwapEntry]) -> None:
@@ -2567,34 +2841,108 @@ def _validate_config_chain(
     return keys, backups
 
 
-def _reject_duplicate_use_targets(plans: list[SwapPlan]) -> None:
+def _snapshot_owned_state(
+    state: dict[tuple[CLIName, Scope], SwapEntry],
+) -> dict[str, OwnedConfig]:
+    """Authenticate every active config and backup owned by swap state."""
+    groups: dict[str, list[tuple[CLIName, Scope]]] = {}
+    for key, entry in state.items():
+        groups.setdefault(entry.config_path, []).append(key)
+
+    snapshots: dict[str, OwnedConfig] = {}
+    for logical, keys in groups.items():
+        clients = {cli for cli, _scope in keys}
+        if len(clients) != 1:
+            msg = f"multiple clients claim recovery for {logical}"
+            _raise_state(msg)
+        cli = next(iter(clients))
+        config = _config_state(CLIS[cli])
+        chain, backups = _validate_config_chain(config, state)
+        if set(chain) != set(keys):
+            msg = f"recovery stack is incomplete for {logical}"
+            _raise_state(msg)
+        snapshots[logical] = OwnedConfig(config, chain, backups)
+    return snapshots
+
+
+def _reject_transaction_aliases(
+    configs: list[tuple[str, ConfigState]],
+    recoveries: list[tuple[str, RecoveryState]],
+    lock: LockState | None,
+) -> None:
     paths: dict[pathlib.Path, str] = {}
     inodes: dict[tuple[int, int], str] = {}
-    destinations: dict[pathlib.Path, str] = {STATE_FILE.resolve(): "swap state"}
-    for plan in plans:
-        target = plan.config.target
-        inode = (plan.config.file.device, plan.config.file.inode)
-        other = paths.get(target) or inodes.get(inode)
-        if other is not None:
-            msg = f"duplicate physical config target for {other} and {plan.label}"
-            _raise_state(msg)
-        owner = destinations.get(target)
+
+    def claim(
+        label: str,
+        logical: pathlib.Path,
+        physical: pathlib.Path,
+        identity: tuple[int, int] | None,
+    ) -> None:
+        owner = next(
+            (
+                paths[path]
+                for path in dict.fromkeys((logical, physical))
+                if path in paths and paths[path] != label
+            ),
+            None,
+        )
+        if owner is None and identity is not None:
+            owner = inodes.get(identity)
+            if owner == label:
+                owner = None
         if owner is not None:
-            msg = f"duplicate transaction destination for {owner} and {plan.label}"
+            msg = f"duplicate transaction destination for {owner} and {label}"
             _raise_state(msg)
-        paths[target] = plan.label
-        inodes[inode] = plan.label
-        destinations[target] = f"{plan.label} config"
-        recovery_paths = [plan.backup, *(item.backup for item in plan.backup_rewrites)]
-        for recovery in recovery_paths:
-            backup_owner = destinations.get(recovery.physical)
-            if backup_owner is not None:
-                msg = (
-                    "duplicate transaction destination for "
-                    f"{backup_owner} and {plan.label} backup"
-                )
-                _raise_state(msg)
-            destinations[recovery.physical] = f"{plan.label} backup"
+        paths[logical] = label
+        paths[physical] = label
+        if identity is not None:
+            inodes[identity] = label
+
+    if os.path.lexists(STATE_FILE.parent):
+        state_file = _recovery_state(STATE_FILE)
+        state_identity = (
+            None
+            if state_file.file is None
+            else (state_file.file.device, state_file.file.inode)
+        )
+        claim("swap state", state_file.path, state_file.physical, state_identity)
+    else:
+        claim("swap state", STATE_FILE, STATE_FILE.resolve(strict=False), None)
+    if lock is not None:
+        lock_identity = (
+            None
+            if lock.device is None or lock.inode is None
+            else (lock.device, lock.inode)
+        )
+        claim("swap lock", lock.path, lock.physical, lock_identity)
+    else:
+        claim("swap lock", _lock_path(), _lock_path().resolve(strict=False), None)
+
+    config_paths: dict[pathlib.Path, str] = {}
+    config_inodes: dict[tuple[int, int], str] = {}
+    for label, config in configs:
+        identity = (config.file.device, config.file.inode)
+        other = config_paths.get(config.target) or config_inodes.get(identity)
+        if other is not None:
+            msg = f"duplicate physical config target for {other} and {label}"
+            _raise_state(msg)
+        config_paths[config.target] = label
+        config_inodes[identity] = label
+        claim(
+            f"{label} config",
+            config.info.config_path,
+            config.target,
+            identity,
+        )
+
+    for label, recovery in recoveries:
+        identity = (
+            None
+            if recovery.file is None
+            else (recovery.file.device, recovery.file.inode)
+        )
+        claim(label, recovery.path, recovery.physical, identity)
 
 
 def _plan_use_local(
@@ -2604,6 +2952,7 @@ def _plan_use_local(
     spec: McpServerSpec,
     extra_env: dict[str, str],
     state: dict[tuple[CLIName, Scope], SwapEntry],
+    lock: LockState | None,
 ) -> tuple[list[SwapPlan], int]:
     targets = list(dict.fromkeys(args.cli or present_clis()))
     if not targets:
@@ -2611,8 +2960,10 @@ def _plan_use_local(
         return [], 1
 
     _validate_state_sequences(state)
+    owned_state = _snapshot_owned_state(state)
     timestamp = time.strftime("%Y%m%d%H%M%S")
     plans: list[SwapPlan] = []
+    selected_configs: list[tuple[str, ConfigState]] = []
     had_error = 0
     for cli in targets:
         scope = _normalize_scope(cli, args.scope)
@@ -2623,8 +2974,12 @@ def _plan_use_local(
             had_error = 1
             continue
         try:
-            config_state = _config_state(info)
-            chain, backups = _validate_config_chain(config_state, state)
+            owned = owned_state.get(str(info.config_path))
+            config_state = owned.config if owned is not None else _config_state(info)
+            selected_configs.append((label, config_state))
+            chain, backups = (
+                (owned.chain, owned.backups) if owned is not None else ([], {})
+            )
             config = _parse_config_bytes(info, config_state.file.data)
             current = get_server(cli, config, server, repo, scope=scope)
             if (
@@ -2714,7 +3069,23 @@ def _plan_use_local(
             had_error = 1
     if had_error:
         return [], had_error
-    _reject_duplicate_use_targets(plans)
+    selected_logicals = {
+        str(config.info.config_path) for _label, config in selected_configs
+    }
+    all_configs = selected_configs + [
+        (f"{logical} owned", owned.config)
+        for logical, owned in owned_state.items()
+        if logical not in selected_logicals
+    ]
+    recoveries = [
+        (f"{_state_key(*key)} backup", backup)
+        for owned in owned_state.values()
+        for key, backup in owned.backups.items()
+    ]
+    recoveries.extend(
+        (f"{plan.label} backup", plan.backup) for plan in plans if plan.prior is None
+    )
+    _reject_transaction_aliases(all_configs, recoveries, lock)
     _assert_destination_feasible(STATE_FILE)
     return plans, 0
 
@@ -2728,9 +3099,9 @@ def _stage_use_local(
     dict[tuple[CLIName, Scope], SwapEntry],
     pathlib.Path,
     pathlib.Path | None,
-    set[pathlib.Path],
+    OwnedPaths,
 ]:
-    owned: set[pathlib.Path] = set()
+    owned = OwnedPaths()
     staged: list[StagedUse] = []
     next_state = dict(state)
     next_seq = max((entry.seq_no for entry in state.values()), default=-1) + 1
@@ -2863,19 +3234,38 @@ def _stage_use_local(
         return staged, next_state, state_stage, state_recovery, owned
 
 
-def _restore_config_stage(item: StagedUse, committed: FileState | None) -> None:
+def _restore_config_stage(
+    item: StagedUse,
+    committed: FileState | None,
+    owned: OwnedPaths,
+    lock: LockState | None,
+) -> None:
     config = item.plan.config
     if committed is None:
         if os.path.lexists(config.target):
             msg = f"{config.target} appeared before rollback"
             _raise_changed(msg)
+        restored, delayed_error = _publish_absent(
+            item.recovery,
+            config.target,
+            expected=owned.files[item.recovery],
+            lock=lock,
+        )
     else:
         _verify_config(config, committed)
-    restored, _delayed_error = _apply_replace(item.recovery, config.target)
+        restored, delayed_error = _apply_replace(
+            item.recovery,
+            config.target,
+            expected=owned.files[item.recovery],
+            destination_expected=committed,
+            lock=lock,
+        )
+    owned.discard(item.recovery)
     if restored != config.file:
         msg = f"{item.plan.label} config rollback changed identity"
         _raise_changed(msg)
     _verify_config(config, config.file)
+    _raise_if_delayed(delayed_error)
 
 
 def _commit_use_local(
@@ -2884,7 +3274,8 @@ def _commit_use_local(
     state_file: RecoveryState,
     state_stage: pathlib.Path,
     state_recovery: pathlib.Path | None,
-    owned: set[pathlib.Path],
+    owned: OwnedPaths,
+    lock: LockState | None,
 ) -> int:
     committed_backups: list[tuple[StagedUse, FileState]] = []
     rewritten_backups: list[tuple[StagedBackupRewrite, FileState | None]] = []
@@ -2892,6 +3283,7 @@ def _commit_use_local(
     state_committed: FileState | None = None
     state_removed = False
     try:
+        _verify_lock(lock)
         for item in staged:
             _verify_config(item.plan.config, item.plan.config.file)
             _verify_recovery(item.plan.backup, item.plan.backup.file)
@@ -2900,12 +3292,16 @@ def _commit_use_local(
         _verify_recovery(state_file, state_file.file)
 
         for item in staged:
+            _verify_lock(lock)
             if item.backup is None:
                 continue
             _verify_config(item.plan.config, item.plan.config.file)
             _verify_recovery(item.plan.backup, None)
-            committed, delayed_error = _apply_replace(
-                item.backup, item.plan.backup.physical
+            committed, delayed_error = _publish_absent(
+                item.backup,
+                item.plan.backup.physical,
+                expected=owned.files[item.backup],
+                lock=lock,
             )
             owned.discard(item.backup)
             committed_backups.append((item, committed))
@@ -2913,16 +3309,27 @@ def _commit_use_local(
 
         for item in staged:
             for rewrite in item.backup_rewrites:
+                _verify_lock(lock)
                 backup = rewrite.plan.backup
                 _verify_recovery(backup, backup.file)
-                moved, delayed_error = _apply_replace(backup.physical, rewrite.recovery)
+                moved, delayed_error = _apply_replace(
+                    backup.physical,
+                    rewrite.recovery,
+                    expected=t.cast(FileState, backup.file),
+                    destination_expected=owned.files[rewrite.recovery],
+                    lock=lock,
+                )
                 rewritten_backups.append((rewrite, None))
                 if moved != backup.file:
                     msg = f"backup recovery identity changed: {backup.path}"
                     _raise_changed(msg)
+                owned.rebind(rewrite.recovery, moved)
                 _raise_if_delayed(delayed_error)
-                committed, delayed_error = _apply_replace(
-                    rewrite.output, backup.physical
+                committed, delayed_error = _publish_absent(
+                    rewrite.output,
+                    backup.physical,
+                    expected=owned.files[rewrite.output],
+                    lock=lock,
                 )
                 owned.discard(rewrite.output)
                 rewritten_backups[-1] = (rewrite, committed)
@@ -2948,34 +3355,58 @@ def _commit_use_local(
                 _verify_recovery(rewrite.plan.backup, committed)
         _verify_recovery(state_file, state_file.file)
 
+        _verify_lock(lock)
         if state_file.file is not None:
             recovery = t.cast(pathlib.Path, state_recovery)
-            moved, delayed_error = _apply_replace(state_file.physical, recovery)
+            moved, delayed_error = _apply_replace(
+                state_file.physical,
+                recovery,
+                expected=state_file.file,
+                destination_expected=owned.files[recovery],
+                lock=lock,
+            )
             state_removed = True
             if moved != state_file.file:
                 msg = "swap state recovery identity changed"
                 _raise_changed(msg)
+            owned.rebind(recovery, moved)
             _raise_if_delayed(delayed_error)
-        state_committed, delayed_error = _apply_replace(
-            state_stage, state_file.physical
+        state_committed, delayed_error = _publish_absent(
+            state_stage,
+            state_file.physical,
+            expected=owned.files[state_stage],
+            lock=lock,
         )
         owned.discard(state_stage)
         _raise_if_delayed(delayed_error)
 
         for item in staged:
+            _verify_lock(lock)
             plan = item.plan
             _verify_config(plan.config, plan.config.file)
             current_state = _recovery_state(STATE_FILE, required=True)
             if current_state.file != state_committed:
                 msg = "swap state changed before config commit"
                 _raise_changed(msg)
-            moved, delayed_error = _apply_replace(plan.config.target, item.recovery)
+            moved, delayed_error = _apply_replace(
+                plan.config.target,
+                item.recovery,
+                expected=plan.config.file,
+                destination_expected=owned.files[item.recovery],
+                lock=lock,
+            )
             config_operations.append((item, None))
             if moved != plan.config.file:
                 msg = f"{plan.label} config recovery identity changed"
                 _raise_changed(msg)
+            owned.rebind(item.recovery, moved)
             _raise_if_delayed(delayed_error)
-            committed, delayed_error = _apply_replace(item.output, plan.config.target)
+            committed, delayed_error = _publish_absent(
+                item.output,
+                plan.config.target,
+                expected=owned.files[item.output],
+                lock=lock,
+            )
             owned.discard(item.output)
             config_operations[-1] = (item, committed)
             _raise_if_delayed(delayed_error)
@@ -2996,8 +3427,7 @@ def _commit_use_local(
         preserved: set[pathlib.Path] = set()
         for item, committed in reversed(config_operations):
             try:
-                _restore_config_stage(item, committed)
-                owned.discard(item.recovery)
+                _restore_config_stage(item, committed, owned, lock)
             except Exception as rollback_exc:  # noqa: PERF203 - continue rollback
                 rollback_errors.append(f"{item.plan.label} config: {rollback_exc}")
                 if item.recovery.exists():
@@ -3014,25 +3444,42 @@ def _commit_use_local(
                         _recovery_state(STATE_FILE, required=True), state_committed
                     )
                     if state_file.file is None:
-                        STATE_FILE.unlink()
+                        delayed_error = _apply_unlink(
+                            STATE_FILE,
+                            expected=state_committed,
+                            lock=lock,
+                        )
+                        _raise_if_delayed(delayed_error)
                     else:
                         recovery = t.cast(pathlib.Path, state_recovery)
-                        restored, _delayed_error = _apply_replace(
-                            recovery, state_file.physical
+                        restored, delayed_error = _apply_replace(
+                            recovery,
+                            state_file.physical,
+                            expected=owned.files[recovery],
+                            destination_expected=state_committed,
+                            lock=lock,
                         )
                         owned.discard(recovery)
                         if restored != state_file.file:
                             msg = "swap state rollback changed identity"
                             _raise_changed(msg)
+                        _raise_if_delayed(delayed_error)
                 elif state_removed:
                     recovery = t.cast(pathlib.Path, state_recovery)
-                    restored, _delayed_error = _apply_replace(
-                        recovery, state_file.physical
+                    if os.path.lexists(STATE_FILE):
+                        msg = "swap state appeared before rollback"
+                        _raise_changed(msg)
+                    restored, delayed_error = _publish_absent(
+                        recovery,
+                        state_file.physical,
+                        expected=owned.files[recovery],
+                        lock=lock,
                     )
                     owned.discard(recovery)
                     if restored != state_file.file:
                         msg = "swap state rollback changed identity"
                         _raise_changed(msg)
+                    _raise_if_delayed(delayed_error)
                 _verify_recovery(state_file, state_file.file)
             except Exception as rollback_exc:
                 rollback_errors.append(f"recovery state: {rollback_exc}")
@@ -3052,14 +3499,27 @@ def _commit_use_local(
                             _raise_changed(msg)
                     else:
                         _verify_recovery(backup, committed)
-                    restored, _delayed_error = _apply_replace(
-                        rewrite.recovery, backup.physical
-                    )
+                    if committed is None:
+                        restored, delayed_error = _publish_absent(
+                            rewrite.recovery,
+                            backup.physical,
+                            expected=owned.files[rewrite.recovery],
+                            lock=lock,
+                        )
+                    else:
+                        restored, delayed_error = _apply_replace(
+                            rewrite.recovery,
+                            backup.physical,
+                            expected=owned.files[rewrite.recovery],
+                            destination_expected=committed,
+                            lock=lock,
+                        )
                     owned.discard(rewrite.recovery)
                     if restored != backup.file:
                         msg = f"{backup.path} rollback changed identity"
                         _raise_changed(msg)
                     _verify_recovery(backup, backup.file)
+                    _raise_if_delayed(delayed_error)
                 except Exception as rollback_exc:
                     rollback_errors.append(f"backup {backup.path}: {rollback_exc}")
                     if rewrite.recovery.exists():
@@ -3081,12 +3541,17 @@ def _commit_use_local(
                     _verify_recovery(
                         _recovery_state(item.plan.backup.path, required=True), committed
                     )
-                    item.plan.backup.path.unlink()
+                    delayed_error = _apply_unlink(
+                        item.plan.backup.path,
+                        expected=committed,
+                        lock=lock,
+                    )
+                    _raise_if_delayed(delayed_error)
                 except Exception as rollback_exc:  # noqa: PERF203 - keep backups
                     rollback_errors.append(f"{item.plan.label} backup: {rollback_exc}")
                     preserved.add(item.plan.backup.path)
 
-        cleanup_errors = _cleanup_owned(owned, preserved)
+        cleanup_errors = _cleanup_owned(owned, preserved, lock=lock)
         details = [f"swap failed: {exc}"]
         if rollback_errors:
             details.append("rollback incomplete: " + "; ".join(rollback_errors))
@@ -3100,7 +3565,7 @@ def _commit_use_local(
         print("; ".join(details), file=sys.stderr)
         return 1
 
-    cleanup_errors = _cleanup_owned(owned)
+    cleanup_errors = _cleanup_owned(owned, lock=lock)
     if cleanup_errors:
         print("; ".join(cleanup_errors), file=sys.stderr)
         return 1
@@ -3109,7 +3574,7 @@ def _commit_use_local(
     return 0
 
 
-def _cmd_use_local(args: argparse.Namespace) -> int:
+def _cmd_use_local(args: argparse.Namespace, lock: LockState | None = None) -> int:
     """Plan, stage, and commit every selected config as one transaction."""
     repo = pathlib.Path(args.repo).resolve()
     server, default_entry = resolve_repo_meta(repo)
@@ -3145,11 +3610,13 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
 
     try:
         if args.dry_run:
+            lock = _lock_state()
             state = load_state(strict=True)
             state_file = None
         else:
+            _verify_lock(lock)
             state, state_file = _strict_state_snapshot()
-        plans, error = _plan_use_local(args, repo, server, spec, extra_env, state)
+        plans, error = _plan_use_local(args, repo, server, spec, extra_env, state, lock)
     except (OSError, RuntimeError, ValueError, SwapStateError) as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -3180,6 +3647,7 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
             return 1
 
     try:
+        _verify_lock(lock)
         staged, next_state, state_stage, state_recovery, owned = _stage_use_local(
             plans, state, t.cast(RecoveryState, state_file)
         )
@@ -3193,6 +3661,7 @@ def _cmd_use_local(args: argparse.Namespace) -> int:
         state_stage,
         state_recovery,
         owned,
+        lock,
     )
 
 
@@ -3201,8 +3670,8 @@ def cmd_use_local(args: argparse.Namespace) -> int:
     if args.dry_run:
         return _cmd_use_local(args)
     try:
-        with _state_lock():
-            return _cmd_use_local(args)
+        with _state_lock() as lock:
+            return _cmd_use_local(args, lock)
     except SwapStateError:
         return 1
     except OSError as exc:
@@ -3218,6 +3687,7 @@ def _revalidate(info: CLIInfo) -> None:
 def _plan_revert(
     args: argparse.Namespace,
     state: dict[tuple[CLIName, Scope], SwapEntry],
+    lock: LockState | None,
 ) -> tuple[list[RevertPlan], int]:
     targets = (
         list(args.cli) if args.cli else list(dict.fromkeys(cli for cli, _ in state))
@@ -3249,16 +3719,18 @@ def _plan_revert(
     plans: list[RevertPlan] = []
     seen_paths: dict[pathlib.Path, str] = {}
     seen_inodes: dict[tuple[int, int], str] = {}
-    destinations: dict[pathlib.Path, str] = {STATE_FILE.resolve(): "swap state"}
     try:
+        owned_state = _snapshot_owned_state(state)
         for logical, wanted in grouped.items():
             cli = wanted[0][0]
             info = CLIS[cli]
             if str(info.config_path) != logical:
                 msg = f"recovery config path changed for {cli}"
                 _raise_state(msg)
-            config = _config_state(info)
-            chain, backups = _validate_config_chain(config, state)
+            owned = owned_state[logical]
+            config = owned.config
+            chain = owned.chain
+            backups = owned.backups
             wanted.sort(key=lambda key: state[key].seq_no, reverse=True)
             if chain[: len(wanted)] != wanted:
                 msg = f"selected recovery layers are not the top of {info.config_path}"
@@ -3276,28 +3748,23 @@ def _plan_revert(
             if other is not None:
                 msg = f"duplicate physical config target for {other} and {label}"
                 _raise_state(msg)
-            if config.target in destinations:
-                msg = (
-                    "duplicate transaction destination for "
-                    f"{destinations[config.target]} and {label}"
-                )
-                _raise_state(msg)
             seen_paths[config.target] = label
             seen_inodes[(config.file.device, config.file.inode)] = label
-            destinations[config.target] = f"{label} config"
             for backup in selected_backups:
-                if backup.physical in destinations:
-                    msg = (
-                        "duplicate transaction destination for "
-                        f"{destinations[backup.physical]} and {backup.path}"
-                    )
-                    _raise_state(msg)
-                destinations[backup.physical] = f"{label} backup"
                 _assert_destination_feasible(backup.physical)
             _assert_destination_feasible(config.target)
             plans.append(
                 RevertPlan(config, tuple(wanted), selected_backups, final.data, mode)
             )
+        configs = [
+            (f"{logical} owned", owned.config) for logical, owned in owned_state.items()
+        ]
+        recoveries = [
+            (f"{_state_key(*key)} backup", backup)
+            for owned in owned_state.values()
+            for key, backup in owned.backups.items()
+        ]
+        _reject_transaction_aliases(configs, recoveries, lock)
         _assert_destination_feasible(STATE_FILE)
     except (OSError, RuntimeError, ValueError, SwapStateError) as exc:
         print(exc, file=sys.stderr)
@@ -3314,9 +3781,9 @@ def _stage_revert(
     dict[tuple[CLIName, Scope], SwapEntry],
     pathlib.Path | None,
     pathlib.Path,
-    set[pathlib.Path],
+    OwnedPaths,
 ]:
-    owned: set[pathlib.Path] = set()
+    owned = OwnedPaths()
     staged: list[StagedRevert] = []
     next_state = dict(state)
     try:
@@ -3402,13 +3869,15 @@ def _commit_revert(
     state_file: RecoveryState,
     state_stage: pathlib.Path | None,
     state_recovery: pathlib.Path,
-    owned: set[pathlib.Path],
+    owned: OwnedPaths,
+    lock: LockState | None,
 ) -> int:
     config_operations: list[tuple[StagedRevert, FileState | None]] = []
     removed_backups: list[tuple[RecoveryState, pathlib.Path]] = []
     state_committed: FileState | None = None
     state_removed = False
     try:
+        _verify_lock(lock)
         for item in staged:
             _verify_config(item.plan.config, item.plan.config.file)
             for backup in item.plan.backups:
@@ -3416,15 +3885,28 @@ def _commit_revert(
         _verify_recovery(state_file, state_file.file)
 
         for item in staged:
+            _verify_lock(lock)
             plan = item.plan
             _verify_config(plan.config, plan.config.file)
-            moved, delayed_error = _apply_replace(plan.config.target, item.recovery)
+            moved, delayed_error = _apply_replace(
+                plan.config.target,
+                item.recovery,
+                expected=plan.config.file,
+                destination_expected=owned.files[item.recovery],
+                lock=lock,
+            )
             config_operations.append((item, None))
             if moved != plan.config.file:
                 msg = "config recovery identity changed"
                 _raise_changed(msg)
+            owned.rebind(item.recovery, moved)
             _raise_if_delayed(delayed_error)
-            committed, delayed_error = _apply_replace(item.restored, plan.config.target)
+            committed, delayed_error = _publish_absent(
+                item.restored,
+                plan.config.target,
+                expected=owned.files[item.restored],
+                lock=lock,
+            )
             owned.discard(item.restored)
             config_operations[-1] = (item, committed)
             _raise_if_delayed(delayed_error)
@@ -3443,16 +3925,27 @@ def _commit_revert(
                     msg = "remaining recovery state does not own config"
                     _raise_changed(msg)
 
+        _verify_lock(lock)
         _verify_recovery(state_file, state_file.file)
-        moved, delayed_error = _apply_replace(state_file.physical, state_recovery)
+        moved, delayed_error = _apply_replace(
+            state_file.physical,
+            state_recovery,
+            expected=t.cast(FileState, state_file.file),
+            destination_expected=owned.files[state_recovery],
+            lock=lock,
+        )
         state_removed = True
         if moved != state_file.file:
             msg = "swap state recovery identity changed"
             _raise_changed(msg)
+        owned.rebind(state_recovery, moved)
         _raise_if_delayed(delayed_error)
         if state_stage is not None:
-            state_committed, delayed_error = _apply_replace(
-                state_stage, state_file.physical
+            state_committed, delayed_error = _publish_absent(
+                state_stage,
+                state_file.physical,
+                expected=owned.files[state_stage],
+                lock=lock,
             )
             owned.discard(state_stage)
             _raise_if_delayed(delayed_error)
@@ -3464,6 +3957,7 @@ def _commit_revert(
             for backup, recovery in zip(
                 item.plan.backups, item.backup_recoveries, strict=True
             ):
+                _verify_lock(lock)
                 _verify_recovery(backup, backup.file)
                 if state_committed is not None:
                     current_state = _recovery_state(STATE_FILE, required=True)
@@ -3473,11 +3967,18 @@ def _commit_revert(
                 elif os.path.lexists(STATE_FILE):
                     msg = "swap state reappeared before backup removal"
                     _raise_changed(msg)
-                moved, delayed_error = _apply_replace(backup.physical, recovery)
+                moved, delayed_error = _apply_replace(
+                    backup.physical,
+                    recovery,
+                    expected=t.cast(FileState, backup.file),
+                    destination_expected=owned.files[recovery],
+                    lock=lock,
+                )
                 removed_backups.append((backup, recovery))
                 if moved != backup.file:
                     msg = f"backup recovery identity changed: {backup.path}"
                     _raise_changed(msg)
+                owned.rebind(recovery, moved)
                 _raise_if_delayed(delayed_error)
                 if os.path.lexists(backup.path):
                     msg = f"backup remained after removal: {backup.path}"
@@ -3490,12 +3991,18 @@ def _commit_revert(
                 if os.path.lexists(backup.path):
                     msg = f"{backup.path} appeared before rollback"
                     _raise_changed(msg)
-                restored, _delayed_error = _apply_replace(recovery, backup.physical)
+                restored, delayed_error = _publish_absent(
+                    recovery,
+                    backup.physical,
+                    expected=owned.files[recovery],
+                    lock=lock,
+                )
                 owned.discard(recovery)
                 if restored != backup.file:
                     msg = f"{backup.path} rollback changed identity"
                     _raise_changed(msg)
                 _verify_recovery(backup, backup.file)
+                _raise_if_delayed(delayed_error)
             except Exception as rollback_exc:  # noqa: PERF203 - continue rollback
                 rollback_errors.append(f"backup {backup.path}: {rollback_exc}")
                 if recovery.exists():
@@ -3511,14 +4018,27 @@ def _commit_revert(
                 elif os.path.lexists(STATE_FILE):
                     msg = "swap state appeared before rollback"
                     _raise_changed(msg)
-                restored, _delayed_error = _apply_replace(
-                    state_recovery, state_file.physical
-                )
+                if state_committed is None:
+                    restored, delayed_error = _publish_absent(
+                        state_recovery,
+                        state_file.physical,
+                        expected=owned.files[state_recovery],
+                        lock=lock,
+                    )
+                else:
+                    restored, delayed_error = _apply_replace(
+                        state_recovery,
+                        state_file.physical,
+                        expected=owned.files[state_recovery],
+                        destination_expected=state_committed,
+                        lock=lock,
+                    )
                 owned.discard(state_recovery)
                 if restored != state_file.file:
                     msg = "swap state rollback changed identity"
                     _raise_changed(msg)
                 _verify_recovery(state_file, state_file.file)
+                _raise_if_delayed(delayed_error)
         except Exception as rollback_exc:
             rollback_errors.append(f"recovery state: {rollback_exc}")
             if state_recovery.exists():
@@ -3532,21 +4052,34 @@ def _commit_revert(
                         _raise_changed(msg)
                 else:
                     _verify_config(item.plan.config, committed)
-                restored, _delayed_error = _apply_replace(
-                    item.recovery, item.plan.config.target
-                )
+                if committed is None:
+                    restored, delayed_error = _publish_absent(
+                        item.recovery,
+                        item.plan.config.target,
+                        expected=owned.files[item.recovery],
+                        lock=lock,
+                    )
+                else:
+                    restored, delayed_error = _apply_replace(
+                        item.recovery,
+                        item.plan.config.target,
+                        expected=owned.files[item.recovery],
+                        destination_expected=committed,
+                        lock=lock,
+                    )
                 owned.discard(item.recovery)
                 if restored != item.plan.config.file:
                     msg = "config rollback changed identity"
                     _raise_changed(msg)
                 _verify_config(item.plan.config, item.plan.config.file)
+                _raise_if_delayed(delayed_error)
             except Exception as rollback_exc:  # noqa: PERF203 - continue rollback
                 label = item.plan.config.info.name
                 rollback_errors.append(f"{label} config: {rollback_exc}")
                 if item.recovery.exists():
                     preserved.add(item.recovery)
 
-        cleanup_errors = _cleanup_owned(owned, preserved)
+        cleanup_errors = _cleanup_owned(owned, preserved, lock=lock)
         details = [f"revert failed: {exc}"]
         if rollback_errors:
             details.append("rollback incomplete: " + "; ".join(rollback_errors))
@@ -3560,7 +4093,7 @@ def _commit_revert(
         print("; ".join(details), file=sys.stderr)
         return 1
 
-    cleanup_errors = _cleanup_owned(owned)
+    cleanup_errors = _cleanup_owned(owned, lock=lock)
     if cleanup_errors:
         print("; ".join(cleanup_errors), file=sys.stderr)
         return 1
@@ -3571,19 +4104,21 @@ def _commit_revert(
     return 0
 
 
-def _cmd_revert(args: argparse.Namespace) -> int:
+def _cmd_revert(args: argparse.Namespace, lock: LockState | None = None) -> int:
     """Restore the selected top-contiguous recovery layers as one transaction."""
     try:
         if args.dry_run:
+            lock = _lock_state()
             state = load_state(strict=True)
             state_file = None
         else:
+            _verify_lock(lock)
             state, state_file = _strict_state_snapshot()
     except (OSError, RuntimeError, ValueError, SwapStateError) as exc:
         print(exc, file=sys.stderr)
         return 1
 
-    plans, error = _plan_revert(args, state)
+    plans, error = _plan_revert(args, state, lock)
     if error or not plans:
         return error
     if args.dry_run:
@@ -3596,6 +4131,7 @@ def _cmd_revert(args: argparse.Namespace) -> int:
         return 0
 
     try:
+        _verify_lock(lock)
         staged, next_state, state_stage, state_recovery, owned = _stage_revert(
             plans, state, t.cast(RecoveryState, state_file)
         )
@@ -3609,6 +4145,7 @@ def _cmd_revert(args: argparse.Namespace) -> int:
         state_stage,
         state_recovery,
         owned,
+        lock,
     )
 
 
@@ -3617,8 +4154,8 @@ def cmd_revert(args: argparse.Namespace) -> int:
     if args.dry_run:
         return _cmd_revert(args)
     try:
-        with _state_lock():
-            return _cmd_revert(args)
+        with _state_lock() as lock:
+            return _cmd_revert(args, lock)
     except SwapStateError:
         return 1
     except OSError as exc:

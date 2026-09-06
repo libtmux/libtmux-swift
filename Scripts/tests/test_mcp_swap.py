@@ -3280,18 +3280,20 @@ def test_state_write_failure_leaves_the_config_unchanged(
     info = mcp_swap.CLIS["cursor"]
     _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
     original = info.config_path.read_bytes()
-    real_replace = mcp_swap.os.replace
+    real_link = mcp_swap.os.link
     failed = False
 
-    def fail_state_write(source: t.Any, destination: t.Any) -> None:
+    def fail_state_write(
+        source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any
+    ) -> None:
         nonlocal failed
         if pathlib.Path(destination) == mcp_swap.STATE_FILE and not failed:
             failed = True
             message = "state is read-only"
             raise PermissionError(message)
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", fail_state_write)
+    monkeypatch.setattr(mcp_swap.os, "link", fail_state_write)
     args = mcp_swap.build_parser().parse_args(
         ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
     )
@@ -3312,18 +3314,20 @@ def test_later_config_write_failure_rolls_back_the_combined_transaction(
         _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
     originals = {info.config_path: info.config_path.read_bytes() for info in infos}
     later_target = infos[1].config_path.resolve()
-    real_replace = mcp_swap.os.replace
+    real_link = mcp_swap.os.link
     failed = False
 
-    def fail_later_once(source: t.Any, destination: t.Any) -> None:
+    def fail_later_once(
+        source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any
+    ) -> None:
         nonlocal failed
         if pathlib.Path(destination) == later_target and not failed:
             failed = True
             message = "later config is read-only"
             raise PermissionError(message)
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", fail_later_once)
+    monkeypatch.setattr(mcp_swap.os, "link", fail_later_once)
     args = mcp_swap.build_parser().parse_args(
         [
             "use-local",
@@ -3342,7 +3346,7 @@ def test_later_config_write_failure_rolls_back_the_combined_transaction(
     assert not any(fake_home.rglob("*.bak.mcp-swap-*"))
 
 
-def test_post_rename_error_rolls_back_the_combined_transaction(
+def test_post_publication_error_rolls_back_the_combined_transaction(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3359,18 +3363,20 @@ def test_post_rename_error_rolls_back_the_combined_transaction(
         for info in infos
     }
     later_target = infos[1].config_path.resolve()
-    real_replace = mcp_swap.os.replace
+    real_link = mcp_swap.os.link
     failed = False
 
-    def commit_then_fail(source: t.Any, destination: t.Any) -> None:
+    def commit_then_fail(
+        source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any
+    ) -> None:
         nonlocal failed
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
         if pathlib.Path(destination) == later_target and not failed:
             failed = True
-            msg = "later rename reported failure after commit"
+            msg = "later publication reported failure after commit"
             raise PermissionError(msg)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", commit_then_fail)
+    monkeypatch.setattr(mcp_swap.os, "link", commit_then_fail)
     args = mcp_swap.build_parser().parse_args(
         [
             "use-local",
@@ -3400,15 +3406,17 @@ def test_swap_write_failure_keeps_recovery_state_without_raising(
     info = mcp_swap.CLIS["cursor"]
     _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
     target = info.config_path.resolve()
-    real_replace = mcp_swap.os.replace
+    real_link = mcp_swap.os.link
     write_error = PermissionError("config is read-only")
 
-    def fail_config_write(source: t.Any, destination: t.Any) -> None:
+    def fail_config_write(
+        source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any
+    ) -> None:
         if pathlib.Path(destination) == target:
             raise write_error
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", fail_config_write)
+    monkeypatch.setattr(mcp_swap.os, "link", fail_config_write)
     args = mcp_swap.build_parser().parse_args(
         ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
     )
@@ -3440,15 +3448,17 @@ def test_revert_write_failure_returns_failure_and_keeps_recovery_files(
     state = mcp_swap.load_state()
     backup = pathlib.Path(state["cursor", "user"].backup_path)
     target = info.config_path.resolve()
-    real_replace = mcp_swap.os.replace
+    real_link = mcp_swap.os.link
     write_error = PermissionError("config is read-only")
 
-    def fail_config_write(source: t.Any, destination: t.Any) -> None:
+    def fail_config_write(
+        source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any
+    ) -> None:
         if pathlib.Path(destination) == target:
             raise write_error
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", fail_config_write)
+    monkeypatch.setattr(mcp_swap.os, "link", fail_config_write)
 
     assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
     assert backup.exists()
@@ -3475,15 +3485,20 @@ def test_revert_state_failure_keeps_recovery_files(
     state_bytes = mcp_swap.STATE_FILE.read_bytes()
     swapped = info.config_path.read_bytes()
     backup = pathlib.Path(mcp_swap.load_state()["cursor", "user"].backup_path)
-    real_replace = mcp_swap.os.replace
+    real_apply = mcp_swap._apply_replace
 
-    def fail_state_update(source: t.Any, destination: t.Any) -> None:
+    def fail_state_update(
+        source: pathlib.Path,
+        destination: pathlib.Path,
+        *args: t.Any,
+        **kwargs: t.Any,
+    ) -> t.Any:
         if pathlib.Path(source) == mcp_swap.STATE_FILE:
             message = "state is read-only"
             raise PermissionError(message)
-        real_replace(source, destination)
+        return real_apply(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", fail_state_update)
+    monkeypatch.setattr(mcp_swap, "_apply_replace", fail_state_update)
 
     assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
     assert info.config_path.read_bytes() == swapped
@@ -3512,18 +3527,20 @@ def test_later_revert_failure_rolls_back_every_selected_client(
         for entry in mcp_swap.load_state().values()
     }
     later = infos[1].config_path.resolve()
-    real_replace = mcp_swap.os.replace
+    real_link = mcp_swap.os.link
     failed = False
 
-    def fail_later_once(source: t.Any, destination: t.Any) -> None:
+    def fail_later_once(
+        source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any
+    ) -> None:
         nonlocal failed
         if pathlib.Path(destination) == later and not failed:
             failed = True
             msg = "later restore is read-only"
             raise PermissionError(msg)
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", fail_later_once)
+    monkeypatch.setattr(mcp_swap.os, "link", fail_later_once)
 
     assert mcp_swap.cmd_revert(parser.parse_args(["revert"])) == 1
     assert {path: path.read_bytes() for path in swapped} == swapped
@@ -3531,7 +3548,7 @@ def test_later_revert_failure_rolls_back_every_selected_client(
     assert {path: path.read_bytes() for path in backups} == backups
 
 
-def test_post_rename_error_rolls_back_selected_revert(
+def test_post_publication_error_rolls_back_selected_revert(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3561,18 +3578,20 @@ def test_post_rename_error_rolls_back_selected_revert(
         for entry in mcp_swap.load_state().values()
     }
     later_target = infos[1].config_path.resolve()
-    real_replace = mcp_swap.os.replace
+    real_link = mcp_swap.os.link
     failed = False
 
-    def commit_then_fail(source: t.Any, destination: t.Any) -> None:
+    def commit_then_fail(
+        source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any
+    ) -> None:
         nonlocal failed
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
         if pathlib.Path(destination) == later_target and not failed:
             failed = True
-            msg = "later restore reported failure after commit"
+            msg = "later restore publication reported failure after commit"
             raise PermissionError(msg)
 
-    monkeypatch.setattr(mcp_swap.os, "replace", commit_then_fail)
+    monkeypatch.setattr(mcp_swap.os, "link", commit_then_fail)
 
     assert mcp_swap.cmd_revert(parser.parse_args(["revert"])) == 1
     for path, (body, mode) in swapped.items():
@@ -3583,6 +3602,494 @@ def test_post_rename_error_rolls_back_selected_revert(
     for path, (body, mode) in backups.items():
         assert path.read_bytes() == body
         assert path.stat().st_mode == mode
+
+
+_LATE_BOUNDARIES = [
+    ("use", "backup-publish"),
+    ("use", "state-publish"),
+    ("use", "config-take-aside"),
+    ("use", "config-publish"),
+    ("repeat-use", "state-take-aside"),
+    ("revert", "config-take-aside"),
+    ("revert", "config-publish"),
+    ("revert", "backup-take-aside"),
+    ("revert", "state-take-aside"),
+]
+
+
+def _late_boundary_command(
+    fake_repo: pathlib.Path,
+    operation: str,
+) -> tuple[argparse.Namespace, t.Callable[[argparse.Namespace], int]]:
+    parser = mcp_swap.build_parser()
+    if operation in {"repeat-use", "revert"}:
+        first = parser.parse_args(
+            [
+                "use-local",
+                "--repo",
+                str(fake_repo),
+                "--cli",
+                "cursor",
+                "--env",
+                "ROUND=one",
+            ]
+        )
+        assert mcp_swap.cmd_use_local(first) == 0
+    if operation == "revert":
+        return parser.parse_args(["revert", "--cli", "cursor"]), mcp_swap.cmd_revert
+    arguments = [
+        "use-local",
+        "--repo",
+        str(fake_repo),
+        "--cli",
+        "cursor",
+    ]
+    if operation == "repeat-use":
+        arguments.extend(["--env", "ROUND=two"])
+    return parser.parse_args(arguments), mcp_swap.cmd_use_local
+
+
+def _is_late_boundary(
+    operation: str,
+    boundary: str,
+    source: pathlib.Path,
+    destination: pathlib.Path,
+    target: pathlib.Path,
+) -> bool:
+    if boundary == "backup-publish":
+        return (
+            "mcp-swap-backup-" in source.name and ".bak.mcp-swap-" in destination.name
+        )
+    if boundary == "state-publish":
+        return destination == mcp_swap.STATE_FILE and "mcp-swap-state-" in source.name
+    if boundary == "config-take-aside":
+        return source == target and "mcp-swap-recovery-" in destination.name
+    if boundary == "config-publish":
+        role = "restore" if operation == "revert" else "output"
+        return destination == target and f"mcp-swap-{role}-" in source.name
+    if boundary == "state-take-aside":
+        return source == mcp_swap.STATE_FILE and "state-recovery-" in destination.name
+    if boundary == "backup-take-aside":
+        return (
+            ".bak.mcp-swap-" in source.name and "mcp-swap-recovery-" in destination.name
+        )
+    message = f"unknown boundary {boundary}"
+    raise AssertionError(message)
+
+
+@pytest.mark.parametrize("timing", ["before-read", "inside-transition"])
+@pytest.mark.parametrize(("operation", "boundary"), _LATE_BOUNDARIES)
+def test_late_transition_source_replacement_survives(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    boundary: str,
+    timing: str,
+) -> None:
+    """Every commit boundary rejects and retains a late source inode."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    arguments, command = _late_boundary_command(fake_repo, operation)
+    target = info.config_path.resolve()
+    real_apply = mcp_swap._apply_replace
+    real_publish = getattr(mcp_swap, "_publish_absent", None)
+    real_link = mcp_swap.os.link
+    real_replace = mcp_swap.os.replace
+    unexpected_inode: int | None = None
+
+    def inject(path: pathlib.Path) -> None:
+        nonlocal unexpected_inode
+        human = path.with_name(f".{path.name}.human-{boundary}")
+        human.write_bytes(b"human boundary replacement\n")
+        human.chmod(0o600)
+        real_replace(human, path)
+        unexpected_inode = path.stat().st_ino
+
+    if timing == "before-read":
+
+        def apply(
+            source: pathlib.Path,
+            destination: pathlib.Path,
+            *args: t.Any,
+            **kwargs: t.Any,
+        ) -> t.Any:
+            source_path = pathlib.Path(source)
+            destination_path = pathlib.Path(destination)
+            if unexpected_inode is None and _is_late_boundary(
+                operation, boundary, source_path, destination_path, target
+            ):
+                inject(source_path)
+            return real_apply(source_path, destination_path, *args, **kwargs)
+
+        monkeypatch.setattr(mcp_swap, "_apply_replace", apply)
+        if real_publish is not None:
+
+            def publish(
+                source: pathlib.Path,
+                destination: pathlib.Path,
+                *args: t.Any,
+                **kwargs: t.Any,
+            ) -> t.Any:
+                source_path = pathlib.Path(source)
+                destination_path = pathlib.Path(destination)
+                if unexpected_inode is None and _is_late_boundary(
+                    operation, boundary, source_path, destination_path, target
+                ):
+                    inject(source_path)
+                return real_publish(source_path, destination_path, *args, **kwargs)
+
+            monkeypatch.setattr(mcp_swap, "_publish_absent", publish)
+    else:
+
+        def replace(source: t.Any, destination: t.Any) -> None:
+            source_path = pathlib.Path(source)
+            destination_path = pathlib.Path(destination)
+            if unexpected_inode is None and _is_late_boundary(
+                operation, boundary, source_path, destination_path, target
+            ):
+                inject(source_path)
+            real_replace(source_path, destination_path)
+
+        def link(
+            source: t.Any,
+            destination: t.Any,
+            *args: t.Any,
+            **kwargs: t.Any,
+        ) -> None:
+            source_path = pathlib.Path(source)
+            destination_path = pathlib.Path(destination)
+            if unexpected_inode is None and _is_late_boundary(
+                operation, boundary, source_path, destination_path, target
+            ):
+                inject(source_path)
+            real_link(source_path, destination_path, *args, **kwargs)
+
+        monkeypatch.setattr(mcp_swap.os, "replace", replace)
+        monkeypatch.setattr(mcp_swap.os, "link", link)
+
+    assert command(arguments) == 1
+    assert unexpected_inode is not None
+    assert unexpected_inode in {
+        path.stat().st_ino for path in fake_home.rglob("*") if path.is_file()
+    }
+
+
+@pytest.mark.parametrize(("operation", "boundary"), _LATE_BOUNDARIES)
+def test_late_transition_destination_replacement_survives(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    boundary: str,
+) -> None:
+    """Every commit boundary preserves a file arriving at its destination."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    arguments, command = _late_boundary_command(fake_repo, operation)
+    target = info.config_path.resolve()
+    real_link = mcp_swap.os.link
+    real_replace = mcp_swap.os.replace
+    unexpected_inode: int | None = None
+
+    def appear(path: pathlib.Path) -> None:
+        nonlocal unexpected_inode
+        human = path.with_name(f".{path.name}.human-{boundary}")
+        human.write_bytes(b"human destination replacement\n")
+        human.chmod(0o600)
+        real_replace(human, path)
+        unexpected_inode = path.stat().st_ino
+
+    def replace(source: t.Any, destination: t.Any) -> None:
+        source_path = pathlib.Path(source)
+        destination_path = pathlib.Path(destination)
+        if unexpected_inode is None and _is_late_boundary(
+            operation, boundary, source_path, destination_path, target
+        ):
+            appear(destination_path)
+        real_replace(source_path, destination_path)
+
+    def link(source: t.Any, destination: t.Any, *args: t.Any, **kwargs: t.Any) -> None:
+        source_path = pathlib.Path(source)
+        destination_path = pathlib.Path(destination)
+        if unexpected_inode is None and _is_late_boundary(
+            operation, boundary, source_path, destination_path, target
+        ):
+            appear(destination_path)
+        real_link(source_path, destination_path, *args, **kwargs)
+
+    monkeypatch.setattr(mcp_swap.os, "replace", replace)
+    monkeypatch.setattr(mcp_swap.os, "link", link)
+
+    assert command(arguments) == 1
+    assert unexpected_inode is not None
+    assert unexpected_inode in {
+        path.stat().st_ino for path in fake_home.rglob("*") if path.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    ("operation", "role"), [("use", "recovery"), ("revert", "recovery")]
+)
+def test_cleanup_retains_a_late_owned_path_replacement(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    role: str,
+) -> None:
+    """Use and revert cleanup retain a substituted task-owned inode."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    arguments, command = _late_boundary_command(fake_repo, operation)
+    real_cleanup = mcp_swap._cleanup_owned
+    real_rename = mcp_swap.os.rename
+    real_replace = mcp_swap.os.replace
+    real_unlink = mcp_swap.os.unlink
+    cleaning = False
+    unexpected_inode: int | None = None
+
+    def inject(path: pathlib.Path) -> None:
+        nonlocal unexpected_inode
+        if (
+            not cleaning
+            or unexpected_inode is not None
+            or f"mcp-swap-{role}-" not in path.name
+        ):
+            return
+        human = path.with_name(f".{path.name}.human-cleanup")
+        human.write_bytes(b"human cleanup replacement\n")
+        human.chmod(0o600)
+        real_replace(human, path)
+        unexpected_inode = path.stat().st_ino
+
+    def cleanup(*args: t.Any, **kwargs: t.Any) -> t.Any:
+        nonlocal cleaning
+        cleaning = True
+        try:
+            return real_cleanup(*args, **kwargs)
+        finally:
+            cleaning = False
+
+    def rename(
+        source: t.Any,
+        destination: t.Any,
+        *args: t.Any,
+        **kwargs: t.Any,
+    ) -> None:
+        inject(pathlib.Path(source))
+        real_rename(source, destination, *args, **kwargs)
+
+    def unlink(path: t.Any, *args: t.Any, **kwargs: t.Any) -> None:
+        inject(pathlib.Path(path))
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(mcp_swap, "_cleanup_owned", cleanup)
+    monkeypatch.setattr(mcp_swap.os, "rename", rename)
+    monkeypatch.setattr(mcp_swap.os, "unlink", unlink)
+
+    assert command(arguments) == 1
+    assert unexpected_inode is not None
+    assert unexpected_inode in {
+        path.stat().st_ino for path in fake_home.rglob("*") if path.is_file()
+    }
+
+
+def test_state_lock_symlink_is_rejected_without_following(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """The persistent transaction lock never follows an unowned symlink."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    original = info.config_path.read_bytes()
+    victim = fake_home / "human-lock-target"
+    victim.write_bytes(b"human lock bytes\n")
+    victim.chmod(0o600)
+    mcp_swap.STATE_DIR.mkdir(parents=True)
+    (mcp_swap.STATE_DIR / "state.lock").symlink_to(victim)
+    args = mcp_swap.build_parser().parse_args(
+        ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert victim.read_bytes() == b"human lock bytes\n"
+    assert info.config_path.read_bytes() == original
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+def test_state_lock_hardlink_is_rejected(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """A transaction lock with another name is not exclusively owned."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    original = info.config_path.read_bytes()
+    victim = fake_home / "human-lock-alias"
+    victim.write_bytes(b"")
+    victim.chmod(0o600)
+    mcp_swap.STATE_DIR.mkdir(parents=True)
+    os.link(victim, mcp_swap.STATE_DIR / "state.lock")
+    args = mcp_swap.build_parser().parse_args(
+        ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert info.config_path.read_bytes() == original
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+def test_state_lock_path_replacement_after_open_is_rejected(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The locked descriptor must still name the authenticated path inode."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    original = info.config_path.read_bytes()
+    mcp_swap.STATE_DIR.mkdir(parents=True)
+    lock = mcp_swap.STATE_DIR / "state.lock"
+    lock.write_bytes(b"")
+    lock.chmod(0o600)
+    real_flock = mcp_swap.fcntl.flock
+    replacement = b"human replacement lock\n"
+    injected = False
+
+    def replace_before_lock(descriptor: int, operation: int) -> None:
+        nonlocal injected
+        if not injected:
+            late = fake_home / "replacement.lock"
+            late.write_bytes(replacement)
+            late.chmod(0o600)
+            late.replace(lock)
+            injected = True
+        real_flock(descriptor, operation)
+
+    monkeypatch.setattr(mcp_swap.fcntl, "flock", replace_before_lock)
+    args = mcp_swap.build_parser().parse_args(
+        ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert injected
+    assert lock.read_bytes() == replacement
+    assert info.config_path.read_bytes() == original
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_config_alias_to_state_lock_is_rejected_before_writes(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    alias_kind: str,
+    dry_run: bool,
+) -> None:
+    """The persistent lock participates in transaction alias checks."""
+    info = mcp_swap.CLIS["cursor"]
+    info.config_path.parent.mkdir(parents=True)
+    mcp_swap.STATE_DIR.mkdir(parents=True)
+    lock = mcp_swap.STATE_DIR / "state.lock"
+    original = b'{"mcpServers": {"other": {"command": "keep"}}}\n'
+    lock.write_bytes(original)
+    lock.chmod(0o600)
+    if alias_kind == "symlink":
+        info.config_path.symlink_to(lock)
+    else:
+        os.link(lock, info.config_path)
+    arguments = ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
+    if dry_run:
+        arguments.append("--dry-run")
+
+    assert mcp_swap.cmd_use_local(mcp_swap.build_parser().parse_args(arguments)) == 1
+    assert lock.read_bytes() == original
+    assert info.config_path.read_bytes() == original
+    assert not mcp_swap.STATE_FILE.exists()
+
+
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
+@pytest.mark.parametrize("artifact", ["config", "backup", "state"])
+@pytest.mark.parametrize("dry_run", [False, True], ids=["use", "dry-run"])
+def test_cross_artifact_alias_is_rejected(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    dry_run: bool,
+    artifact: str,
+    alias_kind: str,
+) -> None:
+    """A selected config cannot alias any existing recovery artifact."""
+    cursor = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(cursor)
+    parser = mcp_swap.build_parser()
+    first = parser.parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--env",
+            "ROUND=one",
+        ]
+    )
+    assert mcp_swap.cmd_use_local(first) == 0
+    state_before = (
+        mcp_swap.STATE_FILE.read_bytes(),
+        mcp_swap.STATE_FILE.stat().st_mode,
+        mcp_swap.STATE_FILE.stat().st_ino,
+    )
+    cursor_before = (
+        cursor.config_path.read_bytes(),
+        cursor.config_path.stat().st_mode,
+        cursor.config_path.stat().st_ino,
+    )
+    backup = pathlib.Path(mcp_swap.load_state()["cursor", "user"].backup_path)
+    backup_before = (
+        backup.read_bytes(),
+        backup.stat().st_mode,
+        backup.stat().st_ino,
+    )
+    aliased = {
+        "config": cursor.config_path,
+        "backup": backup,
+        "state": mcp_swap.STATE_FILE,
+    }[artifact]
+    gemini = mcp_swap.CLIS["gemini"]
+    gemini.config_path.parent.mkdir(parents=True)
+    if alias_kind == "symlink":
+        gemini.config_path.symlink_to(aliased)
+    else:
+        os.link(aliased, gemini.config_path)
+    arguments = [
+        "use-local",
+        "--repo",
+        str(fake_repo),
+        "--cli",
+        "gemini",
+        "--env",
+        "ROUND=two",
+    ]
+    if dry_run:
+        arguments.append("--dry-run")
+
+    assert mcp_swap.cmd_use_local(parser.parse_args(arguments)) == 1
+    assert (
+        cursor.config_path.read_bytes(),
+        cursor.config_path.stat().st_mode,
+        cursor.config_path.stat().st_ino,
+    ) == cursor_before
+    assert (
+        backup.read_bytes(),
+        backup.stat().st_mode,
+        backup.stat().st_ino,
+    ) == backup_before
+    assert (
+        mcp_swap.STATE_FILE.read_bytes(),
+        mcp_swap.STATE_FILE.stat().st_mode,
+        mcp_swap.STATE_FILE.stat().st_ino,
+    ) == state_before
 
 
 @pytest.mark.parametrize("raw", ["0", "-5", "notanumber", "1.5", ""])
