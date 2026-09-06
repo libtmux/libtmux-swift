@@ -443,12 +443,42 @@ def test_all_supported_clis_swap_and_revert_as_one_transaction(
     assert not mcp_swap.STATE_FILE.exists()
 
 
+def test_duplicate_physical_config_targets_are_rejected(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """One physical config cannot represent two clients in one transaction."""
+    shared = fake_home / "dotfiles" / "shared.json"
+    _write_json(shared, {"mcpServers": {"libtmux": _pinned_json_entry()}})
+    original = shared.read_bytes()
+    for cli in ("cursor", "gemini"):
+        path = mcp_swap.CLIS[cli].config_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(shared)
+    args = mcp_swap.build_parser().parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--cli",
+            "gemini",
+        ]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert shared.read_bytes() == original
+    assert not mcp_swap.STATE_FILE.exists()
+    assert not any(fake_home.rglob("*.bak.mcp-swap-*"))
+
+
 def test_failed_server_preflight_writes_no_config_or_recovery_file(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A PR server that cannot initialize is refused before config planning."""
+    """A failed PR preflight writes nothing after read-only config planning."""
     info = mcp_swap.CLIS["cursor"]
     _seed_cli_config(info)
     original = info.config_path.read_bytes()
@@ -961,60 +991,56 @@ def test_seq_no_increments_across_swaps(
 
 def test_lifo_revert_orders_by_seq_no_not_dict_iteration(
     fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
 ) -> None:
-    """LIFO revert sorts by ``seq_no`` regardless of state-file dict order.
-
-    Regression test for the pre-seq_no implementation: the previous
-    ``(swapped_at, original_index)`` sort fell back to dict iteration
-    order on same-second collisions, and the original ``reversed()``
-    approach was dict-order-dependent throughout. This test seeds a
-    state file with entries in a *deliberately wrong* dict order —
-    higher seq_no first — and asserts the revert still applies the
-    higher-seq_no backup first (true LIFO). The explicit ``seq_no``
-    field makes the sort independent of dict order, JSON round-trip,
-    and wall-clock collisions.
-    """
+    """Serialized state order cannot change the recorded recovery stack."""
     info = mcp_swap.CLIS["claude"]
-    info.config_path.write_text("AFTER_BOTH_SWAPS\n")
-
-    backup_old = mcp_swap.STATE_DIR.parent / "old-backup"
-    backup_new = mcp_swap.STATE_DIR.parent / "new-backup"
-    backup_old.parent.mkdir(parents=True, exist_ok=True)
-    backup_old.write_text("ORIGINAL\n")
-    backup_new.write_text("AFTER_FIRST_SWAP\n")
-
-    # Wrong dict order: newer entry (higher seq_no) FIRST in JSON,
-    # older entry (lower seq_no) SECOND. Without the explicit-seq_no
-    # sort, dict iteration would unwind in the wrong direction.
-    mcp_swap.STATE_DIR.mkdir(parents=True, exist_ok=True)
-    state_payload = {
-        "entries": {
-            "claude:user": {
-                "config_path": str(info.config_path),
-                "backup_path": str(backup_new),
-                "server": "libtmux",
-                "action": "replaced",
-                "swapped_at": "20240202020202",
-                "seq_no": 1,  # newer
-            },
-            "claude:project": {
-                "config_path": str(info.config_path),
-                "backup_path": str(backup_old),
-                "server": "libtmux",
-                "action": "replaced",
-                "swapped_at": "20240101010101",
-                "seq_no": 0,  # older
+    _write_json(
+        info.config_path,
+        {
+            "mcpServers": {"libtmux": _pinned_claude_entry()},
+            "projects": {
+                str(fake_repo.resolve()): {
+                    "mcpServers": {"libtmux": _pinned_claude_entry()},
+                },
             },
         },
-    }
-    mcp_swap.STATE_FILE.write_text(json.dumps(state_payload))
+    )
+    original = info.config_path.read_bytes()
+    parser = mcp_swap.build_parser()
+    assert (
+        mcp_swap.cmd_use_local(
+            parser.parse_args(
+                ["use-local", "--repo", str(fake_repo), "--cli", "claude"]
+            )
+        )
+        == 0
+    )
+    assert (
+        mcp_swap.cmd_use_local(
+            parser.parse_args(
+                [
+                    "use-local",
+                    "--repo",
+                    str(fake_repo),
+                    "--cli",
+                    "claude",
+                    "--scope",
+                    "user",
+                ]
+            )
+        )
+        == 0
+    )
 
-    args = mcp_swap.build_parser().parse_args(["revert", "--cli", "claude"])
-    assert mcp_swap.cmd_revert(args) == 0
+    raw = json.loads(mcp_swap.STATE_FILE.read_text())
+    entries = raw["entries"]
+    raw["entries"] = {key: entries[key] for key in reversed(entries)}
+    raw["checksum"] = mcp_swap._state_checksum(raw["version"], raw["entries"])
+    mcp_swap.STATE_FILE.write_text(json.dumps(raw, indent=2) + "\n")
 
-    # LIFO: seq_no=1 (claude:user) restored first, seq_no=0 (claude:project)
-    # restored second. Final file contents = older backup = "ORIGINAL".
-    assert info.config_path.read_text() == "ORIGINAL\n"
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "claude"])) == 0
+    assert info.config_path.read_bytes() == original
 
 
 def test_non_claude_scope_user_passes_through_to_global_config(
@@ -1207,21 +1233,21 @@ def test_use_local_serializes_the_full_state_transaction(
             {"mcpServers": {"libtmux": _pinned_json_entry()}},
         )
     parser = mcp_swap.build_parser()
-    real_save_state = mcp_swap.save_state
+    real_stage = mcp_swap._stage_use_local
     guard = threading.Lock()
     gate = threading.Barrier(3)
     active = 0
     overlapped = False
     results: list[int] = []
 
-    def slow_save_state(entries: dict[t.Any, t.Any]) -> None:
+    def slow_stage(*args: t.Any, **kwargs: t.Any) -> t.Any:
         nonlocal active, overlapped
         with guard:
             active += 1
             overlapped = overlapped or active > 1
         try:
             time.sleep(0.1)
-            real_save_state(entries)
+            return real_stage(*args, **kwargs)
         finally:
             with guard:
                 active -= 1
@@ -1231,7 +1257,7 @@ def test_use_local_serializes_the_full_state_transaction(
         gate.wait()
         results.append(mcp_swap.cmd_use_local(args))
 
-    monkeypatch.setattr(mcp_swap, "save_state", slow_save_state)
+    monkeypatch.setattr(mcp_swap, "_stage_use_local", slow_stage)
     threads = [
         threading.Thread(target=swap, args=(cli,)) for cli in ("cursor", "gemini")
     ]
@@ -1367,12 +1393,8 @@ def test_use_local_returns_clean_error_on_malformed_claude_user_mcpServers(
 ) -> None:
     """A malformed Claude config produces a clean error + exit 1, no traceback.
 
-    Regression: ``set_server``'s shape guard raises ``RuntimeError`` from
-    ``_claude_user_servers``, which previously propagated past
-    ``cmd_use_local``'s inner ``try/except`` (that one wraps only
-    ``atomic_write`` + ``_revalidate``). Per-CLI ``try/except RuntimeError``
-    around the config-prep region now catches it. Pattern follows pytest's
-    main-level ``UsageError`` formatter in ``_pytest/config/__init__.py``.
+    ``set_server`` rejects the malformed shape while the planning phase keeps
+    the exception at the CLI boundary.
     """
     info = mcp_swap.CLIS["claude"]
     info.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1641,14 +1663,11 @@ def test_revert_deletes_backup_after_successful_restore(
 
 
 def test_revert_dry_run_keeps_backup(
-    fake_home: pathlib.Path, fake_repo: pathlib.Path
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``revert --dry-run`` must not delete the backup file.
-
-    The dry-run path ``continue``s before reaching the unlink, so this
-    locks the behaviour against a future refactor that restructures
-    the loop body.
-    """
+    """``revert --dry-run`` plans without staging or deleting recovery."""
     info = mcp_swap.CLIS["cursor"]
     _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
     parser = mcp_swap.build_parser()
@@ -1662,6 +1681,14 @@ def test_revert_dry_run_keeps_backup(
     )
     state = mcp_swap.load_state()
     backup = pathlib.Path(state[("cursor", "user")].backup_path)
+    config = info.config_path.read_bytes()
+    state_bytes = mcp_swap.STATE_FILE.read_bytes()
+
+    def forbidden(*_args: object, **_kwargs: object) -> t.NoReturn:
+        msg = "dry-run attempted to stage a file"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(mcp_swap.tempfile, "mkstemp", forbidden)
 
     assert (
         mcp_swap.cmd_revert(
@@ -1670,6 +1697,8 @@ def test_revert_dry_run_keeps_backup(
         == 0
     )
     assert backup.exists()
+    assert info.config_path.read_bytes() == config
+    assert mcp_swap.STATE_FILE.read_bytes() == state_bytes
 
 
 def test_revert_returns_failure_when_the_recorded_backup_is_missing(
@@ -2121,20 +2150,12 @@ def test_doctor_flags_missing_backup_and_orphans(
 ) -> None:
     """Doctor flags a state entry whose backup vanished, and untracked backups."""
     info = mcp_swap.CLIS["cursor"]
-    _write_json(info.config_path, {"mcpServers": {"libtmux": _local_entry(fake_repo)}})
-    # A recorded swap whose backup file does not exist -> revert would fail.
-    mcp_swap.save_state(
-        {
-            ("cursor", "user"): mcp_swap.SwapEntry(
-                config_path=str(info.config_path),
-                backup_path=str(info.config_path) + ".bak.mcp-swap-20200101000000",
-                server="libtmux",
-                action="replaced",
-                swapped_at="20200101000000",
-                seq_no=0,
-            )
-        }
+    _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
+    use = mcp_swap.build_parser().parse_args(
+        ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
     )
+    assert mcp_swap.cmd_use_local(use) == 0
+    pathlib.Path(mcp_swap.load_state()["cursor", "user"].backup_path).unlink()
     # An orphaned backup on disk not referenced by state.
     orphan = info.config_path.parent / (
         info.config_path.name + ".bak.mcp-swap-20190101000000"
@@ -2193,6 +2214,249 @@ def test_doctor_does_not_call_orphaned_backups_safe_to_delete(
 # ---------------------------------------------------------------------------
 # Repeat swaps must not destroy the pre-swap config.
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mutation", ["edit", "replace"])
+def test_revert_refuses_a_changed_config(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    mutation: str,
+) -> None:
+    """Human edits and same-byte inode replacement retain every recovery file."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    parser = mcp_swap.build_parser()
+    use = parser.parse_args(["use-local", "--repo", str(fake_repo), "--cli", "cursor"])
+    assert mcp_swap.cmd_use_local(use) == 0
+    swapped = info.config_path.read_bytes()
+    state = mcp_swap.load_state()["cursor", "user"]
+    backup = pathlib.Path(state.backup_path)
+    state_bytes = mcp_swap.STATE_FILE.read_bytes()
+    backup_bytes = backup.read_bytes()
+
+    if mutation == "edit":
+        info.config_path.write_bytes(b"human edit\n")
+        expected = b"human edit\n"
+    else:
+        old_inode = info.config_path.stat().st_ino
+        replacement = info.config_path.with_name("replacement.json")
+        replacement.write_bytes(swapped)
+        replacement.chmod(info.config_path.stat().st_mode & 0o777)
+        replacement.replace(info.config_path)
+        assert info.config_path.stat().st_ino != old_inode
+        expected = swapped
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
+    assert info.config_path.read_bytes() == expected
+    assert mcp_swap.STATE_FILE.read_bytes() == state_bytes
+    assert backup.read_bytes() == backup_bytes
+
+
+def test_revert_refuses_a_replaced_backup(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """A same-byte backup replacement is not accepted as owned recovery."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    parser = mcp_swap.build_parser()
+    use = parser.parse_args(["use-local", "--repo", str(fake_repo), "--cli", "cursor"])
+    assert mcp_swap.cmd_use_local(use) == 0
+    swapped = info.config_path.read_bytes()
+    backup = pathlib.Path(mcp_swap.load_state()["cursor", "user"].backup_path)
+    backup_bytes = backup.read_bytes()
+    old_inode = backup.stat().st_ino
+    replacement = backup.with_name("replacement.backup")
+    replacement.write_bytes(backup_bytes)
+    replacement.chmod(backup.stat().st_mode & 0o777)
+    replacement.replace(backup)
+    assert backup.stat().st_ino != old_inode
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
+    assert info.config_path.read_bytes() == swapped
+    assert backup.read_bytes() == backup_bytes
+    assert mcp_swap.STATE_FILE.exists()
+
+
+def test_revert_refuses_tampered_state(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """Editing a recovery destination cannot redirect a restore."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    parser = mcp_swap.build_parser()
+    use = parser.parse_args(["use-local", "--repo", str(fake_repo), "--cli", "cursor"])
+    assert mcp_swap.cmd_use_local(use) == 0
+    swapped = info.config_path.read_bytes()
+    backup = pathlib.Path(mcp_swap.load_state()["cursor", "user"].backup_path)
+    victim = fake_home / "victim.json"
+    victim.write_bytes(b"leave me alone\n")
+    raw = json.loads(mcp_swap.STATE_FILE.read_text())
+    raw["entries"]["cursor:user"]["target_path"] = str(victim)
+    mcp_swap.STATE_FILE.write_text(json.dumps(raw))
+    tampered = mcp_swap.STATE_FILE.read_bytes()
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
+    assert victim.read_bytes() == b"leave me alone\n"
+    assert info.config_path.read_bytes() == swapped
+    assert mcp_swap.STATE_FILE.read_bytes() == tampered
+    assert backup.exists()
+
+
+def test_repeat_swap_refreshes_recorded_expected_state(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+) -> None:
+    """A repeat use keeps the first backup and records the latest output identity."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    parser = mcp_swap.build_parser()
+    for value in ("one", "two"):
+        args = parser.parse_args(
+            [
+                "use-local",
+                "--repo",
+                str(fake_repo),
+                "--cli",
+                "cursor",
+                "--env",
+                f"LIBTMUX_SOCKET={value}",
+            ]
+        )
+        assert mcp_swap.cmd_use_local(args) == 0
+
+    raw = json.loads(mcp_swap.STATE_FILE.read_text())
+    assert raw["version"] == 1
+    assert isinstance(raw["checksum"], str)
+    record = raw["entries"]["cursor:user"]
+    assert record["version"] == 1
+    assert record["expected_config"]["target"] == str(info.config_path.resolve())
+    assert record["expected_config"]["file"]["size"] == info.config_path.stat().st_size
+
+
+def test_pr_dry_run_is_fully_observational(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dry-run plans the selected configs without server or filesystem writes."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    original = info.config_path.read_bytes()
+    monkeypatch.setattr(
+        mcp_swap,
+        "remote_https_url",
+        lambda _repo: "https://github.com/example/libtmux-swift",
+    )
+    monkeypatch.setattr(mcp_swap, "gh_pr_summary", lambda _repo, _pr: None)
+
+    def forbidden(*_args: object, **_kwargs: object) -> t.NoReturn:
+        msg = "dry-run attempted a side effect"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(mcp_swap, "preflight_spec", forbidden)
+    monkeypatch.setattr(mcp_swap.tempfile, "mkstemp", forbidden)
+    args = mcp_swap.build_parser().parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--pr",
+            "1",
+            "--dry-run",
+        ]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 0
+    assert info.config_path.read_bytes() == original
+    assert not mcp_swap.STATE_DIR.exists()
+    assert not any(fake_home.rglob("*.bak.mcp-swap-*"))
+
+
+@pytest.mark.parametrize("changed", ["config", "backup", "state"])
+def test_use_rechecks_every_destination_after_staging(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    changed: str,
+) -> None:
+    """A deterministic post-plan transition is observed before the first commit."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    original = info.config_path.read_bytes()
+    real_stage = mcp_swap._stage_use_local
+    foreign = b"foreign transition\n"
+    changed_path: pathlib.Path | None = None
+
+    def stage_then_change(*args: t.Any, **kwargs: t.Any) -> t.Any:
+        nonlocal changed_path
+        result = real_stage(*args, **kwargs)
+        staged = result[0]
+        if changed == "config":
+            changed_path = info.config_path.resolve()
+        elif changed == "backup":
+            changed_path = staged[0].plan.backup.path
+        else:
+            changed_path = mcp_swap.STATE_FILE
+        changed_path.write_bytes(foreign)
+        return result
+
+    monkeypatch.setattr(mcp_swap, "_stage_use_local", stage_then_change)
+    args = mcp_swap.build_parser().parse_args(
+        ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    assert changed_path is not None and changed_path.read_bytes() == foreign
+    if changed != "config":
+        assert info.config_path.read_bytes() == original
+    if changed != "state":
+        assert not mcp_swap.STATE_FILE.exists()
+
+
+@pytest.mark.parametrize("changed", ["config", "backup", "state"])
+def test_revert_rechecks_every_destination_after_staging(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    changed: str,
+) -> None:
+    """Revert refuses a deterministic transition without consuming recovery."""
+    info = mcp_swap.CLIS["cursor"]
+    _seed_cli_config(info)
+    parser = mcp_swap.build_parser()
+    use = parser.parse_args(["use-local", "--repo", str(fake_repo), "--cli", "cursor"])
+    assert mcp_swap.cmd_use_local(use) == 0
+    swapped = info.config_path.read_bytes()
+    backup = pathlib.Path(mcp_swap.load_state()["cursor", "user"].backup_path)
+    state_bytes = mcp_swap.STATE_FILE.read_bytes()
+    backup_bytes = backup.read_bytes()
+    real_stage = mcp_swap._stage_revert
+    foreign = b"foreign transition\n"
+
+    def stage_then_change(*args: t.Any, **kwargs: t.Any) -> t.Any:
+        result = real_stage(*args, **kwargs)
+        path = {
+            "config": info.config_path.resolve(),
+            "backup": backup,
+            "state": mcp_swap.STATE_FILE,
+        }[changed]
+        path.write_bytes(foreign)
+        return result
+
+    monkeypatch.setattr(mcp_swap, "_stage_revert", stage_then_change)
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
+    assert info.config_path.read_bytes() == (
+        foreign if changed == "config" else swapped
+    )
+    assert backup.read_bytes() == (foreign if changed == "backup" else backup_bytes)
+    assert mcp_swap.STATE_FILE.read_bytes() == (
+        foreign if changed == "state" else state_bytes
+    )
 
 
 def _freeze_timestamps(monkeypatch: pytest.MonkeyPatch, stamps: list[str]) -> None:
@@ -2291,6 +2555,8 @@ def test_repeat_swap_keeps_claude_lifo_order_across_scopes(
     touched. Bumping ``seq_no`` on the re-swap would make ``revert``
     peel the user layer off first and leave the project layer's backup
     (which still contains the user swap) as the final state.
+    The project backup must also carry the newer user value when only
+    that top layer is reverted.
     """
     info = mcp_swap.CLIS["claude"]
     _write_json(
@@ -2338,7 +2604,23 @@ def test_repeat_swap_keeps_claude_lifo_order_across_scopes(
     state = mcp_swap.load_state()
     assert state[("claude", "user")].seq_no < state[("claude", "project")].seq_no
 
-    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "claude"])) == 0
+    assert (
+        mcp_swap.cmd_revert(
+            parser.parse_args(["revert", "--cli", "claude", "--scope", "project"])
+        )
+        == 0
+    )
+    after_project = json.loads(info.config_path.read_text())
+    assert after_project["mcpServers"]["libtmux"]["env"]["LIBTMUX_SOCKET"] == "two"
+    project = after_project["projects"][str(fake_repo.resolve())]["mcpServers"]
+    assert project["libtmux"]["command"] == "uvx"
+
+    assert (
+        mcp_swap.cmd_revert(
+            parser.parse_args(["revert", "--cli", "claude", "--scope", "user"])
+        )
+        == 0
+    )
     assert info.config_path.read_bytes() == original
     assert not mcp_swap.STATE_FILE.exists()
 
@@ -2358,50 +2640,43 @@ def test_write_new_backup_never_overwrites(tmp_path: pathlib.Path) -> None:
     assert third == base.with_name(base.name + "-2")
 
 
-def test_swap_after_backup_vanished_warns_and_writes_new_backup(
+def test_swap_after_backup_vanished_fails_closed(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A re-swap whose recorded backup was deleted says so and re-registers.
-
-    Nothing can recover the pristine bytes at that point, so the new
-    backup is of the swapped config; the warning keeps that explicit
-    instead of implying ``revert`` will undo the original swap.
-    """
+    """A missing owned backup cannot be replaced with already-swapped bytes."""
     info = mcp_swap.CLIS["cursor"]
     _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
     parser = mcp_swap.build_parser()
 
-    def swap(value: str) -> None:
-        assert (
-            mcp_swap.cmd_use_local(
-                parser.parse_args(
-                    [
-                        "use-local",
-                        "--repo",
-                        str(fake_repo),
-                        "--cli",
-                        "cursor",
-                        "--env",
-                        f"LIBTMUX_SOCKET={value}",
-                    ]
-                )
+    def swap(value: str) -> int:
+        return mcp_swap.cmd_use_local(
+            parser.parse_args(
+                [
+                    "use-local",
+                    "--repo",
+                    str(fake_repo),
+                    "--cli",
+                    "cursor",
+                    "--env",
+                    f"LIBTMUX_SOCKET={value}",
+                ]
             )
-            == 0
         )
 
-    swap("one")
+    assert swap("one") == 0
     stale = pathlib.Path(mcp_swap.load_state()[("cursor", "user")].backup_path)
     swapped_bytes = info.config_path.read_bytes()
+    state_bytes = mcp_swap.STATE_FILE.read_bytes()
     stale.unlink()
     capsys.readouterr()
 
-    swap("two")
-
-    assert "recorded backup is gone" in capsys.readouterr().err
-    fresh = pathlib.Path(mcp_swap.load_state()[("cursor", "user")].backup_path)
-    assert fresh.read_bytes() == swapped_bytes
+    assert swap("two") == 1
+    assert str(stale) in capsys.readouterr().err
+    assert info.config_path.read_bytes() == swapped_bytes
+    assert mcp_swap.STATE_FILE.read_bytes() == state_bytes
+    assert not stale.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -3005,15 +3280,18 @@ def test_state_write_failure_leaves_the_config_unchanged(
     info = mcp_swap.CLIS["cursor"]
     _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
     original = info.config_path.read_bytes()
-    real_atomic_write = mcp_swap.atomic_write
-    write_error = PermissionError("state is read-only")
+    real_replace = mcp_swap.os.replace
+    failed = False
 
-    def fail_state_write(path: pathlib.Path, data: bytes) -> None:
-        if path == mcp_swap.STATE_FILE:
-            raise write_error
-        real_atomic_write(path, data)
+    def fail_state_write(source: t.Any, destination: t.Any) -> None:
+        nonlocal failed
+        if pathlib.Path(destination) == mcp_swap.STATE_FILE and not failed:
+            failed = True
+            message = "state is read-only"
+            raise PermissionError(message)
+        real_replace(source, destination)
 
-    monkeypatch.setattr(mcp_swap, "atomic_write", fail_state_write)
+    monkeypatch.setattr(mcp_swap.os, "replace", fail_state_write)
     args = mcp_swap.build_parser().parse_args(
         ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
     )
@@ -3034,18 +3312,18 @@ def test_later_config_write_failure_rolls_back_the_combined_transaction(
         _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
     originals = {info.config_path: info.config_path.read_bytes() for info in infos}
     later_target = infos[1].config_path.resolve()
-    real_atomic_write = mcp_swap.atomic_write
+    real_replace = mcp_swap.os.replace
     failed = False
 
-    def fail_later_once(path: pathlib.Path, data: bytes) -> None:
+    def fail_later_once(source: t.Any, destination: t.Any) -> None:
         nonlocal failed
-        if path == later_target and not failed:
+        if pathlib.Path(destination) == later_target and not failed:
             failed = True
             message = "later config is read-only"
             raise PermissionError(message)
-        real_atomic_write(path, data)
+        real_replace(source, destination)
 
-    monkeypatch.setattr(mcp_swap, "atomic_write", fail_later_once)
+    monkeypatch.setattr(mcp_swap.os, "replace", fail_later_once)
     args = mcp_swap.build_parser().parse_args(
         [
             "use-local",
@@ -3064,6 +3342,55 @@ def test_later_config_write_failure_rolls_back_the_combined_transaction(
     assert not any(fake_home.rglob("*.bak.mcp-swap-*"))
 
 
+def test_post_rename_error_rolls_back_the_combined_transaction(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reported error still rolls back a rename that actually committed."""
+    infos = [mcp_swap.CLIS["cursor"], mcp_swap.CLIS["gemini"]]
+    for info in infos:
+        _seed_cli_config(info)
+    originals = {
+        info.config_path: (
+            info.config_path.read_bytes(),
+            info.config_path.stat().st_mode,
+        )
+        for info in infos
+    }
+    later_target = infos[1].config_path.resolve()
+    real_replace = mcp_swap.os.replace
+    failed = False
+
+    def commit_then_fail(source: t.Any, destination: t.Any) -> None:
+        nonlocal failed
+        real_replace(source, destination)
+        if pathlib.Path(destination) == later_target and not failed:
+            failed = True
+            msg = "later rename reported failure after commit"
+            raise PermissionError(msg)
+
+    monkeypatch.setattr(mcp_swap.os, "replace", commit_then_fail)
+    args = mcp_swap.build_parser().parse_args(
+        [
+            "use-local",
+            "--repo",
+            str(fake_repo),
+            "--cli",
+            "cursor",
+            "--cli",
+            "gemini",
+        ]
+    )
+
+    assert mcp_swap.cmd_use_local(args) == 1
+    for path, (body, mode) in originals.items():
+        assert path.read_bytes() == body
+        assert path.stat().st_mode == mode
+    assert not mcp_swap.STATE_FILE.exists()
+    assert not any(fake_home.rglob("*.bak.mcp-swap-*"))
+
+
 def test_swap_write_failure_keeps_recovery_state_without_raising(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
@@ -3072,25 +3399,25 @@ def test_swap_write_failure_keeps_recovery_state_without_raising(
     """A failed config write remains recoverable even when rollback also fails."""
     info = mcp_swap.CLIS["cursor"]
     _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
-    original = info.config_path.read_bytes()
     target = info.config_path.resolve()
-    real_atomic_write = mcp_swap.atomic_write
+    real_replace = mcp_swap.os.replace
     write_error = PermissionError("config is read-only")
 
-    def fail_config_write(path: pathlib.Path, data: bytes) -> None:
-        if path == target:
+    def fail_config_write(source: t.Any, destination: t.Any) -> None:
+        if pathlib.Path(destination) == target:
             raise write_error
-        real_atomic_write(path, data)
+        real_replace(source, destination)
 
-    monkeypatch.setattr(mcp_swap, "atomic_write", fail_config_write)
+    monkeypatch.setattr(mcp_swap.os, "replace", fail_config_write)
     args = mcp_swap.build_parser().parse_args(
         ["use-local", "--repo", str(fake_repo), "--cli", "cursor"]
     )
 
     assert mcp_swap.cmd_use_local(args) == 1
     state = mcp_swap.load_state()
-    assert info.config_path.read_bytes() == original
+    assert not info.config_path.exists()
     assert pathlib.Path(state["cursor", "user"].backup_path).exists()
+    assert list(target.parent.glob(".mcp.json.mcp-swap-recovery-*"))
 
 
 def test_revert_write_failure_returns_failure_and_keeps_recovery_files(
@@ -3113,15 +3440,15 @@ def test_revert_write_failure_returns_failure_and_keeps_recovery_files(
     state = mcp_swap.load_state()
     backup = pathlib.Path(state["cursor", "user"].backup_path)
     target = info.config_path.resolve()
-    real_atomic_write = mcp_swap.atomic_write
+    real_replace = mcp_swap.os.replace
     write_error = PermissionError("config is read-only")
 
-    def fail_config_write(path: pathlib.Path, data: bytes) -> None:
-        if path == target:
+    def fail_config_write(source: t.Any, destination: t.Any) -> None:
+        if pathlib.Path(destination) == target:
             raise write_error
-        real_atomic_write(path, data)
+        real_replace(source, destination)
 
-    monkeypatch.setattr(mcp_swap, "atomic_write", fail_config_write)
+    monkeypatch.setattr(mcp_swap.os, "replace", fail_config_write)
 
     assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
     assert backup.exists()
@@ -3136,7 +3463,6 @@ def test_revert_state_failure_keeps_recovery_files(
     """A restored config keeps its backup until state cleanup is durable."""
     info = mcp_swap.CLIS["cursor"]
     _write_json(info.config_path, {"mcpServers": {"libtmux": _pinned_json_entry()}})
-    original = info.config_path.read_bytes()
     parser = mcp_swap.build_parser()
     assert (
         mcp_swap.cmd_use_local(
@@ -3147,18 +3473,116 @@ def test_revert_state_failure_keeps_recovery_files(
         == 0
     )
     state_bytes = mcp_swap.STATE_FILE.read_bytes()
+    swapped = info.config_path.read_bytes()
     backup = pathlib.Path(mcp_swap.load_state()["cursor", "user"].backup_path)
-    state_error = PermissionError("state is read-only")
+    real_replace = mcp_swap.os.replace
 
-    def fail_state_update(_entries: dict[t.Any, t.Any]) -> None:
-        raise state_error
+    def fail_state_update(source: t.Any, destination: t.Any) -> None:
+        if pathlib.Path(source) == mcp_swap.STATE_FILE:
+            message = "state is read-only"
+            raise PermissionError(message)
+        real_replace(source, destination)
 
-    monkeypatch.setattr(mcp_swap, "_save_or_clear_state", fail_state_update)
+    monkeypatch.setattr(mcp_swap.os, "replace", fail_state_update)
 
     assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
-    assert info.config_path.read_bytes() == original
+    assert info.config_path.read_bytes() == swapped
     assert mcp_swap.STATE_FILE.read_bytes() == state_bytes
     assert backup.exists()
+
+
+def test_later_revert_failure_rolls_back_every_selected_client(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later restore failure leaves the whole selected set swapped."""
+    infos = [mcp_swap.CLIS["cursor"], mcp_swap.CLIS["gemini"]]
+    for info in infos:
+        _seed_cli_config(info)
+    parser = mcp_swap.build_parser()
+    use = ["use-local", "--repo", str(fake_repo)]
+    for cli in ("cursor", "gemini"):
+        use.extend(["--cli", cli])
+    assert mcp_swap.cmd_use_local(parser.parse_args(use)) == 0
+    swapped = {info.config_path: info.config_path.read_bytes() for info in infos}
+    state_bytes = mcp_swap.STATE_FILE.read_bytes()
+    backups = {
+        pathlib.Path(entry.backup_path): pathlib.Path(entry.backup_path).read_bytes()
+        for entry in mcp_swap.load_state().values()
+    }
+    later = infos[1].config_path.resolve()
+    real_replace = mcp_swap.os.replace
+    failed = False
+
+    def fail_later_once(source: t.Any, destination: t.Any) -> None:
+        nonlocal failed
+        if pathlib.Path(destination) == later and not failed:
+            failed = True
+            msg = "later restore is read-only"
+            raise PermissionError(msg)
+        real_replace(source, destination)
+
+    monkeypatch.setattr(mcp_swap.os, "replace", fail_later_once)
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert"])) == 1
+    assert {path: path.read_bytes() for path in swapped} == swapped
+    assert mcp_swap.STATE_FILE.read_bytes() == state_bytes
+    assert {path: path.read_bytes() for path in backups} == backups
+
+
+def test_post_rename_error_rolls_back_selected_revert(
+    fake_home: pathlib.Path,
+    fake_repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reported error after restore keeps the selected set swapped."""
+    infos = [mcp_swap.CLIS["cursor"], mcp_swap.CLIS["gemini"]]
+    for info in infos:
+        _seed_cli_config(info)
+    parser = mcp_swap.build_parser()
+    use = ["use-local", "--repo", str(fake_repo)]
+    for cli in ("cursor", "gemini"):
+        use.extend(["--cli", cli])
+    assert mcp_swap.cmd_use_local(parser.parse_args(use)) == 0
+    swapped = {
+        info.config_path: (
+            info.config_path.read_bytes(),
+            info.config_path.stat().st_mode,
+        )
+        for info in infos
+    }
+    state = (mcp_swap.STATE_FILE.read_bytes(), mcp_swap.STATE_FILE.stat().st_mode)
+    backups = {
+        pathlib.Path(entry.backup_path): (
+            pathlib.Path(entry.backup_path).read_bytes(),
+            pathlib.Path(entry.backup_path).stat().st_mode,
+        )
+        for entry in mcp_swap.load_state().values()
+    }
+    later_target = infos[1].config_path.resolve()
+    real_replace = mcp_swap.os.replace
+    failed = False
+
+    def commit_then_fail(source: t.Any, destination: t.Any) -> None:
+        nonlocal failed
+        real_replace(source, destination)
+        if pathlib.Path(destination) == later_target and not failed:
+            failed = True
+            msg = "later restore reported failure after commit"
+            raise PermissionError(msg)
+
+    monkeypatch.setattr(mcp_swap.os, "replace", commit_then_fail)
+
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert"])) == 1
+    for path, (body, mode) in swapped.items():
+        assert path.read_bytes() == body
+        assert path.stat().st_mode == mode
+    assert mcp_swap.STATE_FILE.read_bytes() == state[0]
+    assert mcp_swap.STATE_FILE.stat().st_mode == state[1]
+    for path, (body, mode) in backups.items():
+        assert path.read_bytes() == body
+        assert path.stat().st_mode == mode
 
 
 @pytest.mark.parametrize("raw", ["0", "-5", "notanumber", "1.5", ""])
@@ -3299,12 +3723,12 @@ def test_symlinked_config_swap_and_revert_round_trip(
 
 
 @pytest.mark.parametrize("replacement_kind", ["symlink", "file"])
-def test_revert_uses_the_original_target_when_a_config_link_is_replaced(
+def test_revert_refuses_when_a_config_link_is_replaced(
     fake_home: pathlib.Path,
     fake_repo: pathlib.Path,
     replacement_kind: str,
 ) -> None:
-    """Repointing or replacing a link cannot redirect recovery into a new file."""
+    """Repointing or replacing a link retains recovery without writing anywhere."""
     info = mcp_swap.CLIS["cursor"]
     original_target = fake_home / "dotfiles" / "original.json"
     new_target = fake_home / "dotfiles" / "replacement.json"
@@ -3324,6 +3748,10 @@ def test_revert_uses_the_original_target_when_a_config_link_is_replaced(
         )
         == 0
     )
+    swapped = original_target.read_bytes()
+    state = mcp_swap.load_state()["cursor", "user"]
+    backup = pathlib.Path(state.backup_path)
+    state_bytes = mcp_swap.STATE_FILE.read_bytes()
     info.config_path.unlink()
     if replacement_kind == "symlink":
         info.config_path.symlink_to(new_target)
@@ -3332,9 +3760,11 @@ def test_revert_uses_the_original_target_when_a_config_link_is_replaced(
         info.config_path.write_bytes(replacement)
         replacement_path = info.config_path
 
-    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 0
-    assert original_target.read_bytes() == original
+    assert mcp_swap.cmd_revert(parser.parse_args(["revert", "--cli", "cursor"])) == 1
+    assert original_target.read_bytes() == swapped
     assert replacement_path.read_bytes() == replacement
+    assert mcp_swap.STATE_FILE.read_bytes() == state_bytes
+    assert backup.read_bytes() == original
 
 
 # ---------------------------------------------------------------------------
