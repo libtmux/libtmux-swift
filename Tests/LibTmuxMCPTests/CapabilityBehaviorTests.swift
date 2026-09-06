@@ -439,7 +439,9 @@ struct CapabilityBehaviorTests {
                 let setup =
                     "\\trap \(shellQuoted(debugAction)) DEBUG; "
                     + "\\trap \(shellQuoted(errorAction)) ERR; "
-                    + "\\set -e; \\set -x; \(server.shellInvocation) wait-for -S -- "
+                    + "\\set -e; \\set -x; "
+                    + (shell == "bash" ? "\\set -f; " : "")
+                    + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(ready)
                 try await server.sendKeys([setup, "Enter"], to: pane)
                 try await server.wait(for: ready)
@@ -472,8 +474,10 @@ struct CapabilityBehaviorTests {
                 }
 
                 let successMarker = "trap-success-\(shell)"
+                let requireNoglob =
+                    shell == "bash" ? "case $- in *f*) ;; *) exit 92 ;; esac; " : ""
                 let success = try await run(
-                    "/usr/bin/printf '%s\\n' \(shellQuoted(successMarker))"
+                    requireNoglob + "/usr/bin/printf '%s\\n' \(shellQuoted(successMarker))"
                 )
                 let successLines =
                     success.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
@@ -503,6 +507,7 @@ struct CapabilityBehaviorTests {
                 let parent = try await run(
                     "case $- in *e*) ;; *) exit 90 ;; esac; "
                         + "case $- in *x*) ;; *) exit 91 ;; esac; "
+                        + requireNoglob
                         + "/usr/bin/printf '%s\\n' \(shellQuoted(parentMarker)); false"
                 )
                 let parentLines =

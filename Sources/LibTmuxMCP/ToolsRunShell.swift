@@ -553,12 +553,15 @@ extension TmuxTools {
         let query: String
         if currentCommand.hasSuffix("bash") {
             let files = "__libtmux_mcp_trap_files_\(nonce)"
+            let noglob = "__libtmux_mcp_trap_noglob_\(nonce)"
             acquire =
-                "\(files)=(); if /usr/bin/mktemp \(template) >/dev/null; then "
+                "\(noglob)=0; case $- in *f*) \(noglob)=1 ;; esac; \\set +f; "
+                + "\(files)=(); if /usr/bin/mktemp \(template) >/dev/null; then "
                 + "\(files)=(\(shellQuoted(prefix)).??????); "
                 + "if [ \"${#\(files)[@]}\" -eq 1 ]; then "
                 + "\(file)=\"${\(files)[0]}\"; "
-                + "else /bin/rm -f \"${\(files)[@]}\"; fi; fi"
+                + "else /bin/rm -f \"${\(files)[@]}\"; fi; fi; "
+                + "if [ \"$\(noglob)\" -eq 1 ]; then \\set -f; fi"
             query = "\\trap -p ERR DEBUG"
         } else {
             acquire =
