@@ -167,6 +167,10 @@ struct FileRoute: Codable, Equatable, Sendable {
         )
     }
 
+    static func captureMetadataOnly(logical: URL) throws -> FileRoute {
+        try captureMetadata(logical: logical)
+    }
+
     func verify(maximumBytes: Int = 16 * 1024 * 1024) throws {
         let current = try FileRoute.capture(logical: logical, maximumBytes: maximumBytes)
         guard current == self else {
@@ -202,11 +206,11 @@ struct FileRoute: Codable, Equatable, Sendable {
         let absolute = absoluteURL(logical)
         let nodes = try logicalRouteNodes(absolute)
         let resolved = absolute.resolvingSymlinksInPath().standardizedFileURL
-        let parent = try FileIdentity.capture(resolved.deletingLastPathComponent())
+        let parent = try FileIdentity.captureMetadata(resolved.deletingLastPathComponent())
         guard parent.kind == .directory else {
             throw SwapError.message("resolved parent is not a directory: \(parent)")
         }
-        let target = try FileIdentity.capture(resolved)
+        let target = try FileIdentity.captureMetadata(resolved)
         guard target.kind == .regular else {
             throw SwapError.message("configuration is not a regular file: \(absolute.path)")
         }

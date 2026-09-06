@@ -276,11 +276,11 @@ final class TransactionLock: @unchecked Sendable {
             )
             let existed = pathExists(roots.lockFile)
             if existed {
-                let existing = try FileIdentity.capture(roots.lockFile, follow: false)
+                let existing = try FileIdentity.captureMetadata(roots.lockFile, follow: false)
                 guard existing.kind == .regular, existing.links == 1,
-                    existing.mode == 0o600, existing.size == 0
+                    existing.mode == 0o600
                 else {
-                    throw SwapError.message("swap lock is not an exclusive empty 0600 file")
+                    throw SwapError.message("swap lock is not an exclusive 0600 file")
                 }
             }
             let flags = O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW
@@ -293,25 +293,27 @@ final class TransactionLock: @unchecked Sendable {
                 }
                 let descriptorIdentity = try FileIdentity.captureDescriptor(descriptor, data: nil)
                 guard descriptorIdentity.kind == .regular, descriptorIdentity.links == 1,
-                    descriptorIdentity.mode == 0o600, descriptorIdentity.size == 0
+                    descriptorIdentity.mode == 0o600
                 else {
-                    throw SwapError.message("swap lock is not an exclusive empty 0600 file")
-                }
-                let route = try FileRoute.capture(logical: roots.lockFile)
-                guard route.target.sameMetadata(as: descriptorIdentity) else {
-                    throw SwapError.message("swap lock path changed after it was opened")
+                    throw SwapError.message("swap lock is not an exclusive 0600 file")
                 }
                 try afterOpen()
                 guard mcp_swap_lock_exclusive(descriptor) == 0 else {
                     throw lockPOSIXError("lock swap state")
                 }
+                let lockedIdentity = try FileIdentity.captureDescriptor(descriptor, data: nil)
+                guard lockedIdentity.kind == .regular, lockedIdentity.links == 1,
+                    lockedIdentity.mode == 0o600
+                else {
+                    throw SwapError.message("swap lock is not an exclusive 0600 file")
+                }
+                let route = try FileRoute.captureMetadataOnly(logical: roots.lockFile)
                 let pathIdentity = try route.verifyMetadataOnly()
-                guard pathIdentity.device == descriptorIdentity.device,
-                    pathIdentity.inode == descriptorIdentity.inode,
+                guard pathIdentity.device == lockedIdentity.device,
+                    pathIdentity.inode == lockedIdentity.inode,
                     pathIdentity.kind == .regular,
                     pathIdentity.links == 1,
-                    pathIdentity.mode == 0o600,
-                    pathIdentity.size == 0
+                    pathIdentity.mode == 0o600
                 else {
                     throw SwapError.message("swap lock path changed after it was opened")
                 }
@@ -341,8 +343,7 @@ final class TransactionLock: @unchecked Sendable {
             pathIdentity.device == identity.device,
             pathIdentity.inode == identity.inode,
             pathIdentity.links == 1,
-            pathIdentity.mode == 0o600,
-            pathIdentity.size == 0
+            pathIdentity.mode == 0o600
         else {
             throw SwapError.message("swap lock path no longer names the locked file")
         }

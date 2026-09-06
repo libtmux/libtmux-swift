@@ -219,7 +219,11 @@ import Testing
             os.fchmod(descriptor, 0o600)
             fcntl.lockf(descriptor, fcntl.LOCK_EX)
             print("ready", flush=True)
-            time.sleep(0.6)
+            time.sleep(0.2)
+            os.ftruncate(descriptor, 0)
+            os.write(descriptor, b"foreign-lock-token")
+            os.fsync(descriptor)
+            time.sleep(0.4)
             fcntl.lockf(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)
             """,
