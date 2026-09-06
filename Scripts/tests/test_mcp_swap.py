@@ -114,9 +114,11 @@ def fake_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathli
     return tmp_path
 
 
-def _write_manifest(repo: pathlib.Path, executable: str) -> None:
+def _write_manifest(
+    repo: pathlib.Path, executable: str, *, at_root: bool = False
+) -> None:
     """Write the smallest Package.swift meta resolution reads."""
-    package = repo / "swift"
+    package = repo if at_root else repo / "swift"
     package.mkdir(parents=True, exist_ok=True)
     (package / "Package.swift").write_text(
         "// swift-tools-version: 6.2\n"
@@ -180,6 +182,21 @@ def test_resolve_repo_meta_uses_name_when_no_suffix(tmp_path: pathlib.Path) -> N
     repo.mkdir()
     _write_manifest(repo, "weather")
     assert mcp_swap.resolve_repo_meta(repo) == ("weather", "weather")
+
+
+def test_root_package_layout_resolves_debug_binary(tmp_path: pathlib.Path) -> None:
+    """The checkout's root manifest and root build directory form one package."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_manifest(repo, "libtmux-mcp", at_root=True)
+    binary = repo / ".build" / "debug" / "libtmux-mcp"
+    binary.parent.mkdir(parents=True)
+    binary.touch()
+
+    assert mcp_swap.resolve_repo_meta(repo) == ("libtmux", "libtmux-mcp")
+    assert mcp_swap.build_local_spec(repo, "libtmux-mcp", "debug").command == str(
+        binary.resolve()
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1272,6 +1272,11 @@ def _spec_from_entry(entry: t.Any, *, info: CLIInfo) -> McpServerSpec:
 # ---------------------------------------------------------------------------
 
 
+def _swift_package_path(repo: pathlib.Path) -> pathlib.Path:
+    """Return the checkout's Swift package, retaining the legacy nested layout."""
+    return repo if (repo / "Package.swift").is_file() else repo / "swift"
+
+
 def resolve_repo_meta(repo: pathlib.Path) -> tuple[str, str]:
     """Derive (server_name, entry_command) from the repo's Package.swift.
 
@@ -1284,7 +1289,7 @@ def resolve_repo_meta(repo: pathlib.Path) -> tuple[str, str]:
     strips a trailing ``-mcp`` (``libtmux-mcp`` -> ``libtmux``), matching
     the key existing users registered under.
     """
-    manifest = repo / "swift" / "Package.swift"
+    manifest = _swift_package_path(repo) / "Package.swift"
     if not manifest.is_file():
         msg = f"{manifest} does not exist — is this the Swift checkout?"
         raise RuntimeError(msg)
@@ -1311,11 +1316,11 @@ def build_local_spec(
     binary a client should launch rather than a resolver that fetches one:
 
     ``dev``
-        ``swift run --package-path <repo>/swift <entry>``. Rebuilds on
+        ``swift run --package-path <package> <entry>``. Rebuilds on
         every launch, so the client always runs the working tree. Slowest
         to start and the only flavour that reflects uncommitted edits.
     ``debug`` / ``release``
-        the binary already under ``<repo>/swift/.build/<flavour>``. Starts
+        the binary already under ``<package>/.build/<flavour>``. Starts
         immediately and does not rebuild, so it runs whatever was last
         built — which is what you want while bisecting, and a trap if you
         forget to rebuild.
@@ -1329,7 +1334,7 @@ def build_local_spec(
         pointing a client at a path that does not exist fails at launch
         with a message that blames the client.
     """
-    package = repo / "swift"
+    package = _swift_package_path(repo)
     if flavour == "dev":
         return McpServerSpec(
             command="swift",
