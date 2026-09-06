@@ -268,8 +268,12 @@ jobs:
           swift test --traits YAMLWorkspaces --force-resolved-versions
 
       # `Package.resolved` tracks a superset that includes Yams even when the
-      # trait is off, and a trait-off resolve rewrites the file to drop that
-      # pin. Nothing above fails when it does, so the drift reaches a commit
-      # by way of whoever ran the documented trait-off command last.
+      # trait is off, and a trait-off `swift test` resolves without it and
+      # rewrites the file to drop that pin. Checking the committed file is what
+      # catches the drift, because a run that already has it never restores it;
+      # the diff beside it catches a step here rewriting the lock instead.
       - name: Check the resolved versions did not drift
-        run: git diff --exit-code Package.resolved Examples/Package.resolved
+        run: |
+          set -euo pipefail
+          jq -e '.pins[] | select(.identity == "yams")' Package.resolved > /dev/null
+          git diff --exit-code Package.resolved Examples/Package.resolved

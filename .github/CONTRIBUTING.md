@@ -241,16 +241,21 @@ run that cannot finish. One lane spent six hours there. The script requires
 `Sources/LibTmuxMCP/OrderedOutbound.swift` being the example, the exception is
 listed beside the code that resumes it.
 
-`Package.resolved` still tracks the superset it is committed with:
+`Package.resolved` still carries the Yams pin that makes it a superset:
 
 ```console
-$ git diff --exit-code Package.resolved Examples/Package.resolved
+$ jq -e '.pins[] | select(.identity == "yams")' Package.resolved > /dev/null
 ```
 
-A trait-off resolve rewrites the root lock to drop the Yams pin, and every
-command above uses `--force-resolved-versions` precisely so it does not. Run
-one without it — `swift test` with no traits is the one that catches people —
-and the drift lands in the next commit unless this catches it first.
+`swift test` with no traits resolves without Yams and rewrites the file to drop
+that pin. Every command above passes `--force-resolved-versions` so it does
+not, but the trait-off one is easy to reach for, and the drift is invisible in
+review — a lock file with one fewer entry. Checking the committed file is what
+catches it, because a later run that already has the pin never restores it.
+
+CI runs `git diff --exit-code Package.resolved Examples/Package.resolved`
+beside that, which answers a different question: whether a step in the job
+rewrote a lock rather than reading it.
 
 Every tracked file with a shebang is executable in git, so a script that CI
 invokes directly does not fail only there:
