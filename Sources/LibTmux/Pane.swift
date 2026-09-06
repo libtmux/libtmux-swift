@@ -14,6 +14,12 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
     public let height: Int
     /// The pane a command reaches when it names the window and stops there.
     public let isActive: Bool
+    /// Whether the pane's configured process has exited.
+    public let isDead: Bool
+    /// The number of human-client modes stacked on the pane.
+    public let modeCount: Int
+    /// Whether input to this pane participates in synchronized-pane delivery.
+    public let isSynchronized: Bool
     /// The command tmux believes is running. It reflects the foreground
     /// process, so it changes as the user works.
     public let currentCommand: String
@@ -39,6 +45,9 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
         width: Int,
         height: Int,
         isActive: Bool,
+        isDead: Bool,
+        modeCount: Int,
+        isSynchronized: Bool,
         currentCommand: String,
         currentPath: String,
         isAtTop: Bool = false,
@@ -53,6 +62,9 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
         self.width = width
         self.height = height
         self.isActive = isActive
+        self.isDead = isDead
+        self.modeCount = modeCount
+        self.isSynchronized = isSynchronized
         self.currentCommand = currentCommand
         self.currentPath = currentPath
         self.isAtTop = isAtTop
@@ -70,6 +82,9 @@ extension Pane {
     private static let widthField = FormatField("pane_width", .integer)
     private static let heightField = FormatField("pane_height", .integer)
     private static let activeField = FormatField("pane_active", .flag)
+    private static let deadField = FormatField("pane_dead", .flag)
+    private static let modeCountField = FormatField("pane_in_mode", .integer)
+    private static let synchronizedField = FormatField("pane_synchronized", .flag)
     private static let commandField = FormatField("pane_current_command")
     private static let pathField = FormatField("pane_current_path")
     private static let atTopField = FormatField("pane_at_top", .flag)
@@ -81,7 +96,8 @@ extension Pane {
 
     static let projection = FormatProjection(
         [
-            idField, indexField, widthField, heightField, activeField,
+            idField, indexField, widthField, heightField, activeField, deadField,
+            modeCountField, synchronizedField,
             commandField, pathField, atTopField, atBottomField, atLeftField,
             atRightField, windowField,
         ] + ServerIncarnation.projectionFields)
@@ -93,6 +109,9 @@ extension Pane {
             width: row.integer(Pane.widthField),
             height: row.integer(Pane.heightField),
             isActive: row.flag(Pane.activeField),
+            isDead: row.flag(Pane.deadField),
+            modeCount: row.integer(Pane.modeCountField),
+            isSynchronized: row.flag(Pane.synchronizedField),
             currentCommand: row.text(Pane.commandField),
             currentPath: row.text(Pane.pathField),
             isAtTop: row.flag(Pane.atTopField),

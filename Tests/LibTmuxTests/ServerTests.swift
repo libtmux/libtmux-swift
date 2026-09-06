@@ -130,6 +130,45 @@ struct FormatProjectionTests {
             try projection.decode(bytes([["ok", "many"]]))
         }
     }
+
+    @Test("pane input state is typed and malformed rows fail closed")
+    func paneInputStateIsStrictlyDecoded() throws {
+        var values = [
+            "pane_id": "%7", "pane_index": "0", "pane_width": "80",
+            "pane_height": "24", "pane_active": "1", "pane_current_command": "zsh",
+            "pane_current_path": "/tmp", "pane_at_top": "1", "pane_at_bottom": "1",
+            "pane_at_left": "1", "pane_at_right": "1", "window_id": "@2",
+            "socket_path": "/tmp/libtmux-swift-test/pane-state", "pid": "42",
+            "start_time": "9", "pane_dead": "0", "pane_in_mode": "2",
+            "pane_synchronized": "1",
+        ]
+        func encoded() -> [UInt8] {
+            let row = Pane.projection.fields.map { values[$0.name] ?? "" }
+            return bytes([row])
+        }
+
+        let row = try #require(Pane.projection.decode(encoded()).first)
+        let pane = Pane(
+            row: row,
+            endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/pane-state")
+        )
+        #expect(pane.isDead == false)
+        #expect(pane.modeCount == 2)
+        #expect(pane.isSynchronized)
+
+        for (field, malformed) in [
+            ("pane_dead", ""), ("pane_dead", "2"),
+            ("pane_in_mode", ""), ("pane_in_mode", "many"),
+            ("pane_synchronized", ""), ("pane_synchronized", "on"),
+        ] {
+            let original = values[field]
+            values[field] = malformed
+            #expect(throws: FormatDecodingError.self) {
+                try Pane.projection.decode(encoded())
+            }
+            values[field] = original
+        }
+    }
 }
 
 // MARK: - Value semantics
@@ -297,6 +336,9 @@ struct RealTmuxTests {
             #expect(pane.windowID == window.id)
             #expect(link.isActive)
             #expect(pane.isActive)
+            #expect(!pane.isDead)
+            #expect(pane.modeCount == 0)
+            #expect(!pane.isSynchronized)
             #expect(pane.width > 0)
             #expect(pane.height > 0)
         }

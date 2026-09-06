@@ -216,9 +216,11 @@ struct NavigationTests {
 
             try await server.enterCopyMode(pane)
             #expect(try await paneInMode() == "1")
+            #expect(try await server.panes().first { $0.id == pane.id }?.modeCount == 1)
 
             try await server.cancelModes(in: pane)
             #expect(try await paneInMode() == "0")
+            #expect(try await server.panes().first { $0.id == pane.id }?.modeCount == 0)
             try await server.cancelModes(in: pane)
             #expect(try await paneInMode() == "0")
 

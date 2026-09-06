@@ -289,6 +289,7 @@ struct ProvenanceValues: Sendable {
     ) -> Pane {
         Pane(
             id: id, index: index, width: 80, height: 12, isActive: active,
+            isDead: false, modeCount: 0, isSynchronized: false,
             currentCommand: "sh", currentPath: "/tmp", windowID: "@1",
             incarnation: incarnation
         )
