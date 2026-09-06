@@ -8,8 +8,8 @@ import LibTmux
 /// data and the tool evaluates it here, rather than the client asking for
 /// everything and filtering at home.
 public struct TmuxTools: Sendable {
-    /// The one `run_shell_command` lock. See ``PaneRunCoordinator`` for why it is not
-    /// per-instance; `Self.` at every use site is the reminder.
+    /// The process-wide pane-input reservation registry. See ``PaneRunCoordinator``
+    /// for why it is not per-instance.
     static let paneRuns = PaneRunCoordinator()
 
     let server: Server

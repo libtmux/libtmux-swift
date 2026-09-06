@@ -522,20 +522,30 @@ across turns for new output. If a pane is already in a human-owned mode, read
 `pane_in_mode` or `pane_mode` through `get_tmux_variables`, report it, and leave
 entry or cancellation to the client that owns the interaction.
 
-Pane input first reads typed death, mode-count, and effective synchronization
-state. `send_keys` checks every configured member of the effective synchronized
-cohort; `send_keys_batch` repeats that check for every executed row. Returned
-pane IDs describe configured membership, not proof of delivery, and the checks
-remain observational because tmux state can change after a snapshot.
+Pane input reads fresh typed death, mode-count, effective synchronization,
+caller, and terminal-attendance state. Missing, malformed, or inconsistent
+caller/client context fails closed. A zoomed terminal client protects its
+active pane; an unzoomed terminal client protects every pane in its active
+window. Control clients do not count. `send_keys` checks every configured
+member of the effective synchronized cohort; `send_keys_batch` repeats that
+check for every executed row. Returned pane IDs describe configured
+membership, not proof of delivery, and the checks remain observational because
+tmux state can change after a snapshot. A process-wide reservation protects
+every configured member through dispatch, so pane input refuses overlap with
+an active run or other input.
 
-`paste_text` keeps text and its optional Enter target-only in one private
-buffer, checks before and after staging, and removes the buffer on every path.
-`run_shell_command` checks before setup and again before dispatch, requires a
-single configured pane running a recognized POSIX shell, and contains the
-command in a subshell so it cannot leave shell state behind. Those guarantees
-assume the selected shell, tmux daemon, and configuration are trusted; they do
-not claim containment against a hostile shell environment. `force=true`
-bypasses only the MCP caller-pane check.
+`paste_text` checks its target before staging and immediately before its one
+paste dispatch. It keeps non-empty text and its optional Enter target-only in
+one private buffer and removes the buffer on every path. Empty text without
+Enter still performs its initial safety check, then returns without creating a
+buffer or dispatching input. `run_shell_command` checks before setup and again
+before dispatch, refuses a second run instead of waiting, requires a single
+configured pane running a recognized POSIX shell, and contains the command in
+a subshell so it cannot leave shell state behind. Those guarantees assume the
+selected shell, tmux daemon, and configuration are trusted; they do not claim
+containment against a hostile shell environment. `force=true` bypasses only an
+exact caller-pane match; it never bypasses attendance, active-operation, mode,
+death, shell, or target-count checks.
 
 Every tool declares native input and output schemas and carries its complete
 capability row under `_meta["com.git-pull.libtmux-mcp/capability"]`. The same

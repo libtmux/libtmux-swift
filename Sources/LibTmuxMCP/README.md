@@ -77,21 +77,28 @@ MCP response, and an opaque `capture_since` cursor for subsequent output.
 `pane_in_mode` or `pane_mode` with `get_tmux_variables` when mode state matters,
 then report the human-owned state without entering or cancelling it.
 
-Pane-input tools read fresh typed pane state and refuse a dead pane, any
-nonzero mode stack, or the MCP's own pane unless `force=true`. That override is
-only for caller ownership; it never bypasses mode, death, shell, or target-count
-checks. `send_keys` derives effective synchronized membership from each pane's
-configured value. Its `resolvedPaneIds` are the checked configuration, not an
-attestation that tmux delivered bytes to every member. Batch rows are checked
-individually, and every check remains observational rather than atomic.
+Pane-input tools read fresh typed pane state and refuse dead panes, nonzero mode
+stacks, incomplete or malformed caller context, and terminal-attended panes. A
+zoomed terminal client protects its active pane; an unzoomed terminal client
+protects every pane in its active window. Control clients do not count.
+`force=true` bypasses only an exact caller-pane match; it never bypasses
+attendance, active-operation, mode, death, shell, or target-count checks.
+`send_keys` derives effective synchronized membership from each pane's
+configured value and reserves every configured member through dispatch. Its
+`resolvedPaneIds` are the checked configuration, not an attestation that tmux
+delivered bytes to every member. Batch rows are checked individually, and
+every check remains observational rather than atomic.
 
-`paste_text` puts text and its optional newline in one private, target-only
-buffer. It checks the target before staging and again immediately before paste,
-then removes the buffer on success or failure. `run_shell_command` likewise
-checks exactly before setup and before dispatch. It requires one configured
-target running a recognized POSIX shell, pins the selected tmux executable and
-socket route, and isolates the command in a subshell so `cd`, variables, traps,
-syntax errors, and `exit` do not alter or terminate the interactive parent.
+`paste_text` checks the target before staging and again immediately before its
+one paste dispatch. It puts non-empty text and its optional newline in one
+private, target-only buffer, then removes the buffer on success or failure.
+Empty text without Enter still performs the initial guard, then returns without
+a buffer or input dispatch. `run_shell_command` likewise checks exactly before
+setup and before dispatch, and a second run refuses instead of waiting. It
+requires one configured target running a recognized POSIX shell, pins the
+selected tmux executable and socket route, and isolates the command in a
+subshell so `cd`, variables, traps, syntax errors, and `exit` do not alter or
+terminate the interactive parent.
 
 These are safeguards for a trusted shell, tmux daemon, and configuration, not
 universal containment for a hostile shell environment. Pane state can still
