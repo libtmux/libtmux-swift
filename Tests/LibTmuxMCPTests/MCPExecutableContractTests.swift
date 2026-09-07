@@ -31,6 +31,12 @@ struct MCPExecutableContractTests {
             for key in environment.keys where key.hasPrefix("LIBTMUX_") {
                 environment.removeValue(forKey: key)
             }
+            // Clearing the prefix takes the lane's tmux with it, and a client
+            // whose protocol version differs from the server's is refused with
+            // `server exited unexpectedly`. Naming it again is what keeps this
+            // case measuring the release the matrix selected rather than
+            // whichever tmux the runner happens to ship.
+            environment["LIBTMUX_TMUX_BIN"] = tmuxExecutablePath()
             environment["LIBTMUX_SOCKET_PATH"] = incarnation.socketPath
             environment["LIBTMUX_TOOLSETS"] = "execute"
             environment["TMUX"] =
@@ -103,6 +109,8 @@ struct MCPExecutableContractTests {
         for key in environment.keys where key.hasPrefix("LIBTMUX_") {
             environment.removeValue(forKey: key)
         }
+        // The daemon this starts is the one the lane is meant to exercise.
+        environment["LIBTMUX_TMUX_BIN"] = tmuxExecutablePath()
         environment["TMUX_TMPDIR"] = socketDirectory.path
 
         let input = Pipe()

@@ -591,7 +591,13 @@ struct CapabilityManifestTests {
             let window = try #require(snapshot.windows.first { $0.id == link.windowID })
             let pane = try #require(snapshot.panes.first { $0.windowID == window.id })
             #expect(window.name == "manifest-window")
-            #expect(pane.currentPath == "/tmp")
+            // Both sides resolved: Darwin reports /tmp through its vnode
+            // spelling, /private/tmp, so comparing the asked-for name to what
+            // tmux said measures the platform rather than the placement.
+            let resolved = { (path: String) in
+                URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            }
+            #expect(resolved(pane.currentPath) == resolved("/tmp"))
         }
     }
 
@@ -752,7 +758,13 @@ struct CapabilityManifestTests {
         )
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configuration = ServerConfiguration(environment: [:])
+        // Only the binary is named: `isDefaultDedicatedMinimal` reads the
+        // socket and configuration variables, so the launcher this
+        // authenticates is still the default one, started with the lane's tmux
+        // rather than whichever the host happens to have on PATH.
+        let configuration = ServerConfiguration(
+            environment: ["LIBTMUX_TMUX_BIN": tmuxExecutablePath()]
+        )
         let socketPath = root.appendingPathComponent("server").path
         let firstServer = try Server(
             socketPath: socketPath,
