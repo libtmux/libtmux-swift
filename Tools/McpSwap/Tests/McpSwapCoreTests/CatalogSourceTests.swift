@@ -114,7 +114,10 @@ import Testing
         _ = FileManager.default.createFile(atPath: binary.path, contents: Data())
 
         let metadata = try resolveRepoMetadata(repo: repo)
-        #expect(metadata.package == package.standardizedFileURL)
+        // Compared as paths: `standardizedFileURL` marks an existing
+        // directory with a trailing slash on Darwin and not on Linux, so the
+        // URLs differ where the locations do not.
+        #expect(metadata.package.path == package.standardizedFileURL.path)
         #expect(metadata.server == "weather")
         #expect(metadata.entry == "weather")
         let spec = try buildLocalSpec(repo: repo, entry: metadata.entry, flavor: .debug)
