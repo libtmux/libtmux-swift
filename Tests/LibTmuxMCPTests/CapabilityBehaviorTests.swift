@@ -307,13 +307,25 @@ struct CapabilityBehaviorTests {
             for (path, flags) in candidates
             where FileManager.default.isExecutableFile(atPath: path) {
                 try await server.respawn(original, running: [path] + flags)
-                let shell = URL(fileURLWithPath: path).lastPathComponent
-                #expect(
-                    try await waitUntil {
-                        try await server.panes().first(where: { $0.id == original.id })?
-                            .currentCommand == shell
-                    },
-                    Comment(rawValue: shell)
+                // tmux names the pane's command per platform: Linux reports
+                // argv[0]'s basename, so /bin/sh reads as `sh`, while Darwin
+                // reports the executable it actually is, and Darwin's /bin/sh
+                // is bash. Framing keys off that reported name, so the case has
+                // to take it from tmux rather than from the path it respawned.
+                let supported = Set([
+                    "sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh",
+                ])
+                let reported = try await waitUntil {
+                    guard
+                        let command = try await server.panes()
+                            .first(where: { $0.id == original.id })?.currentCommand
+                    else { return false }
+                    return supported.contains(command)
+                }
+                #expect(reported, Comment(rawValue: path))
+                let shell = try #require(
+                    try await server.panes().first(where: { $0.id == original.id })?
+                        .currentCommand
                 )
                 let ready = "libtmux-swift-frame-ready-\(UUID().uuidString)"
                 let setup =
@@ -342,16 +354,27 @@ struct CapabilityBehaviorTests {
                         ])
                     )
                 )
-                #expect(run.structured["exitStatus"]?.intValue != 0, Comment(rawValue: shell))
-                #expect(
-                    run.structured["output"]?.arrayValue?.compactMap(\.stringValue)
-                        .contains("frame-\(shell)") == true,
-                    Comment(rawValue: shell)
+                let lines =
+                    run.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                // The shell and what it actually returned: a bare name cannot say
+                // whether the frame was lost, reordered, or never printed.
+                let live: String =
+                    (try? await server.capture(original))?.suffix(6)
+                    .joined(separator: " / ") ?? "<none>"
+                let statusValue = run.structured["exitStatus"]?.intValue
+                let status: String = statusValue.map(String.init) ?? "nil"
+                let timedOutValue = run.structured["timedOut"]?.boolValue
+                let timedOut: String = timedOutValue.map(String.init) ?? "nil"
+                let held: Bool = await TmuxTools.paneRuns.isHeld(original)
+                let observed = Comment(
+                    rawValue: "\(shell) at \(path): exit=\(status) timedOut=\(timedOut) "
+                        + "lease=\(held) output=\(lines) live=\(live)"
                 )
+                #expect(run.structured["exitStatus"]?.intValue != 0, observed)
+                #expect(lines.contains("frame-\(shell)"), observed)
                 #expect(
-                    run.structured["output"]?.arrayValue?.compactMap(\.stringValue)
-                        .contains("unreachable") == false,
-                    Comment(rawValue: shell)
+                    lines.contains("unreachable") == false,
+                    observed
                 )
 
                 let parent = try await surface.call(
@@ -395,6 +418,13 @@ struct CapabilityBehaviorTests {
                     function.structured["output"]?.arrayValue?.compactMap(\.stringValue)
                         .contains("function-\(shell)") == true,
                     Comment(rawValue: shell)
+                )
+                // Every call above returned, so the lease belongs to nobody by
+                // now. Naming the shell that kept it is what says which pass
+                // left it behind, rather than the pass after it being refused.
+                #expect(
+                    !(await TmuxTools.paneRuns.isHeld(original)),
+                    Comment(rawValue: "\(shell) kept the pane lease")
                 )
             }
         }
@@ -566,7 +596,15 @@ struct CapabilityBehaviorTests {
                     recovered.structured["output"]?.arrayValue?
                         .compactMap(\.stringValue).contains(recoveredMarker) == true
                 )
-                #expect(try runShellTrapFiles() == trapFilesBefore)
+                // Eventually empty rather than equal: the prefix lives in a
+                // /tmp shared with every concurrent case and every other port,
+                // so a snapshot compares against whatever else is mid-capture.
+                // A genuine leak never clears; someone else's file does.
+                #expect(
+                    try await waitUntil {
+                        try runShellTrapFiles().subtracting(trapFilesBefore).isEmpty
+                    }
+                )
                 if let resourcesBefore {
                     #expect(
                         try await waitUntil {
