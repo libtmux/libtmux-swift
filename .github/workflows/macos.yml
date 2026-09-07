@@ -128,4 +128,9 @@ jobs:
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
           xcrun swift test --package-path Examples --force-resolved-versions
-          xcrun swift test --traits YAMLWorkspaces --force-resolved-versions
+          # Serialized here and not on Linux. Every case drives a real tmux
+          # server, and Darwin schedules the parallel suite badly enough that
+          # cases doing sub-second work report forty seconds and the ones at
+          # the tail pass their own time limit. AGENTS.md already requires
+          # --no-parallel for real-tmux runs; this lane is where CI needs it.
+          xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
