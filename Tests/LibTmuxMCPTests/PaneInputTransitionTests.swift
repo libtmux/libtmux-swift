@@ -409,8 +409,12 @@ private actor TransitionTransport: ProcessTransport {
                 )
             )
         case .windowPlacement:
+            // Named because tmux 3.7 crashes on a break-pane with no -n, which
+            // takes the fixture server with it. `Server.breakPane` routes
+            // around the same crash; this mutation stands in for an external
+            // actor, so it issues the command itself and carries the name.
             _ = try await fixture.run(
-                TmuxCommand("break-pane", ["-d", "-s", source.id.rawValue])
+                TmuxCommand("break-pane", ["-d", "-n", "libtmux", "-s", source.id.rawValue])
             )
         case .windowLinkIndex:
             guard let session = try await fixture.sessions().first else {
