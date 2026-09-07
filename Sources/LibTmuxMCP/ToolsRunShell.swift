@@ -56,6 +56,7 @@ extension TmuxTools {
                     socketPath: pane.incarnation.socketPath
                 )
             )
+            defer { unlink(cleanup.scriptPath) }
             try Task.checkCancellation()
             try Self.requireSafeShellRoute(
                 executable: server.tmuxExecutable,
@@ -130,7 +131,14 @@ extension TmuxTools {
         command: String,
         tmuxInvocation: String
     ) async throws -> RunShellCleanup {
-        let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        // Sixteen hex digits, not thirty-two. The framing names every variable,
+        // channel, and option after this, fifty-five times over, and tmux drops
+        // the line whole once it grows past what it will carry -- which cost
+        // Darwin every run in a bash pane. Sixty-four bits is still more than a
+        // hostile parent shell can guess at, and it buys back 880 bytes.
+        let nonce = String(
+            UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)
+        )
         let markerNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let channel = "libtmux-mcp-done-\(nonce)"
         let releaseChannel = "libtmux-mcp-release-\(nonce)"
@@ -160,7 +168,8 @@ extension TmuxTools {
             cursor: cursor,
             startMarker: Self.markerRows("S\(markerNonce)", width: markerWidth),
             endMarker: Self.markerRows("E\(markerNonce)", width: markerWidth),
-            payload: ""
+            payload: "",
+            scriptPath: "/tmp/libtmux-mcp-run-\(nonce)"
         )
         return RunShellCleanup(
             pane: partial.pane,
@@ -175,13 +184,83 @@ extension TmuxTools {
                 tmuxInvocation: tmuxInvocation,
                 nonce: nonce,
                 cleanup: partial
-            )
+            ),
+            scriptPath: partial.scriptPath
         )
     }
 
+    /// Hands the framing to the pane through a file it sources.
+    ///
+    /// A tty in canonical mode discards input past `MAX_CANON`, which is 1024
+    /// on Darwin against 4096 on Linux, and the framing is longer than either
+    /// bound leaves room for. Shells driving readline -- bash, zsh -- put the
+    /// tty in raw mode and never meet the limit, so a pane running one of them
+    /// hides it; dash and a plain `sh` stay canonical, and there the line is
+    /// cut, the command never completes, and the run holds its lease until it
+    /// times out. Sourcing keeps what reaches the tty to a short line whatever
+    /// the shell and the platform.
+    ///
+    /// The file is the process's own: created exclusively so an existing path
+    /// is never followed or reused, and readable only by its owner. It holds
+    /// the framing verbatim -- a line ahead of it would run under the caller's
+    /// inherited traps and change what the capture is measuring -- and the
+    /// caller unlinks it once the run is no longer reading.
     private func dispatchRunShell(with cleanup: RunShellCleanup) async throws {
-        try await server.using(.direct) { server in
-            try await server.sendKeys([cleanup.payload, "Enter"], to: cleanup.pane)
+        // A shell driving readline -- bash, zsh -- puts the tty in raw mode and
+        // reads a line of any length, and those are exactly the shells whose
+        // inherited traps this framing captures. Typing keeps that capture
+        // measuring what it measures today. The rest stay canonical, where the
+        // tty discards input past MAX_CANON, and those skip trap capture
+        // entirely, so sourcing costs them nothing.
+        // bash does not expose an inherited DEBUG trap inside a sourced file --
+        // `trap -p DEBUG` there reports nothing, the same way it does not reach
+        // a function without functrace -- and capturing that trap is the whole
+        // of what this framing promises those shells. So they are typed, and
+        // the shells that cannot take a long line are exactly the ones with no
+        // DEBUG trap to lose.
+        guard !Self.capturesInheritedTraps(cleanup.pane.currentCommand) else {
+            try await server.using(.direct) { server in
+                try await server.sendKeys([cleanup.payload, "Enter"], to: cleanup.pane)
+            }
+            return
+        }
+        let script = "\(cleanup.payload)\n"
+        let descriptor = cleanup.scriptPath.withCString {
+            open($0, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
+        }
+        guard descriptor >= 0 else {
+            throw TmuxError.invocationFailed(
+                reason: "run_shell_command could not stage its command"
+            )
+        }
+        var wrote = false
+        var bytes = Array(script.utf8)
+        wrote = bytes.withUnsafeBytes { buffer -> Bool in
+            var offset = 0
+            while offset < buffer.count {
+                let written = write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
+                if written <= 0 { return false }
+                offset += written
+            }
+            return true
+        }
+        close(descriptor)
+        guard wrote else {
+            unlink(cleanup.scriptPath)
+            throw TmuxError.invocationFailed(
+                reason: "run_shell_command could not stage its command"
+            )
+        }
+        do {
+            try await server.using(.direct) { server in
+                try await server.sendKeys(
+                    [". \(shellQuoted(cleanup.scriptPath))", "Enter"],
+                    to: cleanup.pane
+                )
+            }
+        } catch {
+            unlink(cleanup.scriptPath)
+            throw error
         }
     }
 
@@ -493,6 +572,7 @@ extension TmuxTools {
         let startMarker: [String]
         let endMarker: [String]
         let payload: String
+        let scriptPath: String
 
         func captureLineLimit(for maximumLines: Int) throws -> Int {
             // Separator, cursor row, and one row that proves truncation.
