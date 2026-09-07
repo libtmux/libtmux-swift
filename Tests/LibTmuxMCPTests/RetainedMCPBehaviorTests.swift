@@ -78,7 +78,33 @@ struct RetainedMCPBehaviorTests {
             )
         }
 
-        try await fixture.wait(for: started)
+        // Bounded, and reports the pane when it lapses. An unbounded wait-for
+        // outlives the case's time limit, so a run that never reached the pane
+        // reads as a timeout naming nothing -- which is what this cost on
+        // Darwin before it said anything useful.
+        let signalled = try await withThrowingTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                try await fixture.wait(for: started)
+                return true
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(45))
+                return false
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? false
+        }
+        if !signalled {
+            let held = await TmuxTools.paneRuns.isHeld(pane)
+            let screen = (try? await fixture.capture(pane))?.joined(separator: " | ") ?? "<none>"
+            Issue.record(
+                """
+                the framed run never signalled \(started) in \(pane.id.rawValue); \
+                lease held: \(held); pane: \(screen)
+                """
+            )
+            return release
+        }
         try await beforeInterruption?()
         switch interruption {
         case .cancel:
@@ -137,7 +163,8 @@ struct RetainedMCPBehaviorTests {
     @Test("an oversized request id is rejected before tool dispatch")
     func oversizedRequestIdFailsBeforeDispatch() async throws {
         let server = try Server(
-            socketPath: "/tmp/libtmux-swift-test/oversized-id-\(UUID().uuidString)"
+            socketPath: "/tmp/libtmux-swift-test/oversized-id-\(UUID().uuidString)",
+            tmuxExecutable: tmuxExecutablePath()
         )
         let handler = MCPRequestHandler(tools: tools(server))
         let identifier = String(repeating: "i", count: 1_000_000)
