@@ -198,6 +198,25 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
     /// What the ceiling actually allowed, which may be less than was asked for.
     let effectiveTimeout: Double
 
+    /// Swift's synthesised encoding drops a nil optional, but this tool's
+    /// published schema declares `matched`, `matchedIndex` and `cursor` present
+    /// and nullable. MCP requires `structuredContent` to conform to that
+    /// schema, so a wait that matched nothing has to answer null rather than
+    /// leave the key out.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(paneRef, forKey: .paneRef)
+        try container.encode(outcome, forKey: .outcome)
+        try container.encode(matched, forKey: .matched)
+        try container.encode(matchedIndex, forKey: .matchedIndex)
+        try container.encode(sawNewOutput, forKey: .sawNewOutput)
+        try container.encode(matchedAtEntry, forKey: .matchedAtEntry)
+        try container.encode(tail, forKey: .tail)
+        try container.encode(cursor, forKey: .cursor)
+        try container.encode(seconds, forKey: .seconds)
+        try container.encode(effectiveTimeout, forKey: .effectiveTimeout)
+    }
+
     init(_ wait: OutputWait, pane: Pane, effectiveTimeout: Double) {
         self.paneRef = WireReferenceCodec.processLocal.reference(to: pane)
         self.outcome = wait.outcome.rawValue
