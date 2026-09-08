@@ -21,6 +21,9 @@ struct ClientTests {
                     }
                     let client = try #require(clients.first)
                     #expect(client.isControlMode)
+                    let pane = try #require(try await server.panes().first)
+                    #expect(client.activePaneID == pane.id)
+                    #expect(client.isWindowZoomed == false)
 
                     try await server.detach(client)
                     try await Task.sleep(for: .seconds(20))
@@ -102,6 +105,44 @@ struct ClientTests {
 
         await #expect(throws: TmuxError.connectionClosed) {
             try await pending.value
+        }
+    }
+
+    @Test("client attention state is typed and malformed rows fail closed")
+    func clientAttentionStateIsStrictlyDecoded() throws {
+        var values = [
+            "client_name": "/dev/pts/7", "client_tty": "/dev/pts/7",
+            "client_pid": "77", "client_width": "80", "client_height": "24",
+            "client_control_mode": "0", "session_id": "$2", "pane_id": "%7",
+            "window_zoomed_flag": "1",
+            "socket_path": "/tmp/libtmux-swift-test/client-attention", "pid": "42",
+            "start_time": "9",
+        ]
+        func encoded() -> [UInt8] {
+            let separator = String(FormatProjection.separator)
+            let row = Client.projection.fields.map { values[$0.name] ?? "" }
+                .joined(separator: separator)
+            return Array("\(row)\n".utf8)
+        }
+
+        let row = try #require(Client.projection.decode(encoded()).first)
+        let client = Client(
+            row: row,
+            endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/client-attention")
+        )
+        #expect(client.activePaneID == "%7")
+        #expect(client.isWindowZoomed == true)
+
+        for (field, malformed) in [
+            ("pane_id", ""), ("pane_id", "7"),
+            ("window_zoomed_flag", ""), ("window_zoomed_flag", "2"),
+        ] {
+            let original = values[field]
+            values[field] = malformed
+            #expect(throws: FormatDecodingError.self) {
+                try Client.projection.decode(encoded())
+            }
+            values[field] = original
         }
     }
 }

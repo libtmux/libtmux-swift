@@ -7,9 +7,9 @@ lives here, and [`Scripts/check_examples.py`](../Scripts/check_examples.py)
 fails the build when a documented block appears in no file below.
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 40
-46 documented examples mapped to consumer sources
-40 have live-test call sites
+$ python3 Scripts/check_examples.py --min-executed 41
+47 documented examples mapped to consumer sources
+41 have live-test call sites
 ```
 
 ## Why this is its own package

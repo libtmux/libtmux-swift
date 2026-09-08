@@ -95,7 +95,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/org.swift.swiftpm
-          key: swiftpm-linux-${{ hashFiles('Package.resolved', 'Examples/Package.resolved') }}
+          key: swiftpm-linux-${{ hashFiles('Package.resolved', 'Examples/Package.resolved', 'Tools/McpSwap/Package.resolved') }}
           restore-keys: swiftpm-linux-
 
       - name: Set up Swift
@@ -104,7 +104,22 @@ jobs:
           swift-version: "6.2"
 
       - name: Check formatting
-        run: swift format lint --recursive --strict Sources Tests Examples Benchmarks Package.swift
+        run: >-
+          swift format lint --recursive --strict
+          Sources Tests Examples Benchmarks
+          Tools/McpSwap/Sources/McpSwapCore Tools/McpSwap/Sources/McpSwap
+          Tools/McpSwap/Tests Package.swift Tools/McpSwap/Package.swift
+
+      - name: Test the private MCP swap tool
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
+
+      - name: Check the private MCP swap C shim formatting
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: >-
+          clang-format --dry-run --Werror
+          Tools/McpSwap/Sources/CMcpSwap/mcp_swap.c
+          Tools/McpSwap/Sources/CMcpSwap/include/mcp_swap.h
 
       # The checks below are about the repository rather than the platform, so
       # one lane runs them. A missing DocC link is not a per-runner fact.

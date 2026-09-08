@@ -26,6 +26,10 @@ for a newer view. Every type crossing your API is `Sendable` and `Codable`, and
 the mutable part (the process boundary, the live connection) sits behind an
 actor the value shares.
 
+`Pane` also projects the input-relevant state tmux reports: `isDead`, the exact
+`modeCount`, and effective `isSynchronized`. Missing or malformed values fail
+decoding instead of being treated as writable defaults.
+
 ## What is in here
 
 | File | What it holds |
@@ -33,7 +37,7 @@ actor the value shares.
 | `Server.swift`, `Endpoint.swift` | Addressing a server, and the listings |
 | `Session.swift`, `Window.swift`, `Pane.swift` | The model, as values |
 | `Snapshot.swift` | A bounded aggregate, with the relationships resolved |
-| `Mutations.swift`, `Navigation.swift` | Creating, splitting, renaming, selecting |
+| `Mutations.swift`, `Navigation.swift` | Creating, splitting, renaming, selecting, pane modes |
 | `Options.swift`, `Environment.swift` | tmux options, hooks, and its two environments |
 | `Filter*.swift` | `FilterExpr`, the filter that encodes and travels |
 | `Regex*.swift` | Bounded pattern syntax, compilation, and matching |

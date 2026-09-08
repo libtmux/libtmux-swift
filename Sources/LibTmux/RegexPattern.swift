@@ -49,7 +49,7 @@ public enum RegexMatchError: Error, Sendable, Hashable {
 ///
 /// Swift's own `Regex` cannot take this job. Its matcher backtracks — on Swift
 /// 6.2, `(a+)+b` against twenty `a`s takes 78 seconds — and a match is
-/// synchronous, so the deadline ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
+/// synchronous, so the deadline ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
 /// races cannot interrupt one that has started. A pattern here is bounded
 /// before it runs, which is also what makes one safe to accept from a client.
 public struct RegexPattern: Sendable, Hashable, Codable {
@@ -84,10 +84,24 @@ public struct RegexPattern: Sendable, Hashable, Codable {
         _ source: String,
         options: Options = []
     ) throws(RegexCompileError) {
+        try self.init(
+            source,
+            options: options,
+            maximumSourceUTF8Bytes: Self.maximumSourceUTF8Bytes,
+            maximumCompiledStates: Self.maximumCompiledStates
+        )
+    }
+
+    package init(
+        _ source: String,
+        options: Options = [],
+        maximumSourceUTF8Bytes: Int,
+        maximumCompiledStates: Int
+    ) throws(RegexCompileError) {
         let sourceBytes = source.utf8.count
-        guard sourceBytes <= Self.maximumSourceUTF8Bytes else {
+        guard sourceBytes <= maximumSourceUTF8Bytes else {
             throw .sourceTooLong(
-                maximumUTF8Bytes: Self.maximumSourceUTF8Bytes,
+                maximumUTF8Bytes: maximumSourceUTF8Bytes,
                 actualUTF8Bytes: sourceBytes
             )
         }
@@ -98,7 +112,7 @@ public struct RegexPattern: Sendable, Hashable, Codable {
 
         var parser = RegexParser(source)
         let syntax = try parser.parse()
-        var compiler = RegexCompiler(maximumStates: Self.maximumCompiledStates)
+        var compiler = RegexCompiler(maximumStates: maximumCompiledStates)
 
         self.source = source
         self.options = options

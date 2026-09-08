@@ -88,6 +88,14 @@ command explains itself on standard error — so
 - ``PaneCapture``
 - ``IncrementalCapture``
 - ``CaptureCursor``
+- ``Pane/isDead``
+- ``Pane/modeCount``
+- ``Pane/isSynchronized``
+
+### Controlling pane modes
+
+- ``Server/enterCopyMode(_:)``
+- ``Server/cancelModes(in:)``
 
 ### Laying out a window
 
@@ -98,7 +106,7 @@ command explains itself on standard error — so
 ### Waiting for work to finish
 
 - <doc:Waiting>
-- ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
+- ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
 - ``OutputWait``
 - ``OutputWaitError``
 - ``Server/wait(for:)``

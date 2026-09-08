@@ -86,11 +86,20 @@ extension Server {
     public func newSession(
         named name: String,
         startDirectory: String? = nil,
-        windowName: String? = nil
+        windowName: String? = nil,
+        width: Int? = nil,
+        height: Int? = nil
     ) async throws(TmuxError) -> Session {
+        let requestedSize = width != nil || height != nil
+        let projection =
+            requestedSize
+            ? FormatProjection(Session.projection.fields + WindowAppearance.projection.fields)
+            : Session.projection
         var arguments = [
-            "-d", "-P", "-F", Session.projection.template, "-s", tmuxLiteralArgument(name),
+            "-d", "-P", "-F", projection.template, "-s", tmuxLiteralArgument(name),
         ]
+        if let width { arguments += ["-x", String(width)] }
+        if let height { arguments += ["-y", String(height)] }
         if let windowName { arguments += ["-n", tmuxLiteralArgument(windowName)] }
         if let startDirectory {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]
@@ -101,14 +110,29 @@ extension Server {
         }
         let rows: [FormatRow]
         do {
-            rows = try Session.projection.decode(reply.standardOutput)
+            rows = try projection.decode(reply.standardOutput)
         } catch {
             throw .decodingFailed(error)
         }
         guard rows.count == 1 else {
             throw .invocationFailed(reason: "tmux printed \(rows.count) sessions")
         }
-        return Session(row: rows[0], endpoint: endpoint)
+        let session = Session(row: rows[0], endpoint: endpoint)
+        guard requestedSize else { return session }
+
+        let window = WindowAppearance(row: rows[0], endpoint: endpoint).window
+        let widthChanged = width.map { $0 != window.width } ?? false
+        let heightChanged = height.map { $0 != window.height } ?? false
+        guard widthChanged || heightChanged else { return session }
+
+        var resizeArguments = ["-t", window.id.rawValue]
+        if let width { resizeArguments += ["-x", String(width)] }
+        if let height { resizeArguments += ["-y", String(height)] }
+        try await expectSuccess(
+            TmuxCommand("resize-window", resizeArguments),
+            guardedBy: [.window(window)]
+        )
+        return session
     }
 
     /// Creates a window in a session and returns its exact appearance.

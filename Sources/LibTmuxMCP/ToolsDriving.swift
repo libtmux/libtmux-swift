@@ -1,193 +1,122 @@
 import Foundation
 import LibTmux
 
-// The tools that change something.
-
 extension TmuxTools {
-    func sendKeys(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await pane(try arguments.string("pane"))
-        let keys = try arguments.strings("keys")
-        guard !keys.isEmpty else { throw ToolError.missingArgument("keys") }
-        try await server.sendKeys(
-            keys,
-            to: pane,
-            literally: try arguments.bool("literal", or: false)
-        )
-        return .init(
-            SentKeys(
-                paneRef: WireReferenceCodec.processLocal.reference(to: pane),
-                pane: pane.id.rawValue,
-                keys: keys
-            )
-        )
-    }
-
-    func rename(_ arguments: Arguments) async throws -> ToolOutcome {
-        let target = try arguments.string("target")
-        let name = try arguments.string("name")
-        let references = WireReferenceCodec.processLocal
-        let snapshot = try await server.snapshot()
-        switch try references.checkedKind(
-            of: target,
-            argument: "target",
-            refreshWith: "list_sessions, list_windows, or snapshot"
-        ) {
-        case .window:
-            let window = try references.resolve(
-                target,
-                among: snapshot.windows,
-                argument: "target",
-                refreshWith: "list_windows or snapshot"
-            )
-            try await server.rename(window, to: name)
-            return .init(
-                Renamed(
-                    ref: references.reference(to: window),
-                    kind: "window",
-                    id: window.id.rawValue,
-                    name: name
-                )
-            )
-        case .session:
-            let session = try references.resolve(
-                target,
-                among: snapshot.sessions,
-                argument: "target",
-                refreshWith: "list_sessions"
-            )
-            try await server.rename(session, to: name)
-            return .init(
-                Renamed(
-                    ref: references.reference(to: session),
-                    kind: "session",
-                    id: session.id.rawValue,
-                    name: name
-                )
-            )
-        default:
-            throw ToolError.wrongArgumentType(
-                "target",
-                expected: "a session ref or global windowRef"
-            )
-        }
-    }
-
-    func select(_ arguments: Arguments) async throws -> ToolOutcome {
-        let target = try arguments.string("target")
-        let references = WireReferenceCodec.processLocal
-        let snapshot = try await server.snapshot()
-        switch try references.checkedKind(
-            of: target,
-            argument: "target",
-            refreshWith: "list_panes or list_windows"
-        ) {
-        case .pane:
-            let pane = try references.resolve(
-                target,
-                among: snapshot.panes,
-                argument: "target",
-                refreshWith: "list_panes"
-            )
-            try await server.select(pane)
-            return .init(
-                Killed(
-                    ref: references.reference(to: pane),
-                    kind: "pane",
-                    id: pane.id.rawValue
-                )
-            )
-        case .windowLink:
-            let link = try references.resolve(
-                target,
-                among: snapshot.windowLinks,
-                argument: "target",
-                refreshWith: "list_windows"
-            )
-            try await server.select(link)
-            return .init(
-                Killed(
-                    ref: references.reference(to: link),
-                    kind: "window-link",
-                    id: link.target
-                )
-            )
-        default:
-            throw ToolError.wrongArgumentType(
-                "target",
-                expected: "a pane ref or exact window linkRef"
-            )
-        }
-    }
-
-    func resizePane(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await pane(try arguments.string("pane"))
-        let width = try arguments.optionalInteger("width")
-        let height = try arguments.optionalInteger("height")
-        guard width != nil || height != nil else {
-            throw ToolError.missingArgument("width or height")
-        }
-        try await server.resize(pane, width: width, height: height)
-        let after = try WireReferenceCodec.processLocal.resolve(
-            WireReferenceCodec.processLocal.reference(to: pane),
-            among: try await server.panes(),
-            argument: "pane",
-            refreshWith: "list_panes"
-        )
-        return .init(
-            Resized(
-                paneRef: WireReferenceCodec.processLocal.reference(to: after),
-                pane: after.id.rawValue,
-                width: after.width,
-                height: after.height
-            )
-        )
-    }
-
-    func selectLayout(_ arguments: Arguments) async throws -> ToolOutcome {
-        let target = try arguments.string("target")
-        let window = try WireReferenceCodec.processLocal.resolve(
-            target,
-            among: try await server.windows(),
-            argument: "target",
-            refreshWith: "list_windows or snapshot"
-        )
-        let layout = try arguments.string("layout")
-        try await server.selectLayout(window, layout)
-        return .init(
-            LaidOut(
-                windowRef: WireReferenceCodec.processLocal.reference(to: window),
-                window: window.id.rawValue,
-                layout: layout
-            )
-        )
-    }
-
     func pasteText(_ arguments: Arguments) async throws -> ToolOutcome {
-        let pane = try await pane(try arguments.string("pane"))
+        let requested = try arguments.string("paneId")
         let text = try arguments.string("text")
-        // Named per call and deleted after: tmux's paste buffers are shared
-        // with the user's own, and leaving one behind puts this text into a
-        // history they will page through later.
+        let force = try arguments.bool("force", or: false)
+        let initial = try await preflightPaneInput(
+            requested,
+            scope: .targetOnly,
+            force: force,
+            operation: "paste_text"
+        )
+        let staged = text + (try arguments.bool("enter", or: false) ? "\n" : "")
+        if staged.isEmpty {
+            return .init(
+                Pasted(
+                    paneRef: WireReferenceCodec.processLocal.reference(to: initial.source),
+                    pane: initial.source.id.rawValue,
+                    characters: 0
+                )
+            )
+        }
+        let reservation = try await Self.reservePaneInput(initial, operation: "paste_text")
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
-        try await server.setBuffer(text, named: buffer)
-        let paste: Result<Void, TmuxError>
         do {
-            try await server.paste(buffer: buffer, into: pane)
-            paste = .success(())
+            try await server.setBuffer(staged, named: buffer)
+        } catch let primaryError {
+            do {
+                try await deletePasteBuffer(named: buffer)
+            } catch {
+                await Self.paneRuns.release(reservation)
+                throw combinedPasteFailure(primaryError, cleanup: error)
+            }
+            await Self.paneRuns.release(reservation)
+            throw primaryError
+        }
+        var primaryError: (any Error)?
+        do {
+            let final = try await preflightPaneInput(
+                requested,
+                scope: .targetOnly,
+                force: force,
+                transitionFrom: initial,
+                reservation: reservation,
+                operation: "paste_text"
+            )
+            try await server.paste(buffer: buffer, into: final.source)
         } catch {
-            paste = .failure(error)
+            primaryError = error
         }
-        let cleanup = Task {
-            try await server.deleteBuffer(named: buffer)
+        await Self.paneRuns.release(reservation)
+        do {
+            try await deletePasteBuffer(named: buffer)
+        } catch {
+            if let primaryError {
+                throw combinedPasteFailure(primaryError, cleanup: error)
+            }
+            throw error
         }
-        try await cleanup.value
-        try paste.get()
+        if let primaryError { throw primaryError }
         return .init(
             Pasted(
-                paneRef: WireReferenceCodec.processLocal.reference(to: pane),
-                pane: pane.id.rawValue,
+                paneRef: WireReferenceCodec.processLocal.reference(to: initial.source),
+                pane: initial.source.id.rawValue,
                 characters: text.count
             )
+        )
+    }
+
+    private func deletePasteBuffer(named buffer: String) async throws {
+        let server = server
+        let cleanup = Task.detached { () throws -> Void in
+            let (events, continuation) = AsyncStream<Result<Void, TmuxError>>.makeStream()
+            let deletion = Task.detached {
+                do {
+                    try await server.deleteBuffer(named: buffer)
+                    continuation.yield(.success(()))
+                } catch let error as TmuxError {
+                    continuation.yield(.failure(error))
+                } catch is CancellationError {
+                    continuation.yield(.failure(.cancelled))
+                } catch {
+                    continuation.yield(
+                        .failure(.invocationFailed(reason: String(describing: error)))
+                    )
+                }
+            }
+            let timeout = Task.detached {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                    continuation.yield(
+                        .failure(
+                            .invocationFailed(reason: "paste buffer cleanup timed out")
+                        )
+                    )
+                } catch {}
+            }
+            var iterator = events.makeAsyncIterator()
+            let result =
+                await iterator.next()
+                ?? .failure(.invocationFailed(reason: "paste buffer cleanup ended unexpectedly"))
+            continuation.finish()
+            deletion.cancel()
+            timeout.cancel()
+            try result.get()
+        }
+        try await cleanup.value
+    }
+
+    private func combinedPasteFailure(
+        _ primary: any Error,
+        cleanup: any Error
+    ) -> TmuxError {
+        .invocationFailed(
+            reason:
+                "paste operation failed: \(primary); "
+                + "paste buffer cleanup also failed: \(cleanup)"
         )
     }
 }

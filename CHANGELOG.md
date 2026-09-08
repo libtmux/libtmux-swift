@@ -11,6 +11,126 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `Server.enterCopyMode(_:)` enters pane copy mode, while
+  `Server.cancelModes(in:)` idempotently clears the pane's entire mode stack.
+  Cancellation is not a copy-mode-only inverse. (#9)
+
+### Changed
+
+- **Breaking.** `Pane` now projects typed `isDead`, `modeCount`, and
+  `isSynchronized` state, and its public initializer requires those values.
+  (#9)
+
+- **Breaking.** The MCP surface is now an authoritative 45-tool capability
+  registry split across `inspect`, `manage`, `execute`, and `teardown`.
+  Registration, dispatch, schemas, descriptions, selection, and the static
+  `tmux://capabilities` report use the same definitions. (#9)
+
+- **Breaking.** `LIBTMUX_TOOLSETS`, `LIBTMUX_TOOLS`, and
+  `LIBTMUX_EXCLUDE_TOOLS` replace safety tiers and the legacy allowlist.
+  `LIBTMUX_SOCKET` selects a name, `LIBTMUX_SOCKET_PATH` selects an absolute
+  path, and `LIBTMUX_TMUX_CONFIG` selects configuration provenance. An earlier
+  exact `LIBTMUX_MCP_TOOLS` allowlist maps to empty `LIBTMUX_TOOLSETS` plus the
+  same names in `LIBTMUX_TOOLS`. (#9)
+
+- The default launch uses a dedicated `libtmux-mcp` socket and bundled minimal
+  configuration. It grants teardown by default only when that daemon retains
+  this process's launch nonce from the minimal configuration, and removes the
+  daemon on exit only while both its nonce and incarnation still match. (#9)
+
+- The MCP guide maps every earlier public route and all four removed prompt
+  workflows to the current typed tools or an explicit no-replacement
+  boundary. (#9)
+
+### Fixed
+
+- `run_shell_command` reaches a pane whose shell reads a bounded line. Its
+  framing went to the pane as one line, and two ceilings cut it: a tty in
+  canonical mode discards input past `MAX_CANON`, which is 1024 on Darwin
+  against 4096 on Linux, and tmux drops a `send-keys` argument once it passes
+  what tmux will carry. Either way the command never ran, the call timed out
+  without a status, and the lease it kept refused that pane afterwards — so on
+  macOS the tool did not work in a `dash` or plain `sh` pane at all, and lost
+  long commands in a Bash or zsh pane. Shells that do not capture inherited
+  traps now source the framing from a file created for this process alone and
+  readable only by its owner; the rest stay typed, because Bash does not expose
+  a `DEBUG` trap inside a sourced file, and the nonce naming each run is
+  shorter so the line fits. (#9)
+
+- `wait_for_text` answers within its own schema when it matches nothing.
+  `matched`, `matchedIndex`, and `cursor` are declared present-and-nullable,
+  but Swift's synthesised encoding drops a nil optional, so the reply omitted
+  them and the server rejected its own response. They are encoded
+  explicitly. (#9)
+
+- Development MCP swaps resolve the Swift executable before writing client
+  configuration, recognize this repository's root package, and fail without a
+  configuration change when Swift is unavailable. Selected swaps and reverts
+  now plan and stage every config, backup, and recovery-state destination as
+  one reverse-rollback transaction. Versioned recovery ownership refuses later
+  edits, replacements, or symlink changes without consuming recovery, and dry
+  runs remain read-only. (#9)
+
+- Explicit dimensions for detached sessions are preserved on tmux 3.2a,
+  matching newer supported releases when tmux initially uses its default
+  size. (#9)
+
+- Leading-dash key input, pasted text, names, and wait channels are passed to
+  tmux as literal operands on every supported release. (#9)
+
+- `run_shell_command` preserves inherited Bash and zsh `ERR` and `DEBUG` traps
+  for the authored command without exposing MCP framing to those traps. (#9)
+
+### Removed
+
+- **Breaking.** The MCP `enter_copy_mode` and `exit_copy_mode` tools are
+  removed. Read history through the capture, search, snapshot, and cursor tools
+  instead; none of them take ownership of a human client's pane modes. (#9)
+
+- **Breaking.** MCP prompts, dynamic resources, raw command families,
+  workspace and buffer surfaces, and ordered safety-tier APIs are removed. The
+  static capability resource is the only MCP resource. (#9)
+
+### Security
+
+- Pane-input tools fail closed on incomplete or malformed caller context and
+  refuse terminal-attended panes, dead panes, nonzero human-owned mode stacks,
+  and active-operation overlap from fresh typed snapshots. Zoomed terminal
+  clients protect their active pane, unzoomed clients protect their active
+  window, and control clients do not count. Synchronized sends check every
+  effective configured member; batch rows recheck independently, while paste
+  remains target-only. Empty paste without Enter still runs its safety check,
+  then returns without a buffer or input dispatch. (#9)
+
+- `run_shell_command` requires one configured pane running a recognized POSIX
+  shell, uses one nonqueueing reservation across setup and completion, rechecks
+  before dispatch, pins its tmux route, and contains the requested command so
+  shell state and `exit` do not escape into the interactive parent. A second
+  run refuses instead of waiting. These checks assume a trusted shell, tmux
+  daemon, and configuration. (#9)
+
+- Tool definitions classify direct process reach, effects, output classes,
+  secret and untrusted output, internal interpreter sinks, nested authority,
+  and future input amplification. Public rows expose one schema-keyed
+  `inputLiteralization` map instead of the sink table. Tmux-format-bearing
+  names and paths are literalized before use, and synchronized pane input
+  reports every resolved target. (#9)
+
+- Each advertised tool carries the same complete capability row as the static
+  resource under a namespaced `_meta` key. (#9)
+
+- Pane search has fixed aggregate pane, line, byte, and wall-time ceilings plus
+  a regex-work budget, and successful truncated results name the reached
+  limit. (#9)
+
+- The read aggregate retains full nested envelopes where they fit, marks
+  per-row result truncation, reports success, failure, stop, and truncation
+  totals, and keeps the complete newline-delimited JSON-RPC response at or
+  below 1,000,000 bytes. Requests whose IDs cannot fit inside that ceiling fail
+  with a bounded `id: null` invalid-request response before dispatch. (#9)
+
 ### Development
 
 - Every CI job carries a timeout. The `ubuntu-latest / tmux 3.7a` lane hung in

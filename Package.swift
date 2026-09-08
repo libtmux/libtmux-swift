@@ -72,8 +72,9 @@ let package = Package(
         ),
         .target(
             name: "LibTmuxMCP",
-            dependencies: ["LibTmux", "TmuxWorkspace"],
-            exclude: ["README.md"]
+            dependencies: ["LibTmux"],
+            exclude: ["AGENTS.md", "CLAUDE.md", "README.md"],
+            resources: [.copy("minimal.conf")]
         ),
         .executableTarget(
             name: "libtmux-mcp",
@@ -104,7 +105,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LibTmuxMCPTests",
-            dependencies: ["LibTmuxMCP", "LibTmux", "TmuxWorkspace", "TmuxFixture"]
+            dependencies: ["LibTmuxMCP", "LibTmux", "TmuxFixture"]
         ),
     ],
     swiftLanguageModes: [.v6]

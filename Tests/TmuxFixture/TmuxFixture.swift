@@ -91,6 +91,11 @@ public func withTmuxServer<Result>(
             // is set in the server environment rather than in front of the
             // command, where it would become the window's name.
             TmuxCommand("set-environment", ["-g", "ENV", ""]),
+            // Darwin's /bin/bash is 3.2 and prints a notice telling the reader
+            // that zsh is the default shell now. It is compiled in rather than
+            // read from a startup file, so --noprofile --norc does not stop it,
+            // and it lands in the pane ahead of whatever a case is reading.
+            TmuxCommand("set-environment", ["-g", "BASH_SILENCE_DEPRECATION_WARNING", "1"]),
             // `exec` so the pane holds one process: without it tmux keeps the
             // `-c` wrapper alive, and a case that `exec`s its own command still
             // reports the wrapper as the pane's command.
@@ -235,6 +240,11 @@ public func withNamedTmuxServer<Result>(
             // is set in the server environment rather than in front of the
             // command, where it would become the window's name.
             TmuxCommand("set-environment", ["-g", "ENV", ""]),
+            // Darwin's /bin/bash is 3.2 and prints a notice telling the reader
+            // that zsh is the default shell now. It is compiled in rather than
+            // read from a startup file, so --noprofile --norc does not stop it,
+            // and it lands in the pane ahead of whatever a case is reading.
+            TmuxCommand("set-environment", ["-g", "BASH_SILENCE_DEPRECATION_WARNING", "1"]),
             // `exec` so the pane holds one process: without it tmux keeps the
             // `-c` wrapper alive, and a case that `exec`s its own command still
             // reports the wrapper as the pane's command.

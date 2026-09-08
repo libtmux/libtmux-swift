@@ -41,7 +41,7 @@ extension Server {
         var arguments = ["-t", pane.id.rawValue]
         if literally { arguments.append("-l") }
         try await expectSuccess(
-            TmuxCommand("send-keys", arguments + keys),
+            TmuxCommand("send-keys", arguments + ["--"] + keys),
             guardedBy: [.pane(pane)]
         )
     }
@@ -105,6 +105,26 @@ extension Server {
             includingHistory: includingHistory,
             maximumLines: maximumLines,
             perStreamOutputLimit: Self.captureOutputByteLimit
+        )
+    }
+
+    /// Reads a bounded tmux capture range using tmux's relative row numbering.
+    public func captureRange(
+        _ pane: Pane,
+        startingAt start: Int? = nil,
+        endingAt end: Int? = nil,
+        joiningWrappedLines: Bool = false,
+        maximumLines: Int
+    ) async throws(TmuxError) -> PaneCapture {
+        let bounds = try await captureBounds(for: pane)
+        return try await captureTail(
+            pane,
+            startingAt: start.map(CaptureStart.line),
+            endingAt: end,
+            bounds: bounds,
+            maximumLines: maximumLines,
+            perStreamOutputLimit: Self.captureOutputByteLimit,
+            joiningWrappedLines: joiningWrappedLines
         )
     }
 
@@ -233,7 +253,8 @@ extension Server {
         endingAt requestedEnd: Int?,
         bounds: PaneCaptureBounds,
         maximumLines: Int,
-        perStreamOutputLimit: Int
+        perStreamOutputLimit: Int,
+        joiningWrappedLines: Bool = false
     ) async throws(TmuxError) -> PaneCapture {
         guard maximumLines > 0 else {
             throw .invocationFailed(reason: "a bounded capture needs at least one line")
@@ -266,14 +287,13 @@ extension Server {
             throw .invocationFailed(reason: "pane capture bounds exceed tmux's row range")
         }
 
+        var arguments = [
+            "-p", "-t", pane.id.rawValue, "-S", String(start), "-E",
+            requestedEnd.map(String.init) ?? "-",
+        ]
+        if joiningWrappedLines { arguments.append("-J") }
         let reply = try await runIsolated(
-            TmuxCommand(
-                "capture-pane",
-                [
-                    "-p", "-t", pane.id.rawValue, "-S", String(start), "-E",
-                    requestedEnd.map(String.init) ?? "-",
-                ]
-            ),
+            TmuxCommand("capture-pane", arguments),
             guarding: pane,
             matching: bounds,
             perStreamOutputLimit: perStreamOutputLimit

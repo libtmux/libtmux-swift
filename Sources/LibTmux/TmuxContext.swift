@@ -34,17 +34,29 @@ public struct TmuxContext: Sendable, Hashable, Codable {
         // Split from the right: the last two fields are numbers, and the first
         // is a path, which is the only field allowed to contain a comma.
         let parts = tmuxVariable.split(separator: ",", omittingEmptySubsequences: false)
-        guard parts.count >= 3,
-            let processID = Int(parts[parts.count - 2]),
-            !parts[parts.count - 1].isEmpty
+        guard parts.count >= 3 else { return nil }
+
+        let rawProcessID = parts[parts.count - 2]
+        guard rawProcessID.first.map({ "1"..."9" ~= $0 }) == true,
+            rawProcessID.allSatisfy({ "0"..."9" ~= $0 }),
+            let processID = Int(rawProcessID)
+        else { return nil }
+
+        let rawSessionID = parts[parts.count - 1]
+        guard
+            rawSessionID == "0"
+                || (rawSessionID.first.map({ "1"..."9" ~= $0 }) == true
+                    && rawSessionID.allSatisfy({ "0"..."9" ~= $0 }))
         else { return nil }
 
         let path = parts[0..<(parts.count - 2)].joined(separator: ",")
-        guard !path.isEmpty else { return nil }
+        guard path.utf8.first == 0x2f,
+            !path.utf8.contains(where: { $0 < 0x20 || $0 == 0x7f })
+        else { return nil }
 
         guard
             let sessionID = SessionID(
-                rawValue: "$\(parts[parts.count - 1])"
+                rawValue: "$\(rawSessionID)"
             )
         else { return nil }
 

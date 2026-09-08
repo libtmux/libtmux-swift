@@ -23,20 +23,20 @@ public struct MCPRequestHandler: Sendable {
     static let maximumResponseBytes = 1_000_000
 
     private let tools: TmuxTools
-    private let resources: TmuxResources
+    private let resources: CapabilityResources
     private let encoder = JSONEncoder()
 
     public init(tools: TmuxTools) {
         self.tools = tools
-        self.resources = TmuxResources(server: tools.server)
+        self.resources = CapabilityResources(tools: tools)
     }
 
     /// Answers one newline-delimited JSON-RPC request.
     ///
-    /// Returns the response line, or `nil` for a valid notification, an
-    /// oversized request, or a tool call whose id cannot fit in a bounded
-    /// response. Malformed JSON and invalid request objects receive the
-    /// standard JSON-RPC error with a null id.
+    /// Returns the response line, or `nil` for a valid notification or an
+    /// oversized request. Malformed JSON, invalid request objects, and request
+    /// ids that cannot fit in a bounded response receive the standard JSON-RPC
+    /// error with a null id.
     ///
     /// - Parameters:
     ///   - line: one JSON-RPC request without its trailing newline.
@@ -67,7 +67,13 @@ public struct MCPRequestHandler: Sendable {
             return nil
         }
         guard let id = request.id else { return nil }
-        guard minimalFailure(id: id) != nil else { return nil }
+        guard minimalFailure(id: id) != nil else {
+            return failure(
+                id: .null,
+                code: -32600,
+                message: "request id exceeds bounded response capacity"
+            )
+        }
 
         switch request.method {
         case "initialize":
@@ -92,7 +98,6 @@ public struct MCPRequestHandler: Sendable {
                             "resources": .object([
                                 "subscribe": .bool(false), "listChanged": .bool(false),
                             ]),
-                            "prompts": .object(["listChanged": .bool(false)]),
                         ]),
                         "serverInfo": .object([
                             "name": .string(Self.serverName),
@@ -136,7 +141,7 @@ public struct MCPRequestHandler: Sendable {
                     message: "tools/call needs a tool name and object arguments"
                 )
             }
-            guard TmuxTools.byName[call.name] != nil else {
+            guard tools.exposes(call.name) else {
                 return failure(
                     id: id,
                     code: -32602,
@@ -164,7 +169,7 @@ public struct MCPRequestHandler: Sendable {
                 [
                     "jsonrpc": .string("2.0"),
                     "id": id,
-                    "result": .object(["resources": .array(TmuxResources.fixed)]),
+                    "result": .object(["resources": .array(CapabilityResources.fixed)]),
                 ])
 
         case "resources/templates/list":
@@ -173,7 +178,7 @@ public struct MCPRequestHandler: Sendable {
                 [
                     "jsonrpc": .string("2.0"),
                     "id": id,
-                    "result": .object(["resourceTemplates": .array(TmuxResources.templates)]),
+                    "result": .object(["resourceTemplates": .array(CapabilityResources.templates)]),
                 ])
 
         case "resources/read":
@@ -186,40 +191,13 @@ public struct MCPRequestHandler: Sendable {
                     [
                         "jsonrpc": .string("2.0"),
                         "id": id,
-                        "result": .object(["contents": .array([try await resources.read(uri)])]),
+                        "result": .object(["contents": .array([try resources.read(uri)])]),
                     ])
             } catch {
                 // -32002 is the specification's code for a resource that is not
                 // there, which clients distinguish from a malformed request.
                 return failure(id: id, code: -32002, message: Self.message(for: error))
             }
-
-        case "prompts/list":
-            return boundedResponse(
-                id: id,
-                [
-                    "jsonrpc": .string("2.0"),
-                    "id": id,
-                    "result": .object(["prompts": .array(Prompts.listing)]),
-                ])
-
-        case "prompts/get":
-            guard let name = request.params?["name"]?.stringValue else {
-                return failure(id: id, code: -32602, message: "prompts/get needs a name")
-            }
-            let rendered: JSONValue
-            do {
-                rendered = try Prompts.render(
-                    name,
-                    arguments: request.params?["arguments"] ?? .object([:])
-                )
-            } catch {
-                return failure(id: id, code: -32602, message: error.description)
-            }
-            return boundedResponse(
-                id: id,
-                ["jsonrpc": .string("2.0"), "id": id, "result": rendered]
-            )
 
         case "ping":
             return boundedResponse(
@@ -281,7 +259,7 @@ public struct MCPRequestHandler: Sendable {
 
     private func encode(_ body: [String: JSONValue]) -> String? {
         guard let data = try? encoder.encode(body),
-            data.count <= Self.maximumResponseBytes
+            data.count < Self.maximumResponseBytes
         else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
@@ -310,6 +288,20 @@ public struct MCPRequestHandler: Sendable {
     }
 
     func toolResponse(id: JSONValue, outcome: ToolOutcome) -> String? {
+        if let response = encodedToolResponse(id: id, outcome: outcome) { return response }
+        if let bounded = ReadBatchAccumulator.bounding(
+            outcome,
+            whileExceeding: { encodedToolResponse(id: id, outcome: $0) != nil }
+        ), let response = encodedToolResponse(id: id, outcome: bounded) {
+            return response
+        }
+        return toolFailure(
+            id: id,
+            message: "tool result exceeds the 1000000-byte encoded response limit"
+        )
+    }
+
+    private func encodedToolResponse(id: JSONValue, outcome: ToolOutcome) -> String? {
         let body: [String: JSONValue] = [
             "jsonrpc": .string("2.0"),
             "id": id,
@@ -327,10 +319,6 @@ public struct MCPRequestHandler: Sendable {
             ]),
         ]
         return encode(body)
-            ?? toolFailure(
-                id: id,
-                message: "tool result exceeds the 1000000-byte encoded response limit"
-            )
     }
 
     private func toolFailure(id: JSONValue, message: String) -> String? {

@@ -71,6 +71,9 @@ extension Pane: Filterable {
         case \Pane.currentCommand: "pane.command"
         case \Pane.currentPath: "pane.path"
         case \Pane.isActive: "pane.active"
+        case \Pane.isDead: "pane.dead"
+        case \Pane.modeCount: "pane.modeCount"
+        case \Pane.isSynchronized: "pane.synchronized"
         case \Pane.windowID: "pane.windowID"
         default: nil
         }
@@ -83,6 +86,9 @@ extension Pane: Filterable {
         case "pane.command": .text(root.currentCommand)
         case "pane.path": .text(root.currentPath)
         case "pane.active": .flag(root.isActive)
+        case "pane.dead": .flag(root.isDead)
+        case "pane.modeCount": .integer(root.modeCount)
+        case "pane.synchronized": .flag(root.isSynchronized)
         case "pane.windowID": .text(root.windowID.rawValue)
         default: nil
         }

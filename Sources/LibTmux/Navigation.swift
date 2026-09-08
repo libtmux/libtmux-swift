@@ -1,13 +1,10 @@
 import Foundation
 
-/// Choosing what is active, moving objects around, and the server's paste
-/// buffers.
+/// Choosing what is active, moving objects around, pane modes, and the server's
+/// paste buffers.
 ///
-/// Everything tmux offers that needs an attached client to mean anything —
-/// menus, popups, prompts, copy mode, key bindings — is deliberately absent.
-/// Those are terminal interactions, not server operations, and a library that
-/// wraps them hands back an API that silently does nothing when nobody is
-/// looking at the terminal.
+/// Menus, popups, prompts, and key bindings need an attached client to mean
+/// anything, so they remain deliberately absent.
 extension Server {
     // MARK: Choosing what is active
 
@@ -190,6 +187,26 @@ extension Server {
 
     // MARK: Pane contents
 
+    /// Enters copy mode in a pane.
+    public func enterCopyMode(_ pane: Pane) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("copy-mode", ["-t", pane.id.rawValue]),
+            guardedBy: [.pane(pane)]
+        )
+    }
+
+    /// Idempotently clears the entire mode stack of a pane.
+    ///
+    /// This is not an inverse specific to ``enterCopyMode(_:)``. tmux's
+    /// `copy-mode -q` cancels every active pane mode, including modes entered by
+    /// a client or by another command. A pane already outside a mode is success.
+    public func cancelModes(in pane: Pane) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("copy-mode", ["-q", "-t", pane.id.rawValue]),
+            guardedBy: [.pane(pane)]
+        )
+    }
+
     /// Clears a pane's visible screen and its scrollback.
     public func clearHistory(_ pane: Pane) async throws(TmuxError) {
         try await expectSuccess(
@@ -249,6 +266,18 @@ extension Server {
         try await expectSuccess(TmuxCommand("start-server"))
     }
 
+    package func startServer(
+        launchEnvironment: [String: String]
+    ) async throws(TmuxError) {
+        let reply = try await run(
+            TmuxCommand("start-server"),
+            launchEnvironment: launchEnvironment
+        )
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
+        }
+    }
+
     public func killServer() async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("kill-server"))
     }
@@ -293,13 +322,18 @@ extension Server {
     ///     the pane was created with.
     ///   - killingExisting: replaces whatever is still running, rather
     ///     than refusing while the pane is busy.
+    ///   - startDirectory: where to start the replacement command.
     public func respawn(
         _ pane: Pane,
         running command: [String] = [],
-        killingExisting: Bool = true
+        killingExisting: Bool = true,
+        startDirectory: String? = nil
     ) async throws(TmuxError) {
         var arguments = ["-t", pane.id.rawValue]
         if killingExisting { arguments.append("-k") }
+        if let startDirectory {
+            arguments += ["-c", tmuxLiteralArgument(startDirectory)]
+        }
         try await expectSuccess(
             TmuxCommand("respawn-pane", arguments + command),
             guardedBy: [.pane(pane)]

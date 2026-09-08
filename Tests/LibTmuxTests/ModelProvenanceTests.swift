@@ -153,6 +153,8 @@ struct ModelOperation: Sendable, CustomStringConvertible {
         },
         mutation("joinPane") { s, v in try await s.join(v.pane, into: v.window) },
         mutation("clearHistory") { s, v in try await s.clearHistory(v.pane) },
+        mutation("enterCopyMode") { s, v in try await s.enterCopyMode(v.pane) },
+        mutation("cancelModes") { s, v in try await s.cancelModes(in: v.pane) },
         mutation("setPaneTitle") { s, v in try await s.setTitle("held", of: v.pane) },
         mutation("pasteBuffer") { s, v in try await s.paste(into: v.pane) },
         mutation("detachClient") { s, v in try await s.detach(v.client) },
@@ -287,6 +289,7 @@ struct ProvenanceValues: Sendable {
     ) -> Pane {
         Pane(
             id: id, index: index, width: 80, height: 12, isActive: active,
+            isDead: false, isInputOff: false, modeCount: 0, isSynchronized: false,
             currentCommand: "sh", currentPath: "/tmp", windowID: "@1",
             incarnation: incarnation
         )

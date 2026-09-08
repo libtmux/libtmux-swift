@@ -32,7 +32,7 @@ extension Server {
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("set-buffer", arguments + [contents]))
+        try await expectSuccess(TmuxCommand("set-buffer", arguments + ["--", contents]))
     }
 
     /// Reads a buffer's contents, or `nil` if no such buffer exists.

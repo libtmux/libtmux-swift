@@ -30,23 +30,39 @@ is environment, so a client config is where you say so:
 
 | Variable | Default | What it selects |
 | --- | --- | --- |
-| `LIBTMUX_SOCKET` | `default` | The socket *name*, resolved inside `TMUX_TMPDIR` |
-| `LIBTMUX_SOCKET_PATH` | none | An exact socket path, which takes precedence over `LIBTMUX_SOCKET` |
+| `LIBTMUX_SOCKET` | `libtmux-mcp` | The socket *name*, resolved inside `TMUX_TMPDIR` |
+| `LIBTMUX_SOCKET_PATH` | none | An absolute socket path; mutually exclusive with `LIBTMUX_SOCKET` |
+| `LIBTMUX_TMUX_CONFIG` | bundled minimal config on the default socket | An absolute tmux configuration path |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
-| `LIBTMUX_SAFETY` | `readonly` | The highest tool tier; set `mutating` or `destructive` to opt in to writes |
-| `LIBTMUX_MCP_TOOLS` | all within the tier | A comma-separated exact tool allowlist, intersected with `LIBTMUX_SAFETY` |
+| `LIBTMUX_TOOLSETS` | `inspect,manage,execute` | Any comma-separated combination of `inspect`, `manage`, `execute`, and `teardown`; empty selects none |
+| `LIBTMUX_TOOLS` | none | Exact tool names added after toolset expansion |
+| `LIBTMUX_EXCLUDE_TOOLS` | none | Exact tool names removed last, including aggregate authority |
 | `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The wait ceiling in seconds, clamped from 1 through 300 |
 | `TMUX_TMPDIR` | tmux's own default | Where a socket name is looked up |
 
-The tiers classify tool intent; they do not sandbox the host. `mutating`
-exposes `run_shell` and `send_keys`, which can execute commands through a pane.
-Grant it only to clients trusted to act as the tmux user.
+The default adds `teardown` only when the server retains this process's launch
+nonce from the bundled minimal configuration. Existing servers and explicit
+socket or configuration selections require an explicit `teardown` choice.
+When stdio ends, the process removes only a default daemon whose launch nonce
+and incarnation still match; existing and replacement daemons remain.
 
-Use `LIBTMUX_MCP_TOOLS=new_window,list_sessions` to expose only those tools.
-An unknown or malformed name serves no tools and reports the problem on stderr.
+The configured default exposes 41 of the 45 tools. An authenticated default
+daemon adds the four `teardown` tools; `TmuxTools(server:)` remains the
+18-tool inspect-only embedding default.
 
-All seven are optional; with none set it serves readonly tools for the `default`
-socket through the first `tmux` on `PATH`, with a 120-second wait ceiling.
+Use `LIBTMUX_TOOLSETS=inspect LIBTMUX_TOOLS=create_window` to expose the read
+surface plus one named execute tool. Empty tokens and unknown tool or toolset
+names fail startup before tmux opens. The retired `LIBTMUX_SAFETY` and
+`LIBTMUX_MCP_TOOLS` names also fail with migration guidance.
+Replace an old exact allowlist with `LIBTMUX_TOOLSETS=` and the same names in
+`LIBTMUX_TOOLS`; without the empty toolset, named tools add to the default
+surface.
+
+Tool filtering is interface shaping, not authorization. Execute tools act with
+the tmux user's authority, and a selected socket limits tmux object lookup
+rather than operating-system access. The static `tmux://capabilities` resource
+reports the startup-frozen socket provenance, common boundary fields, and
+effective capability rows.
 
 ## Driving it by hand
 

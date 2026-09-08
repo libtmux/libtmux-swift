@@ -28,14 +28,16 @@ extension Server {
 
     public func rename(_ session: Session, to name: String) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("rename-session", ["-t", session.id.rawValue, tmuxLiteralArgument(name)]),
+            TmuxCommand(
+                "rename-session", ["-t", session.id.rawValue, "--", tmuxLiteralArgument(name)]),
             guardedBy: [.session(session)]
         )
     }
 
     public func rename(_ window: Window, to name: String) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("rename-window", ["-t", window.id.rawValue, tmuxLiteralArgument(name)]),
+            TmuxCommand(
+                "rename-window", ["-t", window.id.rawValue, "--", tmuxLiteralArgument(name)]),
             guardedBy: [.window(window)]
         )
     }
@@ -87,6 +89,14 @@ extension Server {
                 "resize-pane",
                 ["-t", pane.id.rawValue, direction.flag, String(cells)]
             ),
+            guardedBy: [.pane(pane)]
+        )
+    }
+
+    /// Toggles whether one pane fills its window.
+    public func toggleZoom(_ pane: Pane) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("resize-pane", ["-Z", "-t", pane.id.rawValue]),
             guardedBy: [.pane(pane)]
         )
     }

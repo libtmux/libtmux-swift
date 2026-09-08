@@ -13,38 +13,61 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
     /// From `TMUX`, in the same `$…` spelling as a session id.
     public let sessionID: SessionID?
     public let socketPath: String?
-    /// The surrounding server's process id. This, rather than the socket path,
-    /// is what identifies a server: a daemon that died and was replaced binds
-    /// the same path, and comparing paths would then call the replacement
-    /// "ours" and refuse to touch panes that only reuse an id.
+    /// The surrounding server's process id. It authenticates alternate routes
+    /// to one socket and rejects a daemon that replaced one exact route.
     public let serverProcessID: Int?
 
-    /// Reads the surrounding tmux, or `nil` when there is none.
+    /// Reads the surrounding tmux, or `nil` when both context variables are absent.
+    ///
+    /// An incomplete or malformed environment remains present as an invalid
+    /// identity so an input guard cannot mistake it for a detached process.
     public static func current(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> CallerIdentity? {
-        guard let context = TmuxContext.current(environment: environment) else {
+        let hasTmux = environment.keys.contains("TMUX")
+        let hasPane = environment.keys.contains("TMUX_PANE")
+        guard hasTmux || hasPane else {
             return nil
         }
+        guard let rawTmux = environment["TMUX"],
+            let context = TmuxContext(parsing: rawTmux),
+            let rawPane = environment["TMUX_PANE"],
+            let paneID = PaneID(rawValue: rawPane)
+        else {
+            return CallerIdentity(
+                paneID: nil,
+                sessionID: nil,
+                socketPath: nil,
+                serverProcessID: nil
+            )
+        }
         return CallerIdentity(
-            paneID: environment["TMUX_PANE"].flatMap(PaneID.init(rawValue:)),
+            paneID: paneID,
             sessionID: context.sessionID,
             socketPath: context.socketPath,
             serverProcessID: context.serverProcessID
         )
     }
 
-    /// Whether `server` is the tmux this process is running inside.
-    public func isOn(serverProcessID processID: Int?) -> Bool {
-        guard let serverProcessID, let processID else { return false }
-        return serverProcessID == processID
+    /// Whether `server` is the tmux this process is running inside, including
+    /// when caller and server reached its socket through different links.
+    public func isOn(_ server: ServerIncarnation) -> Bool {
+        guard let serverProcessID, let socketPath, Self.isSafeSocketPath(socketPath) else {
+            return false
+        }
+        return serverProcessID == server.processID
+    }
+
+    fileprivate static func isSafeSocketPath(_ path: String) -> Bool {
+        path.utf8.first == 0x2f
+            && !path.utf8.contains(where: { $0 < 0x20 || $0 == 0x7f })
     }
 }
 
 /// Refuses the calls that would end the conversation.
 ///
-/// Not a tier decision: an agent that legitimately runs at the destructive tier
-/// still must not kill the pane it is talking through, and being told why is
+/// Not a toolset decision: an agent with teardown authority still must not kill
+/// the pane it is talking through, and being told why is
 /// more useful than watching the transport go quiet. Every guard names an
 /// escape hatch, because "kill the pane I am in" is a legitimate thing to ask
 /// for — it just has to be asked for on purpose.
@@ -57,14 +80,77 @@ struct CallerGuard: Sendable {
     /// The pane the caller occupies on *this* server, if any.
     var ownPane: PaneID? { isSameServer ? identity?.paneID : nil }
 
+    func validate(in snapshot: Snapshot) throws {
+        guard let identity else {
+            guard !isSameServer else {
+                throw ToolError.refusedForSafety("caller context is inconsistent")
+            }
+            return
+        }
+        guard let paneID = identity.paneID,
+            let sessionID = identity.sessionID,
+            let socketPath = identity.socketPath,
+            CallerIdentity.isSafeSocketPath(socketPath),
+            let processID = identity.serverProcessID,
+            processID > 0
+        else {
+            throw ToolError.refusedForSafety("caller context is incomplete or malformed")
+        }
+
+        if socketPath == snapshot.incarnation.socketPath,
+            processID != snapshot.serverProcessID
+        {
+            throw ToolError.refusedForSafety(
+                "caller context names a stale selected tmux daemon"
+            )
+        }
+        guard processID == snapshot.serverProcessID else {
+            guard !isSameServer else {
+                throw ToolError.refusedForSafety("caller context is inconsistent")
+            }
+            return
+        }
+        guard isSameServer else {
+            throw ToolError.refusedForSafety("caller context is inconsistent")
+        }
+        let sessions = snapshot.sessions.filter {
+            $0.incarnation == snapshot.incarnation && $0.id == sessionID
+        }
+        let panes = snapshot.panes.filter {
+            $0.incarnation == snapshot.incarnation && $0.id == paneID
+        }
+        guard sessions.count == 1,
+            let pane = panes.first,
+            panes.count == 1,
+            snapshot.windows.filter({
+                $0.incarnation == snapshot.incarnation && $0.id == pane.windowID
+            }).count == 1,
+            snapshot.windowLinks.contains(where: {
+                $0.incarnation == snapshot.incarnation
+                    && $0.sessionID == sessionID && $0.windowID == pane.windowID
+            })
+        else {
+            throw ToolError.refusedForSafety(
+                "caller context does not resolve in the selected tmux snapshot"
+            )
+        }
+    }
+
     func checkPane(_ paneID: PaneID, override: Bool) throws {
         guard !override, let own = ownPane, own == paneID else { return }
         throw ToolError.refusedForSafety(
             """
             \(paneID) is the pane this MCP server runs in. Killing it ends the \
             session you are talking through, and nothing would come back to say \
-            so. Pass confirm_self=true if that is genuinely the intent.
+            so. Pass force=true if that is genuinely the intent.
             """
+        )
+    }
+
+    func checkPaneInput(_ paneID: PaneID, override: Bool) throws {
+        guard !override, let own = ownPane, own == paneID else { return }
+        throw ToolError.refusedForSafety(
+            "\(paneID) is the pane this MCP server runs in; pass force=true to send input there"
         )
     }
 
@@ -79,17 +165,6 @@ struct CallerGuard: Sendable {
         try checkContainer("session \(sessionID)", override: override)
     }
 
-    func checkServer(override: Bool) throws {
-        guard !override, isSameServer else { return }
-        throw ToolError.refusedForSafety(
-            """
-            This is the tmux server the MCP runs inside, and killing it takes \
-            every session on it — the one you are talking through included. Pass \
-            confirm_self=true if that is genuinely the intent.
-            """
-        )
-    }
-
     private func checkContainer(
         _ described: String,
         override: Bool
@@ -100,7 +175,7 @@ struct CallerGuard: Sendable {
             \(described) is on the server containing \(own), the pane this MCP runs \
             in. Pane membership can change between inspection and a separate kill, \
             so this cannot safely prove the container will still exclude the caller. \
-            Pass confirm_self=true if killing it is genuinely the intent.
+            Pass force=true if killing it is genuinely the intent.
             """
         )
     }

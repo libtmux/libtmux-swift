@@ -52,6 +52,8 @@ public struct OutputWait: Sendable, Hashable, Codable {
     /// The last lines that arrived, newest last, for reading when the pattern
     /// was wrong.
     public let tail: [String]
+    /// Hand this back to a later wait to carry on without re-reading these rows.
+    public let cursor: CaptureCursor?
     public let seconds: Double
 
     public init(
@@ -61,6 +63,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
         sawNewOutput: Bool,
         matchedAtEntry: Bool = false,
         tail: [String],
+        cursor: CaptureCursor? = nil,
         seconds: Double
     ) {
         self.outcome = outcome
@@ -69,7 +72,21 @@ public struct OutputWait: Sendable, Hashable, Codable {
         self.sawNewOutput = sawNewOutput
         self.matchedAtEntry = matchedAtEntry
         self.tail = tail
+        self.cursor = cursor
         self.seconds = seconds
+    }
+
+    func resuming(at cursor: CaptureCursor) -> OutputWait {
+        OutputWait(
+            outcome: outcome,
+            matched: matched,
+            matchedIndex: matchedIndex,
+            sawNewOutput: sawNewOutput,
+            matchedAtEntry: matchedAtEntry,
+            tail: tail,
+            cursor: cursor,
+            seconds: seconds
+        )
     }
 }
 
@@ -110,6 +127,8 @@ extension Server {
     ///     the rest of the timeout.
     ///   - requireFresh: only count output that arrives after this call, so a
     ///     match already on screen is waited past rather than returned.
+    ///   - cursor: where an earlier incremental capture or wait stopped. Rows
+    ///     after it are checked before waiting for more output.
     ///   - timeout: how long to wait before giving up.
     ///   - tailLimit: how many trailing lines to report back.
     public func waitForOutput(
@@ -117,6 +136,7 @@ extension Server {
         matching patterns: [RegexPattern] = [],
         stoppingAt stops: [RegexPattern] = [],
         requiringFreshOutput requireFresh: Bool = false,
+        startingAt cursor: CaptureCursor? = nil,
         timeout: Duration = .seconds(30),
         tailLimit: Int = 20
     ) async throws(OutputWaitError) -> OutputWait {
@@ -125,6 +145,14 @@ extension Server {
         } catch {
             throw .tmux(error)
         }
+        if let cursor {
+            guard cursor.pane == pane.id.rawValue else {
+                throw .tmux(.foreignServerValue)
+            }
+            guard cursor.incarnation == pane.incarnation else {
+                throw .tmux(.serverRestarted)
+            }
+        }
         let started = ContinuousClock.now
         return try await OutputWaitSession(
             server: self,
@@ -132,6 +160,7 @@ extension Server {
             patterns: patterns,
             stops: stops,
             requireFresh: requireFresh,
+            startingCursor: cursor,
             started: started,
             deadline: started.advanced(by: timeout),
             tailLimit: max(0, tailLimit)

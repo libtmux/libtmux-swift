@@ -62,7 +62,7 @@ on its first report: a watcher learns where it is starting from without asking
 for it, and every report after that is a change.
 
 **You did not write the command: wait on its output.**
-``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)`` is for a
+``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)`` is for a
 daemon printing `ready`, a dev server someone else started, a build you
 attached to:
 
@@ -189,7 +189,7 @@ trip per second.
 
 ### Waiting on output
 
-- ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)``
+- ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
 - ``OutputWait``
 - ``OutputWaitError``
 - ``RegexPattern``

@@ -4,9 +4,10 @@ extension Server {
     /// Moves one window appearance into another session.
     public func move(
         _ link: WindowLink,
-        to destination: Session
+        to destination: Session,
+        at index: Int? = nil
     ) async throws(TmuxError) -> WindowLink {
-        try await transfer(link, into: destination, moving: true)
+        try await transfer(link, into: destination, at: index, moving: true)
     }
 
     /// Links a window into another session. The same window then appears in
@@ -22,6 +23,7 @@ extension Server {
             sourceSessionID: nil,
             sourceValue: .window(window),
             into: session,
+            at: nil,
             moving: false
         )
     }
@@ -38,6 +40,7 @@ extension Server {
     private func transfer(
         _ source: WindowLink,
         into destination: Session,
+        at index: Int?,
         moving: Bool
     ) async throws(TmuxError) -> WindowLink {
         try await transfer(
@@ -46,6 +49,7 @@ extension Server {
             sourceSessionID: source.sessionID,
             sourceValue: .windowLink(source),
             into: destination,
+            at: index,
             moving: moving
         )
     }
@@ -56,23 +60,33 @@ extension Server {
         sourceSessionID: SessionID?,
         sourceValue: GuardedValue,
         into destination: Session,
+        at requestedIndex: Int?,
         moving: Bool
     ) async throws(TmuxError) -> WindowLink {
         let incarnation = try expectedIncarnation([
             sourceValue.incarnation, destination.incarnation,
         ])
-        guard !moving || sourceSessionID != destination.id else {
+        guard requestedIndex.map({ $0 >= 0 }) ?? true else {
+            throw .invocationFailed(reason: "window index cannot be negative")
+        }
+        guard !moving || sourceSessionID != destination.id || requestedIndex != nil else {
             throw .invocationFailed(reason: "move destination is the source session")
         }
         let commandName = moving ? "move-window" : "link-window"
 
-        for _ in 0..<64 {
-            let destinationLinks = try await windowLinks().filter {
-                $0.incarnation == incarnation && $0.sessionID == destination.id
+        for _ in 0..<(requestedIndex == nil ? 64 : 1) {
+            let index: Int
+            if let requestedIndex {
+                index = requestedIndex
+            } else {
+                let destinationLinks = try await windowLinks().filter {
+                    $0.incarnation == incarnation && $0.sessionID == destination.id
+                }
+                let occupied = Set(destinationLinks.map(\.index))
+                var available = occupied.min() ?? 0
+                while occupied.contains(available) { available += 1 }
+                index = available
             }
-            let occupied = Set(destinationLinks.map(\.index))
-            var index = occupied.min() ?? 0
-            while occupied.contains(index) { index += 1 }
 
             let reply = try await runGuarded(
                 TmuxCommand(
@@ -92,6 +106,9 @@ extension Server {
                     isActive: false,
                     incarnation: incarnation
                 )
+            }
+            if requestedIndex != nil {
+                throw .invocationFailed(reason: reply.errorText)
             }
             // Another client can take the index between the listing and the
             // command. tmux says so in these words, unchanged since 3.2a.

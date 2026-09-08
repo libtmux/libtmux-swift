@@ -1,31 +1,69 @@
 import Foundation
 import LibTmux
-import TmuxWorkspace
 
-/// How much damage a tool can do.
-///
-/// The server refuses anything above the tier it was started at and hides it
-/// from `tools/list`, so a client configured for reading never sees a way to
-/// write. Ordered, because the gate is a comparison rather than a set.
-public enum SafetyTier: String, Sendable, Hashable, Codable, CaseIterable, Comparable {
-    /// Answers questions. Nothing on the server changes.
-    case readonly
-    /// Creates, renames, resizes, and sends input.
-    case mutating
-    /// Ends objects, or runs a confirmed raw command outside typed safeguards.
-    case destructive
+/// The independently selectable public tool groups.
+public enum Toolset: String, Sendable, Hashable, Codable, CaseIterable {
+    case inspect
+    case manage
+    case execute
+    case teardown
+}
 
-    private var rank: Int {
-        switch self {
-        case .readonly: 0
-        case .mutating: 1
-        case .destructive: 2
-        }
-    }
+/// Whether caller-controlled data can reach a workload process.
+public enum ProcessReach: String, Sendable, Hashable, Codable {
+    case none
+    case configuredProcess = "configured-process"
+    case paneInput = "pane-input"
+    case paneCommand = "pane-command"
+}
 
-    public static func < (lhs: SafetyTier, rhs: SafetyTier) -> Bool {
-        lhs.rank < rhs.rank
-    }
+/// Direct effects on tmux state. This is a set, not an ordered safety level.
+public enum TmuxEffect: String, Sendable, Hashable, Codable {
+    case observe
+    case change
+    case delete
+}
+
+/// Classes of data a successful call can return.
+public enum OutputClass: String, Sendable, Hashable, Codable {
+    case tmuxMetadata = "tmux-metadata"
+    case terminalContent = "terminal-content"
+    case processEnvironment = "process-environment"
+    case configuredCommand = "configured-command"
+}
+
+/// The interpreter boundary reached by one caller-controlled input.
+public enum InputSink: String, Sendable, Hashable, Codable {
+    case none
+    case tmuxLookup = "tmux-lookup"
+    case tmuxState = "tmux-state"
+    case tmuxFormat = "tmux-format"
+    case paneInput = "pane-input"
+    case shellCommand = "shell-command"
+    case processArgv = "process-argv"
+    case regex
+    case nestedTool = "nested-tool"
+}
+
+/// The manifest-owned control applied before a value reaches tmux format expansion.
+public enum TmuxFormatControl: String, Sendable, Hashable, Codable {
+    case doubleHashOnce = "double-hash-once"
+    case validatedVariableName = "validated-variable-name"
+}
+
+/// All four MCP hints are owned explicitly by each registry row.
+public struct ToolAnnotations: Sendable, Hashable, Codable {
+    public let destructiveHint: Bool
+    public let idempotentHint: Bool
+    public let openWorldHint: Bool
+    public let readOnlyHint: Bool
+
+    public static let conservative = ToolAnnotations(
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+        readOnlyHint: false
+    )
 }
 
 /// One argument of a tool, in enough detail to generate its schema.
@@ -72,6 +110,18 @@ public struct ToolArgument: Sendable, Hashable {
     public let maximum: Double?
     /// The most entries accepted in an array argument.
     public let maximumItems: Int?
+    /// The fewest entries accepted in an array argument.
+    public let minimumItems: Int?
+    /// The most characters accepted in a string argument.
+    public let maximumLength: Int?
+    /// A byte ceiling disclosed explicitly because JSON Schema maxLength counts characters.
+    public let maximumUTF8Bytes: Int?
+    /// A JSON Schema pattern applied before the value reaches tmux.
+    public let pattern: String?
+    /// The schema for each entry when an array contains structured values.
+    public let itemSchema: JSONValue?
+    /// The exact control applied before this value reaches tmux format expansion.
+    public let tmuxFormatControl: TmuxFormatControl?
 
     init(
         name: String,
@@ -82,7 +132,13 @@ public struct ToolArgument: Sendable, Hashable {
         defaultValue: JSONValue? = nil,
         minimum: Double? = nil,
         maximum: Double? = nil,
-        maximumItems: Int? = nil
+        minimumItems: Int? = nil,
+        maximumItems: Int? = nil,
+        maximumLength: Int? = nil,
+        maximumUTF8Bytes: Int? = nil,
+        pattern: String? = nil,
+        itemSchema: JSONValue? = nil,
+        tmuxFormatControl: TmuxFormatControl? = nil
     ) {
         self.name = name
         self.summary = summary
@@ -92,7 +148,13 @@ public struct ToolArgument: Sendable, Hashable {
         self.defaultValue = defaultValue
         self.minimum = minimum
         self.maximum = maximum
+        self.minimumItems = minimumItems
         self.maximumItems = maximumItems
+        self.maximumLength = maximumLength
+        self.maximumUTF8Bytes = maximumUTF8Bytes
+        self.pattern = pattern
+        self.itemSchema = itemSchema
+        self.tmuxFormatControl = tmuxFormatControl
     }
 
     var schema: JSONValue {
@@ -103,7 +165,9 @@ public struct ToolArgument: Sendable, Hashable {
         if kind == .stringArray {
             members["items"] = .object(["type": .string("string")])
         }
-        if kind == .commandArray {
+        if let itemSchema {
+            members["items"] = itemSchema
+        } else if kind == .commandArray {
             members["items"] = .object([
                 "type": .string("object"),
                 "properties": .object([
@@ -125,12 +189,39 @@ public struct ToolArgument: Sendable, Hashable {
         }
         if let minimum { members["minimum"] = .number(minimum) }
         if let maximum { members["maximum"] = .number(maximum) }
+        if let minimumItems { members["minItems"] = .number(Double(minimumItems)) }
         if let maximumItems { members["maxItems"] = .number(Double(maximumItems)) }
+        if let maximumLength { members["maxLength"] = .number(Double(maximumLength)) }
+        if let maximumUTF8Bytes {
+            members["x-libtmux-max-utf8-bytes"] = .number(Double(maximumUTF8Bytes))
+        }
+        if let pattern { members["pattern"] = .string(pattern) }
         return .object(members)
+    }
+
+    func replacingItemSchema(with itemSchema: JSONValue) -> ToolArgument {
+        return ToolArgument(
+            name: name,
+            summary: summary,
+            kind: kind,
+            isRequired: isRequired,
+            allowed: allowed,
+            defaultValue: defaultValue,
+            minimum: minimum,
+            maximum: maximum,
+            minimumItems: minimumItems,
+            maximumItems: maximumItems,
+            maximumLength: maximumLength,
+            maximumUTF8Bytes: maximumUTF8Bytes,
+            pattern: pattern,
+            itemSchema: itemSchema,
+            tmuxFormatControl: tmuxFormatControl
+        )
     }
 }
 
-public struct ToolDefinition: Sendable, Hashable {
+public struct ToolDefinition: Sendable {
+    static let capabilityMetadataKey = "com.git-pull.libtmux-mcp/capability"
     let operation: ToolOperation
     /// What the client names in a ``ToolCall``.
     public let name: String
@@ -142,39 +233,175 @@ public struct ToolDefinition: Sendable, Hashable {
     /// When to reach for this one rather than a neighbour, and what the result
     /// means. Empty for tools whose summary says everything.
     public let detail: String
-    public let tier: SafetyTier
-    /// Whether the tool may replace, remove, or otherwise destroy state.
-    public let isDestructive: Bool
-    /// Whether calling twice with the same arguments leaves the same state as
-    /// calling once. Reaches clients as `idempotentHint`.
-    public let isIdempotent: Bool
     public let arguments: [ToolArgument]
     /// What the tool answers with, when that shape is guaranteed. Declared
     /// only where it is: MCP requires `structuredContent` to conform to this,
     /// so a schema the server may break is worse than none at all.
     public let outputSchema: JSONValue?
+    public let toolset: Toolset
+    public let processReach: ProcessReach
+    public let tmuxEffects: Set<TmuxEffect>
+    public let outputClasses: Set<OutputClass>
+    public let mayExposeSecrets: Bool
+    public let mayReturnUntrustedContent: Bool
+    public let explicitAnnotations: ToolAnnotations
+    public let inputSinks: [String: Set<InputSink>]
+    public let nestedAuthority: Set<String>
+    public let amplifiesFutureInput: Bool
+    let handler: @Sendable (TmuxTools, Arguments, ProgressReporter) async throws -> ToolOutcome
 
     init(
         operation: ToolOperation,
         title: String,
-        summary: String,
-        detail: String = "",
-        tier: SafetyTier,
-        isDestructive: Bool? = nil,
-        isIdempotent: Bool = false,
-        arguments: [ToolArgument] = [],
-        outputSchema: JSONValue? = nil
+        descriptionBody: String,
+        toolset: Toolset,
+        processReach: ProcessReach,
+        tmuxEffects: Set<TmuxEffect>,
+        outputClasses: Set<OutputClass>,
+        mayExposeSecrets: Bool = true,
+        mayReturnUntrustedContent: Bool = true,
+        annotations: ToolAnnotations = .conservative,
+        arguments: [ToolArgument],
+        outputSchema: JSONValue,
+        inputSinks: [String: Set<InputSink>],
+        nestedAuthority: Set<String> = [],
+        amplifiesFutureInput: Bool = false,
+        handler:
+            @escaping @Sendable (
+                TmuxTools, Arguments, ProgressReporter
+            ) async throws -> ToolOutcome
     ) {
         self.operation = operation
         self.name = operation.rawValue
         self.title = title
-        self.summary = summary
-        self.detail = detail
-        self.tier = tier
-        self.isDestructive = isDestructive ?? (tier != .readonly)
-        self.isIdempotent = isIdempotent
+        self.summary =
+            Self.controlledOpener(
+                toolset: toolset,
+                processReach: processReach,
+                outputClasses: outputClasses
+            )
+            + descriptionBody
+        self.detail = ""
         self.arguments = arguments
         self.outputSchema = outputSchema
+        self.toolset = toolset
+        self.processReach = processReach
+        self.tmuxEffects = tmuxEffects
+        self.outputClasses = outputClasses
+        self.mayExposeSecrets = mayExposeSecrets
+        self.mayReturnUntrustedContent = mayReturnUntrustedContent
+        self.explicitAnnotations = annotations
+        self.inputSinks = inputSinks
+        self.nestedAuthority = nestedAuthority
+        self.amplifiesFutureInput = amplifiesFutureInput
+        self.handler = { tools, arguments, progress in
+            let outcome = try await handler(tools, arguments, progress)
+            do {
+                try ToolSchemaValidator.validate(outcome.structured, against: outputSchema)
+            } catch {
+                throw ToolError.internalFailure(
+                    "\(operation.rawValue) returned output outside its schema: \(error)"
+                )
+            }
+            return outcome
+        }
+    }
+
+    static func controlledOpener(
+        toolset: Toolset,
+        processReach: ProcessReach,
+        outputClasses: Set<OutputClass>
+    ) -> String {
+        if toolset == .teardown {
+            return "Delete tmux state; accepts no command payload. "
+        }
+        switch processReach {
+        case .configuredProcess:
+            return "Start a pane's configured process; accepts no command payload. "
+        case .paneInput:
+            return
+                "Send input to a pane's program; a shell that receives it runs it with your user's permissions. "
+        case .paneCommand:
+            return "Run a shell command in a pane with your user's permissions. "
+        case .none:
+            break
+        }
+        guard toolset == .inspect else {
+            return "Change tmux state; no client-supplied executable input. "
+        }
+        if outputClasses.contains(.terminalContent) {
+            return
+                "Read pane output; accepts no client-supplied executable input. Returned content may be sensitive or untrusted. "
+        }
+        if outputClasses.contains(.processEnvironment) {
+            return
+                "Read the tmux environment; accepts no client-supplied executable input. Returned values may contain secrets. "
+        }
+        if outputClasses.contains(.configuredCommand) {
+            return
+                "Read configured tmux commands; accepts no client-supplied executable input. Returned values may contain executable configuration. "
+        }
+        return "Inspect tmux metadata; accepts no client-supplied executable input. "
+    }
+
+    func restrictingNestedAuthority(to definitions: [ToolDefinition]) -> ToolDefinition {
+        guard !nestedAuthority.isEmpty else { return self }
+        let sourceOpener = Self.controlledOpener(
+            toolset: toolset,
+            processReach: processReach,
+            outputClasses: outputClasses
+        )
+        let nestedDefinitions = definitions.filter { nestedAuthority.contains($0.name) }
+        let restrictedNestedAuthority = Set(nestedDefinitions.map(\.name))
+        let operationSchemas = nestedDefinitions.sorted { $0.name < $1.name }.map { nested in
+            JSONValue.object([
+                "type": .string("object"),
+                "properties": .object([
+                    "tool": .object([
+                        "type": .string("string"),
+                        "const": .string(nested.name),
+                    ]),
+                    "arguments": nested.inputSchema,
+                ]),
+                "required": .array([.string("tool")]),
+                "additionalProperties": .bool(false),
+            ])
+        }
+        let operationSchema: JSONValue =
+            operationSchemas.isEmpty
+            ? .object(["not": .object([:])])
+            : .object(["oneOf": .array(operationSchemas)])
+        let restrictedArguments = arguments.map { argument in
+            argument.name == "operations"
+                ? argument.replacingItemSchema(with: operationSchema)
+                : argument
+        }
+        let nestedEffects = Set(nestedDefinitions.flatMap(\.tmuxEffects))
+        let effectiveEffects: Set<TmuxEffect> =
+            nestedEffects.isEmpty ? [.observe] : nestedEffects
+        let nestedOutputs = Set(nestedDefinitions.flatMap(\.outputClasses))
+        let nestedMayExposeSecrets = nestedDefinitions.contains(where: \.mayExposeSecrets)
+        let nestedMayReturnUntrustedContent = nestedDefinitions.contains(
+            where: \.mayReturnUntrustedContent
+        )
+        return ToolDefinition(
+            operation: operation,
+            title: title,
+            descriptionBody: String(description.dropFirst(sourceOpener.count)),
+            toolset: toolset,
+            processReach: processReach,
+            tmuxEffects: effectiveEffects,
+            outputClasses: nestedOutputs,
+            mayExposeSecrets: nestedMayExposeSecrets,
+            mayReturnUntrustedContent: nestedMayReturnUntrustedContent,
+            annotations: explicitAnnotations,
+            arguments: restrictedArguments,
+            outputSchema: outputSchema ?? .object(["type": .string("object")]),
+            inputSinks: inputSinks,
+            nestedAuthority: restrictedNestedAuthority,
+            amplifiesFutureInput: amplifiesFutureInput,
+            handler: handler
+        )
     }
 
     var description: String {
@@ -201,12 +428,19 @@ public struct ToolDefinition: Sendable, Hashable {
     var annotations: JSONValue {
         .object([
             "title": .string(title),
-            "readOnlyHint": .bool(tier == .readonly),
-            "destructiveHint": .bool(isDestructive),
-            "idempotentHint": .bool(isIdempotent),
-            // Everything here acts on one tmux server, whose contents change
-            // under us: panes come and go without this server doing anything.
-            "openWorldHint": .bool(true),
+            "readOnlyHint": .bool(explicitAnnotations.readOnlyHint),
+            "destructiveHint": .bool(explicitAnnotations.destructiveHint),
+            "idempotentHint": .bool(explicitAnnotations.idempotentHint),
+            "openWorldHint": .bool(explicitAnnotations.openWorldHint),
+        ])
+    }
+
+    private var capabilityAnnotations: JSONValue {
+        .object([
+            "readOnlyHint": .bool(explicitAnnotations.readOnlyHint),
+            "destructiveHint": .bool(explicitAnnotations.destructiveHint),
+            "idempotentHint": .bool(explicitAnnotations.idempotentHint),
+            "openWorldHint": .bool(explicitAnnotations.openWorldHint),
         ])
     }
 
@@ -217,9 +451,38 @@ public struct ToolDefinition: Sendable, Hashable {
             "description": .string(description),
             "inputSchema": inputSchema,
             "annotations": annotations,
+            "_meta": .object([Self.capabilityMetadataKey: capabilityRow]),
         ]
         if let outputSchema { members["outputSchema"] = outputSchema }
         return .object(members)
+    }
+
+    var capabilityRow: JSONValue {
+        let formatControls = Dictionary(
+            uniqueKeysWithValues: arguments.compactMap { argument in
+                argument.tmuxFormatControl.map {
+                    (argument.name, JSONValue.string($0.rawValue))
+                }
+            }
+        )
+        return .object([
+            "name": .string(name),
+            "title": .string(title),
+            "description": .string(description),
+            "toolset": .string(toolset.rawValue),
+            "processReach": .string(processReach.rawValue),
+            "tmuxEffects": .array(tmuxEffects.map(\.rawValue).sorted().map(JSONValue.string)),
+            "outputClasses": .array(
+                outputClasses.map(\.rawValue).sorted().map(JSONValue.string)),
+            "mayExposeSecrets": .bool(mayExposeSecrets),
+            "mayReturnUntrustedContent": .bool(mayReturnUntrustedContent),
+            "annotations": capabilityAnnotations,
+            "inputSchema": inputSchema,
+            "outputSchema": outputSchema ?? .object([:]),
+            "inputLiteralization": .object(formatControls),
+            "nestedAuthority": .array(nestedAuthority.sorted().map(JSONValue.string)),
+            "amplifiesFutureInput": .bool(amplifiesFutureInput),
+        ])
     }
 }
 
@@ -248,6 +511,14 @@ struct Arguments {
     private let tool: ToolDefinition
 
     init(_ call: ToolCall, for tool: ToolDefinition) throws {
+        do {
+            try ToolSchemaValidator.validate(call.arguments, against: tool.inputSchema)
+        } catch {
+            throw ToolError.wrongArgumentType(
+                "arguments",
+                expected: "values matching \(tool.name)'s schema (\(error))"
+            )
+        }
         guard let values = call.arguments.objectValue else {
             throw ToolError.wrongArgumentType("arguments", expected: "an object")
         }
@@ -269,34 +540,46 @@ struct Arguments {
         }
     }
 
+    func value(_ name: String) -> JSONValue? {
+        guard let value = resolvedValue(name), !value.isNull else { return nil }
+        return value
+    }
+
+    private func resolvedValue(_ name: String) -> JSONValue? {
+        values[name]
+    }
+
     func string(_ name: String) throws -> String {
-        guard let value = values[name]?.stringValue else {
+        guard let value = resolvedValue(name)?.stringValue else {
             throw ToolError.wrongArgumentType(name, expected: "a string")
         }
         try checkAllowed(name, value)
+        try checkLength(name, value)
         return value
     }
 
     func string(_ name: String, or fallback: String) throws -> String {
-        guard let value = values[name], !value.isNull else { return fallback }
+        guard let value = resolvedValue(name), !value.isNull else { return fallback }
         guard let text = value.stringValue else {
             throw ToolError.wrongArgumentType(name, expected: "a string")
         }
         try checkAllowed(name, text)
+        try checkLength(name, text)
         return text
     }
 
     func optionalString(_ name: String) throws -> String? {
-        guard let value = values[name], !value.isNull else { return nil }
+        guard let value = resolvedValue(name), !value.isNull else { return nil }
         guard let text = value.stringValue else {
             throw ToolError.wrongArgumentType(name, expected: "a string")
         }
         try checkAllowed(name, text)
+        try checkLength(name, text)
         return text
     }
 
     func strings(_ name: String) throws -> [String] {
-        guard let value = values[name], !value.isNull else { return [] }
+        guard let value = resolvedValue(name), !value.isNull else { return [] }
         guard let entries = value.arrayValue else {
             throw ToolError.wrongArgumentType(name, expected: "an array of strings")
         }
@@ -316,15 +599,23 @@ struct Arguments {
         }
     }
 
-    /// Distinguishes an omitted list from an empty one, which several tools
-    /// read as different instructions.
-    func optionalStrings(_ name: String) throws -> [String]? {
-        guard let value = values[name], !value.isNull else { return nil }
-        return try strings(name)
+    func array(_ name: String) throws -> [JSONValue] {
+        guard let entries = resolvedValue(name)?.arrayValue else {
+            throw ToolError.wrongArgumentType(name, expected: "an array")
+        }
+        if let maximum = tool.arguments.first(where: { $0.name == name })?.maximumItems,
+            entries.count > maximum
+        {
+            throw ToolError.wrongArgumentType(
+                name,
+                expected: "an array of at most \(maximum) entries"
+            )
+        }
+        return entries
     }
 
     func bool(_ name: String, or fallback: Bool) throws -> Bool {
-        guard let value = values[name], !value.isNull else { return fallback }
+        guard let value = resolvedValue(name), !value.isNull else { return fallback }
         guard let flag = value.boolValue else {
             throw ToolError.wrongArgumentType(name, expected: "true or false")
         }
@@ -332,7 +623,7 @@ struct Arguments {
     }
 
     func integer(_ name: String, or fallback: Int) throws -> Int {
-        guard let value = values[name], !value.isNull else { return fallback }
+        guard let value = resolvedValue(name), !value.isNull else { return fallback }
         guard let number = value.intValue else {
             throw ToolError.wrongArgumentType(name, expected: "a whole number")
         }
@@ -342,33 +633,19 @@ struct Arguments {
 
     /// Distinguishes an omitted number from one that happens to be zero.
     func optionalInteger(_ name: String) throws -> Int? {
-        guard let value = values[name], !value.isNull else { return nil }
+        guard let value = resolvedValue(name), !value.isNull else { return nil }
         guard let number = value.intValue else {
             throw ToolError.wrongArgumentType(name, expected: "a whole number")
         }
+        try checkNumericBounds(name, Double(number))
         return number
     }
 
-    func seconds(_ name: String, or fallback: Double) throws -> Double {
-        guard let value = values[name], !value.isNull else { return fallback }
-        guard let number = value.doubleValue ?? value.intValue.map(Double.init) else {
-            throw ToolError.wrongArgumentType(name, expected: "a number of seconds")
-        }
-        guard number.isFinite else {
-            throw ToolError.wrongArgumentType(name, expected: "a finite number of seconds")
-        }
-        try checkNumericBounds(name, number)
-        return number
-    }
-
-    /// A nested JSON document, taken either as JSON text or as an object the
-    /// client inlined. Models send both, and rejecting either would be a
-    /// distinction without a reason.
-    func document(_ name: String) throws -> Data? {
-        guard let value = values[name], !value.isNull else { return nil }
-        if let text = value.stringValue { return Data(text.utf8) }
-        let encoder = JSONEncoder()
-        return try? encoder.encode(value)
+    private func checkLength(_ name: String, _ value: String) throws {
+        guard let maximum = tool.arguments.first(where: { $0.name == name })?.maximumLength,
+            value.count > maximum
+        else { return }
+        throw ToolError.wrongArgumentType(name, expected: "at most \(maximum) characters")
     }
 
     private func checkAllowed(_ name: String, _ value: String) throws {
@@ -401,13 +678,10 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
     case unknownArguments([String], accepted: [String])
     case wrongArgumentType(String, expected: String)
     case notAllowed(String, value: String, allowed: [String])
-    case deniedByTier(String, needs: SafetyTier, allowed: SafetyTier)
     case notEnabled(String)
     case refusedForSafety(String)
     case tmuxRejected(String)
-    case timedOut(String, seconds: Double)
     case tmux(TmuxError)
-    case workspace(WorkspaceBuilderError)
     case internalFailure(String)
 
     public var description: String {
@@ -426,27 +700,14 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
             "\(name) must be \(expected)"
         case let .notAllowed(name, value, allowed):
             "\(name) cannot be \(value); it is one of \(allowed.joined(separator: ", "))"
-        case let .deniedByTier(name, needs, allowed):
-            """
-            \(name) is a \(needs.rawValue) tool and this server runs at \
-            \(allowed.rawValue). Restart it with LIBTMUX_SAFETY=\(needs.rawValue) \
-            if that is what you want.
-            """
         case let .notEnabled(name):
             "\(name) is not enabled by this server's exact tool selection"
         case let .refusedForSafety(reason):
             reason
         case let .tmuxRejected(reason):
             "tmux refused the command: \(reason)"
-        case let .timedOut(name, seconds):
-            """
-            \(name) gave up after \(seconds)s. Its tmux command may already have \
-            taken effect; inspect current state before retrying it.
-            """
         case let .tmux(error):
             String(describing: error)
-        case let .workspace(error):
-            "workspace could not be applied: \(error)"
         case let .internalFailure(reason):
             "the tool failed unexpectedly: \(reason)"
         }

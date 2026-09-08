@@ -27,11 +27,21 @@ struct ContextTests {
         "anything that is not that shape reports nothing",
         arguments: [
             "", "/tmp/s", "/tmp/s,1", ",1,2", "/tmp/s,x,2", "/tmp/s,1,$2",
-            "/tmp/s,1,", "/tmp/s,1,01", "/tmp/s,1,٠",
+            "/tmp/s,0,2", "/tmp/s,-1,2", "/tmp/s,+1,2", "/tmp/s,01,2",
+            "/tmp/s,1,", "/tmp/s,1,-1", "/tmp/s,1,+1", "/tmp/s,1,01",
+            "/tmp/s,1,٠",
         ]
     )
     func nonContextsAreRefused(_ value: String) {
         #expect(TmuxContext(parsing: value) == nil)
+    }
+
+    @Test(
+        "a reported socket route is absolute and contains no ASCII controls",
+        arguments: ["relative/socket", "/tmp/socket\nname", "/tmp/socket\u{7f}name"]
+    )
+    func unsafeSocketRoutesAreRefused(_ path: String) {
+        #expect(TmuxContext(parsing: "\(path),1,0") == nil)
     }
 
     @Test("decoding refuses an invalid session id")

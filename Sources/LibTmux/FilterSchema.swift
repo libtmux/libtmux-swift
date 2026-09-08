@@ -114,6 +114,17 @@ extension Pane {
             type: .flag,
             aliases: ["active", "isActive", "pane_active"]
         ),
+        .init(id: "pane.dead", type: .flag, aliases: ["dead", "isDead", "pane_dead"]),
+        .init(
+            id: "pane.modeCount",
+            type: .integer,
+            aliases: ["modeCount", "pane_in_mode"]
+        ),
+        .init(
+            id: "pane.synchronized",
+            type: .flag,
+            aliases: ["synchronized", "isSynchronized", "pane_synchronized"]
+        ),
         .init(id: "pane.windowID", type: .text, aliases: ["windowID", "window_id"]),
     ]
 }
