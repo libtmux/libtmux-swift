@@ -11,6 +11,8 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] - 2026-09-08
+
 ### Added
 
 - `Server.enterCopyMode(_:)` enters pane copy mode, while
