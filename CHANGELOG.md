@@ -83,6 +83,12 @@ version number says only which alpha you have. Pin an exact one.
 - `run_shell_command` preserves inherited Bash and zsh `ERR` and `DEBUG` traps
   for the authored command without exposing MCP framing to those traps. (#9)
 
+- `Server.waitForOutput(in:matching:stoppingAt:requiringFreshOutput:timeout:tailLimit:)`
+  throws `OutputWaitError.tmux(.cancelled)` when its task is cancelled while
+  the wait is suspended between tmux notifications. It previously ignored
+  cancellation there and never returned, so a cancelled wait left its caller
+  suspended for the life of the process. (#8)
+
 ### Removed
 
 - **Breaking.** The MCP `enter_copy_mode` and `exit_copy_mode` tools are

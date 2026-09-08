@@ -124,6 +124,19 @@ case in a loop is cheaper than another round of CI:
 $ for _ in $(seq 20); do swift test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
 ```
 
+Every suite carries `.timeLimit(.minutes(5))`, and that number is a backstop
+rather than a stopwatch. The suite runs its cases in parallel, one tmux server
+each, so what a case reports is mostly time spent waiting for a core: on a
+macOS runner that passed, the fifteen slowest cases all measured between 47 and
+48.5 seconds while the whole run took 51. A one-minute limit against that is
+not a limit on the case, it is a limit on how loaded the runner may be, and it
+went red on a lane that had nothing wrong with it. Five minutes still catches a
+hang long before the job's own thirty.
+
+Raise it here rather than per suite. A limit that differs between suites
+invites reading it as a performance claim about the code underneath, which is
+the thing these numbers cannot support.
+
 All three can hold and it can still be a defect. A run where every cell from
 tmux 3.6 up failed and every earlier one passed read as load, and was a client
 whose protocol version differed from the server's: the example composed
@@ -225,6 +238,37 @@ A path records its root; a name must identify this port, while
 root. The script cannot see whether a server was *started* — nothing reaches
 the filesystem until a command runs against it — so deliberate exceptions are
 listed beside their reason.
+
+Every continuation the library suspends can be resumed by cancelling it:
+
+```console
+$ python3 Scripts/check_continuations.py
+```
+
+A continuation nobody resumes is not a slow call, it is one that never returns,
+and the usual ways of bounding a wait cannot end it — `.timeLimit` cancels a
+case and then waits for it, so a parked continuation turns a slow test into a
+run that cannot finish. One lane spent six hours there. The script requires
+`withTaskCancellationHandler` to open just above the continuation; where the
+*caller* releases the park instead, which is legitimate,
+`Sources/LibTmuxMCP/OrderedOutbound.swift` being the example, the exception is
+listed beside the code that resumes it.
+
+`Package.resolved` still carries the Yams pin that makes it a superset:
+
+```console
+$ jq -e '.pins[] | select(.identity == "yams")' Package.resolved > /dev/null
+```
+
+`swift test` with no traits resolves without Yams and rewrites the file to drop
+that pin. Every command above passes `--force-resolved-versions` so it does
+not, but the trait-off one is easy to reach for, and the drift is invisible in
+review — a lock file with one fewer entry. Checking the committed file is what
+catches it, because a later run that already has the pin never restores it.
+
+CI runs `git diff --exit-code Package.resolved Examples/Package.resolved`
+beside that, which answers a different question: whether a step in the job
+rewrote a lock rather than reading it.
 
 Every tracked file with a shebang is executable in git, so a script that CI
 invokes directly does not fail only there:

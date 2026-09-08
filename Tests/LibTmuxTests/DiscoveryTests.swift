@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("finding servers", .timeLimit(.minutes(1)))
+@Suite("finding servers", .timeLimit(.minutes(5)))
 struct DiscoveryTests {
     @Test("a running server is found in the directory its socket is in")
     func runningServerIsFound() async throws {

@@ -12,7 +12,7 @@ import TmuxFixture
 /// a bare `tmux -C` runs its default command and *creates* a session, which is
 /// worse than attaching to a named one. So the connection shows up in what the
 /// server reports about itself, and only there.
-@Suite("dispatch over a connection", .timeLimit(.minutes(1)))
+@Suite("dispatch over a connection", .timeLimit(.minutes(5)))
 struct ModeProbeTests {
     @Test("the same query answers the same over either mode")
     func sameQueryAnswersTheSame() async throws {

@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("reading only what is new", .timeLimit(.minutes(1)))
+@Suite("reading only what is new", .timeLimit(.minutes(5)))
 struct CaptureSinceTests {
     private func bootstrapPane(_ server: Server) async throws -> Pane {
         try #require(try await server.panes().first)

@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("finding the tmux you are inside", .timeLimit(.minutes(1)))
+@Suite("finding the tmux you are inside", .timeLimit(.minutes(5)))
 struct ContextTests {
     @Test(
         "what tmux puts in the environment reads back as where it is",

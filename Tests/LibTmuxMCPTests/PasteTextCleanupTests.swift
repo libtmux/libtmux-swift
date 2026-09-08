@@ -4,7 +4,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("paste_text cleanup", .timeLimit(.minutes(1)))
+@Suite("paste_text cleanup", .timeLimit(.minutes(5)))
 struct PasteTextCleanupTests {
     @Test("empty text without Enter is a guarded buffer-free no-op")
     func emptyPasteIsBufferFree() async throws {

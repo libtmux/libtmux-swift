@@ -16,7 +16,7 @@ private actor ControlBodyProbe {
     }
 }
 
-@Suite("control mode", .timeLimit(.minutes(1)))
+@Suite("control mode", .timeLimit(.minutes(5)))
 struct ControlModeTests {
     @Test("a rejected attachment never enters the body")
     func rejectedAttachmentNeverEntersBody() async throws {

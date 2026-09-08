@@ -16,7 +16,12 @@ jobs:
   test:
     name: ${{ matrix.os }} / tmux ${{ matrix.tmux }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # Real tmux, real waits: a case that parks a thread is one a Swift Testing
+    # `.timeLimit` cannot cancel, so the job is the only ceiling left. The
+    # slowest cell observed is under six minutes with a warm tmux cache, and a
+    # cold one adds the tarball build; 30 leaves room for both and still turns
+    # a hang into a failure with logs rather than six hours of silence.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -186,6 +191,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_socket_namespace.py
 
+      # A continuation nobody resumes does not fail slowly, it never returns —
+      # and a `.timeLimit` cannot end it, because the limit cancels the case
+      # and then waits for it. Six hours of one lane were spent that way.
+      - name: Check every continuation answers cancellation
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_continuations.py
+
       # Ruff reports EXE001 on the runner but not locally, so the mode a file
       # was committed with is checked here too, where it can be reproduced.
       - name: Check shebanged files are executable
@@ -254,3 +266,14 @@ jobs:
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
           swift test --traits YAMLWorkspaces --force-resolved-versions
+
+      # `Package.resolved` tracks a superset that includes Yams even when the
+      # trait is off, and a trait-off `swift test` resolves without it and
+      # rewrites the file to drop that pin. Checking the committed file is what
+      # catches the drift, because a run that already has it never restores it;
+      # the diff beside it catches a step here rewriting the lock instead.
+      - name: Check the resolved versions did not drift
+        run: |
+          set -euo pipefail
+          jq -e '.pins[] | select(.identity == "yams")' Package.resolved > /dev/null
+          git diff --exit-code Package.resolved Examples/Package.resolved

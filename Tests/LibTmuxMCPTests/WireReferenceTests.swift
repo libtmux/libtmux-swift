@@ -9,7 +9,7 @@ private let referenceAlphabet = CharacterSet(
     charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 )
 
-@Suite("wire references", .timeLimit(.minutes(1)))
+@Suite("wire references", .timeLimit(.minutes(5)))
 struct WireReferenceTests {
     @Test("references are versioned URL-safe opaque values")
     func referencesAreOpaqueAndURLSafe() throws {

@@ -8,6 +8,7 @@ enum WaitWake: Sendable, Hashable {
     case paneClosed
     case timedOut
     case connectionClosed
+    case cancelled
     case failed(TmuxError)
 }
 
@@ -29,6 +30,18 @@ actor WaitDoorbell {
         }
     }
 
+    /// Whether a caller is parked on the doorbell rather than running.
+    ///
+    /// The cancellation case reads this to wait for the park it is about to
+    /// interrupt, instead of guessing how long parking takes.
+    var isWaiting: Bool { waiter != nil }
+
+    /// The next wake, or `.cancelled` if the caller is cancelled while parked.
+    ///
+    /// Cancellation has to reach the continuation, because nothing else will.
+    /// A time limit cancels a test and then waits for it to return, so a wait
+    /// that parks here and ignores cancellation does not fail the test — it
+    /// holds the entire run open. One CI lane spent six hours that way.
     func wait() async -> WaitWake {
         if let deadline = pending.firstIndex(of: .timedOut) {
             return pending.remove(at: deadline)
@@ -36,9 +49,25 @@ actor WaitDoorbell {
         if !pending.isEmpty {
             return pending.removeFirst()
         }
-        return await withCheckedContinuation { continuation in
-            waiter = continuation
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: .cancelled)
+                    return
+                }
+                waiter = continuation
+            }
+        } onCancel: {
+            // Cancellation runs outside the actor, and the parked caller can
+            // only be reached from inside it.
+            Task { await self.releaseParkedWaiter() }
         }
+    }
+
+    private func releaseParkedWaiter() {
+        guard let waiter else { return }
+        self.waiter = nil
+        waiter.resume(returning: .cancelled)
     }
 }
 
