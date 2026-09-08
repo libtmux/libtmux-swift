@@ -11,6 +11,12 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Development
+
+- Every CI job carries a timeout. The `ubuntu-latest / tmux 3.7a` lane hung in
+  its test step for six hours before GitHub's ceiling stopped it, while its
+  seven sibling lanes finished in about three minutes. (#10)
+
 ## [0.1.0-alpha.3] - 2026-08-30
 
 ### Added

@@ -30,6 +30,7 @@ jobs:
   test:
     name: macos-latest / tmux ${{ matrix.tmux }}
     runs-on: macos-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
