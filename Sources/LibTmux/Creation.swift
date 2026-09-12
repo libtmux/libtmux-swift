@@ -308,11 +308,18 @@ extension Server {
         return WindowAppearance(row: rows[0], endpoint: endpoint)
     }
 
+    /// Reads back the pane a split just made.
+    ///
+    /// A narrowed listing rather than every pane on the server: tmux printed
+    /// the id, so there is no reason to fetch the rest and search them.
     private func requirePane(
         _ id: String,
         incarnation: ServerIncarnation? = nil
     ) async throws(TmuxError) -> Pane {
-        guard let pane = try await panes().first(where: { $0.id.rawValue == id }),
+        guard let paneID = PaneID(rawValue: id) else {
+            throw .invocationFailed(reason: "tmux printed an unusable pane id")
+        }
+        guard let pane = try await pane(paneID),
             incarnation == nil || pane.incarnation == incarnation
         else {
             throw .serverRestarted
