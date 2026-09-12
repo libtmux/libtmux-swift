@@ -38,7 +38,7 @@ enum WorkspaceCLI {
             signal(SIGTERM, SIG_IGN)
             let interrupts = [SIGINT, SIGTERM].map { number in
                 let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-                source.setEventHandler { task.cancel() }
+                source.setEventHandler { @Sendable in task.cancel() }
                 source.resume()
                 return source
             }
