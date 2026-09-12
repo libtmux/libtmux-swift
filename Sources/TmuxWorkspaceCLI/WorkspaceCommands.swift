@@ -270,6 +270,12 @@ enum WorkspaceCommands {
                 if ["", "y", "yes", "s", "switch"].contains(answer) { break }
             }
         }
+        guard !current.hasIndependentPaneClient else {
+            throw CLIError(
+                "load_context",
+                "A client on this window uses active-pane; its current pane cannot be identified. Use -d or --append."
+            )
+        }
         guard !current.clients.isEmpty else {
             throw CLIError(
                 "load_context", "No attached client views the current pane. Use -d or --append.")
@@ -312,7 +318,7 @@ enum WorkspaceCommands {
 
     private static func currentTarget(
         _ selected: Server, context: CLIContext, verifyTerminal: Bool
-    ) async throws -> (session: Session, clients: [Client]) {
+    ) async throws -> (session: Session, clients: [Client], hasIndependentPaneClient: Bool) {
         let code = verifyTerminal ? "load_context" : "append_context"
         guard let inherited = TmuxContext.current(environment: context.environment),
             let rawPane = context.environment["TMUX_PANE"], let paneID = PaneID(rawValue: rawPane)
@@ -342,10 +348,16 @@ enum WorkspaceCommands {
                 try await selected.format("#{pane_tty}", for: pane, through: link) == tty
             else { throw CLIError(code, "TMUX_PANE does not identify this terminal.") }
         }
+        let windowPaneIDs = Set(
+            snapshot.panes.lazy.filter { $0.windowID == pane.windowID }.map(\.id))
         return (
             session,
             snapshot.clients.filter {
                 !$0.isControlMode && $0.sessionID == session.id && $0.activePaneID == pane.id
+            },
+            snapshot.clients.contains { client in
+                !client.isControlMode && client.flags.contains("active-pane")
+                    && client.activePaneID.map(windowPaneIDs.contains) == true
             }
         )
     }

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -33,6 +34,16 @@ struct ClientTests {
                     await #expect(throws: TmuxError.staleServerValue) {
                         try await server.switchClient(first, to: destination)
                     }
+                    let reply = try await server.run(
+                        TmuxCommand(
+                            "refresh-client", ["-t", second.name, "-f", "active-pane"]))
+                    #expect(reply.exitCode == 0)
+                    await #expect(throws: TmuxError.staleServerValue) {
+                        try await server.switchClient(second, to: destination)
+                    }
+                    #expect(
+                        try await server.clients().first { $0.name == second.name }?.sessionID
+                            == second.sessionID)
                 }
             }
         }
@@ -148,6 +159,7 @@ struct ClientTests {
             "client_pid": "77", "client_width": "80", "client_height": "24",
             "client_control_mode": "0", "session_id": "$2", "pane_id": "%7",
             "window_zoomed_flag": "1",
+            "client_flags": "active-pane,read-only",
             "socket_path": "/tmp/libtmux-swift-test/client-attention", "pid": "42",
             "start_time": "9",
         ]
@@ -165,6 +177,8 @@ struct ClientTests {
         )
         #expect(client.activePaneID == "%7")
         #expect(client.isWindowZoomed == true)
+        #expect(client.flags == ["active-pane", "read-only"])
+        #expect(try JSONDecoder().decode(Client.self, from: JSONEncoder().encode(client)) == client)
 
         for (field, malformed) in [
             ("pane_id", ""), ("pane_id", "7"),
