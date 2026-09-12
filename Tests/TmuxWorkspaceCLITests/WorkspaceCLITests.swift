@@ -784,7 +784,7 @@ struct WorkspaceCLITests {
             let bad = root.appendingPathComponent("second.json")
             try Data(#"{"session_name":"first","windows":[{"panes":[null]}]}"#.utf8).write(to: good)
             try Data(
-                #"{"session_name":"second","windows":[{"layout":"not-a-layout","panes":[null]}]}"#
+                #"{"session_name":"second","windows":[{"options":{"libtmux-invalid-option":"1"},"panes":[null]}]}"#
                     .utf8
             ).write(to: bad)
             let failed = await invoke(
@@ -829,7 +829,7 @@ struct WorkspaceCLITests {
                     == "literal;#{session_name}")
             let bad = root.appendingPathComponent("bad.json")
             try Data(
-                #"{"session_name":"unused","windows":[{"window_name":"retained","layout":"not-a-layout","panes":[null]}]}"#
+                #"{"session_name":"unused","windows":[{"window_name":"retained","options":{"libtmux-invalid-option":"1"},"panes":[null]}]}"#
                     .utf8
             ).write(to: bad)
             let failed = await invoke(
