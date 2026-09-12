@@ -253,6 +253,9 @@ enum WorkspaceCommands {
     private static func normalize(
         _ value: Value, file: URL, override: String?, store: DocumentStore
     ) throws -> PlannedWorkspace {
+        guard !containsNUL(value) else {
+            throw CLIError("document", "Workspace values and keys cannot contain NUL.")
+        }
         let root = try mapping(
             value,
             allowed: [
@@ -382,6 +385,17 @@ enum WorkspaceCommands {
                 sessionName: name, startDirectory: rootDirectory, windows: windows),
             environment: environment, options: options, windowOptions: windowOptions,
             beforeScript: beforeScript)
+    }
+
+    private static func containsNUL(_ value: Value) -> Bool {
+        switch value {
+        case let .string(text): return text.contains("\0")
+        case let .array(values): return values.contains(where: containsNUL)
+        case let .object(values):
+            return values.keys.contains { $0.contains("\0") }
+                || values.values.contains(where: containsNUL)
+        default: return false
+        }
     }
 
     private static func windowIndex(_ value: Value?) throws -> Int? {

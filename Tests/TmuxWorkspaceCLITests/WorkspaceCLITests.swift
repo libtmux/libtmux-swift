@@ -177,6 +177,38 @@ struct WorkspaceCLITests {
     }
 
     @Test(
+        "NUL configuration values fail before any input reaches tmux",
+        arguments: ["session_name", "start_directory", "window_name", "layout", "command"])
+    func nulPreflight(field: String) async throws {
+        try await withFiles { root in
+            let first = root.appendingPathComponent("first.json")
+            try Data(#"{"session_name":"first","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: first)
+            var window: [String: Value] = ["panes": .array([.null])]
+            var document: [String: Value] = ["session_name": .string("second")]
+            if field == "command" {
+                window["panes"] = .array([.string("printf before\0after")])
+            } else if ["session_name", "start_directory"].contains(field) {
+                document[field] = .string("before\0after")
+            } else {
+                window[field] = .string("before\0after")
+            }
+            document["windows"] = .array([.object(window)])
+            let second = root.appendingPathComponent("second.json")
+            try Data(Value.object(document).encoded().utf8).write(to: second)
+            let result = await invoke(
+                ["load", first.path, second.path, "-d", "-S", root.path + "/unused", "--json"],
+                in: root)
+            #expect(result.code == 1)
+            #expect(result.output.isEmpty)
+            let error = try JSONDecoder().decode(
+                Value.self, from: Data(result.error.joined().utf8))
+            #expect(error["code"] == .string("document"))
+            #expect(error["message"]?.string?.contains("NUL") == true)
+        }
+    }
+
+    @Test(
         "NDJSON discovery emits a document before reading the next",
         arguments: [["ls", "--full", "--ndjson"], ["search", "workspace", "--ndjson"]])
     func incrementalDiscovery(arguments: [String]) async throws {
