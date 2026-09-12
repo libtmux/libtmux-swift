@@ -1,3 +1,5 @@
+"""Verify terminal editing, machine framing and native interruption."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import suppress
 from pathlib import Path
 
 binary = str(Path(sys.argv[1]).resolve())
@@ -20,7 +23,8 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
     workspace.write_text("{}")
     editor = root / "editor"
     editor.write_text(
-        '#!/bin/sh\ntest -t 0 && test -t 1 || exit 11\nprintf "READY\\n"\nread value\nprintf "%s" "$value" > "$MARKER"\n'
+        '#!/bin/sh\ntest -t 0 && test -t 1 || exit 11\nprintf "READY\\n"\n'
+        'read value\nprintf "%s" "$value" > "$MARKER"\n'
     )
     editor.chmod(0o700)
     env = dict(os.environ, EDITOR=str(editor), MARKER=str(root / "marker"))
@@ -34,10 +38,8 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             if select.select([fd], [], [], 0.05)[0]:
-                try:
+                with suppress(OSError):
                     content += os.read(fd, 65536)
-                except OSError:
-                    pass
             if b"READY" in content and not sent:
                 os.write(fd, b"edited\n")
                 sent = True
@@ -52,12 +54,63 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
             env=dict(env, EDITOR="/bin/sh -c 'printf \"\\033[31mchild\\n\"'"),
             capture_output=True,
             timeout=5,
+            check=False,
         )
         assert machine.returncode == 0, machine.stderr
         record = json.loads(machine.stdout)
         assert record["stdout"] == "\x1b[31mchild\n"
         assert b"\x1b" not in machine.stdout
-        print(json.dumps({"human_pty_editor": "pass", "machine_control_bytes": "pass"}))
+        for number in [signal.SIGINT, signal.SIGTERM]:
+            child_marker = root / f"child-{number}"
+            editor.write_text(
+                '#!/bin/sh\nprintf "%s\\n" $$ > "$MARKER"\nexec sleep 30\n'
+            )
+            process = subprocess.Popen(
+                [binary, "edit", str(workspace), "--json"],
+                env=dict(env, MARKER=str(child_marker)),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            child = None
+            try:
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    if child_marker.exists():
+                        marker = child_marker.read_text()
+                        if marker.endswith("\n"):
+                            child = int(marker)
+                            break
+                    assert process.poll() is None, process.communicate()
+                    time.sleep(0.01)
+                assert child is not None, "editor did not start"
+                started = time.monotonic()
+                process.send_signal(number)
+                out, err = process.communicate(timeout=3)
+                assert process.returncode == 130, (number, process.returncode, out, err)
+                assert time.monotonic() - started < 1
+                try:
+                    os.kill(child, 0)
+                except ProcessLookupError:
+                    child = None
+                else:
+                    message = "editor child survived interruption"
+                    raise AssertionError(message)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+                if child is not None:
+                    with suppress(ProcessLookupError):
+                        os.kill(child, signal.SIGKILL)
+        print(
+            json.dumps(
+                {
+                    "human_pty_editor": "pass",
+                    "machine_control_bytes": "pass",
+                    "interrupt_signals": "pass",
+                }
+            )
+        )
     finally:
         if status is None:
             os.kill(pid, signal.SIGKILL)
