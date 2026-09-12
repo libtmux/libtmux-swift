@@ -173,6 +173,91 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("native diagnostics report unavailable and selected tmux binaries")
+    func diagnostics() async throws {
+        try await withFiles { root in
+            let unavailable = await invoke(["debug-info", "--json"], in: root)
+            #expect(unavailable.code == 0)
+            let value = try unavailable.json()
+            #expect(value["port"] as? String == "swift")
+            #expect((value["tmux"] as? [String: Any])?["available"] as? Bool == false)
+            #expect(!unavailable.output.joined().contains(root.path))
+            let binary = root.appendingPathComponent("fake-tmux")
+            try Data("#!/bin/sh\nprintf 'tmux 3.2a\\n'\n".utf8).write(to: binary)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: binary.path)
+            let available = await invoke(
+                ["debug-info", "--ndjson"], in: root, extra: ["LIBTMUX_TMUX_BIN": binary.path])
+            #expect(available.code == 0)
+            #expect(
+                (try available.json()["tmux"] as? [String: Any])?["version"] as? String
+                    == "tmux 3.2a")
+        }
+    }
+
+    @Test("editor argv and child exit status survive native execution")
+    func editor() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("edit.json")
+            try Data(#"{"session_name":"edit","windows":[]}"#.utf8).write(to: file)
+            let script = root.appendingPathComponent("editor helper")
+            try Data(
+                "#!/bin/sh\nprintf '%s\\n' \"$1\" \"$2\" > \"$MARKER\"\nexit \"$EDITOR_EXIT\"\n"
+                    .utf8
+            ).write(to: script)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: script.path)
+            let marker = root.appendingPathComponent("argv")
+            let environment = [
+                "EDITOR": "'\(script.path)' 'two words'", "MARKER": marker.path, "EDITOR_EXIT": "7",
+            ]
+            let failed = await invoke(["edit", "edit", "--json"], in: root, extra: environment)
+            #expect(failed.code == 7)
+            #expect(try String(contentsOf: marker, encoding: .utf8) == "two words\n\(file.path)\n")
+            let completed = await invoke(
+                ["edit", "edit", "--ndjson"], in: root,
+                extra: environment.merging(["EDITOR_EXIT": "0"]) { _, right in right })
+            #expect(completed.code == 0)
+            #expect(try completed.json()["exit_code"] as? Int == 0)
+        }
+    }
+
+    @Test("process output limits and cancellation keep machine streams clean")
+    func processBoundaries() async throws {
+        try await withFiles { root in
+            try Data(#"{"session_name":"edit","windows":[]}"#.utf8).write(
+                to: root.appendingPathComponent("edit.json"))
+            let invalid = await invoke(
+                ["edit", "edit", "--json"], in: root, extra: ["EDITOR": "'unfinished"])
+            #expect(invalid.code == 2)
+            #expect(invalid.output.isEmpty)
+            let overflow = await invoke(
+                ["edit", "edit", "--ndjson"], in: root,
+                extra: ["EDITOR": "/bin/sh -c 'head -c 1048577 /dev/zero'"])
+            #expect(overflow.code == 1)
+            #expect(overflow.output.count == 0)
+            let marker = root.appendingPathComponent("ready")
+            let task = Task {
+                await invoke(
+                    ["edit", "edit", "--json"], in: root,
+                    extra: [
+                        "EDITOR": "/bin/sh -c 'echo ready > \"$MARKER\"; exec sleep 30'",
+                        "MARKER": marker.path,
+                    ])
+            }
+            for _ in 0..<100 where !FileManager.default.fileExists(atPath: marker.path) {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(FileManager.default.fileExists(atPath: marker.path))
+            let start = ContinuousClock.now
+            task.cancel()
+            let cancelled = await task.value
+            #expect(cancelled.code == 130)
+            #expect(cancelled.output.isEmpty)
+            #expect(start.duration(to: .now) < .seconds(1))
+        }
+    }
+
     @Test("bare names resolve globally and explicit files resolve locally")
     func workspaceResolution() async throws {
         try await withFiles { root in
