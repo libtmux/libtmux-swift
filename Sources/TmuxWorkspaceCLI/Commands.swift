@@ -112,6 +112,7 @@ struct Convert: WorkspaceAction {
     static let configuration = CommandConfiguration(
         abstract: "Convert a workspace between YAML and JSON.")
     @OptionGroup var output: OutputOptions
+    @OptionGroup var save: SaveOptions
     @Argument var file: String
     @Flag(name: [.long, .customShort("y")]) var yes = false
 }
@@ -162,7 +163,7 @@ struct SaveOptions: ParsableArguments, Sendable {
     @Option(name: .customLong("save-to"), help: "Save to this destination instead of stdout.")
     var destination: String?
     @Option(name: .customLong("workspace-format"), help: "Saved document encoding.")
-    var format: WorkspaceFormat = .yaml
+    var format: WorkspaceFormat?
     @Flag(help: "Replace an existing destination.") var force = false
 }
 

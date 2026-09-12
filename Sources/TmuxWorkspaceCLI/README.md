@@ -85,14 +85,19 @@ resolve relative to the invocation directory.
 `search` supports field prefixes, repeated field restrictions, literal or
 native ICU regular expressions, case and word matching, inversion and OR
 matching. It does not launch Python. `convert` preserves document mapping
-values, including extension fields. Human conversion previews the opposite
-format; `-y` writes it beside the input and refuses an existing destination.
+values, including extension fields. Conversion defaults to the opposite input
+format. Human conversion previews that format; `-y` writes it beside the input.
+`--save-to` selects an explicit destination, `--workspace-format` selects JSON
+or YAML, and `--force` permits replacement of an existing file. Machine
+conversion without a destination returns the document without writing a file;
+an explicit destination returns a versioned save result.
 
 `import teamocil` and `import tmuxinator` translate a required source file or
 name. Bare names use `~/.teamocil` or `TMUXINATOR_CONFIG` (defaulting to
 `~/.tmuxinator`). Import preserves the translated command, directory and layout
 structure and warns about untranslated fields. It rejects ERB templates.
-`--save-to`, `--workspace-format` and `--force` control optional file output.
+`--save-to`, `--workspace-format` and `--force` control optional file output,
+defaulting to YAML.
 Without a destination, import previews the translated document. The importer
 combines tmuxinator `pre` and `pre_window` as inherited pane commands; it does
 not reconstruct tmuxinator's Ruby lifecycle.
