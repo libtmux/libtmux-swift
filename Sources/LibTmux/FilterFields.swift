@@ -33,6 +33,16 @@ extension Session: Filterable {
         default: nil
         }
     }
+
+    public static func filterFormatField(_ id: String) -> String? {
+        switch id {
+        case "session.id": "session_id"
+        case "session.name": "session_name"
+        case "session.windowCount": "session_windows"
+        case "session.attached": "session_attached"
+        default: nil
+        }
+    }
 }
 
 extension Window: Filterable {
@@ -54,6 +64,15 @@ extension Window: Filterable {
         case "window.id": .text(root.id.rawValue)
         case "window.name": .text(root.name)
         case "window.paneCount": .integer(root.paneCount)
+        default: nil
+        }
+    }
+
+    public static func filterFormatField(_ id: String) -> String? {
+        switch id {
+        case "window.id": "window_id"
+        case "window.name": "window_name"
+        case "window.paneCount": "window_panes"
         default: nil
         }
     }
@@ -93,6 +112,21 @@ extension Pane: Filterable {
         default: nil
         }
     }
+
+    public static func filterFormatField(_ id: String) -> String? {
+        switch id {
+        case "pane.id": "pane_id"
+        case "pane.index": "pane_index"
+        case "pane.active": "pane_active"
+        case "pane.dead": "pane_dead"
+        case "pane.modeCount": "pane_in_mode"
+        case "pane.synchronized": "pane_synchronized"
+        case "pane.command": "pane_current_command"
+        case "pane.path": "pane_current_path"
+        case "pane.windowID": "window_id"
+        default: nil
+        }
+    }
 }
 
 extension Client: Filterable {
@@ -116,6 +150,16 @@ extension Client: Filterable {
         case "client.tty": .text(root.tty)
         case "client.controlMode": .flag(root.isControlMode)
         case "client.sessionID": .text(root.sessionID.rawValue)
+        default: nil
+        }
+    }
+
+    public static func filterFormatField(_ id: String) -> String? {
+        switch id {
+        case "client.name": "client_name"
+        case "client.tty": "client_tty"
+        case "client.controlMode": "client_control_mode"
+        case "client.sessionID": "session_id"
         default: nil
         }
     }

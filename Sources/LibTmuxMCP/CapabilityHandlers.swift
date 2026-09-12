@@ -176,37 +176,42 @@ struct ReadBatchAccumulator {
 
 extension TmuxTools {
     func capabilitySession(_ requested: String) async throws -> Session {
-        let sessions = try await server.sessions()
-        if let found = sessions.first(where: {
-            $0.id.rawValue == requested || $0.name == requested
-        }) {
+        // Ask tmux for the one session rather than every session: a client
+        // naming a session by id or by name is the common path, and the whole
+        // listing is only needed for the wire-reference fallback below.
+        if let id = SessionID(rawValue: requested),
+            let found = try await server.session(id)
+        {
             return found
         }
+        if let found = try await server.session(named: requested) { return found }
         return try WireReferenceCodec.processLocal.resolve(
             requested,
-            among: sessions,
+            among: try await server.sessions(),
             argument: "session",
             refreshWith: "list_sessions"
         )
     }
 
     func capabilityWindow(_ requested: String) async throws -> Window {
-        let windows = try await server.windows()
-        if let found = windows.first(where: { $0.id.rawValue == requested }) { return found }
+        if let id = WindowID(rawValue: requested), let found = try await server.window(id) {
+            return found
+        }
         return try WireReferenceCodec.processLocal.resolve(
             requested,
-            among: windows,
+            among: try await server.windows(),
             argument: "windowId",
             refreshWith: "list_windows"
         )
     }
 
     func capabilityPane(_ requested: String) async throws -> Pane {
-        let panes = try await server.panes()
-        if let found = panes.first(where: { $0.id.rawValue == requested }) { return found }
+        if let id = PaneID(rawValue: requested), let found = try await server.pane(id) {
+            return found
+        }
         return try WireReferenceCodec.processLocal.resolve(
             requested,
-            among: panes,
+            among: try await server.panes(),
             argument: "paneId",
             refreshWith: "list_panes"
         )

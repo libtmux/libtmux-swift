@@ -23,6 +23,19 @@ public protocol Filterable: Sendable {
 
     /// The value kind an id names, or `nil` when this model does not know it.
     static func filterFieldType(_ id: String) -> FilterSchema.ValueType?
+
+    /// The tmux format field an id reads, or `nil` when it has no single one.
+    ///
+    /// This is what lets a filter be answered by tmux instead of by listing
+    /// everything and discarding most of it. Returning `nil` is always safe:
+    /// the field drops out of the `-f` predicate and is evaluated in Swift.
+    static func filterFormatField(_ id: String) -> String?
+}
+
+extension Filterable {
+    /// No field lowers unless a model says so, so a conformance written before
+    /// this existed keeps working and simply filters at home.
+    public static func filterFormatField(_ id: String) -> String? { nil }
 }
 
 /// Why a filter could not be built.
