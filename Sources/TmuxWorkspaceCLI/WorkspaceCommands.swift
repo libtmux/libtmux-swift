@@ -153,7 +153,10 @@ enum WorkspaceCommands {
                 "session_name", "start_directory", "windows", "shell_command_before",
                 "suppress_history",
             ], at: "workspace")
-        guard let name = override ?? root["session_name"]?.string, !name.isEmpty,
+        let expandedName = (override ?? root["session_name"]?.string).map {
+            expand($0, environment: store.context.environment)
+        }
+        guard let name = expandedName, !name.isEmpty,
             !name.contains(":"), !name.contains("."), !name.contains("\n")
         else {
             throw CLIError(
@@ -235,7 +238,7 @@ enum WorkspaceCommands {
                 layout: try optionalString(window["layout"], at: "layout"), panes: panes)
         }
         return Workspace(
-            sessionName: expand(name, environment: store.context.environment),
+            sessionName: name,
             startDirectory: rootDirectory, windows: windows)
     }
 
