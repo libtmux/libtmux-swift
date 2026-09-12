@@ -67,14 +67,26 @@ extension Server {
     /// What one variable is set to, or `nil` when it is unset or marked for
     /// removal.
     ///
-    /// Read from the listing rather than by asking for the name: tmux answers a
-    /// name it does not know with a nonzero status and a message, and this
-    /// library reserves throwing for when no answer exists at all.
+    /// Reads one value directly so embedded newlines remain part of that value.
+    /// tmux's nonzero response for an unknown name becomes `nil`.
     public func environmentValue(
         _ name: String,
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> String? {
-        try await environment(scope).first { $0.name == name }?.value
+        let command = TmuxCommand("show-environment", scope.arguments + ["--", name])
+        let reply = try await run(command)
+        guard reply.isSuccess else {
+            if reply.errorText == "unknown variable: \(name)" { return nil }
+            throw reply.failure(for: command)
+        }
+        var text = reply.text
+        if text.hasSuffix("\n") { text.removeLast() }
+        if text == "-\(name)" { return nil }
+        let prefix = "\(name)="
+        guard text.hasPrefix(prefix) else {
+            throw .invocationFailed(reason: "show-environment returned an unexpected variable.")
+        }
+        return String(text.dropFirst(prefix.count))
     }
 
     /// Sets a variable, replacing whatever was there.
