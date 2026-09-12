@@ -987,6 +987,107 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("freeze selects explicit, pane-context and sole sessions without guessing")
+    func freezeSessionSelection() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            var environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
+            ]
+            let sole = await invoke(
+                ["freeze", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(sole.code == 0, "\(sole.error)")
+            #expect(try sole.json()["session_name"] as? String == "bootstrap")
+            let other = try await server.newSession(named: "other")
+            let snapshot = try await server.snapshot()
+            let pane = try #require(snapshot.panes(of: other).first)
+            let ambiguous = await invoke(
+                ["freeze", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(ambiguous.code == 2)
+            #expect(ambiguous.output.isEmpty)
+            #expect(ambiguous.error.joined().contains("session_required"))
+            let selected = await invoke(
+                ["freeze", "-S", socket, "-f", "json"], in: root, extra: environment,
+                responses: [String(Int.min), "invalid", "2"])
+            #expect(selected.code == 0)
+            #expect(try selected.json()["session_name"] as? String == "other")
+            let cancelled = await invoke(
+                ["freeze", "-S", socket], in: root, extra: environment, responses: ["q"])
+            #expect(cancelled.code == 130)
+            #expect(cancelled.output.isEmpty)
+            environment["TMUX"] = "\(socket),\(snapshot.serverProcessID),999"
+            environment["TMUX_PANE"] = pane.id.rawValue
+            let current = await invoke(["freeze", "--json"], in: root, extra: environment)
+            #expect(current.code == 0, "\(current.error)")
+            #expect(try current.json()["session_name"] as? String == "other")
+            environment["TMUX"] = "\(socket),1,999"
+            let stale = await invoke(["freeze", "--json"], in: root, extra: environment)
+            #expect(stale.code == 1)
+            #expect(stale.output.isEmpty)
+            #expect(stale.error.joined().contains("freeze_context"))
+            let explicit = await invoke(
+                ["freeze", "bootstrap", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(explicit.code == 0)
+            #expect(try explicit.json()["session_name"] as? String == "bootstrap")
+        }
+    }
+
+    @Test("freeze and reload preserve local options and multiline environment values")
+    func freezeSettingsRoundTrip() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first)
+            let window = try #require(snapshot.windows(of: session).first)
+            let sessionValue = "session 'quoted' \\ λ\nnext"
+            let windowValue = "window \"quoted\" #{session_name}\nlast"
+            let environmentValue = "first\nFREEZE_FAKE_VARIABLE=ghost\nlast=λ\n"
+            try await server.setOption(
+                "@freeze-session", to: sessionValue, scope: .session(session))
+            try await server.setOption("@freeze-window", to: windowValue, scope: .window(window))
+            try await server.setEnvironment(
+                "FREEZE_VALUE", to: environmentValue, in: .session(session.id.rawValue))
+            try await server.removeEnvironment("FREEZE_REMOVED", in: .session(session.id.rawValue))
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            let captured = await invoke(
+                ["freeze", "bootstrap", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(captured.code == 0, "\(captured.error)")
+            let document = try captured.json()
+            #expect((document["options"] as? [String: String])?["@freeze-session"] == sessionValue)
+            let windows = try #require(document["windows"] as? [[String: Any]])
+            #expect((windows[0]["options"] as? [String: String])?["@freeze-window"] == windowValue)
+            let variables = try #require(document["environment"] as? [String: String])
+            #expect(variables["FREEZE_VALUE"] == environmentValue)
+            #expect(variables["FREEZE_FAKE_VARIABLE"] == nil)
+            #expect(variables["FREEZE_REMOVED"] == nil)
+            let quiet = await invoke(
+                ["freeze", "bootstrap", "-S", socket, "--json", "-q"], in: root, extra: environment)
+            #expect(quiet.code == 0)
+            #expect(quiet.error.isEmpty)
+            #expect(try quiet.json()["session_name"] as? String == "bootstrap")
+            let saved = root.appendingPathComponent("captured.json")
+            try Data(captured.output.joined().utf8).write(to: saved)
+            let loaded = await invoke(
+                ["load", saved.path, "-s", "replayed-settings", "-d", "-S", socket, "--json"],
+                in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            let after = try await server.snapshot()
+            let replayed = try #require(after.sessions.first { $0.name == "replayed-settings" })
+            let replayedWindow = try #require(after.windows(of: replayed).first)
+            #expect(
+                try await server.option("@freeze-session", scope: .session(replayed))
+                    == sessionValue)
+            #expect(
+                try await server.option("@freeze-window", scope: .window(replayedWindow))
+                    == windowValue)
+            #expect(
+                try await server.environmentValue(
+                    "FREEZE_VALUE", in: .session(replayed.id.rawValue)) == environmentValue)
+        }
+    }
+
     @Test("load and capture preserve explicit indexes and window/pane focus")
     func focusAndIndexes() async throws {
         try await withTmuxServer { server in
@@ -1189,7 +1290,9 @@ struct WorkspaceCLITests {
         }
     }
 
-    private func invoke(_ args: [String], in root: URL, extra: [String: String] = [:]) async
+    private func invoke(
+        _ args: [String], in root: URL, extra: [String: String] = [:], responses: [String]? = nil
+    ) async
         -> Outcome
     {
         let output = Lines()
@@ -1199,9 +1302,14 @@ struct WorkspaceCLITests {
         environment["TMUXP_CONFIGDIR"] = root.path
         environment["LIBTMUX_TMUX_BIN"] = "/unavailable-tmux"
         environment.merge(extra) { _, right in right }
-        let context = CLIContext(
+        var context = CLIContext(
             directory: root, environment: environment, output: { await output.append($0) },
             error: { await error.append($0) })
+        if let responses {
+            let input = Responses(responses)
+            context.terminal = true
+            context.input = { await input.next() }
+        }
         let code = await WorkspaceCLI.run(args, context: context)
         return await Outcome(code: code, output: output.values, error: error.values)
     }
@@ -1218,6 +1326,12 @@ struct WorkspaceCLITests {
 private actor Lines {
     var values: [String] = []
     func append(_ value: String) { values.append(value) }
+}
+
+private actor Responses {
+    var values: [String]
+    init(_ values: [String]) { self.values = values }
+    func next() -> String? { values.isEmpty ? nil : values.removeFirst() }
 }
 
 private struct Outcome: Sendable {

@@ -103,7 +103,10 @@ struct Freeze: WorkspaceAction {
         abstract: "Capture a live session as a workspace.")
     @OptionGroup var output: OutputOptions
     @OptionGroup var socket: SocketOptions
-    @Argument(help: "Exact session name or session ID.") var sessionName: String?
+    @Argument(
+        help:
+            "Exact session name or ID; defaults to the current pane's session or the sole session.")
+    var sessionName: String?
     @Option(name: [.customLong("workspace-format"), .customShort("f")]) var format:
         WorkspaceFormat = .yaml
     @Option(name: [.customLong("save-to"), .customShort("o")]) var destination: String?
