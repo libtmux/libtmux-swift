@@ -14,12 +14,33 @@ private let makeAvailable: Bool = {
     }
 }()
 
+private let artifactID = "swift-waiting"
+
+private func onlyPane(_ server: Server) async throws -> Pane {
+    try #require(try await server.panes().first)
+}
+
+private func assertDocumentedWatchSendsTheDifference(on server: Server) async throws {
+    let pane = try await onlyPane(server)
+    // `building` false runs the example's setup and leaves the loop
+    // immediately, which is the part with a documented contract: the
+    // first read establishes a mark rather than dumping the backlog.
+    try await watchingForChanges(server, pane: pane, building: false)
+
+    let started = try await server.capture(pane, since: nil)
+    #expect(started.lines.isEmpty)
+    try await server.run("printf 'watched-line\\n'", in: pane)
+    var update = started
+    for _ in 0..<30 {
+        update = try await server.capture(pane, since: update.cursor)
+        if !update.lines.isEmpty { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(update.lines.contains { $0.contains("watched-line") })
+}
+
 @Suite("waiting", .timeLimit(.minutes(2)))
 struct WaitingTests {
-    private func onlyPane(_ server: Server) async throws -> Pane {
-        try #require(try await server.panes().first)
-    }
-
     @Test(
         "the documented channel wait returns when the command signals it",
         .enabled(if: makeAvailable, "the example runs make")
@@ -73,23 +94,24 @@ struct WaitingTests {
 
     @Test("the documented watch answers the difference and then nothing")
     func documentedWatchSendsTheDifference() async throws {
-        try await withTmuxServer { server in
-            let pane = try await onlyPane(server)
-            // `building` false runs the example's setup and leaves the loop
-            // immediately, which is the part with a documented contract: the
-            // first read establishes a mark rather than dumping the backlog.
-            try await watchingForChanges(server, pane: pane, building: false)
+        let route = try arenaRoute(
+            environment: ProcessInfo.processInfo.environment,
+            artifact: artifactID
+        )
+        if case let .arena(socketPath, _) = route {
+            let server = try #require(try arenaServer(for: route))
+            try await assertDocumentedWatchSendsTheDifference(on: server)
+            let evidence = try await arenaEvidence(
+                for: server,
+                requestedSocket: socketPath,
+                artifact: artifactID
+            )
+            print("LIBTMUX_ARENA_EVIDENCE=\(String(decoding: evidence, as: UTF8.self))")
+            return
+        }
 
-            let started = try await server.capture(pane, since: nil)
-            #expect(started.lines.isEmpty)
-            try await server.run("printf 'watched-line\\n'", in: pane)
-            var update = started
-            for _ in 0..<30 {
-                update = try await server.capture(pane, since: update.cursor)
-                if !update.lines.isEmpty { break }
-                try await Task.sleep(for: .milliseconds(100))
-            }
-            #expect(update.lines.contains { $0.contains("watched-line") })
+        try await withTmuxServer { server in
+            try await assertDocumentedWatchSendsTheDifference(on: server)
         }
     }
 
