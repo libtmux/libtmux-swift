@@ -3,32 +3,37 @@ import LibTmux
 import TmuxWorkspace
 
 enum WorkspaceCommands {
-    static func server(_ socket: SocketOptions, configuration: String? = nil, context: CLIContext)
-        throws -> Server
-    {
-        let executable = context.environment["LIBTMUX_TMUX_BIN"] ?? "tmux"
+    static func server(
+        _ socket: SocketOptions, configuration: String? = nil, colors256: Bool = false,
+        context: CLIContext
+    ) throws -> Server {
+        let endpoint: Endpoint
         if let path = socket.path {
-            return try Server(
-                socketPath: DocumentStore(context: context).path(path).path,
-                tmuxExecutable: executable, configurationFile: configuration)
-        }
-        if let name = socket.name {
-            return try Server(
-                socketName: name, tmuxExecutable: executable, configurationFile: configuration)
-        }
-        if let inherited = context.environment["TMUX"] {
-            if let tmux = TmuxContext(parsing: inherited) {
-                return try Server(
-                    socketPath: tmux.socketPath, tmuxExecutable: executable,
-                    configurationFile: configuration)
+            endpoint = try Endpoint(socketPath: DocumentStore(context: context).path(path).path)
+        } else if let name = socket.name {
+            endpoint = try Endpoint(socketName: name)
+        } else if let inherited = context.environment["TMUX"] {
+            guard let tmux = TmuxContext(parsing: inherited) else {
+                throw CLIError(
+                    "usage", "TMUX does not contain a valid socket, PID and session index.",
+                    status: 2)
             }
-            throw CLIError(
-                "usage", "TMUX does not contain a valid socket, PID and session index.", status: 2)
+            endpoint = try Endpoint(socketPath: tmux.socketPath)
+        } else {
+            throw CLIError("usage", "Select a tmux endpoint with -S or -L outside tmux.", status: 2)
         }
-        throw CLIError("usage", "Select a tmux endpoint with -S or -L outside tmux.", status: 2)
+        return Server(
+            endpoint: endpoint, tmuxExecutable: context.environment["LIBTMUX_TMUX_BIN"] ?? "tmux",
+            configurationFile: configuration, force256Colors: colors256)
     }
 
     static func load(_ command: Load, context: CLIContext, output: Presenter) async throws {
+        guard !command.colors88 else {
+            throw CLIError(
+                "unsupported_color_mode",
+                "tmux 3.2a and newer do not support 88-color mode (-8); use -2 or automatic detection.",
+                status: 2)
+        }
         let store = DocumentStore(context: context)
         let plans = try command.files.enumerated().map { index, input in
             let file = try store.resolve(input)
@@ -38,7 +43,8 @@ enum WorkspaceCommands {
             )
         }
         let server = try server(
-            command.socket, configuration: command.configurationFile, context: context)
+            command.socket, configuration: command.configurationFile, colors256: command.colors256,
+            context: context)
         let borrowed =
             command.append && !command.detached
             ? try await appendTarget(server, context: context) : nil

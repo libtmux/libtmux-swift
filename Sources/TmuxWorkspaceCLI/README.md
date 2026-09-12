@@ -126,6 +126,9 @@ incremental NDJSON child records still need verification and implementation.
 
 `load -d` creates sessions on an explicit `-S` or `-L` endpoint, or the
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
+`-2` forces 256-color handling in native tmux clients. Legacy `-8` remains in
+the grammar but fails before document lookup because supported tmux versions
+do not implement 88-color mode. Both flags together are a usage error.
 It supports session/window/pane directories, layouts, pane command shorthand,
 inherited commands, history suppression and sequential `enter` settings.
 `window_index` selects an explicit slot; window and pane `focus` choose the
