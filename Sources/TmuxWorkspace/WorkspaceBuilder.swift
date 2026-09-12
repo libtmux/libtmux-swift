@@ -35,7 +35,9 @@ public enum WorkspaceBuilder {
         var session: Session?
         do {
             for (index, window) in workspace.windows.enumerated() {
-                let directory = window.startDirectory ?? workspace.startDirectory
+                let directory =
+                    window.panes.first?.startDirectory
+                    ?? window.startDirectory ?? workspace.startDirectory
                 let created: Window
                 if index == 0 {
                     let made = try await server.newSession(
