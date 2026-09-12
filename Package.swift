@@ -88,6 +88,7 @@ let package = Package(
             dependencies: [
                 "LibTmux", "TmuxWorkspace",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Subprocess", package: "swift-subprocess"),
                 .product(
                     name: "Yams", package: "Yams", condition: .when(traits: ["YAMLWorkspaces"])),
             ],
