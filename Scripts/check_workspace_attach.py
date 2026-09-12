@@ -72,6 +72,12 @@ class Terminal:
 
 def check(choice):
     """Exercise one load choice against an owned terminal and server."""
+    independent = choice in [
+        "independent-yes",
+        "independent-detached",
+        "independent-append",
+    ]
+    mode = choice.removeprefix("independent-")
     with tempfile.TemporaryDirectory(prefix="attach-", dir=base) as directory:
         root = Path(directory)
         socket = str(root / "tmux")
@@ -128,12 +134,27 @@ def check(choice):
             pane = command(
                 "new-session", "-d", "-s", "keeper", "-P", "-F", "#{pane_id}", "/bin/sh"
             )
+            if independent:
+                other_pane = command(
+                    "split-window",
+                    "-d",
+                    "-t",
+                    pane,
+                    "-P",
+                    "-F",
+                    "#{pane_id}",
+                    "/bin/sh",
+                )
             files = []
+            script_marker = root / "script-ran"
+            script = root / "before.sh"
+            script.write_text("printf ran > " + shlex.quote(str(script_marker)) + "\n")
             for name in ["first", "final"]:
                 file = root / (name + ".json")
-                file.write_text(
-                    json.dumps({"session_name": name, "windows": [{"panes": [None]}]})
-                )
+                document = {"session_name": name, "windows": [{"panes": [None]}]}
+                if independent or choice == "gained-independent":
+                    document["before_script"] = shlex.join(["/bin/sh", str(script)])
+                file.write_text(json.dumps(document))
                 files.append(str(file))
             if choice.startswith("outside-"):
                 if choice == "outside-detach":
@@ -171,11 +192,50 @@ def check(choice):
                 assert clients() == []
                 assert sessions() == ["final", "first", "keeper"]
             else:
-                viewer = terminal(
-                    [tmux, "-S", socket, "attach-session", "-t", "=keeper"]
-                )
+                attach = [tmux, "-S", socket, "attach-session", "-t", "=keeper"]
+                if independent:
+                    attach += ["-f", "active-pane"]
+                viewer = terminal(attach)
                 viewer.until(lambda: len(clients()) == 1)
                 first_client = clients()[0][0]
+                if independent:
+                    focus = root / "input-pane"
+                    viewer.send(
+                        b"\x02o"
+                        + (
+                            "printf '%s' \"$TMUX_PANE\" > "
+                            + shlex.quote(str(focus))
+                            + "\n"
+                        ).encode()
+                    )
+                    viewer.until(
+                        lambda: focus.exists() and focus.read_text() == other_pane
+                    )
+                    assert command("list-clients", "-F", "#{pane_id}") == pane
+                    assert "active-pane" in command(
+                        "list-clients", "-F", "#{client_flags}"
+                    )
+                    print(
+                        f"{choice}: input pane={focus.read_text()}, "
+                        f"list-clients pane={pane}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                if choice == "independent-other-window":
+                    command("new-session", "-d", "-s", "elsewhere", "/bin/sh")
+                    other = terminal(
+                        [
+                            tmux,
+                            "-S",
+                            socket,
+                            "attach-session",
+                            "-t",
+                            "=elsewhere",
+                            "-f",
+                            "active-pane",
+                        ]
+                    )
+                    other.until(lambda: len(clients()) == 2)
                 if choice.startswith("ambiguous"):
                     other = terminal(
                         [tmux, "-S", socket, "attach-session", "-t", "=keeper"]
@@ -189,7 +249,7 @@ def check(choice):
                     endpoint = foreign
                 marker = root / "exit-code"
                 arguments = [binary, "load", files[1], "-S", endpoint, "--no-progress"]
-                if choice in ["yes", "ambiguous-yes"]:
+                if mode in ["yes", "ambiguous-yes"]:
                     arguments.append("-y")
                 if choice == "spoofed-pane":
                     other_pane = command(
@@ -203,7 +263,7 @@ def check(choice):
                 )
                 command("send-keys", "-t", pane, "-l", line)
                 command("send-keys", "-t", pane, "Enter")
-                if choice not in ["yes", "ambiguous-yes", "foreign", "spoofed-pane"]:
+                if mode not in ["yes", "ambiguous-yes", "foreign", "spoofed-pane"]:
                     viewer.until(lambda: b"[y]" in viewer.content)
                     answer = {
                         "detached": b"n\n",
@@ -211,12 +271,24 @@ def check(choice):
                         "eof": b"\x04",
                         "quit": b"q\n",
                         "interrupt": b"\x03",
-                    }.get(choice, b"y\n")
+                    }.get(mode, b"y\n")
                     if choice == "stale-client":
                         command("new-session", "-d", "-s", "elsewhere")
                         command("switch-client", "-c", first_client, "-t", "=elsewhere")
                         command("send-keys", "-t", pane, "y", "Enter")
+                    elif independent:
+                        command(
+                            "send-keys", "-t", pane, answer.decode().strip(), "Enter"
+                        )
                     else:
+                        if choice == "gained-independent":
+                            command(
+                                "refresh-client",
+                                "-t",
+                                first_client,
+                                "-f",
+                                "active-pane",
+                            )
                         viewer.send(answer)
                     if choice == "ambiguous":
                         viewer.until(lambda: b"Choose client" in viewer.content)
@@ -233,7 +305,21 @@ def check(choice):
                     lambda: marker.exists() and marker.read_text().endswith("\n")
                 )
                 status = int(marker.read_text())
-                if choice in ["foreign", "ambiguous-yes", "spoofed-pane"]:
+                if choice == "independent-yes":
+                    assert status != 0, (
+                        status,
+                        sessions(),
+                        clients(),
+                        script_marker.exists(),
+                    )
+                    assert sessions() == ["keeper"]
+                    assert not script_marker.exists()
+                    assert clients()[0][2] == "keeper"
+                    transcript = command("capture-pane", "-p", "-t", pane, "-S", "-100")
+                    assert "active-pane" in transcript and "-d" in transcript, (
+                        transcript
+                    )
+                elif choice in ["foreign", "ambiguous-yes", "spoofed-pane"]:
                     assert status != 0
                     assert sessions() == ["keeper"]
                     assert all(row[2] == "keeper" for row in clients())
@@ -250,6 +336,15 @@ def check(choice):
                 elif choice in ["eof", "quit", "interrupt"]:
                     assert status == 130 and sessions() == ["keeper"]
                     assert clients()[0][2] == "keeper"
+                elif choice == "gained-independent":
+                    assert status != 0 and sessions() == ["final", "keeper"], (
+                        status,
+                        sessions(),
+                        clients(),
+                        script_marker.exists(),
+                    )
+                    assert script_marker.exists()
+                    assert clients()[0][2] == "keeper"
                 elif choice == "stale-client":
                     assert status != 0 and sessions() == [
                         "elsewhere",
@@ -257,7 +352,7 @@ def check(choice):
                         "keeper",
                     ]
                     assert clients()[0][2] == "elsewhere"
-                elif choice == "append":
+                elif mode == "append":
                     assert status == 0 and sessions() == ["keeper"]
                     assert (
                         command(
@@ -271,11 +366,16 @@ def check(choice):
                     )
                     assert clients()[0][2] == "keeper"
                 else:
-                    assert status == 0 and sessions() == ["final", "keeper"]
+                    expected = ["final", "keeper"]
+                    if choice == "independent-other-window":
+                        expected.insert(0, "elsewhere")
+                    assert status == 0 and sessions() == expected
                     for name, _, session in clients():
                         assert session == (
                             "final"
-                            if choice != "detached" and name == selected
+                            if mode != "detached" and name == selected
+                            else "elsewhere"
+                            if choice == "independent-other-window" and name != selected
                             else "keeper"
                         )
         finally:
@@ -292,7 +392,7 @@ def check(choice):
 
 
 checks = []
-for choice in [
+for choice in sys.argv[3:] or [
     "outside-detach",
     "outside-int",
     "outside-term",
@@ -309,6 +409,11 @@ for choice in [
     "foreign",
     "spoofed-pane",
     "stale-client",
+    "independent-yes",
+    "independent-detached",
+    "independent-append",
+    "independent-other-window",
+    "gained-independent",
 ]:
     check(choice)
     checks.append(choice)
