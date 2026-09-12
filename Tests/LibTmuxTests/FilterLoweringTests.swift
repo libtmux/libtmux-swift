@@ -10,6 +10,27 @@ import TmuxFixture
 /// the whole contract — a predicate that drops a real match is a silent wrong
 /// answer rather than a failure, which is why these compare the two paths
 /// against each other instead of against a hand-written expectation.
+/// Stops tmux renaming a window while a case is reading its name.
+///
+/// `automatic-rename` follows the command running in a pane, and it overrides a
+/// name given at creation — so a window called `glob*star` becomes `sh` shortly
+/// after its shell starts. A case that reads every name once and then compares
+/// two listings against that list races it, and reports a disagreement between
+/// tmux and this package that neither had.
+///
+/// It is a *window* option. Setting it in the server table is refused, and
+/// `setOption` reports that in a reply rather than by throwing, so the result is
+/// checked here — an earlier version of this helper set the wrong table, the
+/// reply went unread, and the cases stayed flaky with the fix apparently in.
+func pinWindowNames(_ server: Server) async throws {
+    let reply = try await server.setOption(
+        "automatic-rename",
+        to: "off",
+        scope: .globalWindow
+    )
+    #expect(reply.isSuccess, "could not pin window names: \(reply.errorText)")
+}
+
 @Suite("filter lowering", .timeLimit(.minutes(2)))
 struct FilterLoweringTests {
     /// Names chosen to break a naive compiler: tmux ends a format at an
@@ -32,13 +53,7 @@ struct FilterLoweringTests {
     @Test("tmux-side and client-side filtering agree on hostile names")
     func loweringAgreesWithLocalFiltering() async throws {
         try await withTmuxServer { server in
-            // tmux renames a window it did not get an explicit name for as the
-            // command inside it changes, so the bootstrap window drifts from
-            // "tmux" to whatever shell settles. These cases read the names once
-            // and then compare two listings against them, which that rename
-            // loses a race with. Each case has its own server, so turning it off
-            // here is scoped to this one.
-            _ = try await server.setOption("automatic-rename", to: "off")
+            try await pinWindowNames(server)
             let session = try await server.newSession(named: "differential")
             for name in Self.hostileNames {
                 _ = try await server.newWindow(in: session, named: name)
@@ -243,13 +258,7 @@ struct FilterLoweringTests {
     @Test("a literal tmux cannot compare byte for byte is decided at home")
     func unicodeAndHashLiteralsStayLocal() async throws {
         try await withTmuxServer { server in
-            // tmux renames a window it did not get an explicit name for as the
-            // command inside it changes, so the bootstrap window drifts from
-            // "tmux" to whatever shell settles. These cases read the names once
-            // and then compare two listings against them, which that rename
-            // loses a race with. Each case has its own server, so turning it off
-            // here is scoped to this one.
-            _ = try await server.setOption("automatic-rename", to: "off")
+            try await pinWindowNames(server)
             let session = try await server.newSession(named: "unicode")
             // Swift reads these two as one string; tmux reads five bytes and
             // six. Comparing them in tmux would drop a row Swift keeps, so
