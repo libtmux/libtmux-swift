@@ -33,6 +33,7 @@ struct WorkspaceRoot: WorkspaceAction {
         abstract: "Manage native tmux workspaces.",
         subcommands: [
             Load.self, Freeze.self, ListWorkspaces.self, Search.self, Convert.self, ImportRoot.self,
+            Edit.self, DebugInfo.self,
         ]
     )
     @OptionGroup var output: OutputOptions
@@ -111,6 +112,17 @@ struct Convert: WorkspaceAction {
     @OptionGroup var output: OutputOptions
     @Argument var file: String
     @Flag(name: [.long, .customShort("y")]) var yes = false
+}
+
+struct Edit: WorkspaceAction {
+    static let configuration = CommandConfiguration(abstract: "Open a workspace in EDITOR.")
+    @OptionGroup var output: OutputOptions
+    @Argument var file: String
+}
+
+struct DebugInfo: WorkspaceAction {
+    static let configuration = CommandConfiguration(abstract: "Report runtime diagnostics.")
+    @OptionGroup var output: OutputOptions
 }
 
 struct SaveOptions: ParsableArguments, Sendable {

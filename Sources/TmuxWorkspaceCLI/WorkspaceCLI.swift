@@ -97,6 +97,10 @@ enum WorkspaceCLI {
                 try await WorkspaceCommands.freeze(command, context: context, output: output)
             case let command as any ImportAction:
                 try await ImportCommands.run(command, context: context, output: output)
+            case let command as Edit:
+                return try await ProcessCommands.edit(command, context: context, output: output)
+            case let command as DebugInfo:
+                try await ProcessCommands.diagnostics(command, context: context, output: output)
             case is ImportRoot:
                 throw CLIError("usage", "Choose import teamocil or import tmuxinator.", status: 2)
             default: throw CLIError("usage", "Choose a workspace command.", status: 2)

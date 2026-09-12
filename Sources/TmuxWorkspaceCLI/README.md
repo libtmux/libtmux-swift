@@ -1,8 +1,9 @@
 # tmux-workspace
 
 `tmux-workspace` provides native Swift commands for discovering, searching,
-converting, importing, loading and capturing tmux workspaces. This implementation is
-partial. The library's existing workspace APIs remain available separately.
+converting, importing, editing, loading and capturing tmux workspaces. This
+implementation is partial. The library's existing workspace APIs remain
+available separately.
 
 ## Build
 
@@ -51,6 +52,18 @@ Without a destination, import previews the translated document. The importer
 combines tmuxinator `pre` and `pre_window` as inherited pane commands; it does
 not reconstruct tmuxinator's Ruby lifecycle.
 
+`edit` resolves a workspace and runs `EDITOR` (default `vi`) with its path.
+Quoted executable paths and arguments are supported without an implicit shell.
+The command preserves the editor's exit status. Human terminal calls inherit
+the terminal; machine calls capture child stdout/stderr in the result and limit
+each stream to one MiB. Cancellation terminates a captured child's process
+group. Interactive job control and descendant cleanup need broader validation.
+
+`debug-info` reports the package, platform, selected tmux executable/version,
+workspace directories and selected environment fields. An unavailable tmux
+binary appears in the result without failing diagnostics. Home masking applies
+to named path/environment fields; it is not a general output redactor.
+
 `load -d` creates sessions on an explicit `-S` or `-L` endpoint, or the
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
 It supports session/window/pane directories, layouts, pane command shorthand,
@@ -80,7 +93,7 @@ has terminal control characters escaped.
 
 ## Remaining work
 
-Editor, diagnostics and Python shell commands; append and terminal
+Python shell commands; append and terminal
 attachment; scripts, plugins and extended execution settings; progress
 presentation; complete capture; generated manuals; release installation and
 matched benchmarks remain outside this checkpoint. The complete tmuxp command
