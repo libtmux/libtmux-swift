@@ -37,6 +37,24 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "legacy color mode fails before document or backend access",
+        arguments: ["--json", "--ndjson"])
+    func legacyColor(_ mode: String) async throws {
+        try await withFiles { root in
+            let result = await invoke(["load", "missing", "-d", "-8", mode], in: root)
+            #expect(result.code == 2)
+            #expect(result.output.isEmpty)
+            #expect(result.error.joined().contains("unsupported_color_mode"))
+            for flags in [["-2", "-8"], ["-8", "-2"]] {
+                let conflict = await invoke(["load", "missing", "-d", mode] + flags, in: root)
+                #expect(conflict.code == 2)
+                #expect(conflict.output.isEmpty)
+                #expect(conflict.error.joined().contains("Choose one of -2 and -8"))
+            }
+        }
+    }
+
     @Test("machine root usage and empty search remain structured")
     func machineUsage() async throws {
         try await withFiles { root in
@@ -930,8 +948,8 @@ struct WorkspaceCLITests {
         }
     }
 
-    @Test("load starts an absent server on its selected socket")
-    func coldLoad() async throws {
+    @Test("load starts an absent server with its requested color mode", arguments: [false, true])
+    func coldLoad(_ colors256: Bool) async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }
             _ = try await server.run(TmuxCommand("kill-server"))
@@ -940,12 +958,38 @@ struct WorkspaceCLITests {
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
             let file = root.appendingPathComponent("cold.json")
             try Data(#"{"session_name":"cold","windows":[{"panes":[null]}]}"#.utf8).write(to: file)
+            let wrapper = root.appendingPathComponent("tmux-wrapper")
+            let recorded = root.appendingPathComponent("prefixes")
+            let quote = { (value: String) in
+                "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            }
+            try Data(
+                ("#!/bin/sh\nif [ \"$1\" = -u ]; then printf '%s|%s|%s|%s|%s\\n' \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" >> "
+                    + quote(recorded.path) + "; fi\nexec " + quote(server.tmuxExecutable)
+                    + " \"$@\"\n").utf8
+            ).write(to: wrapper)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
             let result = await invoke(
-                ["load", file.path, "-d", "-S", socket, "-f", "/dev/null", "--json"], in: root,
-                extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
-            #expect(result.code == 0, "\(result.error)")
+                ["load", file.path, "-d", "-S", socket, "-f", "/dev/null", "--json"]
+                    + (colors256 ? ["-2"] : []), in: root,
+                extra: ["LIBTMUX_TMUX_BIN": wrapper.path])
+            try #require(result.code == 0, "\(result.error)")
             let sessions = try await server.sessions()
             #expect(sessions.map(\.name) == ["cold"])
+            let configured = Server(
+                endpoint: server.endpoint, tmuxExecutable: wrapper.path,
+                configurationFile: "/dev/null", force256Colors: colors256)
+            let connectedNames = try await configured.using(.connected(to: "cold")) { connected in
+                try await connected.sessions().map(\.name)
+            }
+            #expect(connectedNames == ["cold"])
+            let prefixes = try String(contentsOf: recorded, encoding: .utf8).split(separator: "\n")
+            #expect(!prefixes.isEmpty)
+            let expected = colors256 ? "-u|-2|-f|/dev/null|" : "-u|-f|/dev/null|"
+            #expect(prefixes.allSatisfy { $0.hasPrefix(expected) })
+            #expect(prefixes.contains { $0.contains("|-C") })
+            #expect(prefixes.contains { $0.contains("|-S") })
         }
     }
 
