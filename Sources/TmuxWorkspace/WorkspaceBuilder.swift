@@ -24,7 +24,11 @@ public enum WorkspaceBuilder {
         }
         let existing: [Session]
         do {
-            existing = try await server.sessions()
+            if try await server.isRunning() {
+                existing = try await server.sessions()
+            } else {
+                existing = []
+            }
         } catch {
             throw .tmux(error)
         }
