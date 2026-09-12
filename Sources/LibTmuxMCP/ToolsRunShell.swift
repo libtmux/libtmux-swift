@@ -234,7 +234,7 @@ extension TmuxTools {
             )
         }
         var wrote = false
-        var bytes = Array(script.utf8)
+        let bytes = Array(script.utf8)
         wrote = bytes.withUnsafeBytes { buffer -> Bool in
             var offset = 0
             while offset < buffer.count {
