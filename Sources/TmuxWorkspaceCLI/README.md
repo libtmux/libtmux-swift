@@ -123,6 +123,9 @@ incremental NDJSON child records still need verification and implementation.
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
 It supports session/window/pane directories, layouts, pane command shorthand,
 inherited commands, history suppression and sequential `enter` settings.
+`window_index` selects an explicit slot; window and pane `focus` choose the
+active window and pane after creation. Duplicate explicit indexes and multiple
+focus selections fail during configuration validation.
 Session `environment` reaches the first pane at creation. Session `options`
 and inherited `window_options` apply before pane commands, with each window's
 `options` overriding inherited values. `before_script` runs direct argv after
@@ -138,12 +141,13 @@ endpoint's live identity, and never starts a different server. Socket aliases
 and commas in socket paths are supported. A moved pane determines its current
 session; an ambiguous linked window requires a matching inherited session.
 Failures preserve the borrowed session and report newly created window IDs and
-potentially changed settings. `-d` takes precedence over `--append`.
+potentially changed settings. Append ignores configured indexes and uses new
+slots. `-d` takes precedence over `--append`.
 
-`freeze SESSION` captures current pane commands and directories, window names
-and layouts. It writes a document to stdout unless `--save-to` selects a file;
+`freeze SESSION` captures current pane commands and directories, window names,
+indexes, focus and layouts. It writes a document to stdout unless `--save-to` selects a file;
 an existing file requires `--force`. Captures warn that original command
-arguments and scripts, environment, options, focus and indexes are omitted.
+arguments and scripts, environment and options are omitted.
 
 ## Output
 

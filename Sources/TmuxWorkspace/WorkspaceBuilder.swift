@@ -50,6 +50,7 @@ public enum WorkspaceBuilder {
         }
 
         var session: Session? = borrowed
+        var focusedWindow: Window?
         do {
             if let borrowed { try await configureSession(borrowed) }
             for (index, window) in workspace.windows.enumerated() {
@@ -66,11 +67,17 @@ public enum WorkspaceBuilder {
                     )
                     session = made
                     try await configureSession(made)
-                    guard let first = try await server.snapshot().windows(of: made).first
+                    let snapshot = try await server.snapshot()
+                    guard let first = snapshot.windows(of: made).first
                     else {
                         throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
                     }
                     created = first
+                    if let desired = window.windowIndex,
+                        let link = snapshot.windowLinks(of: made).first, link.index != desired
+                    {
+                        _ = try await server.move(link, to: made, at: desired)
+                    }
                 } else {
                     guard let session else {
                         throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
@@ -78,15 +85,26 @@ public enum WorkspaceBuilder {
                     created = try await server.newWindow(
                         in: session,
                         named: window.windowName,
-                        startDirectory: directory
+                        startDirectory: directory,
+                        at: borrowed == nil ? window.windowIndex : nil
                     ).window
                 }
                 try await configureWindow(created, index)
                 try await build(window, in: created, of: workspace, on: server)
+                if window.focus == true { focusedWindow = created }
             }
 
             guard let session else {
                 throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
+            }
+            if let focusedWindow {
+                guard
+                    let link = try await server.windowLinks().first(where: {
+                        $0.incarnation == session.incarnation && $0.sessionID == session.id
+                            && $0.windowID == focusedWindow.id
+                    })
+                else { throw WorkspaceBuilderError.sessionVanished(workspace.sessionName) }
+                try await server.select(link)
             }
             return session
         } catch {
@@ -179,6 +197,11 @@ public enum WorkspaceBuilder {
                     )
                 }
             }
+        }
+        if let focused = zip(window.panes.reversed(), panes.reversed()).first(where: {
+            $0.0.focus == true
+        }) {
+            try await server.select(focused.1)
         }
     }
 
