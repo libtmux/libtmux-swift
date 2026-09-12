@@ -83,12 +83,15 @@ extension Server {
     // MARK: Creating
 
     /// Creates a detached session.
+    ///
+    /// Environment entries are available to the first pane as it starts.
     public func newSession(
         named name: String,
         startDirectory: String? = nil,
         windowName: String? = nil,
         width: Int? = nil,
-        height: Int? = nil
+        height: Int? = nil,
+        environment: [String: String] = [:]
     ) async throws(TmuxError) -> Session {
         let requestedSize = width != nil || height != nil
         let projection =
@@ -100,6 +103,13 @@ extension Server {
         ]
         if let width { arguments += ["-x", String(width)] }
         if let height { arguments += ["-y", String(height)] }
+        for (name, value) in environment.sorted(by: { $0.key < $1.key }) {
+            guard !name.isEmpty, !name.contains("="), !name.contains("\0"), !value.contains("\0")
+            else {
+                throw .invocationFailed(reason: "invalid session environment variable")
+            }
+            arguments += ["-e", tmuxLiteralArgument(name + "=" + value)]
+        }
         if let windowName { arguments += ["-n", tmuxLiteralArgument(windowName)] }
         if let startDirectory {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]

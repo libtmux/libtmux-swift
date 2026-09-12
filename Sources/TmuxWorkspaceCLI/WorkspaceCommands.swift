@@ -50,7 +50,9 @@ enum WorkspaceCommands {
                 try Task.checkCancellation()
                 let existing: Session?
                 if try await server.isRunning() {
-                    existing = try await server.sessions().first { $0.name == plan.sessionName }
+                    existing = try await server.sessions().first {
+                        $0.name == plan.workspace.sessionName
+                    }
                 } else {
                     existing = nil
                 }
@@ -58,7 +60,42 @@ enum WorkspaceCommands {
                 if let existing {
                     session = existing
                 } else {
-                    session = try await WorkspaceBuilder.build(plan, on: server)
+                    session = try await WorkspaceBuilder.build(
+                        plan.workspace, on: server, environment: plan.environment,
+                        configureSession: { session in
+                            if let script = plan.beforeScript {
+                                var processContext = context
+                                processContext.directory = URL(
+                                    fileURLWithPath: plan.workspace.startDirectory!)
+                                let result = try await ProcessCommands.run(
+                                    script, context: processContext)
+                                if !result.output.isEmpty {
+                                    try await output.warning(
+                                        result.output, code: "bootstrap_stdout")
+                                }
+                                if !result.error.isEmpty {
+                                    try await output.warning(result.error, code: "bootstrap_stderr")
+                                }
+                                guard result.code == 0 else {
+                                    throw CLIError(
+                                        "before_script",
+                                        "before_script exited with status \(result.code).")
+                                }
+                            }
+                            for (name, value) in plan.options.sorted(by: { $0.key < $1.key }) {
+                                try requireSuccess(
+                                    await server.setOption(
+                                        name, to: value, scope: .session(session)))
+                            }
+                        },
+                        configureWindow: { window, index in
+                            for (name, value) in plan.windowOptions[index].sorted(by: {
+                                $0.key < $1.key
+                            }) {
+                                try requireSuccess(
+                                    await server.setOption(name, to: value, scope: .window(window)))
+                            }
+                        })
                 }
                 let result = Value.object([
                     "session_name": .string(session.name),
@@ -144,14 +181,26 @@ enum WorkspaceCommands {
         }
     }
 
+    private struct PlannedWorkspace {
+        let workspace: Workspace
+        let environment: [String: String]
+        let options: [String: String]
+        let windowOptions: [[String: String]]
+        let beforeScript: [String]?
+    }
+
+    private static func requireSuccess(_ reply: TmuxReply) throws {
+        guard reply.isSuccess else { throw CLIError("tmux", reply.errorText) }
+    }
+
     private static func normalize(
         _ value: Value, file: URL, override: String?, store: DocumentStore
-    ) throws -> Workspace {
+    ) throws -> PlannedWorkspace {
         let root = try mapping(
             value,
             allowed: [
                 "session_name", "start_directory", "windows", "shell_command_before",
-                "suppress_history",
+                "suppress_history", "environment", "options", "window_options", "before_script",
             ], at: "workspace")
         let expandedName = (override ?? root["session_name"]?.string).map {
             expand($0, environment: store.context.environment)
@@ -168,16 +217,38 @@ enum WorkspaceCommands {
                 root["start_directory"], parent: file.deletingLastPathComponent(), store: store)
             ?? store.context.directory.path
         let history = try boolean(root["suppress_history"], fallback: true, at: "suppress_history")
+        let environment = try scalarMapping(root["environment"], at: "environment", store: store)
+        for name in environment.keys where name.isEmpty || name.contains("=") || name.contains("\0")
+        {
+            throw CLIError("document", "Invalid environment variable name.")
+        }
+        let options = try scalarMapping(root["options"], at: "options", store: store)
+        let inheritedOptions = try scalarMapping(
+            root["window_options"], at: "window_options", store: store)
+        let beforeScript = try optionalString(root["before_script"], at: "before_script").map {
+            try ProcessCommands.splitArguments(expand($0, environment: store.context.environment))
+        }
+        if let beforeScript,
+            beforeScript.isEmpty || beforeScript[0].isEmpty
+                || beforeScript.contains(where: { $0.contains("\0") })
+        {
+            throw CLIError("document", "before_script must name an executable.")
+        }
         guard let source = root["windows"]?.array, !source.isEmpty else {
             throw CLIError("document", "windows must be a nonempty list.")
         }
+        var windowOptions: [[String: String]] = []
         let windows = try source.enumerated().map { index, item in
             let window = try mapping(
                 item,
                 allowed: [
                     "window_name", "start_directory", "layout", "panes", "shell_command_before",
-                    "suppress_history",
+                    "suppress_history", "options",
                 ], at: "windows[\(index)]")
+            windowOptions.append(
+                inheritedOptions.merging(
+                    try scalarMapping(window["options"], at: "window.options", store: store)
+                ) { _, local in local })
             let windowDirectory =
                 try directory(
                     window["start_directory"], parent: URL(fileURLWithPath: rootDirectory),
@@ -237,9 +308,42 @@ enum WorkspaceCommands {
                 startDirectory: windowDirectory,
                 layout: try optionalString(window["layout"], at: "layout"), panes: panes)
         }
-        return Workspace(
-            sessionName: name,
-            startDirectory: rootDirectory, windows: windows)
+        return PlannedWorkspace(
+            workspace: Workspace(
+                sessionName: name, startDirectory: rootDirectory, windows: windows),
+            environment: environment, options: options, windowOptions: windowOptions,
+            beforeScript: beforeScript)
+    }
+
+    private static func scalarMapping(_ value: Value?, at location: String, store: DocumentStore)
+        throws -> [String: String]
+    {
+        guard let value else { return [:] }
+        guard let mapping = value.object else {
+            throw CLIError("document", "\(location) must be a mapping.")
+        }
+        guard mapping.keys.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("-") && !$0.contains("\0") })
+        else {
+            throw CLIError("document", "\(location) contains an invalid name.")
+        }
+        return try mapping.mapValues { value in
+            let text: String
+            switch value {
+            case let .string(value): text = expand(value, environment: store.context.environment)
+            case let .integer(value): text = String(value)
+            case let .number(value): text = String(value)
+            case let .bool(value):
+                text =
+                    location == "environment" ? (value ? "true" : "false") : (value ? "on" : "off")
+            default:
+                throw CLIError(
+                    "document", "\(location) values must be strings, numbers or booleans.")
+            }
+            guard !text.contains("\0") else {
+                throw CLIError("document", "\(location) values cannot contain NUL.")
+            }
+            return text
+        }
     }
 
     private static func mapping(_ value: Value, allowed: Set<String>, at location: String) throws
