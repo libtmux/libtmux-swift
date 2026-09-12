@@ -267,6 +267,17 @@ jobs:
           # tests behind it are only built when the trait is on.
           swift test --traits YAMLWorkspaces --force-resolved-versions
 
+      - name: Test the staged workspace CLI
+        run: |
+          set -euo pipefail
+          binary="${RUNNER_TEMP}/workspace-cli/bin/tmux-workspace"
+          mkdir -p "$(dirname "$binary")"
+          install -m 755 .build/debug/tmux-workspace "$binary"
+          tmux="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          python3 Scripts/check_workspace_terminal.py "$binary"
+          python3 Scripts/check_workspace_progress.py "$binary" "$tmux"
+          python3 Scripts/check_workspace_attach.py "$binary" "$tmux"
+
       # `Package.resolved` tracks a superset that includes Yams even when the
       # trait is off, and a trait-off `swift test` resolves without it and
       # rewrites the file to drop that pin. Checking the committed file is what

@@ -104,6 +104,24 @@ The examples are their own package and are run separately:
 $ swift test --package-path Examples --force-resolved-versions
 ```
 
+CI also copies `tmux-workspace` outside `.build` and runs its terminal checks
+on every platform and tmux version. Run these after the trait-on test build;
+they create and clean up private sockets under `/tmp/libtmux-swift-dev/`:
+
+```console
+$ python3 Scripts/check_workspace_terminal.py .build/debug/tmux-workspace
+```
+
+```console
+$ python3 Scripts/check_workspace_progress.py \
+    .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
+```
+
+```console
+$ python3 Scripts/check_workspace_attach.py \
+    .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
+```
+
 `Package.resolved` tracks a superset that includes Yams even when the trait is
 off. Root commands use `--force-resolved-versions` to take the pinned revisions
 for the dependencies they resolve and leave the unused Yams pin intact.
