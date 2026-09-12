@@ -237,7 +237,8 @@ extension Server {
         }
         guard current.incarnation == expected else { throw .serverRestarted }
         guard current.processID == client.processID,
-            current.sessionID == client.sessionID, current.activePaneID == client.activePaneID
+            current.sessionID == client.sessionID, current.activePaneID == client.activePaneID,
+            !current.flags.contains("active-pane")
         else { throw .staleServerValue }
         try await expectSuccess(
             TmuxCommand("switch-client", ["-c", client.name, "-t", session.id.rawValue]),

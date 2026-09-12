@@ -29,10 +29,13 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
     /// The session the client is looking at. A client attaches to exactly one,
     /// and switching sessions changes this rather than making a new client.
     public let sessionID: SessionID
-    /// The pane selected by this client.
+    /// The globally active pane in the client's current session window.
+    ///
+    /// This does not identify a client-local pane selected with `active-pane`.
     public let activePaneID: PaneID?
     /// Whether the client's active window is zoomed.
     public let isWindowZoomed: Bool?
+    package private(set) var flags: Set<String> = []
 
     public init(
         name: String,
@@ -66,6 +69,7 @@ extension Client {
     private static let widthField = FormatField("client_width", .optionalInteger)
     private static let heightField = FormatField("client_height", .optionalInteger)
     private static let controlField = FormatField("client_control_mode", .flag)
+    private static let flagsField = FormatField("client_flags")
     private static let sessionField = FormatField(
         "session_id", .identifier(SessionID.sigil))
     private static let activePaneField = FormatField(
@@ -75,7 +79,7 @@ extension Client {
     static let projection = FormatProjection(
         [
             nameField, ttyField, pidField, widthField, heightField, controlField,
-            sessionField, activePaneField, zoomedField,
+            sessionField, activePaneField, zoomedField, flagsField,
         ] + ServerIncarnation.projectionFields)
 
     init(row: FormatRow, endpoint: Endpoint) {
@@ -91,5 +95,6 @@ extension Client {
             isWindowZoomed: row.flag(Client.zoomedField),
             incarnation: ServerIncarnation(row: row, endpoint: endpoint)
         )
+        flags = Set(row.text(Client.flagsField).split(separator: ",").map(String.init))
     }
 }
