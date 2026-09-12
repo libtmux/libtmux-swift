@@ -33,7 +33,7 @@ struct WorkspaceRoot: WorkspaceAction {
         abstract: "Manage native tmux workspaces.",
         subcommands: [
             Load.self, Freeze.self, ListWorkspaces.self, Search.self, Convert.self, ImportRoot.self,
-            Edit.self, DebugInfo.self,
+            Edit.self, DebugInfo.self, Shell.self,
         ]
     )
     @OptionGroup var output: OutputOptions
@@ -123,6 +123,37 @@ struct Edit: WorkspaceAction {
 struct DebugInfo: WorkspaceAction {
     static let configuration = CommandConfiguration(abstract: "Report runtime diagnostics.")
     @OptionGroup var output: OutputOptions
+}
+
+enum PythonShell: String, EnumerableFlag, Sendable {
+    case best, pdb, code, ptipython, ptpython, ipython, bpython
+}
+
+enum PythonStartup: String, EnumerableFlag, Sendable {
+    case usePythonrc, noStartup
+}
+
+enum PythonViMode: String, EnumerableFlag, Sendable {
+    case useViMode, noViMode
+}
+
+struct Shell: WorkspaceAction {
+    static let configuration = CommandConfiguration(
+        abstract: "Inspect tmux through a Python shell.")
+    @OptionGroup var output: OutputOptions
+    @OptionGroup var socket: SocketOptions
+    @Argument var sessionName: String?
+    @Argument var windowName: String?
+    @Option(name: .customShort("c"), help: "Execute Python code and exit.") var code: String?
+    @Flag(exclusivity: .exclusive) var backend: PythonShell = .best
+    @Flag(exclusivity: .chooseLast) var startup: PythonStartup = .noStartup
+    @Flag(exclusivity: .chooseLast) var viMode: PythonViMode = .noViMode
+
+    mutating func validate() throws {
+        if output.machine && code == nil {
+            throw ValidationError("Machine shell requires -c Python code.")
+        }
+    }
 }
 
 struct SaveOptions: ParsableArguments, Sendable {

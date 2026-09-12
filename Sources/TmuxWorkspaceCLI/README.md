@@ -64,6 +64,16 @@ workspace directories and selected environment fields. An unavailable tmux
 binary appears in the result without failing diagnostics. Home masking applies
 to named path/environment fields; it is not a general output redactor.
 
+`shell` delegates Python-specific evaluation to tmuxp 1.74.0 using
+`TMUX_WORKSPACE_PYTHON` (default `python3`). It checks that version before
+execution and uses the selected native tmux executable and explicit endpoint.
+Backend selectors and startup/vi-mode toggles retain their command meanings;
+the last paired toggle wins. Machine calls require `-c` and capture child
+output in one bounded result. Interactive backends require a terminal.
+The live bridge test is enabled by setting `TMUX_WORKSPACE_TEST_PYTHON` to
+the compatible interpreter. Optional interactive backend packages and
+incremental NDJSON child records still need verification and implementation.
+
 `load -d` creates sessions on an explicit `-S` or `-L` endpoint, or the
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
 It supports session/window/pane directories, layouts, pane command shorthand,
@@ -98,8 +108,7 @@ has terminal control characters escaped.
 
 ## Remaining work
 
-Python shell commands; append and terminal
-attachment; plugins and further execution settings; progress
+Append and terminal attachment; plugins and further execution settings; progress
 presentation; complete capture; generated manuals; release installation and
 matched benchmarks remain outside this checkpoint. The complete tmuxp command
 surface is not yet available. YAML is unavailable when its build trait is off.

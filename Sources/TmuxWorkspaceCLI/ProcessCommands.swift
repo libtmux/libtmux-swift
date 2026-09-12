@@ -15,6 +15,75 @@ import Subprocess
 #endif
 
 enum ProcessCommands {
+    static func shell(_ command: Shell, context: CLIContext, output: Presenter) async throws
+        -> Int32
+    {
+        let interactive = command.code == nil
+        if interactive && !context.terminal {
+            throw CLIError(
+                "terminal", "An interactive Python shell requires a terminal; use -c for code.",
+                status: 2)
+        }
+        let server = try WorkspaceCommands.server(command.socket, context: context)
+        let python = context.environment["TMUX_WORKSPACE_PYTHON"] ?? "python3"
+        do {
+            let check = try await run(
+                [
+                    python, "-c",
+                    "import importlib.metadata, inspect, libtmux; print(importlib.metadata.version('tmuxp') if 'tmux_bin' in inspect.signature(libtmux.Server).parameters else '')",
+                ], context: context)
+            guard check.code == 0,
+                check.output.trimmingCharacters(in: .whitespacesAndNewlines) == "1.74.0"
+            else {
+                throw CLIError("version", "Unsupported tmuxp version.")
+            }
+        } catch {
+            try Task.checkCancellation()
+            throw CLIError(
+                "unsupported_runtime",
+                "Python shell requires tmuxp 1.74.0 and libtmux Server tmux_bin support; set TMUX_WORKSPACE_PYTHON to its Python executable."
+            )
+        }
+        var arguments = [
+            python, "-u", "-c",
+            """
+            import functools, importlib, os, sys
+            shell = importlib.import_module('tmuxp.cli.shell')
+            shell.Server = functools.partial(shell.Server, tmux_bin=os.environ['TMUX_WORKSPACE_TMUX'])
+            from tmuxp.cli import cli
+            cli(sys.argv[1:])
+            """, "--color", "never", "shell",
+        ]
+        switch server.endpoint {
+        case let .socketPath(path): arguments += ["-S", path]
+        case let .socketName(name): arguments += ["-L", name]
+        }
+        arguments.append("--" + command.backend.rawValue)
+        arguments.append(command.startup == .usePythonrc ? "--use-pythonrc" : "--no-startup")
+        arguments.append(command.viMode == .useViMode ? "--use-vi-mode" : "--no-vi-mode")
+        if let code = command.code { arguments += ["-c", code] }
+        if let session = command.sessionName { arguments += ["--", session] }
+        if let window = command.windowName { arguments.append(window) }
+        var childContext = context
+        childContext.environment["TMUX_WORKSPACE_TMUX"] = server.tmuxExecutable
+        let result = try await run(arguments, context: childContext, terminal: interactive)
+        if command.output.machine {
+            try await output.result(
+                .object([
+                    "schema_version": .integer(1), "command": .string("shell"),
+                    "status": .string(result.code == 0 ? "success" : "error"),
+                    "exit_code": .integer(Int64(result.code)), "stdout": .string(result.output),
+                    "stderr": .string(result.error), "bridge": .string("tmuxp 1.74.0"),
+                ]))
+        } else {
+            if !result.output.isEmpty {
+                try await context.output(Presenter.sanitize(result.output))
+            }
+            if !result.error.isEmpty { try await context.error(Presenter.sanitize(result.error)) }
+        }
+        return result.code
+    }
+
     static func edit(_ command: Edit, context: CLIContext, output: Presenter) async throws -> Int32
     {
         let file = try DocumentStore(context: context).resolve(command.file)
