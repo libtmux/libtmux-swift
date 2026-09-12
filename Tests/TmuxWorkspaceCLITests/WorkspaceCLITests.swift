@@ -142,6 +142,40 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "NDJSON discovery emits a document before reading the next",
+        arguments: [["ls", "--full", "--ndjson"], ["search", "workspace", "--ndjson"]])
+    func incrementalDiscovery(arguments: [String]) async throws {
+        try await withFiles { root in
+            let later = root.appendingPathComponent("b.json")
+            try Data(#"{"session_name":"workspace-first"}"#.utf8).write(
+                to: root.appendingPathComponent("a.json"))
+            try Data(#"{"session_name":"workspace-before"}"#.utf8).write(to: later)
+            let lines = Lines()
+            let errors = Lines()
+            let context = CLIContext(
+                directory: root,
+                environment: ["TMUXP_CONFIGDIR": root.path, "LIBTMUX_TMUX_BIN": "/unavailable"],
+                output: { line in
+                    await lines.append(line)
+                    let value = try JSONDecoder().decode(Value.self, from: Data(line.utf8))
+                    if value["name"]?.string == "a" {
+                        try Data(#"{"session_name":"workspace-after"}"#.utf8).write(to: later)
+                    }
+                }, error: { await errors.append($0) })
+            let code = await WorkspaceCLI.run(arguments, context: context)
+            #expect(code == 0)
+            #expect(await errors.values.isEmpty)
+            let records = try await lines.values.map {
+                try JSONDecoder().decode(Value.self, from: Data($0.utf8))
+            }
+            #expect(
+                records.map { $0["session_name"]?.string } == [
+                    "workspace-first", "workspace-after",
+                ])
+        }
+    }
+
     @Test("importers validate known fields instead of discarding values")
     func importerTypes() async throws {
         try await withFiles { root in

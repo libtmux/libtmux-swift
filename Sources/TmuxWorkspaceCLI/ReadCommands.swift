@@ -8,7 +8,7 @@ enum ReadCommands {
         if command.output.json && !command.output.ndjson {
             try await output.result(
                 .object([
-                    "workspaces": .array(rows),
+                    "workspaces": .array(Array(rows)),
                     "global_workspace_dirs": .array(
                         store.globalDirectories.map { .string($0.path) }),
                 ]))
