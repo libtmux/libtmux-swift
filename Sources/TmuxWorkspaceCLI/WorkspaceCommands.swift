@@ -137,7 +137,7 @@ enum WorkspaceCommands {
                 try await context.output("Saved \(Presenter.sanitize(file.path))")
             }
         } else if command.output.machine {
-            try await output.result(document)
+            try await output.document(document, command: "freeze")
         } else {
             try await context.output(
                 DocumentStore(context: context).encode(document, format: command.format))

@@ -31,7 +31,7 @@ enum ReadCommands {
         let file = try store.resolve(command.file)
         let value = try store.read(file)
         if command.output.machine {
-            try await output.result(value)
+            try await output.document(value, command: "convert")
             return
         }
         let format: WorkspaceFormat = file.pathExtension == "json" ? .yaml : .json
