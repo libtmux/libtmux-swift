@@ -4,6 +4,22 @@ Every call works the same way whichever mode carries it. You write
 `server.sessions()` and get `[Session]` back; the mode decides whether that
 crossed a process boundary or a connection that was already open.
 
+One thing does change, and it is worth knowing before you reach for a mode: a
+scope takes a closure, and Swift cannot carry a closure's thrown type out of
+one. So a function declared `throws(TmuxError)` will not compile around
+``Server/using(_:_:)`` — the scope's thrown type widens to `any Error`. Wrap it
+in ``withTmuxError(_:)`` to narrow it back:
+
+```swift
+func names(_ server: Server) async throws(TmuxError) -> [String] {
+    try await withTmuxError {
+        try await server.using(.connected(to: "main")) { server in
+            try await server.sessions().map(\.name)
+        }
+    }
+}
+```
+
 ## The dials
 
 Three, and they turn independently:

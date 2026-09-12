@@ -128,6 +128,29 @@ command explains itself on standard error — so
 - ``OptionScope``
 - ``HookScope``
 
+### Finding one object
+
+- ``Server/session(_:)``
+- ``Server/session(named:)``
+- ``Server/window(_:)``
+- ``Server/windows(named:)``
+- ``Server/pane(_:)``
+- ``Server/refresh(_:)-(Session)``
+- ``Server/refresh(_:)-(Window)``
+- ``Server/refresh(_:)-(Pane)``
+
+### Letting tmux do the filtering
+
+- ``Server/sessions(where:)``
+- ``Server/windows(where:)``
+- ``Server/panes(where:)``
+- ``Server/clients(where:)``
+- ``FilteredListingError``
+
+### Keeping an error typed
+
+- ``withTmuxError(_:)``
+
 ### Filter expressions
 
 - ``FilterExpr``

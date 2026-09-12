@@ -148,6 +148,20 @@ let reply = try await server.run(
 print(reply.isSuccess ? reply.text : reply.errorText)
 ```
 
+### Finding one object
+
+Holding a value and wanting a newer view of it is the common case, and it does
+not need a whole listing:
+
+```swift
+let work = try await server.session(named: "work")
+let fresh = try await server.refresh(pane)
+```
+
+Absence is `nil`, not an error — an object going away is ordinary. A re-read
+also refuses a value from a different daemon, because tmux restarts its ids at
+zero and a same-numbered pane on a replacement server is not the one you had.
+
 ### Snapshots
 
 `snapshot()` collects sessions, windows, panes, and clients into one value. The
@@ -204,6 +218,20 @@ let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vi
 let matching = try await server.panes().filter(expression)
 ```
 
+The same expression can also travel all the way to tmux, so the rows that would
+have been discarded never cross the process boundary:
+
+```swift
+let matching = try await server.panes(where: expression)
+```
+
+Both give the same answer. The difference is what crosses the boundary: the
+first formats, pipes and decodes every row before discarding most of them, and
+the second does not, so the cost tracks the size of the result rather than the
+size of the server. What tmux cannot evaluate — a regular expression, which runs
+on this package's bounded engine rather than tmux's — simply widens the
+predicate and is decided here instead.
+
 This is what lets the [MCP tools](#tmux-as-mcp-tools) offer filtering to a
 client that does not speak Swift. The full vocabulary — operators, aliases, and
 which fields carry which type — is in [`Filtering.md`][filtering].
@@ -211,6 +239,8 @@ which fields carry which type — is in [`Filtering.md`][filtering].
 ## One switch changes how work reaches tmux
 
 …and never what you get back. `TmuxMode` is the dial, and it has two settings:
+(One caveat, in [typed errors](#typed-errors-across-a-scope): a scope takes a
+closure, so it widens the thrown type.)
 
 | Mode | How work travels | Where it wins |
 | --- | --- | --- |
@@ -312,6 +342,28 @@ let firstLine: String? = try await server.connected(attachingTo: "work") { serve
     return nil
 }
 ```
+
+### Typed errors across a scope
+
+Every call throws `TmuxError` and says so, so a program can be
+`throws(TmuxError)` from top to bottom. The scoped forms are the exception:
+they take a closure, and Swift 6.2 cannot carry a closure's thrown type out of
+one. Wrap the scope to narrow it back:
+
+```swift
+func names(_ server: Server) async throws(TmuxError) -> [String] {
+    try await withTmuxError {
+        try await server.using(.connected(to: "main")) { server in
+            try await server.sessions().map(\.name)
+        }
+    }
+}
+```
+
+This is a language limitation rather than a choice: a `throws(TmuxError)`
+overload of the scopes is unreachable, because a closure literal's thrown type
+is never inferred from its body, and a scope that fails on its own behalf has no
+way to rethrow that as the body's error type.
 
 ## Waiting without polling
 
