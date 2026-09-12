@@ -342,7 +342,7 @@ struct WorkspaceCLITests {
         try await withFiles { root in
             let file = root.appendingPathComponent("unsupported.json")
             try Data(
-                #"{"session_name":"invalid","before_script":"touch never","windows":[{"panes":[null]}]}"#
+                #"{"session_name":"invalid","plugins":["unavailable"],"windows":[{"panes":[null]}]}"#
                     .utf8
             ).write(to: file)
             let rejected = await invoke(["load", file.path, "-d", "--json"], in: root)
@@ -449,6 +449,110 @@ struct WorkspaceCLITests {
             #expect(
                 (try streamed.json()["workspace"] as? [String: Any])?["session_name"] as? String
                     == "native-cli")
+        }
+    }
+
+    @Test("native configuration reaches the first pane and rolls back failed bootstrap")
+    func loadConfiguration() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let configs = root.appendingPathComponent("configs")
+            let work = root.appendingPathComponent("work")
+            try FileManager.default.createDirectory(at: configs, withIntermediateDirectories: false)
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: false)
+            let script = root.appendingPathComponent("bootstrap")
+            try Data(
+                "#!/bin/sh\n\"$TMUX_BIN\" -S \"$SOCKET\" has-session -t '=configured' || exit 9\npwd > \"$MARKER\"\n"
+                    .utf8
+            ).write(to: script)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: script.path)
+            let file = configs.appendingPathComponent("work.json")
+            let value = Value.object([
+                "session_name": .string("configured"), "start_directory": .string("../work"),
+                "before_script": .string(script.path),
+                "environment": .object(["WORKSPACE_TOKEN": .string("native value")]),
+                "options": .object(["@session-option": .integer(17)]),
+                "window_options": .object(["@window-option": .string("inherited")]),
+                "windows": .array([
+                    .object([
+                        "options": .object(["@window-option": .string("local")]),
+                        "panes": .array([
+                            .string("printf '%s' \"$WORKSPACE_TOKEN\" > token"), .null,
+                        ]),
+                    ])
+                ]),
+            ])
+            try Data(value.encoded().utf8).write(to: file)
+            let marker = root.appendingPathComponent("bootstrap-cwd")
+            let loaded = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root,
+                extra: [
+                    "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX_BIN": server.tmuxExecutable,
+                    "SOCKET": socket, "MARKER": marker.path,
+                ])
+            #expect(loaded.code == 0, "\(loaded.error)")
+            guard loaded.code == 0 else { return }
+            #expect(try String(contentsOf: marker, encoding: .utf8) == work.path + "\n")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "configured" })
+            let window = try #require(snapshot.windows(of: session).first)
+            #expect(try await server.option("@session-option", scope: .session(session)) == "17")
+            #expect(try await server.option("@window-option", scope: .window(window)) == "local")
+            let token = work.appendingPathComponent("token")
+            for _ in 0..<100 where !FileManager.default.fileExists(atPath: token.path) {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(try String(contentsOf: token, encoding: .utf8) == "native value")
+            var failed = try #require(value.object)
+            failed["session_name"] = .string("invocation-cwd")
+            failed.removeValue(forKey: "start_directory")
+            try Data(Value.object(failed).encoded().utf8).write(to: file)
+            let inherited = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root,
+                extra: [
+                    "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX_BIN": server.tmuxExecutable,
+                    "SOCKET": socket, "MARKER": marker.path,
+                ])
+            #expect(inherited.code == 0)
+            #expect(try String(contentsOf: marker, encoding: .utf8) == root.path + "\n")
+            failed["session_name"] = .string("failed-bootstrap")
+            failed["before_script"] = .string("/bin/false")
+            try Data(Value.object(failed).encoded().utf8).write(to: file)
+            let result = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--ndjson"], in: root,
+                extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            #expect(result.code == 1)
+            #expect(try await !server.sessions().contains { $0.name == "failed-bootstrap" })
+            #expect(try await server.sessions().contains { $0.id == session.id })
+        }
+    }
+
+    @Test("configuration preflight rejects unsafe fields before any input loads")
+    func configurationPreflight() async throws {
+        try await withFiles { root in
+            let first = root.appendingPathComponent("first.json")
+            let second = root.appendingPathComponent("second.json")
+            let base: [String: Value] = [
+                "session_name": .string("preflight"),
+                "windows": .array([.object(["panes": .array([.null])])]),
+            ]
+            try Data(Value.object(base).encoded().utf8).write(to: first)
+            for (key, value) in [
+                ("options", Value.object(["-g": .string("on")])),
+                ("before_script", Value.string("/bin/true\0")),
+                ("environment", Value.object(["INVALID=NAME": .string("value")])),
+            ] {
+                var invalid = base
+                invalid[key] = value
+                try Data(Value.object(invalid).encoded().utf8).write(to: second)
+                let result = await invoke(
+                    ["load", first.path, second.path, "-d", "--json"], in: root)
+                #expect(result.code == 1)
+                #expect(result.error.joined().contains("document"))
+                #expect(result.output.isEmpty)
+            }
         }
     }
 

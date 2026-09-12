@@ -68,6 +68,11 @@ to named path/environment fields; it is not a general output redactor.
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
 It supports session/window/pane directories, layouts, pane command shorthand,
 inherited commands, history suppression and sequential `enter` settings.
+Session `environment` reaches the first pane at creation. Session `options`
+and inherited `window_options` apply before pane commands, with each window's
+`options` overriding inherited values. `before_script` runs direct argv after
+session creation, using the expanded session directory or invocation directory
+when omitted. It runs before options; its failure removes the created session.
 Unsupported execution keys fail before creation. Existing exact session names
 are reused. A failed build removes only the session that build created and
 reports earlier successful workspaces as partial results.
@@ -94,7 +99,7 @@ has terminal control characters escaped.
 ## Remaining work
 
 Python shell commands; append and terminal
-attachment; scripts, plugins and extended execution settings; progress
+attachment; plugins and further execution settings; progress
 presentation; complete capture; generated manuals; release installation and
 matched benchmarks remain outside this checkpoint. The complete tmuxp command
 surface is not yet available. YAML is unavailable when its build trait is off.
