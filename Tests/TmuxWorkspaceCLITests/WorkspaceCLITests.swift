@@ -173,6 +173,81 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "Python shell bridge uses a versioned runtime and explicit endpoint",
+        .enabled(if: ProcessInfo.processInfo.environment["TMUX_WORKSPACE_TEST_PYTHON"] != nil))
+    func shellBridge() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let session = try await server.sessions()[0]
+            let result = await invoke(
+                [
+                    "shell", session.name, "-S", socket, "--code", "--no-startup",
+                    "-c",
+                    "print('CLI_RESULT=' + session.session_name); print('CLI_TMUX=' + str(server.tmux_bin))",
+                    "--ndjson",
+                ], in: root,
+                extra: [
+                    "LIBTMUX_TMUX_BIN": server.tmuxExecutable,
+                    "TMUX_WORKSPACE_PYTHON": ProcessInfo.processInfo.environment[
+                        "TMUX_WORKSPACE_TEST_PYTHON"] ?? "python3",
+                    "HOME": ProcessInfo.processInfo.environment["HOME"] ?? root.path,
+                ])
+            #expect(result.code == 0, "\(result.error)")
+            guard result.code == 0 else { return }
+            let childOutput = try result.json()["stdout"] as? String
+            #expect(
+                childOutput?.hasSuffix(
+                    "CLI_RESULT=" + session.name + "\nCLI_TMUX=" + server.tmuxExecutable + "\n")
+                    == true)
+        }
+    }
+
+    @Test("shell runtime and parser failures precede evaluation")
+    func shellRuntime() async throws {
+        try await withFiles { root in
+            let fake = root.appendingPathComponent("python")
+            try Data("#!/bin/sh\nprintf '0.0.0\\n'\n".utf8).write(to: fake)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: fake.path)
+            for python in [fake.path, "/missing-python"] {
+                let result = await invoke(
+                    [
+                        "shell", "-S", root.appendingPathComponent("unused").path, "-c", "pass",
+                        "--json",
+                    ],
+                    in: root, extra: ["TMUX_WORKSPACE_PYTHON": python])
+                #expect(result.code == 1)
+                #expect(result.output.isEmpty)
+                #expect(result.error.joined().contains("unsupported_runtime"))
+            }
+            for arguments in [["shell", "--code", "--ipython", "--json"], ["shell", "--json"]] {
+                let result = await invoke(arguments, in: root)
+                #expect(result.code == 2)
+                #expect(result.output.isEmpty)
+            }
+        }
+    }
+
+    @Test("Python paired toggles preserve occurrence order")
+    func shellFlags() throws {
+        for (flags, expected) in [
+            (["--use-pythonrc", "--no-startup"], PythonStartup.noStartup),
+            (["--no-startup", "--use-pythonrc"], PythonStartup.usePythonrc),
+        ] {
+            let parsed = try #require(WorkspaceRoot.parseAsRoot(["shell"] + flags) as? Shell)
+            #expect(parsed.startup == expected)
+        }
+        for (flags, expected) in [
+            (["--use-vi-mode", "--no-vi-mode"], PythonViMode.noViMode),
+            (["--no-vi-mode", "--use-vi-mode"], PythonViMode.useViMode),
+        ] {
+            let parsed = try #require(WorkspaceRoot.parseAsRoot(["shell"] + flags) as? Shell)
+            #expect(parsed.viMode == expected)
+        }
+    }
+
     @Test("native diagnostics report unavailable and selected tmux binaries")
     func diagnostics() async throws {
         try await withFiles { root in
