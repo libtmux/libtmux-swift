@@ -91,11 +91,16 @@ enum ProcessCommands {
         var started = false
         for character in value {
             if escaped {
-                word.append(character)
+                if quote == "\"" && !["$", "`", "\"", "\\", "\n"].contains(character) {
+                    word.append("\\")
+                }
+                if character != "\n" {
+                    word.append(character)
+                    started = true
+                }
                 escaped = false
             } else if character == "\\" && quote != "'" {
                 escaped = true
-                started = true
             } else if character == quote {
                 quote = nil
             } else if quote == nil && (character == "'" || character == "\"") {
