@@ -205,6 +205,7 @@ actor Presenter {
     }
 
     func warning(_ message: String, code: String = "capture_loss") async throws {
+        guard options.logLevel.priority <= DiagnosticLevel.warning.priority else { return }
         let value = Value.object([
             "severity": .string("warning"), "code": .string(code),
             "message": .string(message),

@@ -4,10 +4,26 @@ enum ColorMode: String, ExpressibleByArgument, Sendable {
     case auto, always, never
 }
 
+enum DiagnosticLevel: String, ExpressibleByArgument, Sendable {
+    case debug, info, warning, error, critical
+
+    var priority: Int {
+        switch self {
+        case .debug: 0
+        case .info: 1
+        case .warning: 2
+        case .error: 3
+        case .critical: 4
+        }
+    }
+}
+
 struct OutputOptions: ParsableArguments, Sendable {
     @Flag(help: "Write one JSON result.") var json = false
     @Flag(help: "Stream newline-delimited JSON records.") var ndjson = false
     @Option(help: "Color policy for human output.") var color: ColorMode = .auto
+    @Option(help: "Minimum severity for advisory diagnostics.")
+    var logLevel: DiagnosticLevel = .warning
 
     var machine: Bool { json || ndjson }
 }
