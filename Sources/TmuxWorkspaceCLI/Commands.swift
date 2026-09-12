@@ -51,7 +51,8 @@ struct Load: WorkspaceAction {
     @Option(name: .customShort("s"), help: "Override the final workspace's session name.")
     var sessionName: String?
     @Flag(name: .customShort("d"), help: "Leave loaded sessions detached.") var detached = false
-    @Flag(help: "Add windows to the current pane's session.") var append = false
+    @Flag(name: [.long, .customShort("a")], help: "Add windows to the current pane's session.")
+    var append = false
     @Flag(name: [.long, .customShort("y")], help: "Accept confirmations.") var yes = false
     @Flag(help: "Disable the progress display.") var noProgress = false
 
