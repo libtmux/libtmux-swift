@@ -5,6 +5,12 @@ import TmuxFixture
 
 @testable import TmuxWorkspaceCLI
 
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
+
 @Suite("workspace CLI", .serialized, .timeLimit(.minutes(1)))
 struct WorkspaceCLITests {
     @Test("root version is a machine result")
@@ -153,6 +159,26 @@ struct WorkspaceCLITests {
                 #expect(result.output.isEmpty)
                 #expect(result.error.joined().contains("\"code\":\"document\""), "\(result.error)")
             }
+        }
+    }
+
+    @Test("workspace reads reject FIFO inputs")
+    func specialFile() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("pipe.json")
+            try #require(mkfifo(file.path, 0o600) == 0)
+            let descriptor = open(file.path, O_RDWR | O_NONBLOCK)
+            try #require(descriptor >= 0)
+            let feeder = Task.detached {
+                let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+                try await Task.sleep(for: .milliseconds(50))
+                try handle.write(contentsOf: Data(#"{"session_name":"fifo"}"#.utf8))
+                try handle.close()
+            }
+            let result = await invoke(["convert", file.path, "--json"], in: root)
+            try await feeder.value
+            #expect(result.code == 1)
+            #expect(result.error.joined().contains("document_type"), "\(result.error)")
         }
     }
 
