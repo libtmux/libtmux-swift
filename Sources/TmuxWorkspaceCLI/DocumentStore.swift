@@ -200,7 +200,7 @@ struct DocumentStore: Sendable {
         }
     }
 
-    func discover(full: Bool) -> [Value] {
+    func discover(full: Bool) -> some Sequence<Value> {
         var files = Set<URL>()
         for directory in globalDirectories {
             if let entries = try? FileManager.default.contentsOfDirectory(
@@ -213,7 +213,7 @@ struct DocumentStore: Sendable {
             let file = context.directory.appendingPathComponent(".tmuxp." + ext)
             if FileManager.default.fileExists(atPath: file.path) { files.insert(file) }
         }
-        return files.sorted { $0.path < $1.path }.map { file in
+        return files.sorted { $0.path < $1.path }.lazy.map { file in
             var row: [String: Value] = [
                 "name": .string(file.deletingPathExtension().lastPathComponent),
                 "path": .string(file.path),
