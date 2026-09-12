@@ -1,9 +1,34 @@
 import Testing
+import TmuxFixture
 
 @testable import LibTmux
 
 @Suite("new session")
 struct NewSessionTests {
+    @Test("creation preserves trailing separators in environment and names")
+    func literalCreationValues() async throws {
+        try await withTmuxServer { server in
+            for (index, value) in ["literal;", "two;;", #"slash\;"#, "#{session_name}"].enumerated()
+            {
+                let session = try await server.newSession(
+                    named: "literal\(index);", windowName: "window;",
+                    environment: ["CREATED_VALUE": value])
+                #expect(session.name == "literal\(index);")
+                #expect(
+                    try await server.environmentValue(
+                        "CREATED_VALUE", in: .session(session.id.rawValue)) == value)
+                #expect(try await server.snapshot().windows(of: session).first?.name == "window;")
+                let connected = try await server.using(.connected(to: "bootstrap")) {
+                    try await $0.newSession(
+                        named: "connected\(index);", environment: ["CREATED_VALUE": value])
+                }
+                #expect(
+                    try await server.environmentValue(
+                        "CREATED_VALUE", in: .session(connected.id.rawValue)) == value)
+            }
+        }
+    }
+
     @Test("a replacement cannot reuse the created session's id")
     func replacementCannotReuseTheCreatedID() async throws {
         let socketPath = "/tmp/libtmux-swift-test/new-session-atomic/socket"

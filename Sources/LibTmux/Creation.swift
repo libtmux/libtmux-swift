@@ -108,13 +108,18 @@ extension Server {
             else {
                 throw .invocationFailed(reason: "invalid session environment variable")
             }
-            arguments += ["-e", tmuxLiteralArgument(name + "=" + value)]
+            arguments += ["-e", name + "=" + value]
         }
         if let windowName { arguments += ["-n", tmuxLiteralArgument(windowName)] }
         if let startDirectory {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]
         }
-        let reply = try await run(TmuxCommand("new-session", arguments))
+        let reply = try await run(
+            TmuxCommand(
+                "new-session",
+                arguments.map {
+                    $0.hasSuffix(";") ? String($0.dropLast()) + "\\;" : $0
+                }))
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }
