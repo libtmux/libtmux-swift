@@ -107,8 +107,10 @@ struct Freeze: WorkspaceAction {
         help:
             "Exact session name or ID; defaults to the current pane's session or the sole session.")
     var sessionName: String?
-    @Option(name: [.customLong("workspace-format"), .customShort("f")]) var format:
-        WorkspaceFormat = .yaml
+    @Option(
+        name: [.customLong("workspace-format"), .customShort("f")],
+        help: "Document format; inferred from .json destinations, otherwise YAML.")
+    var format: WorkspaceFormat?
     @Option(name: [.customLong("save-to"), .customShort("o")]) var destination: String?
     @Flag(name: [.long, .customShort("y")]) var yes = false
     @Flag(name: [.long, .customShort("q")]) var quiet = false
