@@ -138,6 +138,35 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("progress flags validate before document and backend access")
+    func progressFlags() async throws {
+        try await withFiles { root in
+            for preset in [
+                "default", "minimal", "window", "pane", "verbose", "{session} {pane_progress}",
+            ] {
+                let result = await invoke(
+                    [
+                        "load", "missing", "-d", "--progress-format", preset,
+                        "--progress-lines", "-1", "--json",
+                    ], in: root)
+                #expect(result.code == 1)
+                #expect(result.output.isEmpty)
+                #expect(result.error.joined().contains("workspace_not_found"))
+            }
+            for value in ["bad", "-2"] {
+                let arguments = await invoke(
+                    ["load", "missing", "-d", "--progress-lines", value, "--ndjson"], in: root)
+                #expect(arguments.code == 2)
+                #expect(arguments.output.isEmpty)
+                let environment = await invoke(
+                    ["load", "missing", "-d", "--json"], in: root,
+                    extra: ["TMUXP_PROGRESS_LINES": value])
+                #expect(environment.code == 2)
+                #expect(environment.output.isEmpty)
+            }
+        }
+    }
+
     @Test("load logs lifecycle events and escaped bootstrap output")
     func loadLog() async throws {
         try await withTmuxServer { server in
@@ -165,7 +194,8 @@ struct WorkspaceCLITests {
             }
             #expect(
                 records.compactMap { $0["event"]?.string } == [
-                    "started", "workspace-completed", "completed",
+                    "started", "workspace-started", "window-created", "pane-created",
+                    "pane-completed", "window-completed", "workspace-completed", "completed",
                 ])
             #expect(records.contains { $0["code"] == .string("bootstrap_stdout") })
             #expect(result.error.joined().contains("bootstrap_stdout"))

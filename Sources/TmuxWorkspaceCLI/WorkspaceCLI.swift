@@ -15,6 +15,10 @@ struct CLIContext: Sendable {
     var output: @Sendable (String) async throws -> Void
     var error: @Sendable (String) async throws -> Void
     var terminal = false
+    var errorTerminal = false
+    var terminalSize = (columns: 80, rows: 24)
+    var rawOutput: (@Sendable (String) async throws -> Void)?
+    var rawError: (@Sendable (String) async throws -> Void)?
 }
 
 @main
@@ -24,12 +28,21 @@ enum WorkspaceCLI {
         do {
             let output = try NonblockingLineWriter(fileDescriptor: STDOUT_FILENO)
             let error = try NonblockingLineWriter(fileDescriptor: STDERR_FILENO)
+            var size = winsize()
+            _ = ioctl(STDERR_FILENO, UInt(TIOCGWINSZ), &size)
             let context = CLIContext(
                 directory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
                 environment: ProcessInfo.processInfo.environment,
                 output: { line in try await write(line, with: output) },
                 error: { line in try await write(line, with: error) },
-                terminal: isatty(STDOUT_FILENO) == 1
+                terminal: isatty(STDOUT_FILENO) == 1,
+                errorTerminal: isatty(STDERR_FILENO) == 1,
+                terminalSize: (
+                    columns: size.ws_col > 0 ? Int(size.ws_col) : 80,
+                    rows: size.ws_row > 0 ? Int(size.ws_row) : 24
+                ),
+                rawOutput: { text in try await write(text, with: output, newline: false) },
+                rawError: { text in try await write(text, with: error, newline: false) }
             )
             let task = Task {
                 await run(Array(CommandLine.arguments.dropFirst()), context: context)
@@ -129,8 +142,10 @@ enum WorkspaceCLI {
             machine ? value.encoded() : "Error: \(Presenter.sanitize(error.message))")
     }
 
-    private static func write(_ line: String, with writer: NonblockingLineWriter) async throws {
-        switch await writer.write(line) {
+    private static func write(
+        _ line: String, with writer: NonblockingLineWriter, newline: Bool = true
+    ) async throws {
+        switch await writer.write(line, newline: newline) {
         case .written: return
         case .cancelled: throw CancellationError()
         case .closed: throw CLIError("closed_output", "Output pipe closed.")
@@ -156,6 +171,7 @@ actor Presenter {
     let context: CLIContext
     private var sequence = 0
     private var logFile: FileHandle?
+    private var progress: LoadProgress?
 
     init(options: OutputOptions, context: CLIContext) {
         self.options = options
@@ -182,6 +198,13 @@ actor Presenter {
         await log(
             event == "failed" ? .error : .info,
             fields: ["event": .string(event), "command": .string(command), "data": data])
+        if ["failed", "completed", "workspace-completed"].contains(event) {
+            progress?.update(event, data: data)
+            await finishProgress()
+        } else if progress != nil {
+            progress?.update(event, data: data)
+            try await drawProgress()
+        }
         guard options.ndjson else { return }
         sequence += 1
         try await result(
@@ -221,8 +244,51 @@ actor Presenter {
     }
 
     func failure(_ error: CLIError) async {
+        await finishProgress()
         await log(.error, fields: ["code": .string(error.code), "message": .string(error.message)])
         await WorkspaceCLI.diagnostic(error, machine: options.machine, context: context)
+    }
+
+    func prepareProgress(_ command: Load) throws {
+        progress = try LoadProgress.create(command, context: context)
+    }
+
+    func bootstrap(_ text: String, stream: String) async throws {
+        let code = "bootstrap_" + stream
+        if options.machine {
+            try await warning(text, code: code)
+            return
+        }
+        await log(.warning, fields: ["code": .string(code), "message": .string(text)])
+        await finishProgress()
+        let sink =
+            stream == "stdout"
+            ? context.rawOutput ?? context.output : context.rawError ?? context.error
+        try await sink(text)
+        if progress?.active == true, !text.hasSuffix("\n") {
+            try await (context.rawError ?? context.error)("\n")
+        }
+        progress?.appendCapturedOutput(text)
+        try await drawProgress()
+    }
+
+    private func drawProgress() async throws {
+        guard let frame = progress?.frame() else { return }
+        try await (context.rawError ?? context.error)(frame)
+    }
+
+    private func finishProgress() async {
+        guard let clear = progress?.clear(), !clear.isEmpty else { return }
+        let sink = context.rawError ?? context.error
+        let cleanup = Task.detached { try await sink(clear) }
+        let deadline = Task.detached {
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+                cleanup.cancel()
+            } catch {}
+        }
+        _ = try? await cleanup.value
+        deadline.cancel()
     }
 
     func openLog(_ file: URL) throws {
@@ -253,6 +319,7 @@ actor Presenter {
         } catch {
             logFile = nil
             try? file.close()
+            await finishProgress()
             await WorkspaceCLI.diagnostic(
                 CLIError("log_write", "Cannot append to the log file: \(error)"),
                 machine: options.machine, context: context)
