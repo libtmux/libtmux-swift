@@ -229,7 +229,15 @@ enum ProcessCommands {
             let descriptors = [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO].map {
                 ($0, fcntl($0, F_GETFL))
             }
+            let terminals = descriptors.compactMap { descriptor, _ -> (Int32, termios)? in
+                var attributes = termios()
+                return tcgetattr(descriptor, &attributes) == 0 ? (descriptor, attributes) : nil
+            }
             defer {
+                for (descriptor, saved) in terminals {
+                    var attributes = saved
+                    _ = tcsetattr(descriptor, TCSANOW, &attributes)
+                }
                 for (descriptor, flags) in descriptors where flags >= 0 {
                     _ = fcntl(descriptor, F_SETFL, flags)
                 }
