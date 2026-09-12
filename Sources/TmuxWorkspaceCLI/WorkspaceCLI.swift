@@ -95,6 +95,10 @@ enum WorkspaceCLI {
                 try await WorkspaceCommands.load(command, context: context, output: output)
             case let command as Freeze:
                 try await WorkspaceCommands.freeze(command, context: context, output: output)
+            case let command as any ImportAction:
+                try await ImportCommands.run(command, context: context, output: output)
+            case is ImportRoot:
+                throw CLIError("usage", "Choose import teamocil or import tmuxinator.", status: 2)
             default: throw CLIError("usage", "Choose a workspace command.", status: 2)
             }
             return 0
@@ -154,6 +158,18 @@ actor Presenter {
         try await context.output(value.encoded(pretty: !options.machine))
     }
 
+    func document(_ value: Value, command: String) async throws {
+        if options.ndjson {
+            try await result(
+                .object([
+                    "schema_version": .integer(1), "command": .string(command),
+                    "status": .string("success"), "workspace": value,
+                ]))
+        } else {
+            try await result(value)
+        }
+    }
+
     func event(_ event: String, command: String, data: Value) async throws {
         guard options.ndjson else { return }
         sequence += 1
@@ -182,9 +198,9 @@ actor Presenter {
         try await context.output(tree ? "  " + line : line)
     }
 
-    func warning(_ message: String) async throws {
+    func warning(_ message: String, code: String = "capture_loss") async throws {
         let value = Value.object([
-            "severity": .string("warning"), "code": .string("capture_loss"),
+            "severity": .string("warning"), "code": .string(code),
             "message": .string(message),
         ])
         try await context.error(

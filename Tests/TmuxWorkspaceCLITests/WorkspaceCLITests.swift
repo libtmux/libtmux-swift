@@ -86,6 +86,59 @@ struct WorkspaceCLITests {
             let converted = await invoke(["convert", file.path, "--json"], in: root)
             #expect(converted.code == 0)
             #expect((try converted.json()["extension"] as? [String: Bool])?["keep"] == true)
+            let streamed = await invoke(["convert", file.path, "--ndjson"], in: root)
+            #expect(
+                (try streamed.json()["workspace"] as? [String: Any])?["session_name"] as? String
+                    == "project")
+        }
+    }
+
+    @Test("native importers resolve sources and preserve workspace structure")
+    func importWorkspaces() async throws {
+        try await withFiles { root in
+            let source = root.appendingPathComponent("incoming")
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: false)
+            let tmuxinator = source.appendingPathComponent("work.json")
+            try Data(
+                #"{"name":"imported","root":"/tmp","tmux_options":"-f /tmp/a-file.conf","windows":[{"editor":{"layout":"tiled","panes":["one","two"]}}]}"#
+                    .utf8
+            ).write(to: tmuxinator)
+            let imported = await invoke(
+                ["--json", "import", "tmuxinator", "work"], in: root,
+                extra: ["TMUXINATOR_CONFIG": source.path])
+            #expect(imported.code == 0, "\(imported.error)")
+            let document = try imported.json()
+            #expect(document["session_name"] as? String == "imported")
+            #expect(document["config"] as? String == "/tmp/a-file.conf")
+            let windows = try #require(document["windows"] as? [[String: Any]])
+            #expect((windows[0]["panes"] as? [String]) == ["one", "two"])
+            let teamocil = root.appendingPathComponent("team.json")
+            try Data(
+                #"{"session":{"name":"team","windows":[{"name":"shell","splits":[{"cmd":"echo imported"}]}]}}"#
+                    .utf8
+            ).write(to: teamocil)
+            let streamed = await invoke(
+                ["import", "teamocil", teamocil.path, "--ndjson"], in: root)
+            #expect(streamed.code == 0)
+            let envelope = try streamed.json()
+            #expect(envelope["schema_version"] as? Int == 1)
+            #expect((envelope["workspace"] as? [String: Any])?["session_name"] as? String == "team")
+            let missing = await invoke(["import", "teamocil", "--json"], in: root)
+            #expect(missing.code == 2)
+            #expect(missing.output.isEmpty)
+            let destination = root.appendingPathComponent("saved.json")
+            let saveArgs = [
+                "import", "teamocil", teamocil.path, "--save-to", destination.path,
+                "--workspace-format", "json", "--json",
+            ]
+            let saved = await invoke(saveArgs, in: root)
+            #expect(saved.code == 0)
+            let original = try Data(contentsOf: destination)
+            let protected = await invoke(saveArgs, in: root)
+            #expect(protected.code == 1)
+            #expect(try Data(contentsOf: destination) == original)
+            let forced = await invoke(saveArgs + ["--force"], in: root)
+            #expect(forced.code == 0)
         }
     }
 
@@ -274,6 +327,12 @@ struct WorkspaceCLITests {
             #expect(try captured.json()["session_name"] as? String == "native-cli")
             #expect((try captured.json()["windows"] as? [Any])?.count == 2)
             #expect(!captured.error.isEmpty)
+            let streamed = await invoke(
+                ["freeze", "native-cli", "-S", socket, "--ndjson"], in: root,
+                extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            #expect(
+                (try streamed.json()["workspace"] as? [String: Any])?["session_name"] as? String
+                    == "native-cli")
         }
     }
 

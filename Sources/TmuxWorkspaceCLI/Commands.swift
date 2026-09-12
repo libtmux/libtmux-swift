@@ -31,7 +31,9 @@ struct WorkspaceRoot: WorkspaceAction {
     static let configuration = CommandConfiguration(
         commandName: "tmux-workspace",
         abstract: "Manage native tmux workspaces.",
-        subcommands: [Load.self, Freeze.self, ListWorkspaces.self, Search.self, Convert.self]
+        subcommands: [
+            Load.self, Freeze.self, ListWorkspaces.self, Search.self, Convert.self, ImportRoot.self,
+        ]
     )
     @OptionGroup var output: OutputOptions
     @Flag(name: [.long, .customShort("V")], help: "Print the package version.")
@@ -109,4 +111,44 @@ struct Convert: WorkspaceAction {
     @OptionGroup var output: OutputOptions
     @Argument var file: String
     @Flag(name: [.long, .customShort("y")]) var yes = false
+}
+
+struct SaveOptions: ParsableArguments, Sendable {
+    @Option(name: .customLong("save-to"), help: "Save to this destination instead of stdout.")
+    var destination: String?
+    @Option(name: .customLong("workspace-format"), help: "Saved document encoding.")
+    var format: WorkspaceFormat = .yaml
+    @Flag(help: "Replace an existing destination.") var force = false
+}
+
+struct ImportRoot: WorkspaceAction {
+    static let configuration = CommandConfiguration(
+        commandName: "import", abstract: "Import a workspace from another tmux manager.",
+        subcommands: [ImportTeamocil.self, ImportTmuxinator.self])
+    @OptionGroup var output: OutputOptions
+}
+
+protocol ImportAction: WorkspaceAction {
+    var file: String { get }
+    var save: SaveOptions { get }
+    static var importer: String { get }
+}
+
+struct ImportTeamocil: ImportAction {
+    static let importer = "teamocil"
+    static let configuration = CommandConfiguration(
+        commandName: "teamocil", abstract: "Translate a teamocil workspace.")
+    @OptionGroup var output: OutputOptions
+    @OptionGroup var save: SaveOptions
+    @Argument(help: "Source path or name in ~/.teamocil.") var file: String
+}
+
+struct ImportTmuxinator: ImportAction {
+    static let importer = "tmuxinator"
+    static let configuration = CommandConfiguration(
+        commandName: "tmuxinator",
+        abstract: "Translate a tmuxinator workspace without executing ERB.")
+    @OptionGroup var output: OutputOptions
+    @OptionGroup var save: SaveOptions
+    @Argument(help: "Source path or name in TMUXINATOR_CONFIG or ~/.tmuxinator.") var file: String
 }
