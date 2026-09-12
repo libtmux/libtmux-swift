@@ -35,6 +35,7 @@ enum WorkspaceCommands {
                 status: 2)
         }
         let store = DocumentStore(context: context)
+        if let file = command.logFile { try await output.openLog(store.path(file)) }
         let plans = try command.files.enumerated().map { index, input in
             let file = try store.resolve(input)
             return try normalize(
@@ -126,9 +127,8 @@ enum WorkspaceCommands {
                 try await output.event("workspace-completed", command: "load", data: result)
             }
             let result = Value.object(["status": .string("success"), "workspaces": .array(results)])
-            if command.output.ndjson {
-                try await output.event("completed", command: "load", data: result)
-            } else {
+            try await output.event("completed", command: "load", data: result)
+            if !command.output.ndjson {
                 try await output.result(result)
             }
         } catch {
@@ -147,9 +147,8 @@ enum WorkspaceCommands {
                 ])
             }
             let result = Value.object(fields)
-            if command.output.ndjson {
-                try? await output.event("failed", command: "load", data: result)
-            } else if command.output.json {
+            try? await output.event("failed", command: "load", data: result)
+            if command.output.json && !command.output.ndjson {
                 try? await output.result(result)
             }
             throw error

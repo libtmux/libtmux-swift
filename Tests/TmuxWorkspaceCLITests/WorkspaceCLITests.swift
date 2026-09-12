@@ -110,6 +110,119 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("load logs append structured diagnostics without changing stderr")
+    func loadLogPreflight() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("load.log")
+            for mode in ["--json", "--ndjson"] {
+                let result = await invoke(
+                    ["load", "missing", "-d", "--log-file", file.path, mode], in: root)
+                #expect(result.code == 1)
+                #expect(result.output.isEmpty)
+                #expect(result.error.joined().contains("workspace_not_found"))
+            }
+            let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n")
+            #expect(lines.count == 2)
+            for line in lines {
+                let record = try JSONDecoder().decode(Value.self, from: Data(line.utf8))
+                #expect(record["severity"] == .string("error"))
+                #expect(record["code"] == .string("workspace_not_found"))
+            }
+            let fifo = root.appendingPathComponent("log.fifo")
+            try #require(mkfifo(fifo.path, 0o600) == 0)
+            let rejected = await invoke(
+                ["load", "missing", "-d", "--log-file", fifo.path, "--json"], in: root)
+            #expect(rejected.code == 1)
+            #expect(rejected.output.isEmpty)
+            #expect(rejected.error.joined().contains("log_open"))
+        }
+    }
+
+    @Test("load logs lifecycle events and escaped bootstrap output")
+    func loadLog() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let input = root.appendingPathComponent("logged.json")
+            try Data(
+                #"{"session_name":"logged","before_script":"/usr/bin/printf 'line\\n\\033[31m'","windows":[{"panes":[null]}]}"#
+                    .utf8
+            ).write(to: input)
+            let file = root.appendingPathComponent("load.log")
+            let result = await invoke(
+                [
+                    "load", input.path, "-d", "-S", socket, "--log-file", file.path,
+                    "--log-level", "info", "--json",
+                ],
+                in: root, extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            try #require(result.code == 0, "\(result.error)")
+            #expect(try result.json()["status"] as? String == "success")
+            #expect(try await server.sessions().contains { $0.name == "logged" })
+            let raw = try String(contentsOf: file, encoding: .utf8)
+            #expect(!raw.contains("\u{1b}"))
+            let records = try raw.split(separator: "\n").map {
+                try JSONDecoder().decode(Value.self, from: Data($0.utf8))
+            }
+            #expect(
+                records.compactMap { $0["event"]?.string } == [
+                    "started", "workspace-completed", "completed",
+                ])
+            #expect(records.contains { $0["code"] == .string("bootstrap_stdout") })
+            #expect(result.error.joined().contains("bootstrap_stdout"))
+        }
+    }
+
+    @Test("log write failures retain the primary load outcome")
+    func logWriteFailure() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let input = root.appendingPathComponent("limited.json")
+            try Data(#"{"session_name":"limited","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: input)
+            let executable = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent().appendingPathComponent(".build/debug/tmux-workspace")
+            try #require(FileManager.default.isExecutableFile(atPath: executable.path))
+            for source in [input.path, "missing"] {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sh")
+                process.arguments = [
+                    "-c", "ulimit -f 0; trap '' XFSZ; exec \"$@\"", "workspace-log-limit",
+                    executable.path, "load", source, "-d", "-S", socket, "--json",
+                    "--log-file", root.appendingPathComponent("limited.log").path,
+                    "--log-level", "info",
+                ]
+                process.environment = ProcessInfo.processInfo.environment.merging([
+                    "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUXP_CONFIGDIR": root.path,
+                ]) { _, new in new }
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+                try process.run()
+                process.waitUntilExit()
+                let out = stdout.fileHandleForReading.readDataToEndOfFile()
+                let err = stderr.fileHandleForReading.readDataToEndOfFile()
+                let records = try String(decoding: err, as: UTF8.self).split(separator: "\n").map {
+                    try JSONDecoder().decode(Value.self, from: Data($0.utf8))
+                }
+                #expect(records.filter { $0["code"] == .string("log_write") }.count == 1)
+                if source == input.path {
+                    #expect(process.terminationStatus == 0)
+                    #expect(
+                        try JSONDecoder().decode(Value.self, from: out)["status"]
+                            == .string("success"))
+                } else {
+                    #expect(process.terminationStatus == 1)
+                    #expect(out.isEmpty)
+                    #expect(records.contains { $0["code"] == .string("workspace_not_found") })
+                }
+            }
+            #expect(try await server.sessions().contains { $0.name == "limited" })
+        }
+    }
+
     @Test("native read commands preserve generic documents and machine framing")
     func readCommands() async throws {
         try await withFiles { root in
