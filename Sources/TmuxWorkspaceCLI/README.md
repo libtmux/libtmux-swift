@@ -29,6 +29,51 @@ Generate shell completion from the parser:
 $ .build/debug/tmux-workspace --generate-completion-script zsh
 ```
 
+Build an optimized executable and install it in a directory on `PATH`:
+
+```console
+$ swift build \
+    --configuration release \
+    --jobs 2 \
+    --traits YAMLWorkspaces \
+    --force-resolved-versions \
+    --product tmux-workspace
+```
+
+```console
+$ install -dm755 "$HOME/.local/bin"
+```
+
+```console
+$ install -m755 .build/release/tmux-workspace "$HOME/.local/bin/tmux-workspace"
+```
+
+The installed binary requires the Swift runtime libraries provided by the
+toolchain on Linux. This command does not produce a standalone distribution.
+
+Verify terminal handoff against that executable:
+
+```console
+$ python3 Scripts/check_workspace_terminal.py "$HOME/.local/bin/tmux-workspace"
+```
+
+Compare startup, discovery, search, cold-server load and YAML capture with
+tmuxp 1.74.0 installed in the selected Python interpreter:
+
+```console
+$ python3 Scripts/benchmark_workspace_cli.py \
+    "$HOME/.local/bin/tmux-workspace" \
+    --tmux tmux \
+    --python python3 \
+    --samples 5 \
+    --output workspace-cli-benchmark.json
+```
+
+The benchmark uses private sockets, checks topology and directories outside
+the timed subprocess, and retains every sample plus median and spread. Its
+three blank panes exercise creation; they do not establish command execution,
+interactive behavior or full capture fidelity.
+
 ## Commands
 
 `ls` discovers global workspaces and local `.tmuxp.yaml`, `.tmuxp.yml` and
@@ -109,6 +154,6 @@ has terminal control characters escaped.
 ## Remaining work
 
 Append and terminal attachment; plugins and further execution settings; progress
-presentation; complete capture; generated manuals; release installation and
-matched benchmarks remain outside this checkpoint. The complete tmuxp command
+presentation; complete capture; generated manuals and portable distribution
+remain outside this checkpoint. The complete tmuxp command
 surface is not yet available. YAML is unavailable when its build trait is off.
