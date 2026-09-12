@@ -48,6 +48,10 @@ struct Load: WorkspaceAction {
     @Argument(help: "Workspace names or paths.") var files: [String]
     @Option(name: .customShort("f"), help: "tmux configuration file.") var configurationFile:
         String?
+    @Flag(name: .customShort("2"), help: "Force tmux clients to use 256-color mode.")
+    var colors256 = false
+    @Flag(name: .customShort("8"), help: "Legacy 88-color mode; unsupported by current tmux.")
+    var colors88 = false
     @Option(name: .customShort("s"), help: "Override the final workspace's session name.")
     var sessionName: String?
     @Flag(name: .customShort("d"), help: "Leave loaded sessions detached.") var detached = false
@@ -58,6 +62,9 @@ struct Load: WorkspaceAction {
 
     mutating func validate() throws {
         guard !files.isEmpty else { throw ValidationError("Provide at least one workspace.") }
+        guard !(colors256 && colors88) else {
+            throw ValidationError("Choose one of -2 and -8.")
+        }
         guard detached || append else {
             throw ValidationError(
                 "This build requires load -d; terminal attachment is not implemented yet.")
