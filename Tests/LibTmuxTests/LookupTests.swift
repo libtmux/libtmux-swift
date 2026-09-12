@@ -61,6 +61,13 @@ struct LookupTests {
     @Test("a name tmux reads as format syntax still looks up exactly")
     func hostileNamesLookUp() async throws {
         try await withTmuxServer { server in
+            // tmux renames a window it did not get an explicit name for as the
+            // command inside it changes, so the bootstrap window drifts from
+            // "tmux" to whatever shell settles. These cases read the names once
+            // and then compare two listings against them, which that rename
+            // loses a race with. Each case has its own server, so turning it off
+            // here is scoped to this one.
+            _ = try await server.setOption("automatic-rename", to: "off")
             let session = try await server.newSession(named: "hostile")
             for name in ["with,comma", "with}brace", "glob*star", "with#hash"] {
                 _ = try await server.newWindow(in: session, named: name)

@@ -32,6 +32,13 @@ struct FilterLoweringTests {
     @Test("tmux-side and client-side filtering agree on hostile names")
     func loweringAgreesWithLocalFiltering() async throws {
         try await withTmuxServer { server in
+            // tmux renames a window it did not get an explicit name for as the
+            // command inside it changes, so the bootstrap window drifts from
+            // "tmux" to whatever shell settles. These cases read the names once
+            // and then compare two listings against them, which that rename
+            // loses a race with. Each case has its own server, so turning it off
+            // here is scoped to this one.
+            _ = try await server.setOption("automatic-rename", to: "off")
             let session = try await server.newSession(named: "differential")
             for name in Self.hostileNames {
                 _ = try await server.newWindow(in: session, named: name)
@@ -236,6 +243,13 @@ struct FilterLoweringTests {
     @Test("a literal tmux cannot compare byte for byte is decided at home")
     func unicodeAndHashLiteralsStayLocal() async throws {
         try await withTmuxServer { server in
+            // tmux renames a window it did not get an explicit name for as the
+            // command inside it changes, so the bootstrap window drifts from
+            // "tmux" to whatever shell settles. These cases read the names once
+            // and then compare two listings against them, which that rename
+            // loses a race with. Each case has its own server, so turning it off
+            // here is scoped to this one.
+            _ = try await server.setOption("automatic-rename", to: "off")
             let session = try await server.newSession(named: "unicode")
             // Swift reads these two as one string; tmux reads five bytes and
             // six. Comparing them in tmux would drop a row Swift keeps, so
