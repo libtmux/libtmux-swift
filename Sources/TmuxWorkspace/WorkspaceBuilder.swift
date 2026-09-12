@@ -1,6 +1,13 @@
 import Foundation
 import LibTmux
 
+package enum WorkspaceBuildEvent: Sendable {
+    case windowStarted(index: Int, window: Window)
+    case paneStarted(windowIndex: Int, index: Int, pane: Pane)
+    case paneCompleted(windowIndex: Int, index: Int, pane: Pane)
+    case windowCompleted(index: Int, window: Window)
+}
+
 /// Builds a workspace on a tmux server.
 ///
 /// This is a consumer of `LibTmux`, not part of it: everything here goes
@@ -30,7 +37,8 @@ public enum WorkspaceBuilder {
         environment: [String: String],
         configureSession: @Sendable (Session) async throws -> Void,
         configureWindow: @Sendable (Window, Int) async throws -> Void,
-        borrowing borrowed: Session? = nil
+        borrowing borrowed: Session? = nil,
+        onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void = { _ in }
     ) async throws(WorkspaceBuilderError) -> Session {
         guard !workspace.windows.isEmpty else {
             throw WorkspaceBuilderError.noWindows
@@ -90,7 +98,10 @@ public enum WorkspaceBuilder {
                     ).window
                 }
                 try await configureWindow(created, index)
-                try await build(window, in: created, of: workspace, on: server)
+                try await onEvent(.windowStarted(index: index, window: created))
+                try await build(
+                    window, at: index, in: created, of: workspace, on: server, onEvent: onEvent)
+                try await onEvent(.windowCompleted(index: index, window: created))
                 if window.focus == true { focusedWindow = created }
             }
 
@@ -163,10 +174,12 @@ public enum WorkspaceBuilder {
 
     private static func build(
         _ window: WindowPlan,
+        at windowIndex: Int,
         in created: Window,
         of workspace: Workspace,
-        on server: Server
-    ) async throws(TmuxError) {
+        on server: Server,
+        onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void
+    ) async throws {
         // The window arrives with one pane; only the rest are split in.
         var panes = try await server.snapshot().panes(of: created)
         for pane in window.panes.dropFirst() {
@@ -183,7 +196,9 @@ public enum WorkspaceBuilder {
             try await server.selectLayout(created, layout)
         }
 
-        for (plan, pane) in zip(window.panes, panes) {
+        for (index, pair) in zip(window.panes, panes).enumerated() {
+            let (plan, pane) = pair
+            try await onEvent(.paneStarted(windowIndex: windowIndex, index: index, pane: pane))
             for command in plan.shellCommands {
                 if command.enter {
                     try await server.run(command.command, in: pane)
@@ -197,6 +212,7 @@ public enum WorkspaceBuilder {
                     )
                 }
             }
+            try await onEvent(.paneCompleted(windowIndex: windowIndex, index: index, pane: pane))
         }
         if let focused = zip(window.panes.reversed(), panes.reversed()).first(where: {
             $0.0.focus == true
