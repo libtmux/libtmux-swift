@@ -233,9 +233,8 @@ extension TmuxTools {
                 reason: "run_shell_command could not stage its command"
             )
         }
-        var wrote = false
-        var bytes = Array(script.utf8)
-        wrote = bytes.withUnsafeBytes { buffer -> Bool in
+        let bytes = Array(script.utf8)
+        let wrote = bytes.withUnsafeBytes { buffer -> Bool in
             var offset = 0
             while offset < buffer.count {
                 let written = write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
