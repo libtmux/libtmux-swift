@@ -114,12 +114,13 @@ enum WorkspaceCLI {
                 ?? CLIError(
                     Task.isCancelled ? "cancelled" : "operation", String(describing: error),
                     status: Task.isCancelled ? 130 : 1)
-            await diagnostic(failure, machine: action.output.machine, context: context)
+            await output.failure(failure)
             return failure.status
         }
     }
 
-    private static func diagnostic(_ error: CLIError, machine: Bool, context: CLIContext) async {
+    fileprivate static func diagnostic(_ error: CLIError, machine: Bool, context: CLIContext) async
+    {
         let value = Value.object([
             "severity": .string("error"), "code": .string(error.code),
             "message": .string(error.message),
@@ -154,6 +155,7 @@ actor Presenter {
     let options: OutputOptions
     let context: CLIContext
     private var sequence = 0
+    private var logFile: FileHandle?
 
     init(options: OutputOptions, context: CLIContext) {
         self.options = options
@@ -177,6 +179,9 @@ actor Presenter {
     }
 
     func event(_ event: String, command: String, data: Value) async throws {
+        await log(
+            event == "failed" ? .error : .info,
+            fields: ["event": .string(event), "command": .string(command), "data": data])
         guard options.ndjson else { return }
         sequence += 1
         try await result(
@@ -205,6 +210,7 @@ actor Presenter {
     }
 
     func warning(_ message: String, code: String = "capture_loss") async throws {
+        await log(.warning, fields: ["code": .string(code), "message": .string(message)])
         guard options.logLevel.priority <= DiagnosticLevel.warning.priority else { return }
         let value = Value.object([
             "severity": .string("warning"), "code": .string(code),
@@ -212,6 +218,45 @@ actor Presenter {
         ])
         try await context.error(
             options.machine ? value.encoded() : "Warning: \(Self.sanitize(message))")
+    }
+
+    func failure(_ error: CLIError) async {
+        await log(.error, fields: ["code": .string(error.code), "message": .string(error.message)])
+        await WorkspaceCLI.diagnostic(error, machine: options.machine, context: context)
+    }
+
+    func openLog(_ file: URL) throws {
+        guard !file.path.utf8.contains(0) else {
+            throw CLIError("log_open", "Log file path contains a NUL byte.")
+        }
+        let descriptor = open(
+            file.path, O_WRONLY | O_CREAT | O_APPEND | O_NONBLOCK | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else {
+            throw CLIError("log_open", String(cString: strerror(errno)))
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        var attributes = stat()
+        guard fstat(descriptor, &attributes) == 0, attributes.st_mode & S_IFMT == S_IFREG else {
+            try? handle.close()
+            throw CLIError("log_open", "Log destination must be a regular file.")
+        }
+        logFile = handle
+    }
+
+    private func log(_ level: DiagnosticLevel, fields: [String: Value]) async {
+        guard let file = logFile, level.priority >= options.logLevel.priority else { return }
+        var record = fields
+        record["schema_version"] = .integer(1)
+        record["severity"] = .string(level.rawValue)
+        do {
+            try file.write(contentsOf: Data((try Value.object(record).encoded() + "\n").utf8))
+        } catch {
+            logFile = nil
+            try? file.close()
+            await WorkspaceCLI.diagnostic(
+                CLIError("log_write", "Cannot append to the log file: \(error)"),
+                machine: options.machine, context: context)
+        }
     }
 
     static func sanitize(_ value: String) -> String {
