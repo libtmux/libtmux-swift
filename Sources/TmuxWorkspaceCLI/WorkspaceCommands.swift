@@ -57,6 +57,7 @@ enum WorkspaceCommands {
         let server = try server(
             command.socket, configuration: command.configurationFile, colors256: command.colors256,
             context: context)
+        try await WorkspaceLayout.validate(plans.map(\.workspace), on: server)
         let target = try await loadTarget(command, server: server, context: context, output: output)
         let borrowed: Session?
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }

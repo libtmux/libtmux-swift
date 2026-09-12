@@ -138,8 +138,12 @@ preserving the loaded workspace. tmux client names can be reused between the
 final check and the switch.
 Detaching or interrupting an attached client preserves the loaded workspaces.
 `-d` loads without attachment. Redirected and machine calls require `-d` or
-`--append` and never prompt. All input configurations are validated before
-prompts or session creation.
+`--append` and never prompt. Configuration and layout syntax for every input
+are validated before prompts, scripts or session creation. Invalid layout
+names, checksums and malformed trees fail without changing existing sessions.
+Version-dependent names follow the running daemon, or the selected executable
+when no daemon exists. tmux still resolves geometry and removes extra layout
+cells.
 
 `-2` forces 256-color handling in native tmux clients. Legacy `-8` remains in
 the grammar but fails before document lookup because supported tmux versions

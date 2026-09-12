@@ -775,6 +775,41 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "invalid layouts are rejected before any workspace mutation",
+        arguments: ["not-a-layout", "32d2,80x24,0,0{}", "b25d,80x24,0,0,0"])
+    func invalidLayoutsBeforeMutation(layout: String) async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let before = try await server.snapshot()
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let good = root.appendingPathComponent("first.json")
+            let bad = root.appendingPathComponent("invalid.json")
+            let marker = root.appendingPathComponent("before-script-ran")
+            try JSONSerialization.data(withJSONObject: [
+                "session_name": "first",
+                "before_script": "/usr/bin/touch '\(marker.path)'",
+                "windows": [["panes": [NSNull()]]],
+            ]).write(to: good)
+            try JSONSerialization.data(withJSONObject: [
+                "session_name": "invalid",
+                "windows": [["layout": layout, "panes": [NSNull(), NSNull()]]],
+            ]).write(to: bad)
+            let rejected = await invoke(
+                ["load", good.path, bad.path, "-d", "-S", socket, "--json"],
+                in: root, extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            #expect(rejected.code == 1)
+            #expect(!FileManager.default.fileExists(atPath: marker.path))
+            let running = try await server.isRunning()
+            try #require(running, "Invalid layout terminated the existing tmux server.")
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+            #expect(after.panes.map(\.id) == before.panes.map(\.id))
+        }
+    }
+
     @Test("load failures report retained sessions and roll back only the failed workspace")
     func partialLoad() async throws {
         try await withTmuxServer { server in
