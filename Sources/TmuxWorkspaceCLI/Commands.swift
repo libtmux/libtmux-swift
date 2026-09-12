@@ -73,7 +73,10 @@ struct Load: WorkspaceAction {
     @Flag(name: .customShort("d"), help: "Leave loaded sessions detached.") var detached = false
     @Flag(name: [.long, .customShort("a")], help: "Add windows to the current pane's session.")
     var append = false
-    @Flag(name: [.long, .customShort("y")], help: "Accept confirmations.") var yes = false
+    @Flag(
+        name: [.long, .customShort("y")],
+        help: "Skip the load-mode prompt; require one matching client.")
+    var yes = false
     @Option(help: "Append structured load events and diagnostics to a regular file.")
     var logFile: String?
     @Option(help: "Progress preset or template. Env: TMUXP_PROGRESS_FORMAT.")
@@ -91,10 +94,6 @@ struct Load: WorkspaceAction {
         }
         if let progressLines, progressLines < -1 {
             throw ValidationError("Progress lines must be an integer at least -1.")
-        }
-        guard detached || append else {
-            throw ValidationError(
-                "This build requires load -d; terminal attachment is not implemented yet.")
         }
     }
 }

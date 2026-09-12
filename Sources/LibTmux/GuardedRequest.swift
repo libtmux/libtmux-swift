@@ -73,7 +73,7 @@ enum GuardedValue: Sendable {
             )
         case .client:
             // `if-shell` has a pane target but no client target. The daemon
-            // identity is still guarded atomically and `detach-client` names
+            // identity is still guarded atomically and the operation names
             // the exact client; this does not compare client_pid atomically.
             nil
         case let .windowLink(value):

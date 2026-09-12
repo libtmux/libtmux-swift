@@ -34,6 +34,16 @@ enum WorkspaceCommands {
                 "tmux 3.2a and newer do not support 88-color mode (-8); use -2 or automatic detection.",
                 status: 2)
         }
+        guard !command.output.machine || command.detached || command.append else {
+            throw CLIError("load_mode", "Machine load requires -d or --append.", status: 2)
+        }
+        guard command.detached || command.append || (context.terminal && context.inputTTY != nil)
+        else {
+            throw CLIError(
+                "terminal_required",
+                "Attached load requires a foreground terminal. Use -d to load detached.",
+                status: 2)
+        }
         try await output.prepareProgress(command)
         let store = DocumentStore(context: context)
         if let file = command.logFile { try await output.openLog(store.path(file)) }
@@ -47,11 +57,12 @@ enum WorkspaceCommands {
         let server = try server(
             command.socket, configuration: command.configurationFile, colors256: command.colors256,
             context: context)
-        let borrowed =
-            command.append && !command.detached
-            ? try await appendTarget(server, context: context) : nil
+        let target = try await loadTarget(command, server: server, context: context, output: output)
+        let borrowed: Session?
+        if case let .append(session) = target { borrowed = session } else { borrowed = nil }
         let retained = AppendState()
         var results: [Value] = []
+        var lastSession: Session?
         try await output.event(
             "started", command: "load", data: .object(["inputs": .integer(Int64(plans.count))]))
         do {
@@ -169,12 +180,21 @@ enum WorkspaceCommands {
                         borrowed != nil ? "appended" : existing == nil ? "created" : "reused"),
                 ])
                 results.append(result)
+                lastSession = session
                 try await output.event("workspace-completed", command: "load", data: result)
             }
             let result = Value.object(["status": .string("success"), "workspaces": .array(results)])
             try await output.event("completed", command: "load", data: result)
-            if !command.output.ndjson {
+            if command.output.json && !command.output.ndjson {
                 try await output.result(result)
+            } else if !command.output.machine {
+                for result in results {
+                    try await output.row(
+                        .object([
+                            "name": result["session_name"] ?? .null,
+                            "path": result["action"] ?? .null,
+                        ]))
+                }
             }
         } catch {
             let changed = await retained.started
@@ -198,14 +218,105 @@ enum WorkspaceCommands {
             }
             throw error
         }
+        if case let .attached(client) = target, let session = lastSession {
+            if let client {
+                try await server.switchClient(client, to: session)
+            } else {
+                guard try await server.incarnation() == session.incarnation else {
+                    throw CLIError(
+                        "attach_context", "The workspace's tmux server changed before attachment.")
+                }
+                var arguments = [server.tmuxExecutable, "-N", "-u"]
+                if command.colors256 { arguments.append("-2") }
+                switch server.endpoint {
+                case let .socketPath(path): arguments += ["-S", path]
+                case let .socketName(name): arguments += ["-L", name]
+                }
+                arguments += ["attach-session", "-t", session.id.rawValue]
+                let result = try await ProcessCommands.run(
+                    arguments, context: context, terminal: true)
+                guard result.code == 0 else {
+                    throw CLIError(
+                        "attach_failed", "tmux attachment exited with status \(result.code).",
+                        status: result.code)
+                }
+            }
+        }
     }
 
-    private static func appendTarget(_ selected: Server, context: CLIContext) async throws
-        -> Session
+    private enum LoadTarget {
+        case detached
+        case append(Session)
+        case attached(Client?)
+    }
+
+    private static func loadTarget(
+        _ command: Load, server: Server, context: CLIContext, output: Presenter
+    ) async throws -> LoadTarget {
+        if command.detached { return .detached }
+        if command.append {
+            return .append(
+                try await currentTarget(server, context: context, verifyTerminal: false).session)
+        }
+        guard let tmux = context.environment["TMUX"], !tmux.isEmpty else { return .attached(nil) }
+        let current = try await currentTarget(server, context: context, verifyTerminal: true)
+        if !command.yes {
+            while true {
+                let answer = try await prompt(
+                    "Load: [y] switch, [n] detached, [a] append, [q] cancel (y)",
+                    context: context, output: output)
+                if ["n", "no", "d", "detached"].contains(answer) { return .detached }
+                if ["a", "append"].contains(answer) { return .append(current.session) }
+                if ["", "y", "yes", "s", "switch"].contains(answer) { break }
+            }
+        }
+        guard !current.clients.isEmpty else {
+            throw CLIError(
+                "load_context", "No attached client views the current pane. Use -d or --append.")
+        }
+        if current.clients.count == 1 { return .attached(current.clients[0]) }
+        guard !command.yes else {
+            throw CLIError(
+                "load_context",
+                "Several clients view this pane. Omit -y to choose a client, or use -d or --append.",
+                status: 2)
+        }
+        let clients = current.clients.sorted { $0.name < $1.name }
+        for (index, client) in clients.enumerated() {
+            try await output.row(
+                .object(["name": .string("[\(index + 1)]"), "path": .string(client.name)]))
+        }
+        while true {
+            let answer = try await prompt(
+                "Choose client (1-\(clients.count), q to cancel):", context: context, output: output
+            )
+            if let number = Int(answer), clients.indices.contains(number - 1) {
+                return .attached(clients[number - 1])
+            }
+        }
+    }
+
+    private static func prompt(_ message: String, context: CLIContext, output: Presenter)
+        async throws -> String
     {
+        try await output.row(.object(["name": .string(message)]))
+        guard let input = context.input, let line = try await input() else {
+            throw CLIError("cancelled", "Load cancelled.", status: 130)
+        }
+        let answer = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !["q", "quit", "cancel"].contains(answer) else {
+            throw CLIError("cancelled", "Load cancelled.", status: 130)
+        }
+        return answer
+    }
+
+    private static func currentTarget(
+        _ selected: Server, context: CLIContext, verifyTerminal: Bool
+    ) async throws -> (session: Session, clients: [Client]) {
+        let code = verifyTerminal ? "load_context" : "append_context"
         guard let inherited = TmuxContext.current(environment: context.environment),
             let rawPane = context.environment["TMUX_PANE"], let paneID = PaneID(rawValue: rawPane)
-        else { throw CLIError("append_context", "Append requires a valid TMUX and TMUX_PANE.") }
+        else { throw CLIError(code, "This load requires a valid TMUX and TMUX_PANE.") }
         let origin = try await inherited.server(tmuxExecutable: selected.tmuxExecutable)
             .incarnation()
         let snapshot = try await selected.snapshot()
@@ -216,7 +327,7 @@ enum WorkspaceCommands {
             let pane = snapshot.panes.first(where: { $0.id == paneID })
         else {
             throw CLIError(
-                "append_context", "Selected endpoint does not identify the current pane's server.")
+                code, "Selected endpoint does not identify the current pane's server.")
         }
         let links = snapshot.windowLinks.filter { $0.windowID == pane.windowID }
         let link =
@@ -224,9 +335,19 @@ enum WorkspaceCommands {
             ?? (links.count == 1 ? links.first : nil)
         guard let link, let session = snapshot.sessions.first(where: { $0.id == link.sessionID })
         else {
-            throw CLIError("append_context", "The current pane's session is missing or ambiguous.")
+            throw CLIError(code, "The current pane's session is missing or ambiguous.")
         }
-        return session
+        if verifyTerminal {
+            guard let tty = context.inputTTY,
+                try await selected.format("#{pane_tty}", for: pane, through: link) == tty
+            else { throw CLIError(code, "TMUX_PANE does not identify this terminal.") }
+        }
+        return (
+            session,
+            snapshot.clients.filter {
+                !$0.isControlMode && $0.sessionID == session.id && $0.activePaneID == pane.id
+            }
+        )
     }
 
     static func freeze(_ command: Freeze, context: CLIContext, output: Presenter) async throws {

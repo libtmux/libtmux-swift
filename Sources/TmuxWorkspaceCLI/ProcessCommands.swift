@@ -200,6 +200,36 @@ enum ProcessCommands {
         var error = ""
     }
 
+    static func readLine() async throws -> String? {
+        let descriptor = STDIN_FILENO
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) >= 0 else {
+            throw CLIError("terminal_input", "Cannot read terminal input.")
+        }
+        defer { _ = fcntl(descriptor, F_SETFL, flags) }
+        var bytes: [UInt8] = []
+        while true {
+            try Task.checkCancellation()
+            var byte: UInt8 = 0
+            let count = read(descriptor, &byte, 1)
+            if count == 1 {
+                if byte == 10 { return String(decoding: bytes, as: UTF8.self) }
+                guard bytes.count < 1024 else {
+                    throw CLIError(
+                        "terminal_input", "Terminal response exceeds 1024 bytes.", status: 2)
+                }
+                bytes.append(byte)
+            } else if count == 0 {
+                return bytes.isEmpty ? nil : String(decoding: bytes, as: UTF8.self)
+            } else if errno == EAGAIN || errno == EWOULDBLOCK {
+                guard await DescriptorReadiness(fileDescriptor: descriptor, interest: .read).wait()
+                else { throw CancellationError() }
+            } else if errno != EINTR {
+                throw CLIError("terminal_input", "Cannot read terminal input.")
+            }
+        }
+    }
+
     static func run(
         _ arguments: [String], context: CLIContext, terminal: Bool = false
     ) async throws -> Result {

@@ -67,6 +67,20 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "implicit attachment fails before input discovery without a terminal",
+        arguments: [[], ["--json"], ["--ndjson"]])
+    func loadModePreflight(_ mode: [String]) async throws {
+        try await withFiles { root in
+            let result = await invoke(["load", "missing"] + mode, in: root)
+            #expect(result.code == 2)
+            #expect(result.output.isEmpty)
+            #expect(
+                result.error.joined().contains(
+                    mode.isEmpty ? "foreground terminal" : "-d or --append"))
+        }
+    }
+
     @Test("native parser help and completion are executable")
     func parserHelp() async throws {
         try await withFiles { root in

@@ -124,8 +124,19 @@ The live bridge test is enabled by setting `TMUX_WORKSPACE_TEST_PYTHON` to
 the compatible interpreter. Optional interactive backend packages and
 incremental NDJSON child records still need verification and implementation.
 
-`load -d` creates sessions on an explicit `-S` or `-L` endpoint, or the
+`load` creates sessions on an explicit `-S` or `-L` endpoint, or the
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
+Human calls with a foreground terminal attach to the last loaded workspace.
+Inside tmux, a prompt offers switching, detached loading, appending or
+cancellation. `-y` skips the mode prompt. When several clients view the current
+pane, choose one interactively; `-y` refuses that ambiguity. Switching verifies
+the pane's terminal, server identity and selected client's current PID, session
+and pane. tmux client names can be reused between that check and the switch.
+Detaching or interrupting an attached client preserves the loaded workspaces.
+`-d` loads without attachment. Redirected and machine calls require `-d` or
+`--append` and never prompt. All input configurations are validated before
+prompts or session creation.
+
 `-2` forces 256-color handling in native tmux clients. Legacy `-8` remains in
 the grammar but fails before document lookup because supported tmux versions
 do not implement 88-color mode. Both flags together are a usage error.
@@ -205,7 +216,7 @@ output disable the display. NDJSON receives discrete window/pane events.
 
 ## Remaining work
 
-Terminal attachment; plugins and further execution settings; complete capture;
+Plugins and further execution settings; complete capture;
 generated manuals and portable distribution
 remain outside this checkpoint. The complete tmuxp command
 surface is not yet available. YAML is unavailable when its build trait is off.
