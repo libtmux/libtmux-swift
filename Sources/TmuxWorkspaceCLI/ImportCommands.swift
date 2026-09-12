@@ -60,15 +60,29 @@ enum ImportCommands {
         ]
         result["start_directory"] = source["project_root"] ?? source["root"]
         result["socket_name"] = source["socket_name"]
+        for key in ["cli_args", "tmux_options"] {
+            if let value = source[key], value.string == nil {
+                throw CLIError("import_document", "\(key) must be a string.")
+            }
+        }
         if let configuration = (source["cli_args"] ?? source["tmux_options"])?.string {
             let value = configuration.trimmingCharacters(in: .whitespaces)
             result["config"] = .string(
                 value.hasPrefix("-f ")
                     ? String(value.dropFirst(3)).trimmingCharacters(in: .whitespaces) : value)
         }
+        try validateCommands(source["pre"])
+        try validateCommands(source["pre_window"])
         var before = list(source["pre"])
         before += list(source["pre_window"])
-        if let version = source["rbenv"]?.string {
+        if let value = source["rbenv"] {
+            let version: String
+            switch value {
+            case let .string(text): version = text
+            case let .integer(number): version = String(number)
+            case let .number(number): version = String(number)
+            default: throw CLIError("import_document", "rbenv must be a version string or number.")
+            }
             before.append(.string("rbenv shell " + version))
         }
         if !before.isEmpty { result["shell_command_before"] = .array(before) }
@@ -119,8 +133,15 @@ enum ImportCommands {
                 window["start_directory"] = sourceWindow["root"]
                 window["layout"] = sourceWindow["layout"]
                 window["clear"] = sourceWindow["clear"]
-                window["shell_command_before"] = sourceWindow["filters"]?["before"]
-                window["shell_command_after"] = sourceWindow["filters"]?["after"]
+                if let value = sourceWindow["filters"] {
+                    let filters = try object(value, at: "filters")
+                    warnUnknown(
+                        filters, known: ["before", "after"], at: "filters", warnings: &warnings)
+                    try validateCommands(filters["before"])
+                    try validateCommands(filters["after"])
+                    window["shell_command_before"] = filters["before"]
+                    window["shell_command_after"] = filters["after"]
+                }
                 guard let panes = (sourceWindow["splits"] ?? sourceWindow["panes"])?.array else {
                     throw CLIError("import_document", "teamocil panes must be a list.")
                 }
@@ -153,6 +174,18 @@ enum ImportCommands {
     private static func list(_ value: Value?) -> [Value] {
         guard let value, value != .null else { return [] }
         return value.array ?? [value]
+    }
+
+    private static func validateCommands(_ value: Value?) throws {
+        guard let value else { return }
+        switch value {
+        case .string, .null: return
+        case let .array(values): for value in values { try validateCommands(value) }
+        case .object where value["cmd"]?.string != nil: return
+        default:
+            throw CLIError(
+                "import_document", "Commands must be strings, command mappings or lists.")
+        }
     }
 
     private static func warnUnknown(
