@@ -195,6 +195,15 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("quoted argv preserves ordinary backslashes and joins continuations")
+    func quotedArguments() throws {
+        #expect(
+            try ProcessCommands.splitArguments(#"editor "a\q" "\$x" "\`x" "\\" "\"" 'literal\q'"#)
+                == ["editor", #"a\q"#, "$x", "`x", "\\", "\"", #"literal\q"#])
+        #expect(
+            try ProcessCommands.splitArguments("editor foo\\\nbar \\\n") == ["editor", "foobar"])
+    }
+
     @Test("editor argv and child exit status survive native execution")
     func editor() async throws {
         try await withFiles { root in
