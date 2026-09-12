@@ -30,15 +30,26 @@ enum ReadCommands {
         let store = DocumentStore(context: context)
         let file = try store.resolve(command.file)
         let value = try store.read(file)
-        if command.output.machine {
+        let format =
+            command.save.format ?? (file.pathExtension.lowercased() == "json" ? .yaml : .json)
+        let destination =
+            command.save.destination.map { store.path($0) }
+            ?? (command.yes && !command.output.machine
+                ? file.deletingPathExtension().appendingPathExtension(format.rawValue) : nil)
+        if let destination {
+            try store.save(value, to: destination, format: format, overwrite: command.save.force)
+            if command.output.machine {
+                try await output.result(
+                    .object([
+                        "schema_version": .integer(1), "command": .string("convert"),
+                        "status": .string("success"), "destination": .string(destination.path),
+                        "format": .string(format.rawValue),
+                    ]))
+            } else {
+                try await context.output("Saved \(Presenter.sanitize(destination.path))")
+            }
+        } else if command.output.machine {
             try await output.document(value, command: "convert")
-            return
-        }
-        let format: WorkspaceFormat = file.pathExtension == "json" ? .yaml : .json
-        let destination = file.deletingPathExtension().appendingPathExtension(format.rawValue)
-        if command.yes {
-            try store.save(value, to: destination, format: format, overwrite: false)
-            try await context.output("Saved \(Presenter.sanitize(destination.path))")
         } else {
             try await context.output(store.encode(value, format: format))
         }

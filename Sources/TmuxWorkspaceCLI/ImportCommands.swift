@@ -5,6 +5,7 @@ enum ImportCommands {
         async throws
     {
         let kind = type(of: command).importer
+        let format = command.save.format ?? .yaml
         var sourceContext = context
         sourceContext.environment["TMUXP_CONFIGDIR"] =
             kind == "tmuxinator"
@@ -29,9 +30,9 @@ enum ImportCommands {
         if let destination = command.save.destination {
             let file = store.path(destination)
             try store.save(
-                document, to: file, format: command.save.format, overwrite: command.save.force)
+                document, to: file, format: format, overwrite: command.save.force)
             result["destination"] = .string(file.path)
-            result["format"] = .string(command.save.format.rawValue)
+            result["format"] = .string(format.rawValue)
             if command.output.machine {
                 try await output.result(.object(result))
             } else {
@@ -43,7 +44,7 @@ enum ImportCommands {
         } else if command.output.json {
             try await output.result(document)
         } else {
-            try await context.output(store.encode(document, format: command.save.format))
+            try await context.output(store.encode(document, format: format))
         }
     }
 

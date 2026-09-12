@@ -143,6 +143,40 @@ struct WorkspaceCLITests {
     }
 
     @Test(
+        "conversion saves explicit destinations in both machine modes",
+        arguments: ["--json", "--ndjson"])
+    func conversionSave(mode: String) async throws {
+        try await withFiles { root in
+            let input = root.appendingPathComponent("source.json")
+            let destination = root.appendingPathComponent("saved.json")
+            try Data(#"{"session_name":"before","extension":{"keep":true}}"#.utf8).write(to: input)
+            let arguments = [
+                "convert", input.path, "--save-to", destination.path,
+                "--workspace-format", "json", mode,
+            ]
+            let saved = await invoke(arguments, in: root)
+            try #require(saved.code == 0, "\(saved.error)")
+            let metadata = try saved.json()
+            #expect(metadata["schema_version"] as? Int == 1)
+            #expect(metadata["command"] as? String == "convert")
+            #expect(metadata["destination"] as? String == destination.path)
+            let original = try Data(contentsOf: destination)
+            #expect(
+                try JSONDecoder().decode(Value.self, from: original)["extension"]?["keep"]
+                    == .bool(true))
+            try Data(#"{"session_name":"after"}"#.utf8).write(to: input)
+            let protected = await invoke(arguments, in: root)
+            #expect(protected.code == 1)
+            #expect(try Data(contentsOf: destination) == original)
+            let replaced = await invoke(arguments + ["--force"], in: root)
+            #expect(replaced.code == 0, "\(replaced.error)")
+            #expect(
+                try JSONDecoder().decode(Value.self, from: Data(contentsOf: destination))[
+                    "session_name"] == .string("after"))
+        }
+    }
+
+    @Test(
         "NDJSON discovery emits a document before reading the next",
         arguments: [["ls", "--full", "--ndjson"], ["search", "workspace", "--ndjson"]])
     func incrementalDiscovery(arguments: [String]) async throws {
