@@ -168,6 +168,10 @@ successful sessions. NDJSON conversion, capture and import results include a
 versioned envelope and nested `workspace` document. Diagnostics use stderr.
 Machine output bypasses color.
 
+`--log-level debug|info|warning|error|critical` selects the minimum advisory
+diagnostic severity, defaulting to `warning`. Capture/import/bootstrap warnings
+are hidden at `error` or `critical`. Result data and fatal errors remain visible.
+
 Human listing uses semantic name/path colors. `--color auto|always|never`,
 `NO_COLOR` and `FORCE_COLOR` control it. Text from workspace names and paths
 has terminal control characters escaped.

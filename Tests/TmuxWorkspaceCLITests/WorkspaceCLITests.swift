@@ -82,6 +82,34 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("diagnostic levels filter warnings without hiding results or failures")
+    func diagnosticLevels() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("import.json")
+            try Data(#"{"name":"levels","windows":[],"untranslated":true}"#.utf8).write(to: file)
+            for level in ["debug", "info", "warning", "error", "critical"] {
+                let arguments = ["import", "tmuxinator", file.path, "--json"]
+                for flags in [
+                    ["--log-level", level] + arguments, arguments + ["--log-level", level],
+                ] {
+                    let result = await invoke(flags, in: root)
+                    try #require(result.code == 0, "\(result.error)")
+                    #expect(try result.json()["session_name"] as? String == "levels")
+                    #expect(result.error.isEmpty == ["error", "critical"].contains(level))
+                }
+            }
+            let invalid = await invoke(
+                ["convert", "missing", "--log-level", "invalid", "--ndjson"], in: root)
+            #expect(invalid.code == 2)
+            #expect(invalid.output.isEmpty)
+            let failure = await invoke(
+                ["convert", "missing", "--log-level", "critical", "--json"], in: root)
+            #expect(failure.code == 1)
+            #expect(failure.output.isEmpty)
+            #expect(!failure.error.isEmpty)
+        }
+    }
+
     @Test("native read commands preserve generic documents and machine framing")
     func readCommands() async throws {
         try await withFiles { root in
