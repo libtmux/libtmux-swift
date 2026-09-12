@@ -17,11 +17,16 @@ version number says only which alpha you have. Pin an exact one.
   and `Server.clients(where:)` answer a `FilterExpr` through tmux instead of
   listing a whole server and discarding most of it, so a narrow query costs
   what its result costs rather than what the server holds. They throw
-  `FilteredListingError`. The answer matches `filter(_:)` exactly: what tmux
-  cannot evaluate — a regular expression, a glob pattern containing a
-  backslash, a case-insensitive match on non-ASCII text — widens the predicate
-  and is decided locally. `Server.clients(where:)` never pushes down, because
-  `list-clients` gained `-f` in tmux 3.4 and this package supports 3.2a. (#11)
+  `FilteredListingError`. The answer matches `filter(_:)` exactly. What tmux
+  cannot be trusted to answer the same way widens the predicate and is decided
+  locally instead: a regular expression, which runs on this package's bounded
+  engine rather than tmux's; a literal tmux cannot compare byte for byte,
+  meaning one that is not ASCII — Swift's `==` is canonical equivalence — or
+  that contains `#`, whose escape has an exception before `[`; and a glob
+  pattern containing a backslash. A glob is pushed down but never negated,
+  because tmux matches bytes where Swift matches characters.
+  `Server.clients(where:)` never pushes down at all, because `list-clients`
+  gained `-f` in tmux 3.4 and this package supports 3.2a. (#11)
 
 - `Server.session(_:)`, `Server.session(named:)`, `Server.window(_:)`,
   `Server.windows(named:)` and `Server.pane(_:)` read one object back without
