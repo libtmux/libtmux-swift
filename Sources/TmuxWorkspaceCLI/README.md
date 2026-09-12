@@ -172,6 +172,14 @@ Machine output bypasses color.
 diagnostic severity, defaulting to `warning`. Capture/import/bootstrap warnings
 are hidden at `error` or `critical`. Result data and fatal errors remain visible.
 
+`load --log-file PATH` appends compact JSON records to a regular file. The
+selected log level controls lifecycle events (`info`), bootstrap warnings and
+errors. New files have owner-only permissions. Opening the destination fails
+before document or backend work; a later write failure reports `log_write` on
+stderr, disables further logging and preserves the primary operation result.
+The file can end with an incomplete record after a partial write failure.
+Log output and human or machine stdout remain separate.
+
 Human listing uses semantic name/path colors. `--color auto|always|never`,
 `NO_COLOR` and `FORCE_COLOR` control it. Text from workspace names and paths
 has terminal control characters escaped.

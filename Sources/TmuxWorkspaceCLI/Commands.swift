@@ -74,6 +74,8 @@ struct Load: WorkspaceAction {
     @Flag(name: [.long, .customShort("a")], help: "Add windows to the current pane's session.")
     var append = false
     @Flag(name: [.long, .customShort("y")], help: "Accept confirmations.") var yes = false
+    @Option(help: "Append structured load events and diagnostics to a regular file.")
+    var logFile: String?
     @Flag(help: "Disable the progress display.") var noProgress = false
 
     mutating func validate() throws {
