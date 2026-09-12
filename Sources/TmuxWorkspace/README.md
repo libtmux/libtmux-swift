@@ -53,7 +53,7 @@ behind it — appears only when the `YAMLWorkspaces` trait is enabled:
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.4",
+    exact: "0.1.0-alpha.5",
     traits: ["YAMLWorkspaces"]
 )
 ```

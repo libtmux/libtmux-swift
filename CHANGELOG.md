@@ -11,6 +11,8 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] - 2026-09-12
+
 ### Added
 
 - `Server.sessions(where:)`, `Server.windows(where:)`, `Server.panes(where:)`

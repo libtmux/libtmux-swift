@@ -51,13 +51,13 @@ MANIFEST_EXCERPTS = {
     (
         '.package(\n'
         '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
-        '    exact: "0.1.0-alpha.4"\n'
+        '    exact: "0.1.0-alpha.5"\n'
         ")"
     ),
     (
         '.package(\n'
         '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
-        '    exact: "0.1.0-alpha.4",\n'
+        '    exact: "0.1.0-alpha.5",\n'
         '    traits: ["YAMLWorkspaces"]\n'
         ")"
     ),
