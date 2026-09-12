@@ -33,8 +33,8 @@ package struct NonblockingLineWriter: Sendable {
         self.fileDescriptor = fileDescriptor
     }
 
-    package func write(_ line: String) async -> LineWriteResult {
-        let bytes = Array("\(line)\n".utf8)
+    package func write(_ line: String, newline: Bool = true) async -> LineWriteResult {
+        let bytes = Array((newline ? line + "\n" : line).utf8)
         var offset = 0
         while offset < bytes.count {
             if Task.isCancelled { return .cancelled }

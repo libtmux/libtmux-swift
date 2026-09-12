@@ -171,6 +171,8 @@ Machine output bypasses color.
 `--log-level debug|info|warning|error|critical` selects the minimum advisory
 diagnostic severity, defaulting to `warning`. Capture/import/bootstrap warnings
 are hidden at `error` or `critical`. Result data and fatal errors remain visible.
+Human bootstrap output retains its original stdout/stderr stream; its file-log
+copy follows the threshold.
 
 `load --log-file PATH` appends compact JSON records to a regular file. The
 selected log level controls lifecycle events (`info`), bootstrap warnings and
@@ -184,9 +186,26 @@ Human listing uses semantic name/path colors. `--color auto|always|never`,
 `NO_COLOR` and `FORCE_COLOR` control it. Text from workspace names and paths
 has terminal control characters escaped.
 
+Human loads display progress on terminal stderr. `--progress-format` accepts
+`default`, `minimal`, `window`, `pane`, `verbose`, or a custom template with
+session, window and pane counters. Unknown tokens remain literal; doubled
+braces produce literal braces. `TMUXP_PROGRESS_FORMAT` supplies the default.
+
+`--progress-lines` selects the recent bootstrap-output panel: `3` by default,
+`0` hides it and `-1` uses the initial terminal height. `TMUXP_PROGRESS_LINES`
+supplies its default. The panel retains at most 65,536 UTF-8 bytes; original
+captured child output still goes to its destination. The display updates from
+native build events without polling tmux, uses conservative Unicode clipping,
+and clears on completion or interruption. It reads terminal size once and does
+not track resize events. Child output is collected before display, not streamed
+while the script runs.
+
+`--no-progress`, `TMUXP_PROGRESS=0`, `TERM=dumb`, redirected stderr and machine
+output disable the display. NDJSON receives discrete window/pane events.
+
 ## Remaining work
 
-Terminal attachment; plugins and further execution settings; progress
-presentation; complete capture; generated manuals and portable distribution
+Terminal attachment; plugins and further execution settings; complete capture;
+generated manuals and portable distribution
 remain outside this checkpoint. The complete tmuxp command
 surface is not yet available. YAML is unavailable when its build trait is off.

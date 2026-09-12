@@ -34,6 +34,7 @@ enum WorkspaceCommands {
                 "tmux 3.2a and newer do not support 88-color mode (-8); use -2 or automatic detection.",
                 status: 2)
         }
+        try await output.prepareProgress(command)
         let store = DocumentStore(context: context)
         if let file = command.logFile { try await output.openLog(store.path(file)) }
         let plans = try command.files.enumerated().map { index, input in
@@ -57,6 +58,15 @@ enum WorkspaceCommands {
             for plan in plans {
                 await retained.reset()
                 try Task.checkCancellation()
+                try await output.event(
+                    "workspace-started", command: "load",
+                    data: .object([
+                        "session_name": .string(borrowed?.name ?? plan.workspace.sessionName),
+                        "input": .string(plan.source),
+                        "window_total": .integer(Int64(plan.workspace.windows.count)),
+                        "session_pane_total": .integer(
+                            Int64(plan.workspace.windows.reduce(0) { $0 + $1.panes.count })),
+                    ]))
                 let existing: Session?
                 if let borrowed {
                     existing = borrowed
@@ -82,11 +92,10 @@ enum WorkspaceCommands {
                                 let result = try await ProcessCommands.run(
                                     script, context: processContext)
                                 if !result.output.isEmpty {
-                                    try await output.warning(
-                                        result.output, code: "bootstrap_stdout")
+                                    try await output.bootstrap(result.output, stream: "stdout")
                                 }
                                 if !result.error.isEmpty {
-                                    try await output.warning(result.error, code: "bootstrap_stderr")
+                                    try await output.bootstrap(result.error, stream: "stderr")
                                 }
                                 guard result.code == 0 else {
                                     throw CLIError(
@@ -115,7 +124,43 @@ enum WorkspaceCommands {
                                 try requireSuccess(
                                     await server.setOption(name, to: value, scope: .window(window)))
                             }
-                        }, borrowing: borrowed)
+                        }, borrowing: borrowed,
+                        onEvent: { event in
+                            let name: String
+                            var fields: [String: Value] = [:]
+                            switch event {
+                            case let .windowStarted(index, window):
+                                name = "window-created"
+                                fields = [
+                                    "window_id": .string(window.id.rawValue),
+                                    "window_name": .string(window.name),
+                                    "window_index": .integer(Int64(index + 1)),
+                                    "pane_total": .integer(
+                                        Int64(plan.workspace.windows[index].panes.count)),
+                                ]
+                            case let .windowCompleted(index, window):
+                                name = "window-completed"
+                                fields = [
+                                    "window_id": .string(window.id.rawValue),
+                                    "window_index": .integer(Int64(index + 1)),
+                                ]
+                            case let .paneStarted(windowIndex, index, pane):
+                                name = "pane-created"
+                                fields = [
+                                    "pane_id": .string(pane.id.rawValue),
+                                    "window_index": .integer(Int64(windowIndex + 1)),
+                                    "pane_index": .integer(Int64(index + 1)),
+                                ]
+                            case let .paneCompleted(windowIndex, index, pane):
+                                name = "pane-completed"
+                                fields = [
+                                    "pane_id": .string(pane.id.rawValue),
+                                    "window_index": .integer(Int64(windowIndex + 1)),
+                                    "pane_index": .integer(Int64(index + 1)),
+                                ]
+                            }
+                            try await output.event(name, command: "load", data: .object(fields))
+                        })
                 }
                 let result = Value.object([
                     "session_name": .string(session.name),
@@ -244,6 +289,7 @@ enum WorkspaceCommands {
     }
 
     private struct PlannedWorkspace {
+        let source: String
         let workspace: Workspace
         let environment: [String: String]
         let options: [String: String]
@@ -386,6 +432,7 @@ enum WorkspaceCommands {
             throw CLIError("document", "Choose one focused window and one focused pane per window.")
         }
         return PlannedWorkspace(
+            source: file.path,
             workspace: Workspace(
                 sessionName: name, startDirectory: rootDirectory, windows: windows),
             environment: environment, options: options, windowOptions: windowOptions,

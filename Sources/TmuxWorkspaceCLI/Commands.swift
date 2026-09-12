@@ -76,12 +76,21 @@ struct Load: WorkspaceAction {
     @Flag(name: [.long, .customShort("y")], help: "Accept confirmations.") var yes = false
     @Option(help: "Append structured load events and diagnostics to a regular file.")
     var logFile: String?
+    @Option(help: "Progress preset or template. Env: TMUXP_PROGRESS_FORMAT.")
+    var progressFormat: String?
+    @Option(
+        parsing: .unconditional,
+        help: "Progress panel rows: 0 hides, -1 uses terminal height. Env: TMUXP_PROGRESS_LINES.")
+    var progressLines: Int?
     @Flag(help: "Disable the progress display.") var noProgress = false
 
     mutating func validate() throws {
         guard !files.isEmpty else { throw ValidationError("Provide at least one workspace.") }
         guard !(colors256 && colors88) else {
             throw ValidationError("Choose one of -2 and -8.")
+        }
+        if let progressLines, progressLines < -1 {
+            throw ValidationError("Progress lines must be an integer at least -1.")
         }
         guard detached || append else {
             throw ValidationError(
