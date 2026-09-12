@@ -126,10 +126,12 @@ extension Server {
         } catch {
             throw .tmux(error)
         }
-        // An empty listing exits nonzero when a filter excluded everything, and
-        // that is a result rather than a failure. A real refusal says so on
-        // standard error.
-        guard reply.isSuccess || reply.errorText.isEmpty else {
+        // A filter that excluded every row is still a success: tmux exits 0
+        // and prints nothing, on every supported release. So a nonzero status
+        // is a failure with no ambiguity to resolve — treating an empty
+        // standard error as "matched nothing" would report absence for a
+        // client that was killed before it could say anything.
+        guard reply.isSuccess else {
             throw .tmux(reply.failure(for: command))
         }
         let rows: [FormatRow]

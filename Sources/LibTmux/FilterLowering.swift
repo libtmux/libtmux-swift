@@ -18,17 +18,40 @@ enum FilterLowering {
     /// what is being asked — `#{==:a,b,a,b}` compares `a` with `b`. `#` is the
     /// escape character and therefore has to go first.
     static func escaped(_ literal: String) -> String {
-        var out = ""
-        out.reserveCapacity(literal.count)
-        for character in literal {
-            switch character {
-            case "#": out += "##"
-            case ",": out += "#,"
-            case "}": out += "#}"
-            default: out.append(character)
+        var out = String.UnicodeScalarView()
+        out.reserveCapacity(literal.unicodeScalars.count)
+        // Over scalars, not characters. A `}` carrying a combining mark is one
+        // Character and compares equal to neither `}` nor anything else, so a
+        // switch over characters walks straight past a brace tmux still reads
+        // as the end of the expansion.
+        for scalar in literal.unicodeScalars {
+            switch scalar {
+            case "#": out.append(contentsOf: "##".unicodeScalars)
+            case ",": out.append(contentsOf: "#,".unicodeScalars)
+            case "}": out.append(contentsOf: "#}".unicodeScalars)
+            default: out.append(scalar)
             }
         }
-        return out
+        return String(out)
+    }
+
+    /// Whether tmux comparing this literal byte for byte asks the same question
+    /// Swift does.
+    ///
+    /// Two reasons it may not, and both silently drop rows rather than failing:
+    ///
+    /// Swift's `==` is canonical equivalence, so `caf\u{e9}` and `cafe\u{301}`
+    /// are one string in Swift and two different byte sequences to tmux. A
+    /// pure-ASCII literal cannot be canonically equal to anything but itself,
+    /// which is what makes the two agree.
+    ///
+    /// A `#` is excluded as well. It is tmux's escape character, but the escape
+    /// has an exception: in `##[` the run is kept rather than collapsed,
+    /// because `#[` opens a style. No single encoding of a literal `#` is
+    /// therefore right in every position, so a literal carrying one is matched
+    /// at home instead.
+    static func comparableAsBytes(_ literal: String) -> Bool {
+        literal.unicodeScalars.allSatisfy { $0.isASCII && $0 != "#" }
     }
 
     /// Escapes a string so tmux's `m` modifier matches it literally, or `nil`
@@ -48,15 +71,16 @@ enum FilterLowering {
     /// at all and is matched at home.
     static func globLiteral(_ literal: String) -> String? {
         guard !literal.contains("\\") else { return nil }
-        var out = ""
-        out.reserveCapacity(literal.count)
-        for character in literal {
-            switch character {
-            case "*", "?", "[", "]": out += "[\(character)]"
-            default: out.append(character)
+        var out = String.UnicodeScalarView()
+        out.reserveCapacity(literal.unicodeScalars.count)
+        for scalar in literal.unicodeScalars {
+            switch scalar {
+            case "*", "?", "[", "]":
+                out.append(contentsOf: "[\(scalar)]".unicodeScalars)
+            default: out.append(scalar)
             }
         }
-        return out
+        return String(out)
     }
 
     /// A predicate that is always true, used wherever a node cannot lower.
@@ -78,11 +102,18 @@ enum FilterLowering {
         return meaningful.dropFirst().reduce(first) { "#{&&:\($0),\($1)}" }
     }
 
+    /// A predicate nothing satisfies.
+    ///
+    /// `.or([])` matches nothing, so an empty disjunction must lower to this
+    /// rather than to ``alwaysTrue``. Spelling it "true" was sound on its own —
+    /// a wider predicate only costs bandwidth — but it also made the branch
+    /// look exactly lowered, which let a wrapping `not` negate it and exclude
+    /// rows that genuinely matched.
+    static let alwaysFalse = "0"
+
     static func any(_ predicates: [String]) -> String {
-        // One unlowerable branch makes the whole disjunction unlowerable: the
-        // others cannot exclude what that branch might have admitted.
         guard !predicates.contains(alwaysTrue) else { return alwaysTrue }
-        guard let first = predicates.first else { return alwaysTrue }
+        guard let first = predicates.first else { return alwaysFalse }
         guard predicates.count > 1 else { return first }
         return predicates.dropFirst().reduce(first) { "#{||:\($0),\($1)}" }
     }
@@ -118,103 +149,136 @@ extension FilterLowering {
         expected ? "#{!=:\(field),0}" : "#{==:\(field),0}"
     }
 
-    /// Whether a case-insensitive match may be handed to tmux.
-    ///
-    /// `m/i` folds case with fnmatch's `FNM_CASEFOLD`, which follows the
-    /// server's locale, while this package folds with Swift's Unicode-correct
-    /// `lowercased()`. For ASCII the two agree everywhere; beyond it they need
-    /// not, and a server running under `LC_ALL=C` would fold nothing at all.
-    /// Rather than let the answer depend on the daemon's environment, anything
-    /// non-ASCII is matched at home.
-    static func foldsIdenticallyToTmux(_ literal: String) -> Bool {
-        literal.unicodeScalars.allSatisfy(\.isASCII)
-    }
+}
+
+/// A tmux predicate, and whether it asks exactly the question the expression
+/// does.
+///
+/// The two travel together on purpose. They were computed apart once — the
+/// predicate by lowering, the exactness by walking the tree a second time — and
+/// the two walks disagreed about an empty branch, which was enough to let a
+/// `not` negate an approximation and drop rows that matched. Deriving both from
+/// one pass makes that class of bug unrepresentable.
+struct LoweredPredicate {
+    let text: String
+    /// `true` only when tmux and this package cannot answer differently.
+    /// An inexact predicate may still be used — it can only ever admit extra
+    /// rows — but it must never be negated.
+    let isExact: Bool
+
+    /// Admits everything, and promises nothing.
+    static let anything = LoweredPredicate(text: FilterLowering.alwaysTrue, isExact: false)
+    /// Admits nothing, exactly.
+    static let nothing = LoweredPredicate(text: FilterLowering.alwaysFalse, isExact: true)
 }
 
 extension FilterOperation {
-    /// A tmux predicate testing this operation against `field`, or `nil` when
-    /// this build cannot express it.
+    /// A predicate testing this operation against `field`, or `nil` when this
+    /// build cannot express it at all.
     ///
     /// `field` is already a `#{...}` expansion; literals arrive raw and are
     /// escaped here so no caller has to remember to.
-    func tmuxPredicate(comparing field: String) -> String? {
-        func literal(_ value: String) -> String { FilterLowering.escaped(value) }
+    func lowered(comparing field: String) -> LoweredPredicate? {
+        func exactly(_ text: String) -> LoweredPredicate {
+            LoweredPredicate(text: text, isExact: true)
+        }
+        /// A glob is never exact even on an ASCII pattern. tmux matches bytes
+        /// where Swift matches characters, so `e*` finds the `e` inside a
+        /// decomposed `é` and `hasPrefix("e")` does not. tmux therefore admits
+        /// rows Swift rejects — harmless while the result is filtered again,
+        /// and wrong the moment it is negated.
+        func approximately(_ text: String) -> LoweredPredicate {
+            LoweredPredicate(text: text, isExact: false)
+        }
         func glob(_ pattern: String) -> String? {
-            FilterLowering.globLiteral(pattern).map(FilterLowering.escaped)
+            guard FilterLowering.comparableAsBytes(pattern) else { return nil }
+            return FilterLowering.globLiteral(pattern).map(FilterLowering.escaped)
         }
-        func foldedGlob(_ pattern: String) -> String? {
-            FilterLowering.foldsIdenticallyToTmux(pattern) ? glob(pattern) : nil
-        }
+
         switch self {
         case let .equals(value):
             if case let .flag(expected) = value {
-                return FilterLowering.flag(expected, of: field)
+                return exactly(FilterLowering.flag(expected, of: field))
             }
-            return value.tmuxText.map { "#{==:\(field),\(literal($0))}" }
-        case let .caseInsensitiveEquals(text):
-            return foldedGlob(text).map { "#{m/i:\($0),\(field)}" }
-        case let .contains(text):
-            return glob(text).map { "#{m:*\($0)*,\(field)}" }
-        case let .caseInsensitiveContains(text):
-            return foldedGlob(text).map { "#{m/i:*\($0)*,\(field)}" }
-        case let .hasPrefix(text):
-            return glob(text).map { "#{m:\($0)*,\(field)}" }
-        case let .hasSuffix(text):
-            return glob(text).map { "#{m:*\($0),\(field)}" }
+            guard let text = value.tmuxText,
+                FilterLowering.comparableAsBytes(text)
+            else { return nil }
+            return exactly("#{==:\(field),\(FilterLowering.escaped(text))}")
         case let .isIn(values):
-            guard !values.isEmpty else { return "0" }
-            let comparisons = values.map { value -> String in
+            guard !values.isEmpty else { return .nothing }
+            var comparisons: [String] = []
+            for value in values {
                 if case let .flag(expected) = value {
-                    return FilterLowering.flag(expected, of: field)
+                    comparisons.append(FilterLowering.flag(expected, of: field))
+                    continue
                 }
-                return value.tmuxText.map { "#{==:\(field),\(literal($0))}" }
-                    ?? FilterLowering.alwaysTrue
+                guard let text = value.tmuxText,
+                    FilterLowering.comparableAsBytes(text)
+                else { return nil }
+                comparisons.append("#{==:\(field),\(FilterLowering.escaped(text))}")
             }
-            return FilterLowering.any(comparisons)
+            return exactly(FilterLowering.any(comparisons))
+        case let .caseInsensitiveEquals(text):
+            return glob(text).map { approximately("#{m/i:\($0),\(field)}") }
+        case let .contains(text):
+            return glob(text).map { approximately("#{m:*\($0)*,\(field)}") }
+        case let .caseInsensitiveContains(text):
+            return glob(text).map { approximately("#{m/i:*\($0)*,\(field)}") }
+        case let .hasPrefix(text):
+            return glob(text).map { approximately("#{m:\($0)*,\(field)}") }
+        case let .hasSuffix(text):
+            return glob(text).map { approximately("#{m:*\($0),\(field)}") }
         case .matches:
-            // tmux's regex engine is not this package's bounded one. Leaving it
-            // out keeps the predicate sound; the caller still evaluates it.
+            // tmux's regular expression engine is not this package's bounded
+            // one. Leaving it out keeps the predicate sound.
             return nil
         }
     }
 }
 
 extension FilterExpr {
-    /// A tmux `-f` predicate that admits everything this expression matches.
+    /// This expression as a tmux predicate, with its exactness.
     ///
-    /// Never `nil`: an expression that lowers to nothing lowers to "true", and
-    /// the caller filters the result anyway. ``isFullyLowered`` says whether
-    /// that second pass can actually change the answer.
-    var tmuxPredicate: String {
+    /// Never fails: a node that cannot be lowered becomes
+    /// ``LoweredPredicate/anything``, and the caller filters the result anyway.
+    var lowered: LoweredPredicate {
         switch self {
         case let .comparison(fieldID, operation):
-            guard let field = Root.filterFormatField(fieldID) else {
-                return FilterLowering.alwaysTrue
-            }
-            return operation.tmuxPredicate(comparing: "#{\(field)}")
-                ?? FilterLowering.alwaysTrue
+            guard let field = Root.filterFormatField(fieldID),
+                let lowered = operation.lowered(comparing: "#{\(field)}")
+            else { return .anything }
+            return lowered
         case let .and(children):
-            return FilterLowering.all(children.map(\.tmuxPredicate))
+            // An empty conjunction is vacuously true, which `all` already
+            // spells, and it is exactly true.
+            let parts = children.map(\.lowered)
+            return LoweredPredicate(
+                text: FilterLowering.all(parts.map(\.text)),
+                isExact: parts.allSatisfy(\.isExact)
+            )
         case let .or(children):
-            return FilterLowering.any(children.map(\.tmuxPredicate))
+            guard !children.isEmpty else { return .nothing }
+            let parts = children.map(\.lowered)
+            return LoweredPredicate(
+                text: FilterLowering.any(parts.map(\.text)),
+                isExact: parts.allSatisfy(\.isExact)
+            )
         case let .not(child):
-            // A negated over-approximation is an under-approximation, which
-            // would drop real matches. Only an exact child may be negated.
-            guard child.isFullyLowered else { return FilterLowering.alwaysTrue }
-            return FilterLowering.negated(child.tmuxPredicate)
+            // Negating an over-approximation under-approximates, which drops
+            // real matches for good — the second pass only sees rows tmux
+            // already returned.
+            let child = child.lowered
+            guard child.isExact else { return .anything }
+            return LoweredPredicate(
+                text: FilterLowering.negated(child.text),
+                isExact: true
+            )
         }
     }
 
+    /// A tmux `-f` predicate admitting everything this expression matches.
+    var tmuxPredicate: String { lowered.text }
+
     /// Whether ``tmuxPredicate`` is exact rather than an over-approximation.
-    var isFullyLowered: Bool {
-        switch self {
-        case let .comparison(fieldID, operation):
-            guard Root.filterFormatField(fieldID) != nil else { return false }
-            return operation.tmuxPredicate(comparing: "#{x}") != nil
-        case let .and(children), let .or(children):
-            return children.allSatisfy(\.isFullyLowered)
-        case let .not(child):
-            return child.isFullyLowered
-        }
-    }
+    var isFullyLowered: Bool { lowered.isExact }
 }

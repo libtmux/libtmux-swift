@@ -101,13 +101,6 @@ extension Server {
 
     // MARK: Plumbing
 
-    /// Runs a lookup and insists the answer came from the daemon the value did.
-    ///
-    /// Without this, a server that died and was replaced between the value
-    /// being read and being refreshed would hand back an object with the same
-    /// id from a different tmux — ids restart at zero. Every other targeted
-    /// call in this library guards on the incarnation, and a re-read is the one
-    /// most likely to span a restart.
     /// Insists the row came from the daemon the held value did.
     ///
     /// Two different failures. A value from another endpoint is refused before

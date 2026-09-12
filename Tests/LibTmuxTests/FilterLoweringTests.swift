@@ -173,8 +173,11 @@ struct FilterLoweringTests {
             #expect(wide.tmuxPredicate == "1")
             #expect(!wide.isFullyLowered)
 
+            // An ASCII literal still reaches tmux — it just may not be negated,
+            // because `m/i` folds by the server's locale and globs over bytes.
             let ascii = try FilterExpr<Window>.where(\.name, .caseInsensitiveEquals("FOLDING"))
-            #expect(ascii.isFullyLowered)
+            #expect(ascii.tmuxPredicate.contains("window_name"))
+            #expect(!ascii.isFullyLowered)
 
             // Either way the answer is the one the client computes.
             let local = try await server.windows().filter(wide)
@@ -182,6 +185,123 @@ struct FilterLoweringTests {
             #expect(lowered.map(\.id) == local.map(\.id))
             #expect(local.map(\.name) == ["ÜBER"])
         }
+    }
+
+    /// Tree shapes, not just field types.
+    ///
+    /// The differential cases above vary the *operation*; every expression they
+    /// build is a comparison or a one-level and/or over one. A degenerate
+    /// branch is a different axis, and it is the one that hid a predicate which
+    /// excluded rows the expression matched.
+    @Test("a degenerate branch lowers to what it actually means")
+    func degenerateBranchesLowerSoundly() async throws {
+        try await withTmuxServer { server in
+            _ = try await server.newSession(named: "foo")
+            let named = try FilterExpr<Session>.where(\.name, .equals("foo"))
+            let emptyOr = FilterExpr<Session>.or([])
+            let emptyAnd = FilterExpr<Session>.and([])
+
+            // `.or([])` matches nothing and `.and([])` matches everything.
+            #expect(emptyOr.tmuxPredicate == "0")
+            #expect(emptyOr.isFullyLowered)
+            #expect(emptyAnd.tmuxPredicate == "1")
+            #expect(emptyAnd.isFullyLowered)
+
+            for expression: FilterExpr<Session> in [
+                emptyOr, emptyAnd,
+                .not(emptyOr), .not(emptyAnd),
+                .and([emptyOr, named]), .or([emptyOr, named]),
+                .and([emptyAnd, named]), .or([emptyAnd, named]),
+                // The shape that dropped a row: a negated conjunction whose
+                // always-false branch was lowered as always-true.
+                .not(.and([emptyOr, named])),
+                .not(.or([emptyAnd, named])),
+                .not(.not(named)),
+                .and([.and([]), .or([])]),
+            ] {
+                let local = try await server.sessions().filter(expression)
+                let lowered = try await server.sessions(where: expression)
+                #expect(
+                    lowered.map(\.id) == local.map(\.id),
+                    """
+                    predicate: \(expression.tmuxPredicate) exact=\(expression.isFullyLowered)
+                    tmux: \(lowered.map(\.name))
+                    local: \(local.map(\.name))
+                    """
+                )
+            }
+        }
+    }
+
+    @Test("a literal tmux cannot compare byte for byte is decided at home")
+    func unicodeAndHashLiteralsStayLocal() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "unicode")
+            // Swift reads these two as one string; tmux reads five bytes and
+            // six. Comparing them in tmux would drop a row Swift keeps, so
+            // such a literal must not reach the predicate at all.
+            let precomposed = "caf\u{e9}"
+            let decomposed = "cafe\u{301}"
+            #expect(precomposed == decomposed)
+
+            // tmux keeps the run of hashes before a `[`, because `#[` opens a
+            // style, so no encoding of a literal `#` is right everywhere.
+            for name in [decomposed, "a#[b", "plain#hash"] {
+                _ = try await server.newWindow(in: session, named: name)
+            }
+
+            for stored in try await server.windows().map(\.name) {
+                let equals = try FilterExpr<Window>.where(\.name, .equals(stored))
+                let expressions: [FilterExpr<Window>] = [equals, .not(equals)]
+                if !FilterLowering.comparableAsBytes(stored) {
+                    #expect(equals.tmuxPredicate == "1", "\(stored.debugDescription) lowered")
+                    #expect(!equals.isFullyLowered)
+                }
+                for expression in expressions {
+                    let local = try await server.windows().filter(expression)
+                    let lowered = try await server.windows(where: expression)
+                    #expect(
+                        lowered.map(\.id) == local.map(\.id),
+                        "disagreement on \(stored.debugDescription)"
+                    )
+                }
+            }
+        }
+    }
+
+    @Test("a glob is pushed down but never negated")
+    func globsAreNotExact() throws {
+        // tmux globs over bytes and Swift matches characters, so `e*` finds the
+        // `e` inside a decomposed accent where hasPrefix("e") does not. The
+        // predicate may admit that extra row; negating it would drop a real one.
+        for operation: FilterOperator<String> in [
+            .contains("a"), .hasPrefix("a"), .hasSuffix("a"),
+            .caseInsensitiveEquals("a"), .caseInsensitiveContains("a"),
+        ] {
+            let expression = try FilterExpr<Window>.where(\.name, operation)
+            #expect(expression.tmuxPredicate.contains("window_name"))
+            #expect(!expression.isFullyLowered)
+            #expect(FilterExpr.not(expression).tmuxPredicate == "1")
+        }
+        // Equality on an ASCII literal is exact, so it may be negated.
+        let equals = try FilterExpr<Window>.where(\.name, .equals("a"))
+        #expect(equals.isFullyLowered)
+        #expect(FilterExpr.not(equals).tmuxPredicate != "1")
+    }
+
+    @Test("escaping works on scalars, not on grapheme clusters")
+    func escapingHandlesCombiningMarks() {
+        // `}` followed by a combining mark is a single Character that equals
+        // neither `}` nor anything else, so a switch over characters walks past
+        // a brace tmux still reads as the end of the expansion.
+        let brace = "}\u{301}"
+        #expect(brace.count == 1)
+        #expect(brace.first != "}")
+        #expect(
+            Array(FilterLowering.escaped(brace).unicodeScalars) == ["#", "}", "\u{301}"],
+            "the brace must be escaped even though it is not the first Character"
+        )
+        #expect(FilterLowering.globLiteral("*\u{301}") == "[*]\u{301}")
     }
 
     @Test("a regular expression is left out of the predicate but still applied")
