@@ -140,6 +140,22 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("expanded session names are validated before endpoint lookup")
+    func expandedSessionName() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("expanded.json")
+            try Data(#"{"session_name":"${WORKSPACE_NAME}","windows":[{"panes":[null]}]}"#.utf8)
+                .write(to: file)
+            for name in ["", "bad:name", "bad.name", "bad\nname"] {
+                let result = await invoke(
+                    ["load", file.path, "-d", "--json"], in: root, extra: ["WORKSPACE_NAME": name])
+                #expect(result.code == 1)
+                #expect(result.output.isEmpty)
+                #expect(result.error.joined().contains("\"code\":\"document\""), "\(result.error)")
+            }
+        }
+    }
+
     @Test("load failures report retained sessions and roll back only the failed workspace")
     func partialLoad() async throws {
         try await withTmuxServer { server in
