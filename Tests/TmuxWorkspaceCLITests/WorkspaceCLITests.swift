@@ -1036,8 +1036,11 @@ struct WorkspaceCLITests {
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
             let configs = root.appendingPathComponent("configs")
             let work = root.appendingPathComponent("work")
+            let physicalWork = root.appendingPathComponent("physical-work")
             try FileManager.default.createDirectory(at: configs, withIntermediateDirectories: false)
-            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: false)
+            try FileManager.default.createDirectory(
+                at: physicalWork, withIntermediateDirectories: false)
+            try FileManager.default.createSymbolicLink(at: work, withDestinationURL: physicalWork)
             let script = root.appendingPathComponent("bootstrap")
             try Data(
                 "#!/bin/sh\n\"$TMUX_BIN\" -S \"$SOCKET\" has-session -t '=configured' || exit 9\npwd > \"$MARKER\"\n"
@@ -1071,7 +1074,11 @@ struct WorkspaceCLITests {
                 ])
             #expect(loaded.code == 0, "\(loaded.error)")
             guard loaded.code == 0 else { return }
-            #expect(try String(contentsOf: marker, encoding: .utf8) == work.path + "\n")
+            let configuredDirectory = try String(contentsOf: marker, encoding: .utf8)
+                .trimmingCharacters(in: .newlines)
+            #expect(
+                URL(fileURLWithPath: configuredDirectory).resolvingSymlinksInPath().path
+                    == work.resolvingSymlinksInPath().path)
             let snapshot = try await server.snapshot()
             let session = try #require(snapshot.sessions.first { $0.name == "configured" })
             let window = try #require(snapshot.windows(of: session).first)
@@ -1093,7 +1100,11 @@ struct WorkspaceCLITests {
                     "SOCKET": socket, "MARKER": marker.path,
                 ])
             #expect(inherited.code == 0)
-            #expect(try String(contentsOf: marker, encoding: .utf8) == root.path + "\n")
+            let inheritedDirectory = try String(contentsOf: marker, encoding: .utf8)
+                .trimmingCharacters(in: .newlines)
+            #expect(
+                URL(fileURLWithPath: inheritedDirectory).resolvingSymlinksInPath().path
+                    == root.resolvingSymlinksInPath().path)
             failed["session_name"] = .string("failed-bootstrap")
             failed["before_script"] = .string("/bin/false")
             try Data(Value.object(failed).encoded().utf8).write(to: file)
