@@ -1,5 +1,11 @@
 import Foundation
 
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
+
 #if YAMLWorkspaces
     import Yams
 #endif
@@ -101,11 +107,7 @@ struct DocumentStore: Sendable {
     }
 
     func read(_ file: URL) throws -> Value {
-        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-        guard let size = attributes[.size] as? NSNumber, size.intValue <= 8 * 1024 * 1024 else {
-            throw CLIError("document_size", "Workspace exceeds the 8 MiB document limit.")
-        }
-        let data = try Data(contentsOf: file)
+        let data = try readRegularFile(file)
         let value: Value
         if file.pathExtension.lowercased() == "json" {
             value = try JSONDecoder().decode(Value.self, from: data)
@@ -129,6 +131,36 @@ struct DocumentStore: Sendable {
             throw CLIError("document", "A workspace must be a mapping.")
         }
         return value
+    }
+
+    private func readRegularFile(_ file: URL) throws -> Data {
+        let descriptor = open(file.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            throw CLIError("document_read", String(cString: strerror(errno)))
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var attributes = stat()
+        guard fstat(descriptor, &attributes) == 0 else {
+            throw CLIError("document_read", String(cString: strerror(errno)))
+        }
+        guard attributes.st_mode & S_IFMT == S_IFREG else {
+            throw CLIError("document_type", "Workspace input must be a regular file.")
+        }
+        let limit = 8 * 1024 * 1024
+        guard attributes.st_size <= limit else {
+            throw CLIError("document_size", "Workspace exceeds the 8 MiB document limit.")
+        }
+        var data = Data()
+        while let chunk = try handle.read(upToCount: min(65_536, limit + 1 - data.count)),
+            !chunk.isEmpty
+        {
+            data.append(chunk)
+            guard data.count <= limit else {
+                throw CLIError("document_size", "Workspace exceeds the 8 MiB document limit.")
+            }
+        }
+        return data
     }
 
     func encode(_ value: Value, format: WorkspaceFormat) throws -> String {
