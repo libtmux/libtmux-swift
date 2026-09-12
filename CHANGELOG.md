@@ -11,6 +11,37 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `Server.sessions(where:)`, `Server.windows(where:)`, `Server.panes(where:)`
+  and `Server.clients(where:)` answer a `FilterExpr` through tmux instead of
+  listing a whole server and discarding most of it, so a narrow query costs
+  what its result costs rather than what the server holds. They throw
+  `FilteredListingError`. The answer matches `filter(_:)` exactly: what tmux
+  cannot evaluate — a regular expression, a glob pattern containing a
+  backslash, a case-insensitive match on non-ASCII text — widens the predicate
+  and is decided locally. `Server.clients(where:)` never pushes down, because
+  `list-clients` gained `-f` in tmux 3.4 and this package supports 3.2a. (#11)
+
+- `Server.session(_:)`, `Server.session(named:)`, `Server.window(_:)`,
+  `Server.windows(named:)` and `Server.pane(_:)` read one object back without
+  listing the rest, and `Server.refresh(_:)` re-reads a `Session`, `Window` or
+  `Pane` already held. Absence is `nil`; only a server that cannot answer
+  throws. A re-read against a replaced daemon throws
+  `TmuxError.serverRestarted` rather than returning the same-numbered object,
+  because tmux restarts its ids at zero. (#11)
+
+- `withTmuxError(_:)` narrows a scope's thrown type back to `TmuxError`.
+  `Server.using(_:_:)`, `Server.connected(attachingTo:_:)` and
+  `Server.withControlMode(attachingTo:_:)` take a closure, and Swift 6.2
+  cannot carry a closure's thrown type out of one, so a `throws(TmuxError)`
+  function wrapping any of them failed with `thrown expression type 'any
+  Error' cannot be converted to error type 'TmuxError'`. (#11)
+
+- `Filterable.filterFormatField(_:)` names the tmux format field a filter id
+  reads, which is what lets an expression reach tmux. It defaults to `nil`, so
+  an existing conformance keeps compiling and simply filters locally. (#11)
+
 ## [0.1.0-alpha.4] - 2026-09-08
 
 ### Added
