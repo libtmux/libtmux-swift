@@ -69,6 +69,10 @@ public struct WindowPlan: Sendable, Hashable, Codable {
     /// tmux's own layout name — `even-horizontal`, `tiled`, and the rest —
     /// applied after the panes exist.
     public let layout: String?
+    /// Explicit session-local index; omitted indexes use tmux's next slot.
+    public let windowIndex: Int?
+    /// Selects this window after the workspace is built.
+    public let focus: Bool?
     /// The panes to open. The first is the window itself; each one after it
     /// splits what is already there.
     public let panes: [PanePlan]
@@ -77,12 +81,16 @@ public struct WindowPlan: Sendable, Hashable, Codable {
         windowName: String? = nil,
         startDirectory: String? = nil,
         layout: String? = nil,
-        panes: [PanePlan]
+        panes: [PanePlan],
+        windowIndex: Int? = nil,
+        focus: Bool? = nil
     ) {
         self.windowName = windowName
         self.startDirectory = startDirectory
         self.layout = layout
         self.panes = panes
+        self.windowIndex = windowIndex
+        self.focus = focus
     }
 
     enum CodingKeys: String, CodingKey {
@@ -90,6 +98,8 @@ public struct WindowPlan: Sendable, Hashable, Codable {
         case startDirectory = "start_directory"
         case layout
         case panes
+        case windowIndex = "window_index"
+        case focus
     }
 }
 
@@ -157,15 +167,21 @@ public struct PanePlan: Sendable, Hashable, Codable {
     public let shellCommands: [TmuxShellCommand]
     /// Where this pane starts, overriding the window's and the workspace's.
     public let startDirectory: String?
+    /// Selects this pane after its window's commands are sent.
+    public let focus: Bool?
 
-    public init(shellCommands: [TmuxShellCommand] = [], startDirectory: String? = nil) {
+    public init(
+        shellCommands: [TmuxShellCommand] = [], startDirectory: String? = nil, focus: Bool? = nil
+    ) {
         self.shellCommands = shellCommands
         self.startDirectory = startDirectory
+        self.focus = focus
     }
 
     enum CodingKeys: String, CodingKey {
         case shellCommands = "shell_command"
         case startDirectory = "start_directory"
+        case focus
     }
 
     public init(from decoder: any Decoder) throws {
@@ -186,6 +202,7 @@ public struct PanePlan: Sendable, Hashable, Codable {
             String.self,
             forKey: .startDirectory
         )
+        let focus = try container.decodeIfPresent(Bool.self, forKey: .focus)
         // `shell_command` is a string or a list of them, depending on who wrote
         // the file.
         // Elements are optional because a list is allowed to hold a null
@@ -194,7 +211,8 @@ public struct PanePlan: Sendable, Hashable, Codable {
             [TmuxShellCommand?].self,
             forKey: .shellCommands
         ) {
-            self.init(shellCommands: list.compactMap { $0 }, startDirectory: directory)
+            self.init(
+                shellCommands: list.compactMap { $0 }, startDirectory: directory, focus: focus)
         } else {
             let single = try container.decodeIfPresent(
                 TmuxShellCommand.self,
@@ -202,7 +220,7 @@ public struct PanePlan: Sendable, Hashable, Codable {
             )
             self.init(
                 shellCommands: single.map { [$0] } ?? [],
-                startDirectory: directory
+                startDirectory: directory, focus: focus
             )
         }
     }
@@ -211,5 +229,6 @@ public struct PanePlan: Sendable, Hashable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(shellCommands, forKey: .shellCommands)
         try container.encodeIfPresent(startDirectory, forKey: .startDirectory)
+        try container.encodeIfPresent(focus, forKey: .focus)
     }
 }

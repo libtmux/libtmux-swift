@@ -153,14 +153,18 @@ extension Server {
     /// Creates a window in a session and returns its exact appearance.
     ///
     /// The appearance is read from the creation reply, after the windows
-    /// already in the session when no relative placement is given.
+    /// already in the session when no index is given. An occupied index fails.
     public func newWindow(
         in session: Session,
         named name: String? = nil,
-        startDirectory: String? = nil
+        startDirectory: String? = nil,
+        at index: Int? = nil
     ) async throws(TmuxError) -> WindowAppearance {
-        try await newWindow(
-            target: session.id.rawValue,
+        guard index.map({ $0 >= 0 && $0 <= Int32.max }) ?? true else {
+            throw .invocationFailed(reason: "window index is outside tmux's range")
+        }
+        return try await newWindow(
+            target: session.id.rawValue + (index.map { ":\($0)" } ?? ""),
             placement: nil,
             named: name,
             startDirectory: startDirectory,

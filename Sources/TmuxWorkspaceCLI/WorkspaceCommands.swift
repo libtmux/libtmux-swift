@@ -200,12 +200,14 @@ enum WorkspaceCommands {
             let panes = snapshot.panes(of: window).map { pane in
                 Value.object([
                     "start_directory": .string(pane.currentPath),
+                    "focus": .bool(pane.isActive),
                     "shell_command": .array(
                         pane.currentCommand.isEmpty ? [] : [.string(pane.currentCommand)]),
                 ])
             }
             var value: [String: Value] = [
                 "window_name": .string(window.name), "panes": .array(panes),
+                "window_index": .integer(Int64(link.index)), "focus": .bool(link.isActive),
             ]
             if let layout = try await server.format("#{window_layout}", for: link) {
                 value["layout"] = .string(layout)
@@ -216,7 +218,7 @@ enum WorkspaceCommands {
             "session_name": .string(session.name), "windows": .array(windows),
         ])
         try await output.warning(
-            "Capture preserves current commands, directories and layout. Original arguments, scripts, environment, options, focus and explicit indexes cannot be reconstructed by this build."
+            "Capture preserves current commands, directories, layout, indexes and focus. Original arguments, scripts, environment and options cannot be reconstructed by this build."
         )
         if let destination = command.destination {
             let store = DocumentStore(context: context)
@@ -298,7 +300,7 @@ enum WorkspaceCommands {
                 item,
                 allowed: [
                     "window_name", "start_directory", "layout", "panes", "shell_command_before",
-                    "suppress_history", "options",
+                    "suppress_history", "options", "window_index", "focus",
                 ], at: "windows[\(index)]")
             windowOptions.append(
                 inheritedOptions.merging(
@@ -323,7 +325,7 @@ enum WorkspaceCommands {
                         item,
                         allowed: [
                             "start_directory", "shell_command", "shell_command_before",
-                            "suppress_history", "enter",
+                            "suppress_history", "enter", "focus",
                         ], at: "pane")
                 default: pane = ["shell_command": item]
                 }
@@ -356,18 +358,38 @@ enum WorkspaceCommands {
                     shellCommands: commands,
                     startDirectory: try directory(
                         pane["start_directory"], parent: URL(fileURLWithPath: windowDirectory),
-                        store: store) ?? windowDirectory)
+                        store: store) ?? windowDirectory,
+                    focus: try boolean(pane["focus"], fallback: false, at: "pane.focus"))
             }
             return WindowPlan(
                 windowName: try optionalString(window["window_name"], at: "window_name"),
                 startDirectory: windowDirectory,
-                layout: try optionalString(window["layout"], at: "layout"), panes: panes)
+                layout: try optionalString(window["layout"], at: "layout"), panes: panes,
+                windowIndex: try windowIndex(window["window_index"]),
+                focus: try boolean(window["focus"], fallback: false, at: "window.focus"))
+        }
+        let indexes = windows.compactMap(\.windowIndex)
+        guard Set(indexes).count == indexes.count else {
+            throw CLIError("document", "Each explicit window_index must be unique.")
+        }
+        guard windows.filter({ $0.focus == true }).count <= 1,
+            windows.allSatisfy({ $0.panes.filter { $0.focus == true }.count <= 1 })
+        else {
+            throw CLIError("document", "Choose one focused window and one focused pane per window.")
         }
         return PlannedWorkspace(
             workspace: Workspace(
                 sessionName: name, startDirectory: rootDirectory, windows: windows),
             environment: environment, options: options, windowOptions: windowOptions,
             beforeScript: beforeScript)
+    }
+
+    private static func windowIndex(_ value: Value?) throws -> Int? {
+        guard let value else { return nil }
+        guard case let .integer(index) = value, index >= 0, index <= Int32.max else {
+            throw CLIError("document", "window_index must be an integer from 0 through 2147483647.")
+        }
+        return Int(index)
     }
 
     private static func scalarMapping(_ value: Value?, at location: String, store: DocumentStore)
