@@ -111,6 +111,43 @@ struct WorkspaceCLITests {
     }
 
     #if YAMLWorkspaces
+        @Test("failed conversion writes leave no destination or temporary file")
+        func atomicWriteFailure() async throws {
+            try await withFiles { root in
+                let input = root.appendingPathComponent("large.yaml")
+                try Data(
+                    ("session_name: test\nvalue: " + String(repeating: "x", count: 16_384) + "\n")
+                        .utf8
+                ).write(to: input)
+                let executable = URL(fileURLWithPath: #filePath)
+                    .deletingLastPathComponent().deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .appendingPathComponent(".build/debug/tmux-workspace")
+                try #require(FileManager.default.isExecutableFile(atPath: executable.path))
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sh")
+                process.arguments = [
+                    "-c", "ulimit -f 1; trap '' XFSZ; exec \"$@\"", "workspace-file-limit",
+                    executable.path, "convert", input.path, "-y",
+                ]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try process.run()
+                process.waitUntilExit()
+                #expect(process.terminationStatus == 1)
+                let remaining = try FileManager.default.contentsOfDirectory(atPath: root.path)
+                #expect(remaining == ["large.yaml"])
+                let saved = await invoke(["convert", input.path, "-y"], in: root)
+                #expect(saved.code == 0)
+                let destination = root.appendingPathComponent("large.json")
+                let original = try Data(contentsOf: destination)
+                try Data("session_name: changed\n".utf8).write(to: input)
+                let protected = await invoke(["convert", input.path, "-y"], in: root)
+                #expect(protected.code == 1)
+                #expect(try Data(contentsOf: destination) == original)
+            }
+        }
+
         @Test("YAML retains quoted scalar types and rejects multiple documents")
         func yamlTypes() async throws {
             try await withFiles { root in
