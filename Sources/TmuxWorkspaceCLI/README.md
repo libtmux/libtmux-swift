@@ -167,10 +167,18 @@ Failures preserve the borrowed session and report newly created window IDs and
 potentially changed settings. Append ignores configured indexes and uses new
 slots. `-d` takes precedence over `--append`.
 
-`freeze SESSION` captures current pane commands and directories, window names,
-indexes, focus and layouts. It writes a document to stdout unless `--save-to` selects a file;
-an existing file requires `--force`. Captures warn that original command
-arguments and scripts, environment and options are omitted.
+`freeze [SESSION]` captures current pane commands and directories, window names,
+indexes, focus, layouts, local session/window options and session environment
+values, including embedded newlines. An explicit name or ID takes precedence.
+Otherwise it authenticates the current pane's tmux context or selects the sole
+session. With several sessions, a human caller can choose; machine calls require
+an explicit target. A stale or foreign pane context fails.
+
+Freeze writes a document to stdout unless `--save-to` selects a file; an existing
+file requires `--force`. Original command arguments, scripts, global settings
+and environment removal markers are omitted. `--quiet` suppresses explanatory
+messages while preserving documents and machine results.
+Reload applies the usual environment-variable expansion to captured values.
 
 ## Output
 

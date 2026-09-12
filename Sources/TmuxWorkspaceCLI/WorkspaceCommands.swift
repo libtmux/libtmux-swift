@@ -317,12 +317,13 @@ enum WorkspaceCommands {
     }
 
     private static func currentTarget(
-        _ selected: Server, context: CLIContext, verifyTerminal: Bool
+        _ selected: Server, context: CLIContext, verifyTerminal: Bool,
+        code requestedCode: String? = nil
     ) async throws -> (session: Session, clients: [Client], hasIndependentPaneClient: Bool) {
-        let code = verifyTerminal ? "load_context" : "append_context"
+        let code = requestedCode ?? (verifyTerminal ? "load_context" : "append_context")
         guard let inherited = TmuxContext.current(environment: context.environment),
             let rawPane = context.environment["TMUX_PANE"], let paneID = PaneID(rawValue: rawPane)
-        else { throw CLIError(code, "This load requires a valid TMUX and TMUX_PANE.") }
+        else { throw CLIError(code, "A valid TMUX and TMUX_PANE are required.") }
         let origin = try await inherited.server(tmuxExecutable: selected.tmuxExecutable)
             .incarnation()
         let snapshot = try await selected.snapshot()
@@ -363,18 +364,10 @@ enum WorkspaceCommands {
     }
 
     static func freeze(_ command: Freeze, context: CLIContext, output: Presenter) async throws {
-        guard let name = command.sessionName else {
-            throw CLIError("usage", "Provide a session name for capture.", status: 2)
-        }
         let server = try server(command.socket, context: context)
         let snapshot = try await server.snapshot()
-        guard
-            let session = snapshot.sessions.first(where: {
-                $0.name == name || $0.id.rawValue == name
-            })
-        else {
-            throw CLIError("session_not_found", "Session not found: \(name)")
-        }
+        let session = try await freezeSession(
+            command, snapshot: snapshot, server: server, context: context)
         var windows: [Value] = []
         for link in snapshot.windowLinks(of: session).sorted(by: { $0.index < $1.index }) {
             guard let window = snapshot.windows.first(where: { $0.id == link.windowID }) else {
@@ -395,14 +388,28 @@ enum WorkspaceCommands {
             if let layout = try await server.format("#{window_layout}", for: link) {
                 value["layout"] = .string(layout)
             }
+            value["options"] = .object(try await freezeOptions(.window(window), server: server))
             windows.append(.object(value))
+        }
+        let scope = EnvironmentScope.session(session.id.rawValue)
+        var environment: [String: Value] = [:]
+        for variable in try await server.environment(scope) {
+            // A multiline value can resemble another listing row. A direct
+            // lookup authenticates each name and preserves the complete value.
+            if let value = try await server.environmentValue(variable.name, in: scope) {
+                environment[variable.name] = .string(value)
+            }
         }
         let document = Value.object([
             "session_name": .string(session.name), "windows": .array(windows),
+            "options": .object(try await freezeOptions(.session(session), server: server)),
+            "environment": .object(environment),
         ])
-        try await output.warning(
-            "Capture preserves current commands, directories, layout, indexes and focus. Original arguments, scripts, environment and options cannot be reconstructed by this build."
-        )
+        if !command.quiet {
+            try await output.warning(
+                "Capture preserves current commands, directories, layouts, indexes, focus, local options and session environment values. Original arguments and scripts are unavailable; global settings and environment removal markers are omitted."
+            )
+        }
         if let destination = command.destination {
             let store = DocumentStore(context: context)
             let file = store.path(destination)
@@ -418,6 +425,72 @@ enum WorkspaceCommands {
         } else {
             try await context.output(
                 DocumentStore(context: context).encode(document, format: command.format))
+        }
+    }
+
+    private static func freezeOptions(
+        _ scope: OptionScope, server: Server
+    ) async throws -> [String: Value] {
+        var values: [String: Value] = [:]
+        for option in try await server.options(scope) {
+            guard let value = try await server.option(option.name, scope: scope) else {
+                throw CLIError("stale_session", "An option disappeared during capture.")
+            }
+            values[option.name] = .string(value)
+        }
+        return values
+    }
+
+    private static func freezeSession(
+        _ command: Freeze, snapshot: Snapshot, server: Server, context: CLIContext
+    ) async throws -> Session {
+        if let name = command.sessionName {
+            guard
+                let session = snapshot.sessions.first(where: {
+                    $0.name == name || $0.id.rawValue == name
+                })
+            else {
+                throw CLIError("session_not_found", "Session not found: \(name)")
+            }
+            return session
+        }
+        if !(context.environment["TMUX"] ?? "").isEmpty {
+            let current = try await currentTarget(
+                server, context: context, verifyTerminal: false, code: "freeze_context")
+            guard let session = snapshot.sessions.first(where: { $0 == current.session }) else {
+                throw CLIError("stale_session", "The current session changed during capture.")
+            }
+            return session
+        }
+        let sessions = snapshot.sessions.sorted { $0.name < $1.name }
+        if sessions.count == 1 { return sessions[0] }
+        guard !sessions.isEmpty else {
+            throw CLIError("session_not_found", "No live sessions to capture.")
+        }
+        guard !command.output.machine, context.terminal, let input = context.input else {
+            throw CLIError(
+                "session_required", "Several sessions are available; provide a session name or ID.",
+                status: 2)
+        }
+        for (index, session) in sessions.enumerated() {
+            try await context.error("[\(index + 1)] \(Presenter.sanitize(session.name))")
+        }
+        while true {
+            try await context.error("Choose a session (1-\(sessions.count), q to cancel):")
+            guard let line = try await input() else {
+                throw CLIError("cancelled", "Capture cancelled.", status: 130)
+            }
+            let answer = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if ["q", "quit", "cancel"].contains(answer.lowercased()) {
+                throw CLIError("cancelled", "Capture cancelled.", status: 130)
+            }
+            if let index = Int(answer), index > 0, index <= sessions.count {
+                return sessions[index - 1]
+            }
+            if let session = sessions.first(where: { $0.name == answer || $0.id.rawValue == answer }
+            ) {
+                return session
+            }
         }
     }
 
