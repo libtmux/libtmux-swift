@@ -132,6 +132,14 @@ Unsupported execution keys fail before creation. Existing exact session names
 are reused. A failed build removes only the session that build created and
 reports earlier successful workspaces as partial results.
 
+`load --append` adds windows to the current pane's session. It requires a valid
+`TMUX` and `TMUX_PANE`, verifies the inherited server PID and the selected
+endpoint's live identity, and never starts a different server. Socket aliases
+and commas in socket paths are supported. A moved pane determines its current
+session; an ambiguous linked window requires a matching inherited session.
+Failures preserve the borrowed session and report newly created window IDs and
+potentially changed settings. `-d` takes precedence over `--append`.
+
 `freeze SESSION` captures current pane commands and directories, window names
 and layouts. It writes a document to stdout unless `--save-to` selects a file;
 an existing file requires `--force`. Captures warn that original command
@@ -141,7 +149,7 @@ arguments and scripts, environment, options, focus and indexes are omitted.
 
 Every implemented command accepts `--json` and `--ndjson` before or after the
 command name. NDJSON wins when both are present. Listing and search stream
-records; load streams sequenced events ending in one completed event while
+records; load streams sequenced events ending in one completed or failed event while
 the output stream remains writable. JSON load failures include retained
 successful sessions. NDJSON conversion, capture and import results include a
 versioned envelope and nested `workspace` document. Diagnostics use stderr.
@@ -153,7 +161,7 @@ has terminal control characters escaped.
 
 ## Remaining work
 
-Append and terminal attachment; plugins and further execution settings; progress
+Terminal attachment; plugins and further execution settings; progress
 presentation; complete capture; generated manuals and portable distribution
 remain outside this checkpoint. The complete tmuxp command
 surface is not yet available. YAML is unavailable when its build trait is off.

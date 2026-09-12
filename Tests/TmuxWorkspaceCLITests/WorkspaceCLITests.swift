@@ -497,6 +497,132 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("append preserves the borrowed session and reports failed windows")
+    func appendWorkspace() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let initial = try await server.snapshot()
+            let pane = try #require(initial.panes.first)
+            let session = try #require(initial.sessions.first)
+            let file = root.appendingPathComponent("append.json")
+            try Data(
+                #"{"session_name":"unused","environment":{"APPEND_VALUE":"literal;#{session_name}"},"windows":[{"window_name":"added","panes":[null]}]}"#
+                    .utf8
+            ).write(to: file)
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable,
+                "TMUX": "\(socket),\(initial.serverProcessID),999",
+                "TMUX_PANE": pane.id.rawValue,
+            ]
+            let loaded = await invoke(
+                ["load", file.path, "--append", "--json"], in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            let after = try await server.snapshot()
+            #expect(after.sessions.map(\.id) == initial.sessions.map(\.id))
+            #expect(after.windows.count == initial.windows.count + 1)
+            #expect(
+                try await server.environmentValue("APPEND_VALUE", in: .session(session.id.rawValue))
+                    == "literal;#{session_name}")
+            let bad = root.appendingPathComponent("bad.json")
+            try Data(
+                #"{"session_name":"unused","windows":[{"window_name":"retained","layout":"not-a-layout","panes":[null]}]}"#
+                    .utf8
+            ).write(to: bad)
+            let failed = await invoke(
+                ["load", bad.path, "--append", "--json"], in: root, extra: environment)
+            #expect(failed.code == 1)
+            let result = try failed.json()
+            #expect(result["status"] as? String == "partial")
+            let retained = try #require(result["retained_state"] as? [String: Any])
+            #expect(retained["session_id"] as? String == session.id.rawValue)
+            #expect((retained["window_ids"] as? [String])?.count == 1)
+            let final = try await server.snapshot()
+            #expect(final.sessions.map(\.id) == initial.sessions.map(\.id))
+            #expect(final.windows.count == after.windows.count + 1)
+            let stream = await invoke(
+                ["load", bad.path, "--append", "--ndjson"], in: root, extra: environment)
+            #expect(stream.code == 1)
+            let records = try stream.output.map {
+                try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+            }
+            #expect(records.last?["event"] as? String == "failed")
+            #expect(
+                records.filter { ["completed", "failed"].contains($0["event"] as? String ?? "") }
+                    .count == 1)
+            #expect((records.last?["data"] as? [String: Any])?["status"] as? String == "partial")
+            let detached = await invoke(
+                ["load", file.path, "--append", "-d", "--json"], in: root, extra: environment)
+            #expect(detached.code == 0, "\(detached.error)")
+            #expect(try await server.sessions().contains { $0.name == "unused" })
+        }
+    }
+
+    @Test("append rejects foreign and stale inherited endpoints before mutation")
+    func appendIdentity() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let snapshot = try await server.snapshot()
+            let pane = try #require(snapshot.panes.first)
+            let file = root.appendingPathComponent("append.json")
+            try Data(#"{"session_name":"unused","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: file)
+            let alias = root.appendingPathComponent("socket,alias")
+            try FileManager.default.createSymbolicLink(
+                atPath: alias.path, withDestinationPath: socket)
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable,
+                "TMUX": "\(alias.path),\(snapshot.serverProcessID),999",
+                "TMUX_PANE": pane.id.rawValue,
+            ]
+            let accepted = await invoke(
+                ["load", file.path, "--append", "-S", socket, "--json"], in: root,
+                extra: environment)
+            #expect(accepted.code == 0, "\(accepted.error)")
+            let count = try await server.snapshot().windows.count
+            let stale = environment.merging(["TMUX": "\(socket),1,0"]) { _, new in new }
+            let rejected = await invoke(
+                ["load", file.path, "--append", "--json"], in: root, extra: stale)
+            #expect(rejected.code == 1)
+            #expect(rejected.error.joined().contains("append_context"))
+            #expect(try await server.snapshot().windows.count == count)
+            try await withTmuxServer { other in
+                guard case let .socketPath(otherSocket) = other.endpoint else { return }
+                let before = try await other.snapshot().windows.count
+                let foreign = await invoke(
+                    ["load", file.path, "--append", "-S", otherSocket, "--json"], in: root,
+                    extra: environment)
+                #expect(foreign.code == 1)
+                #expect(foreign.error.joined().contains("append_context"))
+                #expect(try await other.snapshot().windows.count == before)
+            }
+            let coldSocket = root.appendingPathComponent("unstarted").path
+            let cold = await invoke(
+                ["load", file.path, "--append", "-S", coldSocket, "--json"], in: root,
+                extra: environment)
+            #expect(cold.code == 1)
+            #expect(!FileManager.default.fileExists(atPath: coldSocket))
+            _ = try await server.run(TmuxCommand("kill-server"))
+            let replacement = try await server.newSession(named: "replacement")
+            let recycled = try await server.snapshot()
+            #expect(recycled.panes.first?.id == pane.id)
+            let restarted = await invoke(
+                ["load", file.path, "--append", "-S", socket, "--json"], in: root,
+                extra: environment)
+            #expect(restarted.code == 1)
+            #expect(restarted.error.joined().contains("append_context"))
+            #expect(try await server.snapshot().windows.count == 1)
+            let old = try #require(snapshot.sessions.first)
+            await #expect(throws: TmuxError.serverRestarted) {
+                _ = try await server.setEnvironment("UNCHANGED", to: "bad", in: old)
+            }
+            #expect(
+                try await server.environmentValue(
+                    "UNCHANGED", in: .session(replacement.id.rawValue)) == nil)
+        }
+    }
+
     @Test("native load and capture use an explicit socket")
     func loadAndCapture() async throws {
         try await withTmuxServer { server in

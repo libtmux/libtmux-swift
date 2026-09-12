@@ -43,6 +43,16 @@ public struct TmuxEnvironmentVariable: Sendable, Hashable, Codable {
 }
 
 extension Server {
+    package func setEnvironment(
+        _ name: String, to value: String, in session: Session
+    ) async throws(TmuxError) -> TmuxReply {
+        try await runGuarded(
+            TmuxCommand(
+                "set-environment",
+                ["-t", session.id.rawValue, "--", name, value]),
+            by: [.session(session)])
+    }
+
     /// Every variable in an environment, in the order tmux printed them.
     public func environment(
         _ scope: EnvironmentScope = .global

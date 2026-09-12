@@ -29,14 +29,15 @@ public enum WorkspaceBuilder {
         on server: Server,
         environment: [String: String],
         configureSession: @Sendable (Session) async throws -> Void,
-        configureWindow: @Sendable (Window, Int) async throws -> Void
+        configureWindow: @Sendable (Window, Int) async throws -> Void,
+        borrowing borrowed: Session? = nil
     ) async throws(WorkspaceBuilderError) -> Session {
         guard !workspace.windows.isEmpty else {
             throw WorkspaceBuilderError.noWindows
         }
         let existing: [Session]
         do {
-            if try await server.isRunning() {
+            if borrowed == nil, try await server.isRunning() {
                 existing = try await server.sessions()
             } else {
                 existing = []
@@ -48,14 +49,15 @@ public enum WorkspaceBuilder {
             throw WorkspaceBuilderError.sessionExists(workspace.sessionName)
         }
 
-        var session: Session?
+        var session: Session? = borrowed
         do {
+            if let borrowed { try await configureSession(borrowed) }
             for (index, window) in workspace.windows.enumerated() {
                 let directory =
                     window.panes.first?.startDirectory
                     ?? window.startDirectory ?? workspace.startDirectory
                 let created: Window
-                if index == 0 {
+                if index == 0 && borrowed == nil {
                     let made = try await server.newSession(
                         named: workspace.sessionName,
                         startDirectory: directory,
@@ -89,7 +91,7 @@ public enum WorkspaceBuilder {
             return session
         } catch {
             let original = Self.builderError(error)
-            guard let session else { throw original }
+            guard borrowed == nil, let session else { throw original }
             if let cleanup = await rollback(session, on: server) {
                 throw .rollbackFailed(original: original, cleanup: cleanup)
             }

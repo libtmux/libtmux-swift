@@ -17,13 +17,10 @@ enum WorkspaceCommands {
                 socketName: name, tmuxExecutable: executable, configurationFile: configuration)
         }
         if let inherited = context.environment["TMUX"] {
-            let fields = inherited.split(separator: ",", omittingEmptySubsequences: false)
-            if fields.count >= 3, let pid = Int(fields[fields.count - 2]), pid > 0,
-                let index = Int(fields.last ?? ""), index >= 0
-            {
-                let path = fields.dropLast(2).joined(separator: ",")
+            if let tmux = TmuxContext(parsing: inherited) {
                 return try Server(
-                    socketPath: path, tmuxExecutable: executable, configurationFile: configuration)
+                    socketPath: tmux.socketPath, tmuxExecutable: executable,
+                    configurationFile: configuration)
             }
             throw CLIError(
                 "usage", "TMUX does not contain a valid socket, PID and session index.", status: 2)
@@ -42,14 +39,21 @@ enum WorkspaceCommands {
         }
         let server = try server(
             command.socket, configuration: command.configurationFile, context: context)
+        let borrowed =
+            command.append && !command.detached
+            ? try await appendTarget(server, context: context) : nil
+        let retained = AppendState()
         var results: [Value] = []
         try await output.event(
             "started", command: "load", data: .object(["inputs": .integer(Int64(plans.count))]))
         do {
             for plan in plans {
+                await retained.reset()
                 try Task.checkCancellation()
                 let existing: Session?
-                if try await server.isRunning() {
+                if let borrowed {
+                    existing = borrowed
+                } else if try await server.isRunning() {
                     existing = try await server.sessions().first {
                         $0.name == plan.workspace.sessionName
                     }
@@ -57,12 +61,13 @@ enum WorkspaceCommands {
                     existing = nil
                 }
                 let session: Session
-                if let existing {
+                if let existing, borrowed == nil {
                     session = existing
                 } else {
                     session = try await WorkspaceBuilder.build(
                         plan.workspace, on: server, environment: plan.environment,
                         configureSession: { session in
+                            if borrowed != nil { await retained.begin() }
                             if let script = plan.beforeScript {
                                 var processContext = context
                                 processContext.directory = URL(
@@ -82,6 +87,13 @@ enum WorkspaceCommands {
                                         "before_script exited with status \(result.code).")
                                 }
                             }
+                            if borrowed != nil {
+                                for (name, value) in plan.environment.sorted(by: { $0.key < $1.key }
+                                ) {
+                                    try requireSuccess(
+                                        await server.setEnvironment(name, to: value, in: session))
+                                }
+                            }
                             for (name, value) in plan.options.sorted(by: { $0.key < $1.key }) {
                                 try requireSuccess(
                                     await server.setOption(
@@ -89,17 +101,20 @@ enum WorkspaceCommands {
                             }
                         },
                         configureWindow: { window, index in
+                            if borrowed != nil { await retained.append(window.id.rawValue) }
                             for (name, value) in plan.windowOptions[index].sorted(by: {
                                 $0.key < $1.key
                             }) {
                                 try requireSuccess(
                                     await server.setOption(name, to: value, scope: .window(window)))
                             }
-                        })
+                        }, borrowing: borrowed)
                 }
                 let result = Value.object([
                     "session_name": .string(session.name),
                     "session_id": .string(session.id.rawValue), "created": .bool(existing == nil),
+                    "action": .string(
+                        borrowed != nil ? "appended" : existing == nil ? "created" : "reused"),
                 ])
                 results.append(result)
                 try await output.event("workspace-completed", command: "load", data: result)
@@ -111,17 +126,57 @@ enum WorkspaceCommands {
                 try await output.result(result)
             }
         } catch {
-            let result = Value.object([
-                "status": .string(results.isEmpty ? "error" : "partial"),
+            let changed = await retained.started
+            var fields: [String: Value] = [
+                "status": .string(results.isEmpty && !changed ? "error" : "partial"),
                 "workspaces": .array(results),
-            ])
+            ]
+            if let borrowed, changed {
+                fields["retained_state"] = .object([
+                    "ownership": .string("borrowed"),
+                    "session_id": .string(borrowed.id.rawValue),
+                    "session_name": .string(borrowed.name),
+                    "window_ids": .array(await retained.windows.map(Value.string)),
+                    "settings_may_have_changed": .bool(true),
+                ])
+            }
+            let result = Value.object(fields)
             if command.output.ndjson {
-                try? await output.event("completed", command: "load", data: result)
+                try? await output.event("failed", command: "load", data: result)
             } else if command.output.json {
                 try? await output.result(result)
             }
             throw error
         }
+    }
+
+    private static func appendTarget(_ selected: Server, context: CLIContext) async throws
+        -> Session
+    {
+        guard let inherited = TmuxContext.current(environment: context.environment),
+            let rawPane = context.environment["TMUX_PANE"], let paneID = PaneID(rawValue: rawPane)
+        else { throw CLIError("append_context", "Append requires a valid TMUX and TMUX_PANE.") }
+        let origin = try await inherited.server(tmuxExecutable: selected.tmuxExecutable)
+            .incarnation()
+        let snapshot = try await selected.snapshot()
+        guard origin.processID == inherited.serverProcessID,
+            snapshot.incarnation.processID == origin.processID,
+            snapshot.incarnation.startedAt == origin.startedAt,
+            snapshot.incarnation.socketPath == origin.socketPath,
+            let pane = snapshot.panes.first(where: { $0.id == paneID })
+        else {
+            throw CLIError(
+                "append_context", "Selected endpoint does not identify the current pane's server.")
+        }
+        let links = snapshot.windowLinks.filter { $0.windowID == pane.windowID }
+        let link =
+            links.first { $0.sessionID == inherited.sessionID }
+            ?? (links.count == 1 ? links.first : nil)
+        guard let link, let session = snapshot.sessions.first(where: { $0.id == link.sessionID })
+        else {
+            throw CLIError("append_context", "The current pane's session is missing or ambiguous.")
+        }
+        return session
     }
 
     static func freeze(_ command: Freeze, context: CLIContext, output: Presenter) async throws {
@@ -406,4 +461,15 @@ enum WorkspaceCommands {
         }
         return result
     }
+}
+
+private actor AppendState {
+    var started = false
+    var windows: [String] = []
+    func reset() {
+        started = false
+        windows = []
+    }
+    func begin() { started = true }
+    func append(_ window: String) { windows.append(window) }
 }

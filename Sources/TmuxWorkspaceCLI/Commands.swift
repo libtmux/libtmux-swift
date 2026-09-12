@@ -51,12 +51,13 @@ struct Load: WorkspaceAction {
     @Option(name: .customShort("s"), help: "Override the final workspace's session name.")
     var sessionName: String?
     @Flag(name: .customShort("d"), help: "Leave loaded sessions detached.") var detached = false
+    @Flag(help: "Add windows to the current pane's session.") var append = false
     @Flag(name: [.long, .customShort("y")], help: "Accept confirmations.") var yes = false
     @Flag(help: "Disable the progress display.") var noProgress = false
 
     mutating func validate() throws {
         guard !files.isEmpty else { throw ValidationError("Provide at least one workspace.") }
-        guard detached else {
+        guard detached || append else {
             throw ValidationError(
                 "This build requires load -d; terminal attachment is not implemented yet.")
         }
