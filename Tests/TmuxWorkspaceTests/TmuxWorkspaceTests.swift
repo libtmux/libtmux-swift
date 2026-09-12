@@ -214,21 +214,51 @@ struct WorkspaceBuildingTests {
     @Test("a failed build removes the exact session it created")
     func failedBuildRollsBackItsSession() async throws {
         try await withTmuxServer { server in
+            let before = try await server.snapshot()
             let workspace = Workspace(
                 sessionName: "rollback",
                 windows: [
                     WindowPlan(
-                        layout: "not-a-tmux-layout",
                         panes: [PanePlan(), PanePlan()]
                     )
                 ]
             )
 
             await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(
+                    workspace, on: server, environment: [:], configureSession: { _ in },
+                    configureWindow: { window, _ in
+                        try await server.expectSuccess(
+                            TmuxCommand(
+                                "set-option",
+                                ["-w", "-t", window.id.rawValue, "libtmux-invalid-option", "1"]))
+                    })
+            }
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+            #expect(after.panes.map(\.id) == before.panes.map(\.id))
+        }
+    }
+
+    @Test(
+        "invalid workspace layouts preserve existing sessions",
+        arguments: ["not-a-layout", "32d2,80x24,0,0{}"])
+    func invalidLayoutPreservesServer(layout: String) async throws {
+        try await withTmuxServer { server in
+            let before = try await server.snapshot()
+            let workspace = Workspace(
+                sessionName: "invalid-layout",
+                windows: [WindowPlan(layout: layout, panes: [PanePlan()])])
+            await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(workspace, on: server)
             }
-            let remains = try await server.hasSession("rollback")
-            #expect(!remains)
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+            #expect(after.panes.map(\.id) == before.panes.map(\.id))
         }
     }
 

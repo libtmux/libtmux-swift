@@ -45,6 +45,7 @@ public enum WorkspaceBuilder {
         }
         let existing: [Session]
         do {
+            try await WorkspaceLayout.validate([workspace], on: server)
             if borrowed == nil, try await server.isRunning() {
                 existing = try await server.sessions()
             } else {
@@ -192,7 +193,7 @@ public enum WorkspaceBuilder {
             )
         }
 
-        if let layout = window.layout {
+        if let layout = window.layout, !layout.isEmpty {
             try await server.selectLayout(created, layout)
         }
 
