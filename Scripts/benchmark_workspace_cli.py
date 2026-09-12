@@ -4,16 +4,36 @@
 from __future__ import annotations
 
 import argparse
+import errno
+import hashlib
 import json
 import os
 import shutil
 import site
+import socket
 import statistics
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+
+def wait_for_shutdown(path):
+    """Wait until the previous daemon no longer accepts connections."""
+    deadline = time.monotonic() + 2
+    while True:
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.settimeout(0.05)
+            result = connection.connect_ex(str(path))
+        if result in (errno.ENOENT, errno.ECONNREFUSED):
+            return
+        if result not in (0, errno.EAGAIN, errno.EINPROGRESS):
+            raise OSError(result, os.strerror(result))
+        if time.monotonic() >= deadline:
+            message = "the previous tmux listener did not close"
+            raise TimeoutError(message)
+        time.sleep(0.005)
 
 
 def main():
@@ -32,6 +52,8 @@ def main():
         parser.error("the selected tmux executable is unavailable")
     args.tmux = str(Path(selected_tmux).resolve())
     native = [str(args.executable.resolve())]
+    tmux_version = subprocess.check_output([args.tmux, "-V"], text=True).strip()
+    native_sha256 = hashlib.sha256(args.executable.read_bytes()).hexdigest()
     reference = [
         args.python,
         "-u",
@@ -59,6 +81,11 @@ def main():
         env.pop("TMUX", None)
         env.pop("TMUX_PANE", None)
         env["PATH"] = str(Path(args.tmux).resolve().parent) + os.pathsep + env["PATH"]
+        reference_tmux = shutil.which("tmux", path=env["PATH"])
+        if reference_tmux is None or Path(reference_tmux).resolve() != Path(args.tmux):
+            parser.error(
+                "the reference PATH must resolve tmux to the selected executable"
+            )
         fixture = config / "benchmark.json"
         fixture.write_text(
             json.dumps(
@@ -101,6 +128,7 @@ def main():
                 timeout=5,
                 check=False,
             )
+            wait_for_shutdown(socket)
 
         def summarize(values):
             return {
@@ -241,11 +269,14 @@ def main():
         json.dumps(
             {
                 "comparison": comparison,
+                "tmux_version": tmux_version,
+                "native_sha256": native_sha256,
                 "samples": args.samples,
                 "fixture": "two windows, three blank panes, explicit cwd, "
                 "default indexes 0 and 1",
                 "timing_boundary": "subprocess start through exit; correctness "
-                "excluded; cold private server for load; YAML file output for freeze",
+                "and prior listener shutdown excluded; cold private server for load; "
+                "YAML file output for freeze",
                 "limitations": "blank-pane fixture; no command execution, "
                 "interactive behavior or complete capture parity measured",
             },
