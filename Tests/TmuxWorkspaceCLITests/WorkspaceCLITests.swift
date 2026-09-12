@@ -142,6 +142,37 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("importers validate known fields instead of discarding values")
+    func importerTypes() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("typed-import.json")
+            try Data(#"{"name":"typed","rbenv":2.7,"windows":[]}"#.utf8).write(to: file)
+            let ruby = await invoke(["import", "tmuxinator", file.path, "--json"], in: root)
+            #expect(try ruby.json()["shell_command_before"] as? [String] == ["rbenv shell 2.7"])
+            for source in [
+                #"{"name":"typed","cli_args":{},"windows":[]}"#,
+                #"{"name":"typed","windows":[{"name":"one","filters":false,"panes":[null]}]}"#,
+                #"{"name":"typed","windows":[{"name":"one","filters":{"before":false},"panes":[null]}]}"#,
+            ] {
+                try Data(source.utf8).write(to: file)
+                let result = await invoke(
+                    [
+                        "import", source.contains("cli_args") ? "tmuxinator" : "teamocil",
+                        file.path, "--json",
+                    ], in: root)
+                #expect(result.code == 1)
+                #expect(result.output.isEmpty)
+            }
+            try Data(
+                #"{"name":"typed","windows":[{"name":"one","filters":{"unknown":"echo lost"},"panes":[null]}]}"#
+                    .utf8
+            ).write(to: file)
+            let warned = await invoke(["import", "teamocil", file.path, "--json"], in: root)
+            #expect(warned.code == 0)
+            #expect(warned.error.joined().contains("filters.unknown"))
+        }
+    }
+
     @Test("bare names resolve globally and explicit files resolve locally")
     func workspaceResolution() async throws {
         try await withFiles { root in
