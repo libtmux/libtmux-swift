@@ -417,6 +417,7 @@ struct SnapshotCaptureTests {
         try await withTmuxServer { server in
             let first = try await server.snapshot()
             _ = try await server.run(TmuxCommand("kill-server"))
+            try #require(await waitForSocketClosure(first.incarnation.socketPath))
             _ = try await server.run(TmuxCommand("new-session", ["-d", "-s", "second"]))
 
             let second = try await server.snapshot()
