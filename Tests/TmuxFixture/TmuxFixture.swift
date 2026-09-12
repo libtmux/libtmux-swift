@@ -339,6 +339,41 @@ public func waitUntil(
     return try await condition()
 }
 
+/// Waits for a stopped daemon's Unix listener to close before reusing its path.
+public func waitForSocketClosure(_ path: String) async throws -> Bool {
+    try await waitUntil(within: .seconds(2)) {
+        #if canImport(Darwin)
+            let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        #else
+            let descriptor = socket(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0)
+        #endif
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(descriptor) }
+        guard fcntl(descriptor, F_SETFL, O_NONBLOCK) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        var address = sockaddr_un()
+        #if canImport(Darwin)
+            address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        #endif
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8) + [0]
+        guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else {
+            throw POSIXError(.ENAMETOOLONG)
+        }
+        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        if result == 0 { return false }
+        if errno == ECONNREFUSED || errno == ENOENT { return true }
+        if errno == EINPROGRESS || errno == EAGAIN { return false }
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+}
+
 /// The lane binary when a matrix runner selected one, otherwise whatever `tmux`
 /// resolves to. Resolved to a path because the transport never searches `PATH`.
 public func tmuxExecutablePath() -> String {
