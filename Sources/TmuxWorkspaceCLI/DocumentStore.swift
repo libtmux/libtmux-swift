@@ -174,7 +174,30 @@ struct DocumentStore: Sendable {
 
     func save(_ value: Value, to file: URL, format: WorkspaceFormat, overwrite: Bool) throws {
         let data = Data(try encode(value, format: format).utf8)
-        try data.write(to: file, options: overwrite ? .atomic : .withoutOverwriting)
+        var template = Array(
+            file.deletingLastPathComponent().appendingPathComponent(".workspace-XXXXXX").path
+                .utf8CString)
+        let descriptor = mkstemp(&template)
+        guard descriptor >= 0 else {
+            throw CLIError("document_write", String(cString: strerror(errno)))
+        }
+        let temporary = String(
+            decoding: template.dropLast().map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer {
+            try? handle.close()
+            _ = unlink(temporary)
+        }
+        guard fcntl(descriptor, F_SETFD, FD_CLOEXEC) == 0 else {
+            throw CLIError("document_write", String(cString: strerror(errno)))
+        }
+        try handle.write(contentsOf: data)
+        try handle.synchronize()
+        try handle.close()
+        let published = overwrite ? rename(temporary, file.path) : link(temporary, file.path)
+        guard published == 0 else {
+            throw CLIError("document_write", String(cString: strerror(errno)))
+        }
     }
 
     func discover(full: Bool) -> [Value] {
