@@ -72,6 +72,16 @@ struct EnvironmentTests {
         }
     }
 
+    @Test("an individual environment value preserves embedded and trailing newlines")
+    func multilineValue() async throws {
+        try await withTmuxServer { server in
+            let value = "first\nNOT_A_VARIABLE=second\nlast=λ\n"
+            try await server.setEnvironment("MULTILINE", to: value, in: .session("bootstrap"))
+            #expect(
+                try await server.environmentValue("MULTILINE", in: .session("bootstrap")) == value)
+        }
+    }
+
     @Test("an empty value is a value, not an absence")
     func emptyValuesSurvive() async throws {
         try await withTmuxServer { server in
@@ -107,6 +117,17 @@ struct EnvironmentTests {
         try await withTmuxServer { server in
             let missing = try await server.environmentValue("NEVER_SET", in: .global)
             #expect(missing == nil)
+        }
+    }
+
+    @Test("a missing environment session is an error, while an unknown variable is absent")
+    func missingSessionIsFailure() async throws {
+        try await withTmuxServer { server in
+            let unknown = try await server.environmentValue("NEVER_SET", in: .session("bootstrap"))
+            #expect(unknown == nil)
+            await #expect(throws: TmuxError.self) {
+                try await server.environmentValue("NEVER_SET", in: .session("missing-session"))
+            }
         }
     }
 
