@@ -662,6 +662,69 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("duplicate indexes and conflicting focus fail before endpoint lookup")
+    func focusPreflight() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("focus.json")
+            for windows in [
+                #"[{"window_index":2,"panes":[null]},{"window_index":2,"panes":[null]}]"#,
+                #"[{"focus":true,"panes":[null]},{"focus":true,"panes":[null]}]"#,
+                #"[{"panes":[{"focus":true},{"focus":true}]}]"#,
+                #"[{"window_index":-1,"panes":[null]}]"#,
+                #"[{"focus":1,"panes":[null]}]"#,
+            ] {
+                try Data("{\"session_name\":\"preflight\",\"windows\":\(windows)}".utf8).write(
+                    to: file)
+                let result = await invoke(
+                    ["load", file.path, "-d", "-S", "unavailable", "--json"], in: root)
+                #expect(result.code == 1)
+                #expect(result.error.joined().contains(#""code":"document""#), "\(result.error)")
+            }
+        }
+    }
+
+    @Test("load and capture preserve explicit indexes and window/pane focus")
+    func focusAndIndexes() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("focus.json")
+            try Data(
+                #"{"session_name":"focused","windows":[{"window_name":"one","window_index":3,"panes":[null]},{"window_name":"two","window_index":7,"focus":true,"panes":[{"focus":true},null]}]}"#
+                    .utf8
+            ).write(to: file)
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            let loaded = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "focused" })
+            let links = snapshot.windowLinks(of: session)
+            #expect(links.map(\.index) == [3, 7])
+            #expect(links.filter(\.isActive).map(\.index) == [7])
+            let focused = try #require(snapshot.windows.first { $0.id == links.last?.windowID })
+            #expect(snapshot.panes(of: focused).filter(\.isActive).map(\.index) == [0])
+            let capture = await invoke(
+                ["freeze", "focused", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(capture.code == 0)
+            let windows = try #require(try capture.json()["windows"] as? [[String: Any]])
+            #expect(windows.compactMap { $0["window_index"] as? Int } == [3, 7])
+            #expect(windows.compactMap { $0["focus"] as? Bool } == [false, true])
+            let panes = try #require(windows.last?["panes"] as? [[String: Any]])
+            #expect(panes.compactMap { $0["focus"] as? Bool } == [true, false])
+            let saved = root.appendingPathComponent("captured.json")
+            try Data(capture.output.joined().utf8).write(to: saved)
+            let replay = await invoke(
+                ["load", saved.path, "-s", "replayed", "-d", "-S", socket, "--json"], in: root,
+                extra: environment)
+            #expect(replay.code == 0, "\(replay.error)")
+            let after = try await server.snapshot()
+            let restored = try #require(after.sessions.first { $0.name == "replayed" })
+            #expect(after.windowLinks(of: restored).map(\.index) == [3, 7])
+            #expect(after.windowLinks(of: restored).filter(\.isActive).map(\.index) == [7])
+        }
+    }
+
     @Test("native configuration reaches the first pane and rolls back failed bootstrap")
     func loadConfiguration() async throws {
         try await withTmuxServer { server in

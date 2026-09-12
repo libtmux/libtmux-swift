@@ -17,8 +17,10 @@ struct WorkspaceDecodingTests {
               "windows": [
                 {
                   "window_name": "editor",
+                  "window_index": 7,
+                  "focus": true,
                   "layout": "even-horizontal",
-                  "panes": [{"shell_command": ["echo one"]}, "echo two"]
+                  "panes": [{"shell_command": ["echo one"], "focus": true}, "echo two"]
                 }
               ]
             }
@@ -32,6 +34,10 @@ struct WorkspaceDecodingTests {
         let window = try #require(workspace.windows.first)
         #expect(window.windowName == "editor")
         #expect(window.layout == "even-horizontal")
+        #expect(window.windowIndex == 7)
+        #expect(window.focus == true)
+        #expect(window.panes.first?.focus == true)
+        #expect(try Workspace.decode(json: JSONEncoder().encode(workspace)) == workspace)
         // tmuxp lets a pane be a bare string meaning "run this".
         #expect(window.panes.map(\.shellCommands) == [["echo one"], ["echo two"]])
     }
