@@ -15,6 +15,8 @@ struct CLIContext: Sendable {
     var output: @Sendable (String) async throws -> Void
     var error: @Sendable (String) async throws -> Void
     var terminal = false
+    var inputTTY: String?
+    var input: (@Sendable () async throws -> String?)?
     var errorTerminal = false
     var terminalSize = (columns: 80, rows: 24)
     var rawOutput: (@Sendable (String) async throws -> Void)?
@@ -30,12 +32,17 @@ enum WorkspaceCLI {
             let error = try NonblockingLineWriter(fileDescriptor: STDERR_FILENO)
             var size = winsize()
             _ = ioctl(STDERR_FILENO, UInt(TIOCGWINSZ), &size)
+            let inputTTY =
+                isatty(STDIN_FILENO) == 1 && tcgetpgrp(STDIN_FILENO) == getpgrp()
+                ? ttyname(STDIN_FILENO).map { String(cString: $0) } : nil
             let context = CLIContext(
                 directory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
                 environment: ProcessInfo.processInfo.environment,
                 output: { line in try await write(line, with: output) },
                 error: { line in try await write(line, with: error) },
                 terminal: isatty(STDOUT_FILENO) == 1,
+                inputTTY: inputTTY,
+                input: { try await ProcessCommands.readLine() },
                 errorTerminal: isatty(STDERR_FILENO) == 1,
                 terminalSize: (
                     columns: size.ws_col > 0 ? Int(size.ws_col) : 80,
