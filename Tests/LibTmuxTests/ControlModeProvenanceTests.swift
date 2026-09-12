@@ -10,6 +10,7 @@ struct ControlModeProvenanceTests {
         try await withTmuxServer { server in
             let stale = try #require(try await server.sessions().first)
             _ = try await server.run(TmuxCommand("kill-server"))
+            try #require(await waitForSocketClosure(stale.incarnation.socketPath))
             _ = try await server.run(
                 TmuxCommand("new-session", ["-d", "-s", "replacement"])
             )

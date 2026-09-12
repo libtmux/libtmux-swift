@@ -604,6 +604,7 @@ struct WorkspaceCLITests {
             #expect(cold.code == 1)
             #expect(!FileManager.default.fileExists(atPath: coldSocket))
             _ = try await server.run(TmuxCommand("kill-server"))
+            try #require(await waitForSocketClosure(socket))
             let replacement = try await server.newSession(named: "replacement")
             let recycled = try await server.snapshot()
             #expect(recycled.panes.first?.id == pane.id)
@@ -834,6 +835,7 @@ struct WorkspaceCLITests {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }
             _ = try await server.run(TmuxCommand("kill-server"))
+            try #require(await waitForSocketClosure(socket))
             #expect(try await !server.isRunning())
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
             let file = root.appendingPathComponent("cold.json")
