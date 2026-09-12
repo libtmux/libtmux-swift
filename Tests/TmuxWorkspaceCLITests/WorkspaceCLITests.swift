@@ -516,7 +516,7 @@ struct WorkspaceCLITests {
                 "TMUX_PANE": pane.id.rawValue,
             ]
             let loaded = await invoke(
-                ["load", file.path, "--append", "--json"], in: root, extra: environment)
+                ["load", file.path, "-a", "--json"], in: root, extra: environment)
             #expect(loaded.code == 0, "\(loaded.error)")
             let after = try await server.snapshot()
             #expect(after.sessions.map(\.id) == initial.sessions.map(\.id))
