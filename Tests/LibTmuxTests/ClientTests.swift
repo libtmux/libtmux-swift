@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -5,6 +6,49 @@ import TmuxFixture
 
 @Suite("clients and connection close", .timeLimit(.minutes(1)))
 struct ClientTests {
+    @Test("switching authenticates the selected client and preserves other clients")
+    func switchingAuthenticatesTheSelectedClient() async throws {
+        try await withTmuxServer { server in
+            let destination = try await server.newSession(named: "destination")
+            try await server.withControlMode(attachingTo: "bootstrap") { _ in
+                let first = try #require(try await server.clients().first)
+                try await server.withControlMode(attachingTo: "bootstrap") { _ in
+                    let second = try #require(
+                        try await server.clients().first { $0.name != first.name })
+                    let wrongProcess = Client(
+                        name: first.name, tty: first.tty, processID: first.processID + 1,
+                        width: first.width, height: first.height,
+                        isControlMode: first.isControlMode,
+                        sessionID: first.sessionID, activePaneID: first.activePaneID,
+                        isWindowZoomed: first.isWindowZoomed, incarnation: first.incarnation)
+                    await #expect(throws: TmuxError.staleServerValue) {
+                        try await server.switchClient(wrongProcess, to: destination)
+                    }
+                    #expect(
+                        try await server.clients().allSatisfy { $0.sessionID == first.sessionID })
+
+                    try await server.switchClient(first, to: destination)
+                    let clients = try await server.clients()
+                    #expect(clients.first { $0.name == first.name }?.sessionID == destination.id)
+                    #expect(clients.first { $0.name == second.name }?.sessionID == second.sessionID)
+                    await #expect(throws: TmuxError.staleServerValue) {
+                        try await server.switchClient(first, to: destination)
+                    }
+                    let reply = try await server.run(
+                        TmuxCommand(
+                            "refresh-client", ["-t", second.name, "-f", "active-pane"]))
+                    #expect(reply.exitCode == 0)
+                    await #expect(throws: TmuxError.staleServerValue) {
+                        try await server.switchClient(second, to: destination)
+                    }
+                    #expect(
+                        try await server.clients().first { $0.name == second.name }?.sessionID
+                            == second.sessionID)
+                }
+            }
+        }
+    }
+
     @Test("a control connection appears as a client and detaches")
     func controlConnectionIsAClientAndDetaches() async throws {
         try await withTmuxServer { server in
@@ -115,6 +159,7 @@ struct ClientTests {
             "client_pid": "77", "client_width": "80", "client_height": "24",
             "client_control_mode": "0", "session_id": "$2", "pane_id": "%7",
             "window_zoomed_flag": "1",
+            "client_flags": "active-pane,read-only",
             "socket_path": "/tmp/libtmux-swift-test/client-attention", "pid": "42",
             "start_time": "9",
         ]
@@ -132,6 +177,8 @@ struct ClientTests {
         )
         #expect(client.activePaneID == "%7")
         #expect(client.isWindowZoomed == true)
+        #expect(client.flags == ["active-pane", "read-only"])
+        #expect(try JSONDecoder().decode(Client.self, from: JSONEncoder().encode(client)) == client)
 
         for (field, malformed) in [
             ("pane_id", ""), ("pane_id", "7"),

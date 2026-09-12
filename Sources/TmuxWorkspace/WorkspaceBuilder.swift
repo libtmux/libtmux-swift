@@ -1,6 +1,13 @@
 import Foundation
 import LibTmux
 
+package enum WorkspaceBuildEvent: Sendable {
+    case windowStarted(index: Int, window: Window)
+    case paneStarted(windowIndex: Int, index: Int, pane: Pane)
+    case paneCompleted(windowIndex: Int, index: Int, pane: Pane)
+    case windowCompleted(index: Int, window: Window)
+}
+
 /// Builds a workspace on a tmux server.
 ///
 /// This is a consumer of `LibTmux`, not part of it: everything here goes
@@ -19,12 +26,30 @@ public enum WorkspaceBuilder {
         _ workspace: Workspace,
         on server: Server
     ) async throws(WorkspaceBuilderError) -> Session {
+        try await build(
+            workspace, on: server, environment: [:], configureSession: { _ in },
+            configureWindow: { _, _ in })
+    }
+
+    package static func build(
+        _ workspace: Workspace,
+        on server: Server,
+        environment: [String: String],
+        configureSession: @Sendable (Session) async throws -> Void,
+        configureWindow: @Sendable (Window, Int) async throws -> Void,
+        borrowing borrowed: Session? = nil,
+        onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void = { _ in }
+    ) async throws(WorkspaceBuilderError) -> Session {
         guard !workspace.windows.isEmpty else {
             throw WorkspaceBuilderError.noWindows
         }
         let existing: [Session]
         do {
-            existing = try await server.sessions()
+            if borrowed == nil, try await server.isRunning() {
+                existing = try await server.sessions()
+            } else {
+                existing = []
+            }
         } catch {
             throw .tmux(error)
         }
@@ -32,23 +57,35 @@ public enum WorkspaceBuilder {
             throw WorkspaceBuilderError.sessionExists(workspace.sessionName)
         }
 
-        var session: Session?
+        var session: Session? = borrowed
+        var focusedWindow: Window?
         do {
+            if let borrowed { try await configureSession(borrowed) }
             for (index, window) in workspace.windows.enumerated() {
-                let directory = window.startDirectory ?? workspace.startDirectory
+                let directory =
+                    window.panes.first?.startDirectory
+                    ?? window.startDirectory ?? workspace.startDirectory
                 let created: Window
-                if index == 0 {
+                if index == 0 && borrowed == nil {
                     let made = try await server.newSession(
                         named: workspace.sessionName,
                         startDirectory: directory,
-                        windowName: window.windowName
+                        windowName: window.windowName,
+                        environment: environment
                     )
                     session = made
-                    guard let first = try await server.snapshot().windows(of: made).first
+                    try await configureSession(made)
+                    let snapshot = try await server.snapshot()
+                    guard let first = snapshot.windows(of: made).first
                     else {
                         throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
                     }
                     created = first
+                    if let desired = window.windowIndex,
+                        let link = snapshot.windowLinks(of: made).first, link.index != desired
+                    {
+                        _ = try await server.move(link, to: made, at: desired)
+                    }
                 } else {
                     guard let session else {
                         throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
@@ -56,19 +93,34 @@ public enum WorkspaceBuilder {
                     created = try await server.newWindow(
                         in: session,
                         named: window.windowName,
-                        startDirectory: directory
+                        startDirectory: directory,
+                        at: borrowed == nil ? window.windowIndex : nil
                     ).window
                 }
-                try await build(window, in: created, of: workspace, on: server)
+                try await configureWindow(created, index)
+                try await onEvent(.windowStarted(index: index, window: created))
+                try await build(
+                    window, at: index, in: created, of: workspace, on: server, onEvent: onEvent)
+                try await onEvent(.windowCompleted(index: index, window: created))
+                if window.focus == true { focusedWindow = created }
             }
 
             guard let session else {
                 throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
             }
+            if let focusedWindow {
+                guard
+                    let link = try await server.windowLinks().first(where: {
+                        $0.incarnation == session.incarnation && $0.sessionID == session.id
+                            && $0.windowID == focusedWindow.id
+                    })
+                else { throw WorkspaceBuilderError.sessionVanished(workspace.sessionName) }
+                try await server.select(link)
+            }
             return session
         } catch {
             let original = Self.builderError(error)
-            guard let session else { throw original }
+            guard borrowed == nil, let session else { throw original }
             if let cleanup = await rollback(session, on: server) {
                 throw .rollbackFailed(original: original, cleanup: cleanup)
             }
@@ -122,10 +174,12 @@ public enum WorkspaceBuilder {
 
     private static func build(
         _ window: WindowPlan,
+        at windowIndex: Int,
         in created: Window,
         of workspace: Workspace,
-        on server: Server
-    ) async throws(TmuxError) {
+        on server: Server,
+        onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void
+    ) async throws {
         // The window arrives with one pane; only the rest are split in.
         var panes = try await server.snapshot().panes(of: created)
         for pane in window.panes.dropFirst() {
@@ -142,7 +196,9 @@ public enum WorkspaceBuilder {
             try await server.selectLayout(created, layout)
         }
 
-        for (plan, pane) in zip(window.panes, panes) {
+        for (index, pair) in zip(window.panes, panes).enumerated() {
+            let (plan, pane) = pair
+            try await onEvent(.paneStarted(windowIndex: windowIndex, index: index, pane: pane))
             for command in plan.shellCommands {
                 if command.enter {
                     try await server.run(command.command, in: pane)
@@ -156,6 +212,12 @@ public enum WorkspaceBuilder {
                     )
                 }
             }
+            try await onEvent(.paneCompleted(windowIndex: windowIndex, index: index, pane: pane))
+        }
+        if let focused = zip(window.panes.reversed(), panes.reversed()).first(where: {
+            $0.0.focus == true
+        }) {
+            try await server.select(focused.1)
         }
     }
 

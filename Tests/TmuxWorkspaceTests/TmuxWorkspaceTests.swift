@@ -17,8 +17,10 @@ struct WorkspaceDecodingTests {
               "windows": [
                 {
                   "window_name": "editor",
+                  "window_index": 7,
+                  "focus": true,
                   "layout": "even-horizontal",
-                  "panes": [{"shell_command": ["echo one"]}, "echo two"]
+                  "panes": [{"shell_command": ["echo one"], "focus": true}, "echo two"]
                 }
               ]
             }
@@ -32,6 +34,10 @@ struct WorkspaceDecodingTests {
         let window = try #require(workspace.windows.first)
         #expect(window.windowName == "editor")
         #expect(window.layout == "even-horizontal")
+        #expect(window.windowIndex == 7)
+        #expect(window.focus == true)
+        #expect(window.panes.first?.focus == true)
+        #expect(try Workspace.decode(json: JSONEncoder().encode(workspace)) == workspace)
         // tmuxp lets a pane be a bare string meaning "run this".
         #expect(window.panes.map(\.shellCommands) == [["echo one"], ["echo two"]])
     }
@@ -73,6 +79,40 @@ struct WorkspaceDecodingTests {
 
 @Suite("workspace building", .timeLimit(.minutes(1)))
 struct WorkspaceBuildingTests {
+    @Test("first-pane directories override session and window directories")
+    func firstPaneDirectoryOverridesItsParents() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(path) = server.endpoint else {
+                Issue.record("The fixture must use an explicit socket path")
+                return
+            }
+            let root = URL(fileURLWithPath: path).deletingLastPathComponent()
+            let first = root.appendingPathComponent("first")
+            try FileManager.default.createDirectory(at: first, withIntermediateDirectories: false)
+            let workspace = Workspace(
+                sessionName: "first-pane",
+                startDirectory: root.path,
+                windows: [
+                    WindowPlan(panes: [PanePlan(startDirectory: first.path), PanePlan()]),
+                    WindowPlan(
+                        startDirectory: root.path, panes: [PanePlan(startDirectory: first.path)]),
+                ]
+            )
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let directories = snapshot.windows(of: session).map { window in
+                snapshot.panes(of: window).map {
+                    URL(fileURLWithPath: $0.currentPath).resolvingSymlinksInPath().path
+                }
+            }
+            #expect(
+                directories == [
+                    [first.resolvingSymlinksInPath().path, root.resolvingSymlinksInPath().path],
+                    [first.resolvingSymlinksInPath().path],
+                ])
+        }
+    }
+
     @Test("a workspace becomes the session, windows, and panes it describes")
     func workspaceBecomesWhatItDescribes() async throws {
         try await withTmuxServer { server in

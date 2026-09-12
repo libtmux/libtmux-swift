@@ -15,6 +15,7 @@ let package = Package(
         .library(name: "TmuxWorkspace", targets: ["TmuxWorkspace"]),
         .library(name: "LibTmuxMCP", targets: ["LibTmuxMCP"]),
         .executable(name: "libtmux-mcp", targets: ["libtmux-mcp"]),
+        .executable(name: "tmux-workspace", targets: ["TmuxWorkspaceCLI"]),
         // Provisioning and reaping, for anyone whose own tests drive tmux.
         //
         // The other ports of libtmux all vend theirs: Go exports
@@ -33,6 +34,7 @@ let package = Package(
     // `Workspace.decode(yaml:)` goes away.
     traits: [.default(enabledTraits: []), "YAMLWorkspaces"],
     dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
         .package(
             url: "https://github.com/swiftlang/swift-subprocess.git",
             .upToNextMinor(from: "1.0.0")
@@ -81,6 +83,17 @@ let package = Package(
             dependencies: ["LibTmux", "LibTmuxMCP"],
             exclude: ["README.md"]
         ),
+        .executableTarget(
+            name: "TmuxWorkspaceCLI",
+            dependencies: [
+                "LibTmux", "TmuxWorkspace",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Subprocess", package: "swift-subprocess"),
+                .product(
+                    name: "Yams", package: "Yams", condition: .when(traits: ["YAMLWorkspaces"])),
+            ],
+            exclude: ["README.md"]
+        ),
         // Shared by every suite that talks to a real tmux, so that all of them
         // provision and reap servers the same way. It stays under `Tests/`
         // because that is where it is read from most: SwiftPM is happy to vend
@@ -102,6 +115,10 @@ let package = Package(
             name: "TmuxWorkspaceTests",
             dependencies: ["TmuxWorkspace", "LibTmux", "TmuxFixture"],
             resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "TmuxWorkspaceCLITests",
+            dependencies: ["TmuxWorkspaceCLI", "LibTmux", "TmuxFixture"]
         ),
         .testTarget(
             name: "LibTmuxMCPTests",
