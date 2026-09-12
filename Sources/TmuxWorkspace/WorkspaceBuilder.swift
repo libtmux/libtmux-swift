@@ -19,6 +19,18 @@ public enum WorkspaceBuilder {
         _ workspace: Workspace,
         on server: Server
     ) async throws(WorkspaceBuilderError) -> Session {
+        try await build(
+            workspace, on: server, environment: [:], configureSession: { _ in },
+            configureWindow: { _, _ in })
+    }
+
+    package static func build(
+        _ workspace: Workspace,
+        on server: Server,
+        environment: [String: String],
+        configureSession: @Sendable (Session) async throws -> Void,
+        configureWindow: @Sendable (Window, Int) async throws -> Void
+    ) async throws(WorkspaceBuilderError) -> Session {
         guard !workspace.windows.isEmpty else {
             throw WorkspaceBuilderError.noWindows
         }
@@ -47,9 +59,11 @@ public enum WorkspaceBuilder {
                     let made = try await server.newSession(
                         named: workspace.sessionName,
                         startDirectory: directory,
-                        windowName: window.windowName
+                        windowName: window.windowName,
+                        environment: environment
                     )
                     session = made
+                    try await configureSession(made)
                     guard let first = try await server.snapshot().windows(of: made).first
                     else {
                         throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
@@ -65,6 +79,7 @@ public enum WorkspaceBuilder {
                         startDirectory: directory
                     ).window
                 }
+                try await configureWindow(created, index)
                 try await build(window, in: created, of: workspace, on: server)
             }
 
