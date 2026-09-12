@@ -152,9 +152,10 @@ arguments and scripts, environment and options are omitted.
 ## Output
 
 Every implemented command accepts `--json` and `--ndjson` before or after the
-command name. NDJSON wins when both are present. Listing and search stream
-records; load streams sequenced events ending in one completed or failed event while
-the output stream remains writable. JSON load failures include retained
+command name. NDJSON wins when both are present. NDJSON listing and search read
+documents on demand and emit each result before continuing. Load streams
+sequenced events ending in one completed or failed event while the output
+stream remains writable. JSON load failures include retained
 successful sessions. NDJSON conversion, capture and import results include a
 versioned envelope and nested `workspace` document. Diagnostics use stderr.
 Machine output bypasses color.
