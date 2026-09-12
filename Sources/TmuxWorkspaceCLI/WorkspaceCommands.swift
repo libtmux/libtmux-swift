@@ -413,7 +413,9 @@ enum WorkspaceCommands {
         if let destination = command.destination {
             let store = DocumentStore(context: context)
             let file = store.path(destination)
-            try store.save(document, to: file, format: command.format, overwrite: command.force)
+            let format =
+                command.format ?? (file.pathExtension.lowercased() == "json" ? .json : .yaml)
+            try store.save(document, to: file, format: format, overwrite: command.force)
             if command.output.machine {
                 try await output.result(
                     .object(["path": .string(file.path), "workspace": document]))
@@ -424,7 +426,7 @@ enum WorkspaceCommands {
             try await output.document(document, command: "freeze")
         } else {
             try await context.output(
-                DocumentStore(context: context).encode(document, format: command.format))
+                DocumentStore(context: context).encode(document, format: command.format ?? .yaml))
         }
     }
 

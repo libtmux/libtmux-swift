@@ -1088,6 +1088,62 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "freeze infers JSON destinations and preserves explicit format choices",
+        arguments: ["--json", "--ndjson"])
+    func freezeSaveFormat(mode: String) async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            for (name, flags) in [
+                ("inferred.JsOn", [String]()), ("explicit.yaml", ["-f", "json"]),
+            ] {
+                let file = root.appendingPathComponent(name)
+                let arguments =
+                    ["freeze", "bootstrap", "-S", socket, mode, "-q", "--save-to", file.path]
+                    + flags
+                let saved = await invoke(arguments, in: root, extra: environment)
+                #expect(saved.code == 0, "\(saved.error)")
+                #expect(saved.error.isEmpty)
+                let result = try saved.json()
+                #expect(result["path"] as? String == file.path)
+                #expect(
+                    (result["workspace"] as? [String: Any])?["session_name"] as? String
+                        == "bootstrap")
+                let original = try Data(contentsOf: file)
+                let document = try JSONSerialization.jsonObject(with: original) as? [String: Any]
+                #expect(document?["session_name"] as? String == "bootstrap")
+                let protected = await invoke(arguments, in: root, extra: environment)
+                #expect(protected.code == 1)
+                #expect(protected.output.isEmpty)
+                #expect(try Data(contentsOf: file) == original)
+            }
+            #if YAMLWorkspaces
+                let file = root.appendingPathComponent("inferred.JsOn")
+                let overridden = await invoke(
+                    [
+                        "freeze", "bootstrap", "-S", socket, mode, "-q", "--save-to", file.path,
+                        "--force", "-f", "yaml",
+                    ], in: root, extra: environment)
+                #expect(overridden.code == 0, "\(overridden.error)")
+                #expect(overridden.error.isEmpty)
+                #expect(
+                    (try overridden.json()["workspace"] as? [String: Any])?["session_name"]
+                        as? String == "bootstrap")
+                let yaml = try Data(contentsOf: file)
+                #expect((try? JSONSerialization.jsonObject(with: yaml)) == nil)
+                let readable = root.appendingPathComponent("overridden.yaml")
+                try yaml.write(to: readable)
+                let converted = await invoke(["convert", readable.path, "--json"], in: root)
+                #expect(converted.code == 0)
+                #expect(try converted.json()["session_name"] as? String == "bootstrap")
+            #endif
+            let contents = try FileManager.default.contentsOfDirectory(atPath: root.path)
+            #expect(!contents.contains { $0.hasPrefix(".workspace-") })
+        }
+    }
+
     @Test("load and capture preserve explicit indexes and window/pane focus")
     func focusAndIndexes() async throws {
         try await withTmuxServer { server in
