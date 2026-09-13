@@ -190,6 +190,34 @@ and environment removal markers are omitted. `--quiet` suppresses explanatory
 messages while preserving documents and machine results.
 Reload applies the usual environment-variable expansion to captured values.
 
+## Inspect a workspace through MCP
+
+Loaded workspaces are ordinary tmux sessions. Build the separate
+[MCP server](../libtmux-mcp/README.md) from the repository root:
+
+```console
+$ swift build \
+    --configuration release \
+    --jobs 2 \
+    --force-resolved-versions \
+    --product libtmux-mcp
+```
+
+Load with `-d -S /tmp/libtmux-swift-dev/workspace-example.sock`, then configure
+your MCP client to launch `.build/release/libtmux-mcp` with
+`LIBTMUX_SOCKET_PATH=/tmp/libtmux-swift-dev/workspace-example.sock` and
+`LIBTMUX_TOOLSETS=inspect`. The socket's parent directory must exist.
+For `-L` loads, set `LIBTMUX_SOCKET` to the same name instead of
+`LIBTMUX_SOCKET_PATH`. Set `LIBTMUX_TMUX_BIN` when selecting a tmux executable
+outside `PATH`. The endpoint is selected once at MCP startup.
+
+Discover tools with `tools/list`, then call `list_sessions`, `list_windows`
+with the loaded session's name, and `list_panes`. Use returned pane IDs as
+`paneId` with `capture_pane` or `wait_for_text`; bound `maxLines` and the
+wait's `timeoutMs` in milliseconds. A pending text wait allows other
+inspection calls on the same connection. The `tmux://capabilities` resource
+reports the selected endpoint and available tools.
+
 ## Output
 
 Every implemented command accepts `--json` and `--ndjson` before or after the
