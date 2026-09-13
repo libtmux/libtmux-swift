@@ -115,9 +115,13 @@ first pane in each window receive focus. `blank` and `pane` source commands
 remain executable commands.
 
 Unsupported fields fail before printing a document or replacing a destination.
-These include ERB templates, lifecycle hooks, endpoint and runtime controls,
-named pane titles, synchronization, Teamocil widths, clearing and filters.
-Imported directories reject dollar expansion and named-user home shortcuts.
+These include lifecycle hooks, endpoint and runtime controls, named pane
+titles, synchronization, Teamocil widths, clearing and filters. Tmuxinator
+expands ERB templates through Ruby before parsing YAML, and no native reader
+does, so unexpanded `<%` markup in a Tmuxinator source fails the same way.
+Teamocil evaluates no templates, so the same markup in a Teamocil source is
+ordinary text and is preserved. Imported directories reject dollar expansion
+and named-user home shortcuts.
 Import validates the translated document with the loader's configuration
 validator; load also checks layout syntax against the selected tmux version.
 Imported commands follow the loader's environment-variable expansion rules.
