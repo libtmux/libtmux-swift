@@ -504,6 +504,10 @@ enum WorkspaceCommands {
         guard reply.isSuccess else { throw CLIError("tmux", reply.errorText) }
     }
 
+    static func validateImport(_ value: Value, file: URL, store: DocumentStore) throws {
+        _ = try normalize(value, file: file, override: nil, store: store)
+    }
+
     private static func normalize(
         _ value: Value, file: URL, override: String?, store: DocumentStore
     ) throws -> PlannedWorkspace {
