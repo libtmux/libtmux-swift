@@ -86,10 +86,13 @@ extension TmuxTools {
             lifetime = .submitting(cleanup)
             try await server.using(.direct) { server in
                 let target = cleanup.pane.id.rawValue
+                // `action` is a tmux command line if-shell will re-parse, not
+                // an argument handed to a POSIX shell, so it is quoted for
+                // tmux's own parser.
                 let action =
                     "set-option -p -t \(target) \(cleanup.statusOption) pending ; "
                     + ["send-keys", "-t", target, "--", dispatch, "Enter"]
-                    .map(shellQuoted).joined(separator: " ")
+                    .map(tmuxQuoted).joined(separator: " ")
                 let command = TmuxCommand("if-shell", ["-F", "1", action])
                 let reply = try await server.runIsolated(
                     command, expecting: cleanup.pane.incarnation, perStreamOutputLimit: 4_096)
@@ -116,19 +119,32 @@ extension TmuxTools {
                 started: started
             )
             if let status = result.exitStatus {
-                try await server.using(.direct) { server in
-                    try await Self.releaseRunShell(cleanup, status: status, server: server)
-                    try await Self.waitForRunShellRelease(cleanup, server: server)
+                // The command already ran, and `result` already carries its
+                // exit status and output. A cleanup hiccup from here on must
+                // not turn a completed call into a thrown error that discards
+                // it, so a failure here falls back to the same background
+                // retry the timeout path already relies on instead of
+                // propagating and losing `result`.
+                var releaseObserved = false
+                do {
+                    try await server.using(.direct) { server in
+                        try await Self.releaseRunShell(cleanup, status: status, server: server)
+                        try await Self.waitForRunShellRelease(cleanup, server: server)
+                    }
+                    releaseObserved = true
+                    try await server.using(.direct) { server in
+                        try await Self.clearRunShellStatus(cleanup, server: server)
+                    }
+                    Self.releaseRunShellFile(cleanup.stagedFile)
+                    await Self.paneRuns.release(reservation)
+                } catch {
+                    let message =
+                        "libtmux-mcp: run_shell_command completed but cleanup failed "
+                        + "(\(error)); retrying in the background\n"
+                    FileHandle.standardError.write(Data(message.utf8))
+                    schedulePaneRunCleanup(
+                        cleanup, reservation: reservation, releaseObserved: releaseObserved)
                 }
-                lifetime = .released(cleanup)
-                try await server.using(.direct) { server in
-                    try await Self.clearRunShellStatus(cleanup, server: server)
-                }
-                guard cleanup.stagedFile?.remove() == .removed else {
-                    throw TmuxError.invocationFailed(
-                        reason: "run_shell_command could not remove its command")
-                }
-                await Self.paneRuns.release(reservation)
             } else {
                 schedulePaneRunCleanup(cleanup, reservation: reservation)
             }
@@ -157,12 +173,6 @@ extension TmuxTools {
                 abandonRunShell(
                     cleanup,
                     reservation: reservation
-                )
-            case .released(let cleanup):
-                schedulePaneRunCleanup(
-                    cleanup,
-                    reservation: reservation,
-                    releaseObserved: true
                 )
             }
             throw error
@@ -238,13 +248,29 @@ extension TmuxTools {
             )
         }
         defer { close(descriptor) }
-        let stagedFile = try RunShellFile(path: cleanup.scriptPath, descriptor: descriptor)
+        let stagedFile: RunShellFile
+        do {
+            stagedFile = try RunShellFile(path: cleanup.scriptPath, descriptor: descriptor)
+        } catch {
+            // The descriptor above is closed by `defer`, but nothing else
+            // unlinks a path opened with O_CREAT|O_EXCL, and the path is
+            // nonce-derived, so nothing will ever reuse or clean it up.
+            _ = cleanup.scriptPath.withCString { unlink($0) }
+            throw error
+        }
         let bytes = Array(script.utf8)
         let wrote = bytes.withUnsafeBytes { buffer -> Bool in
             var offset = 0
             while offset < buffer.count {
                 let written = write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
-                if written <= 0 { return false }
+                if written < 0 {
+                    // A signal-interrupted write is not a failure: the tests
+                    // deliberately push payloads large enough to make EINTR
+                    // more likely, and retrying is the standard POSIX response.
+                    if errno == EINTR { continue }
+                    return false
+                }
+                if written == 0 { return false }
                 offset += written
             }
             return true
@@ -532,6 +558,7 @@ extension TmuxTools {
         server: Server
     ) async throws {
         let deadline = ContinuousClock.now.advanced(by: runShellCaptureSettleTimeout)
+        var settle = firstSettleDelay
         while true {
             try Task.checkCancellation()
             if await retainedRunState(cleanup, server: server) == .released { return }
@@ -539,7 +566,8 @@ extension TmuxTools {
                 throw TmuxError.invocationFailed(
                     reason: "run_shell_command release was not acknowledged")
             }
-            try await Task.sleep(for: firstSettleDelay)
+            try await Task.sleep(for: settle)
+            settle = nextSettleDelay(after: settle)
         }
     }
 
@@ -664,8 +692,12 @@ extension TmuxTools {
                         + "manual removal is required")
             }
             self.path = path
-            device = UInt64(metadata.st_dev)
-            inode = UInt64(metadata.st_ino)
+            // `truncatingIfNeeded` rather than a direct conversion: `dev_t` is
+            // unsigned on Linux but a signed Int32 on Darwin, where it is
+            // negative for major device numbers >= 128 (FUSE, disk images,
+            // network filesystems), and a plain `UInt64(_:)` traps on that.
+            device = UInt64(truncatingIfNeeded: metadata.st_dev)
+            inode = UInt64(truncatingIfNeeded: metadata.st_ino)
         }
 
         enum Removal: Equatable {
@@ -676,14 +708,29 @@ extension TmuxTools {
 
         func remove() -> Removal {
             var metadata = stat()
-            guard path.withCString({ lstat($0, &metadata) }) == 0 else {
-                return errno == ENOENT ? .removed : .failed(errno)
+            // errno is captured inside each closure, immediately after the
+            // call that set it: `withCString` bridges the Swift `String` to a
+            // temporary C string and tears that buffer down once the closure
+            // returns, and that teardown is free to touch errno before a
+            // caller reading it afterward ever gets to.
+            let (lstatResult, lstatErrno) = path.withCString { pointer -> (Int32, Int32) in
+                let result = lstat(pointer, &metadata)
+                return (result, errno)
             }
-            guard UInt64(metadata.st_dev) == device, UInt64(metadata.st_ino) == inode else {
+            guard lstatResult == 0 else {
+                return lstatErrno == ENOENT ? .removed : .failed(lstatErrno)
+            }
+            guard UInt64(truncatingIfNeeded: metadata.st_dev) == device,
+                UInt64(truncatingIfNeeded: metadata.st_ino) == inode
+            else {
                 return .replaced
             }
-            if unlink(path) == 0 || errno == ENOENT { return .removed }
-            return .failed(errno)
+            let (unlinkResult, unlinkErrno) = path.withCString { pointer -> (Int32, Int32) in
+                let result = unlink(pointer)
+                return (result, errno)
+            }
+            if unlinkResult == 0 || unlinkErrno == ENOENT { return .removed }
+            return .failed(unlinkErrno)
         }
     }
 
@@ -692,7 +739,6 @@ extension TmuxTools {
         case submitting(RunShellCleanup)
         case started(RunShellCleanup)
         case finishing(RunShellCleanup)
-        case released(RunShellCleanup)
     }
 
     private enum RetainedRunProof {
@@ -910,7 +956,8 @@ extension TmuxTools {
             "\(status)=$?; "
             + "until \(publish); do \(retry); done; "
             + "/usr/bin/printf '\\r\\n'; \(end); "
-            + "\(completion); \(release); "
+            + "until \(completion); do \(retry); done; "
+            + "until \(release); do \(retry); done; "
             + "until \(acknowledge); do \(retry); done; \\exit 0"
         let remember =
             "case $- in *e*x*|*x*e*) \(flags)=ex ;; *e*) \(flags)=e ;; "

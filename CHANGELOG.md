@@ -36,7 +36,10 @@ version number says only which alpha you have. Pin an exact one.
 - `run_shell_command` runs long commands without truncation and preserves
   inherited shell traps. Interrupted calls retain pane input ownership until
   completion or owner termination; permanent staged-command cleanup failures
-  report an explicit diagnostic. (#15)
+  report an explicit diagnostic. A cleanup failure after a command has already
+  completed retries in the background instead of discarding the caller's exit
+  status and output, and staging no longer crashes on a Darwin filesystem with
+  a negative device number (FUSE, disk images, network filesystems). (#15)
 
 ## [0.1.0-alpha.5] - 2026-09-12
 
