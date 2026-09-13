@@ -13,6 +13,264 @@ import TmuxFixture
 
 @Suite("workspace CLI", .serialized, .timeLimit(.minutes(1)))
 struct WorkspaceCLITests {
+    @Test("imports refuse untranslated semantics before preview or destination replacement")
+    func importRefusalBeforePublication() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("source.json")
+            let destination = root.appendingPathComponent("destination.json")
+            let original = Data("preserve destination".utf8)
+            for (kind, source) in [
+                (
+                    "teamocil",
+                    #"{"name":"test","windows":[{"name":"work","clear":true,"panes":[null]}]}"#
+                ),
+                (
+                    "teamocil",
+                    #"{"name":"test","windows":[{"name":"work","filters":{"after":"echo lost"},"panes":[null]}]}"#
+                ),
+                (
+                    "teamocil",
+                    #"{"name":"test","windows":[{"name":"work","panes":[{"cmd":":","width":50}]}]}"#
+                ),
+                (
+                    "tmuxinator",
+                    #"{"name":"test","socket_name":"foreign","windows":[{"work":":"}]}"#
+                ),
+                (
+                    "tmuxinator",
+                    #"{"name":"test","tmux_options":"-f foreign.conf","windows":[{"work":":"}]}"#
+                ),
+                (
+                    "tmuxinator",
+                    #"{"name":"test","windows":[{"work":{"panes":[{"title":":"}]}}]}"#
+                ),
+                (
+                    "tmuxinator",
+                    #"{"name":"test","windows":[{"work":{"synchronize":"before","panes":[":"]}}]}"#
+                ),
+                (
+                    "teamocil",
+                    #"{"name":"test","windows":[{"name":"work","panes":[{"cmd":":","focus":1}]}]}"#
+                ),
+                ("tmuxinator", #"{"name":"test","pre":"echo lifecycle","windows":[{"work":":"}]}"#),
+                ("tmuxinator", #"{"name":"test","rbenv":2.7,"windows":[{"work":":"}]}"#),
+                (
+                    "teamocil",
+                    #"{"name":"test","windows":[{"name":"work","panes":[{"commands":[42]}]}]}"#
+                ),
+                ("tmuxinator", #"{"name":"test","windows":[]}"#),
+            ] {
+                try Data(source.utf8).write(to: file)
+                for save in [false, true] {
+                    try original.write(to: destination)
+                    let arguments =
+                        ["import", kind, file.path, "--json"]
+                        + (save ? ["--save-to", destination.path, "--force"] : [])
+                    let result = await invoke(arguments, in: root)
+                    #expect(result.code == 1, "\(kind): \(source): \(result.output)")
+                    #expect(result.output.isEmpty)
+                    #expect(try Data(contentsOf: destination) == original)
+                }
+            }
+        }
+    }
+
+    @Test("imported focus and before-command groups survive loading")
+    func importedFocusAndBeforeCommands() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            for kind in ["teamocil", "tmuxinator"] {
+                let source = root.appendingPathComponent("\(kind).json")
+                let destination = root.appendingPathComponent("\(kind)-imported.yaml")
+                let text =
+                    kind == "teamocil"
+                    ? #"{"name":"teamocil","windows":[{"name":"one","panes":[null,null]},{"name":"two","focus":true,"panes":[null,{"commands":["false","printf done > marker"],"focus":true},{"focus":true}]},{"name":"three","focus":true,"panes":[null]}]}"#
+                    : #"{"name":"tmuxinator","pre_window":["false","touch continued-project"],"windows":[{"one":{"pre":["false","touch skipped-window"],"panes":["printf done > marker",null]}},{"two":null}]}"#
+                try Data(text.utf8).write(to: source)
+                let imported = await invoke(
+                    ["import", kind, source.path, "--save-to", destination.path, "--json"],
+                    in: root)
+                #expect(imported.code == 0, "\(imported.error)")
+                let preview = await invoke(["convert", destination.path, "--json"], in: root)
+                let document = try preview.json()
+                let importedWindows = try #require(document["windows"] as? [[String: Any]])
+                let selected = kind == "teamocil" ? 1 : 0
+                #expect(importedWindows[selected]["focus"] as? Bool == true)
+                for (index, window) in importedWindows.enumerated() {
+                    let panes = try #require(window["panes"] as? [[String: Any]])
+                    let selectedPane = kind == "teamocil" && index == 1 ? 1 : 0
+                    #expect(panes[selectedPane]["focus"] as? Bool == true)
+                    #expect(panes.filter { $0["focus"] as? Bool == true }.count == 1)
+                }
+                #expect(importedWindows.filter { $0["focus"] as? Bool == true }.count == 1)
+                if kind == "tmuxinator" {
+                    #expect(
+                        (document["shell_command_before"] as? [String: String])?["cmd"]
+                            == "false; touch continued-project")
+                    #expect(
+                        (importedWindows[0]["shell_command_before"] as? [String: String])?["cmd"]
+                            == "false && touch skipped-window")
+                }
+                let loaded = await invoke(
+                    ["load", "-d", "-S", socket, destination.path, "--json"],
+                    in: root, extra: environment)
+                #expect(loaded.code == 0, "\(loaded.error)")
+                let snapshot = try await server.snapshot()
+                let session = try #require(snapshot.sessions.first { $0.name == kind })
+                let windows = snapshot.windows(of: session)
+                #expect(
+                    windows.map(\.name)
+                        == (kind == "teamocil" ? ["one", "two", "three"] : ["one", "two"]))
+                #expect(
+                    snapshot.windowLinks(of: session).filter(\.isActive).map(\.windowID)
+                        == [windows[selected].id])
+                for (index, window) in windows.enumerated() {
+                    let selectedPane = kind == "teamocil" && index == 1 ? 1 : 0
+                    #expect(
+                        snapshot.panes(of: window).filter(\.isActive).map(\.index)
+                            == [selectedPane])
+                }
+                let marker = root.appendingPathComponent("marker")
+                var contents = ""
+                for _ in 0..<100 {
+                    contents = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
+                    if contents == "done" { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                #expect(contents == "done")
+                #expect(
+                    FileManager.default.fileExists(atPath: root.path + "/continued-project")
+                        == (kind == "tmuxinator"))
+                #expect(!FileManager.default.fileExists(atPath: root.path + "/skipped-window"))
+                try FileManager.default.removeItem(at: marker)
+            }
+        }
+    }
+
+    @Test("imported blank and pane strings remain executable commands")
+    func importedLiteralCommands() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let marker = root.appendingPathComponent("literal-marker")
+            for name in ["blank", "pane"] {
+                let file = root.appendingPathComponent(name)
+                try Data("#!/bin/sh\nprintf '\(name)\\n' >> '\(marker.path)'\n".utf8).write(
+                    to: file)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: file.path)
+            }
+            try await server.setOption(
+                "default-command",
+                to: "exec /usr/bin/env PATH='\(root.path):/usr/bin:/bin' /bin/sh",
+                scope: .globalSession)
+            for (kind, name, text) in [
+                (
+                    "teamocil", "team",
+                    #"{"name":"team","windows":[{"name":"work","panes":[{"cmd":"blank"},{"commands":"pane"}]}]}"#
+                ),
+                (
+                    "tmuxinator", "window",
+                    #"{"name":"window","windows":[{"work":["blank","pane"]}]}"#
+                ),
+                (
+                    "tmuxinator", "prefix",
+                    #"{"name":"prefix","pre_window":"blank","windows":[{"work":{"pre":"pane","panes":[":"]}}]}"#
+                ),
+            ] {
+                let source = root.appendingPathComponent(name + ".json")
+                let destination = root.appendingPathComponent(name + "-imported.json")
+                try Data(text.utf8).write(to: source)
+                let imported = await invoke(
+                    [
+                        "import", kind, source.path, "--save-to", destination.path,
+                        "--workspace-format", "json", "--json",
+                    ], in: root)
+                #expect(imported.code == 0, "\(imported.error)")
+                let loaded = await invoke(
+                    ["load", "-d", "-S", socket, destination.path, "--json"], in: root,
+                    extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+                #expect(loaded.code == 0, "\(loaded.error)")
+                var contents = ""
+                for _ in 0..<100 {
+                    contents = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
+                    if contents.split(separator: "\n").count == 2 { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                var captured: [String] = []
+                if contents.isEmpty {
+                    let snapshot = try await server.snapshot()
+                    let session = try #require(snapshot.sessions.first { $0.name == name })
+                    for pane in snapshot.panes(of: session) {
+                        captured += try await server.capture(pane)
+                    }
+                }
+                #expect(
+                    contents.split(separator: "\n").sorted() == ["blank", "pane"],
+                    "\(captured)")
+                if FileManager.default.fileExists(atPath: marker.path) {
+                    try FileManager.default.removeItem(at: marker)
+                }
+            }
+        }
+    }
+
+    @Test("imports create loadable command groups with stable directories")
+    func importedCommandGroups() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let project = root.appendingPathComponent("project")
+            let destinationDirectory = root.appendingPathComponent("elsewhere")
+            try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+            try FileManager.default.createDirectory(
+                at: destinationDirectory, withIntermediateDirectories: false)
+            for kind in ["teamocil", "tmuxinator"] {
+                let source = root.appendingPathComponent("\(kind).json")
+                let destination = destinationDirectory.appendingPathComponent("\(kind).json")
+                let commands = [
+                    "export IMPORT_SEQUENCE=first", "printf '%s\\n' \"$IMPORT_SEQUENCE\" > marker",
+                ]
+                let document: [String: Any] =
+                    kind == "teamocil"
+                    ? [
+                        "name": kind, "root": "project",
+                        "windows": [["name": "work", "panes": [["commands": commands]]]],
+                    ]
+                    : ["name": kind, "root": "project", "windows": [["work": commands]]]
+                try JSONSerialization.data(withJSONObject: document).write(to: source)
+                let imported = await invoke(
+                    [
+                        "import", kind, source.path, "--save-to", destination.path,
+                        "--workspace-format", "json", "--json",
+                    ], in: root)
+                #expect(imported.code == 0, "\(imported.error)")
+                let loaded = await invoke(
+                    ["load", "-d", "-S", socket, destination.path, "--json"],
+                    in: destinationDirectory, extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+                #expect(loaded.code == 0, "\(loaded.error)")
+                let snapshot = try await server.snapshot()
+                let session = try #require(snapshot.sessions.first { $0.name == kind })
+                let windows = snapshot.windows(of: session)
+                let window = try #require(windows.first)
+                let panes = snapshot.panes(of: window)
+                #expect(windows.count == 1)
+                #expect(panes.count == 1)
+                let marker = project.appendingPathComponent("marker")
+                var contents = ""
+                for _ in 0..<100 {
+                    contents = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
+                    if contents == "first\n" { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                #expect(contents == "first\n")
+                try FileManager.default.removeItem(at: marker)
+            }
+        }
+    }
+
     @Test("root version is a machine result")
     func machineVersion() async throws {
         try await withFiles { root in
@@ -98,15 +356,17 @@ struct WorkspaceCLITests {
 
     @Test("diagnostic levels filter warnings without hiding results or failures")
     func diagnosticLevels() async throws {
-        try await withFiles { root in
-            let file = root.appendingPathComponent("import.json")
-            try Data(#"{"name":"levels","windows":[],"untranslated":true}"#.utf8).write(to: file)
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let session = try await server.newSession(named: "levels")
             for level in ["debug", "info", "warning", "error", "critical"] {
-                let arguments = ["import", "tmuxinator", file.path, "--json"]
+                let arguments = ["freeze", session.name, "-S", socket, "--json"]
                 for flags in [
                     ["--log-level", level] + arguments, arguments + ["--log-level", level],
                 ] {
-                    let result = await invoke(flags, in: root)
+                    let result = await invoke(
+                        flags, in: root, extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
                     try #require(result.code == 0, "\(result.error)")
                     #expect(try result.json()["session_name"] as? String == "levels")
                     #expect(result.error.isEmpty == ["error", "critical"].contains(level))
@@ -303,7 +563,7 @@ struct WorkspaceCLITests {
             try FileManager.default.createDirectory(at: source, withIntermediateDirectories: false)
             let tmuxinator = source.appendingPathComponent("work.json")
             try Data(
-                #"{"name":"imported","root":"/tmp","tmux_options":"-f /tmp/a-file.conf","windows":[{"editor":{"layout":"tiled","panes":["one","two"]}}]}"#
+                #"{"name":"imported","root":"/tmp","windows":[{"editor":{"layout":"tiled","panes":["one","two"]}}]}"#
                     .utf8
             ).write(to: tmuxinator)
             let imported = await invoke(
@@ -312,9 +572,13 @@ struct WorkspaceCLITests {
             #expect(imported.code == 0, "\(imported.error)")
             let document = try imported.json()
             #expect(document["session_name"] as? String == "imported")
-            #expect(document["config"] as? String == "/tmp/a-file.conf")
             let windows = try #require(document["windows"] as? [[String: Any]])
-            #expect((windows[0]["panes"] as? [String]) == ["one", "two"])
+            let panes = try #require(windows[0]["panes"] as? [[String: Any]])
+            #expect(
+                panes.compactMap { $0["shell_command"] as? [[String: String]] }
+                    == [[["cmd": "one"]], [["cmd": "two"]]])
+            #expect(windows[0]["focus"] as? Bool == true)
+            #expect(panes[0]["focus"] as? Bool == true)
             let teamocil = root.appendingPathComponent("team.json")
             try Data(
                 #"{"session":{"name":"team","windows":[{"name":"shell","splits":[{"cmd":"echo imported"}]}]}}"#
@@ -451,7 +715,8 @@ struct WorkspaceCLITests {
             let file = root.appendingPathComponent("typed-import.json")
             try Data(#"{"name":"typed","rbenv":2.7,"windows":[]}"#.utf8).write(to: file)
             let ruby = await invoke(["import", "tmuxinator", file.path, "--json"], in: root)
-            #expect(try ruby.json()["shell_command_before"] as? [String] == ["rbenv shell 2.7"])
+            #expect(ruby.code == 1)
+            #expect(ruby.output.isEmpty)
             for source in [
                 #"{"name":"typed","cli_args":{},"windows":[]}"#,
                 #"{"name":"typed","windows":[{"name":"one","filters":false,"panes":[null]}]}"#,
@@ -471,8 +736,9 @@ struct WorkspaceCLITests {
                     .utf8
             ).write(to: file)
             let warned = await invoke(["import", "teamocil", file.path, "--json"], in: root)
-            #expect(warned.code == 0)
-            #expect(warned.error.joined().contains("filters.unknown"))
+            #expect(warned.code == 1)
+            #expect(warned.output.isEmpty)
+            #expect(warned.error.joined().contains("filters"))
         }
     }
 
@@ -751,7 +1017,11 @@ struct WorkspaceCLITests {
             #expect(missing.error.joined().contains("workspace_not_found"))
             #expect(!FileManager.default.fileExists(atPath: source.path))
             try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-            try Data(#"{"name":"imported","windows":[]}"#.utf8).write(
+            let document =
+                kind == "teamocil"
+                ? #"{"name":"imported","windows":[{"name":"work","panes":[null]}]}"#
+                : #"{"name":"imported","windows":[{"work":null}]}"#
+            try Data(document.utf8).write(
                 to: source.appendingPathComponent("work.json"))
             let imported = await invoke(
                 ["import", kind, "work", "--json"], in: root, extra: environment)
