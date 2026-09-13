@@ -6,6 +6,24 @@ import TmuxFixture
 
 @Suite("navigation and buffers", .timeLimit(.minutes(5)))
 struct NavigationTests {
+    @Test("invalid layouts fail before the typed mutation reaches tmux")
+    func invalidLayoutDoesNotDispatch() async throws {
+        let path = "/tmp/libtmux-swift-test/core-layout-preflight/socket"
+        let endpoint = try Endpoint(socketPath: path)
+        let transport = InvalidLayoutProbeTransport()
+        let server = Server(endpoint: endpoint, transport: transport)
+        let window = Window(
+            id: "@1", name: "keeper", paneCount: 1, width: 80, height: 24,
+            incarnation: ServerIncarnation(
+                endpoint: endpoint, socketPath: path, processID: 123, startedAt: 456))
+        for layout in ["not-a-layout", "32d2,80x24,0,0{}", "ffff,80x24,0,0,0"] {
+            await #expect(throws: TmuxError.self) {
+                try await server.selectLayout(window, layout)
+            }
+        }
+        #expect(await transport.calls == 0)
+    }
+
     @Test("selecting changes which object is active")
     func selectingChangesWhatIsActive() async throws {
         try await withTmuxServer { server in
@@ -369,6 +387,18 @@ struct NavigationTests {
             let back = try await server.format("#{window_layout}", for: link)
             #expect(back == start, "previous-layout did not undo next-layout")
         }
+    }
+}
+
+private actor InvalidLayoutProbeTransport: ProcessTransport {
+    private(set) var calls = 0
+
+    func run(
+        executable: String, arguments: [String], environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        calls += 1
+        return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
     }
 }
 

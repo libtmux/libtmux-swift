@@ -22,7 +22,7 @@ struct WorkspaceLayoutTests {
                 "bad-inner-size", "nested-invalid-width", "nested-short-parent",
             ].contains(item.id)
             #expect(
-                WorkspaceLayout.accepts(item.layout, version: release, panes: item.panes)
+                LayoutSyntax.accepts(item.layout, version: release, panes: item.panes)
                     == (item.accepts[version] == true || delegatesGeometry),
                 Comment(rawValue: "\(item.id), tmux \(version)"))
         }
@@ -32,12 +32,12 @@ struct WorkspaceLayoutTests {
     func mirroredNameBoundary() {
         let before = TmuxVersion(major: 3, minor: 4)
         let after = TmuxVersion(major: 3, minor: 5)
-        #expect(WorkspaceLayout.accepts("main-h", version: before, panes: 2))
-        #expect(!WorkspaceLayout.accepts("main-h", version: after, panes: 2))
-        #expect(!WorkspaceLayout.accepts("main-horizontal-mirrored", version: before, panes: 2))
-        #expect(WorkspaceLayout.accepts("main-horizontal-mirrored", version: after, panes: 2))
-        #expect(WorkspaceLayout.accepts("main-horizontal", version: after, panes: 2))
-        #expect(WorkspaceLayout.accepts("", version: before, panes: 1))
+        #expect(LayoutSyntax.accepts("main-h", version: before, panes: 2))
+        #expect(!LayoutSyntax.accepts("main-h", version: after, panes: 2))
+        #expect(!LayoutSyntax.accepts("main-horizontal-mirrored", version: before, panes: 2))
+        #expect(LayoutSyntax.accepts("main-horizontal-mirrored", version: after, panes: 2))
+        #expect(LayoutSyntax.accepts("main-horizontal", version: after, panes: 2))
+        #expect(!LayoutSyntax.accepts("", version: before, panes: 1))
     }
 
     @Test("layout names follow the daemon even when it has no sessions")
