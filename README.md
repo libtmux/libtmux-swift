@@ -179,6 +179,16 @@ incarnation before and after them and reports a replacement, but another client
 can still mutate the same daemon between listings. The result is not a tmux
 transaction.
 
+Session creation times also have a local Foundation `Date` view:
+
+```swift
+let created = session.creationDate
+print(created)
+```
+
+`createdAt` remains exact integer epoch seconds in snapshots and encoded data.
+Daemon identity continues to use the original integer `startedAt`.
+
 ## Change what is there
 
 ```swift
