@@ -31,6 +31,36 @@ import Testing
     }
 }
 
+@Test func preflightDoesNotInheritUnrelatedWritableDescriptors() throws {
+    try withPreflightFixture { root in
+        let file = root.appending(path: "unrelated")
+        let descriptor = open(file.path, O_CREAT | O_EXCL | O_RDWR, mode_t(0o600))
+        #expect(descriptor >= 0)
+        guard descriptor >= 0 else { return }
+        defer { _ = close(descriptor) }
+        #expect(fcntl(descriptor, F_GETFD) & FD_CLOEXEC == 0)
+        let server = root.appending(path: "server.sh")
+        try script(
+            """
+            #!/bin/sh
+            if [ "/dev/fd/$UNRELATED_FD" -ef "$UNRELATED_PATH" ]; then
+                printf '%s\\n' 'inherited unrelated descriptor' >&2
+                exit 7
+            fi
+            IFS= read -r request
+            printf '%s\\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}'
+            """, at: server)
+
+        try preflight(
+            ServerSpec(
+                command: "/bin/sh", arguments: [server.path],
+                environment: [
+                    "UNRELATED_FD": String(descriptor), "UNRELATED_PATH": file.path,
+                ]), timeout: 3)
+        #expect(fcntl(descriptor, F_GETFD) & FD_CLOEXEC == 0)
+    }
+}
+
 @Test func preflightResolvesAnInstalledCommandFromTheFinalEnvironmentPath() throws {
     try withPreflightFixture { root in
         let bin = root.appending(path: "bin")

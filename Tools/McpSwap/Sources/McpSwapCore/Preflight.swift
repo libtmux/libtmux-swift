@@ -20,6 +20,9 @@ func preflight(
     maximumOutputBytes: Int = 1024 * 1024,
     baseEnvironment: [String: String] = ProcessInfo.processInfo.environment
 ) throws {
+    guard mcp_swap_spawn_supported() != 0 else {
+        throw SwapError.message("MCP preflight requires macOS or Linux with glibc 2.34 or newer")
+    }
     guard timeout > 0 else { throw SwapError.message("preflight timeout must be positive") }
     guard maximumOutputBytes > 0 else {
         throw SwapError.message("preflight output limit must be positive")

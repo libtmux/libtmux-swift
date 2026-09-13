@@ -36,6 +36,7 @@ int mcp_swap_rename_noreplace(const char *source, const char *destination);
 int mcp_swap_lock_exclusive(int descriptor);
 int mcp_swap_unlock(int descriptor);
 int mcp_swap_sync_directory(const char *path);
+int mcp_swap_spawn_supported(void);
 int mcp_swap_spawn(const char *command, const char *arguments, uint64_t arguments_size,
                    const char *environment, uint64_t environment_size,
                    struct mcp_swap_child *child);

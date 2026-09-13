@@ -21,6 +21,15 @@
 #include <stdio.h>
 #endif
 
+#if defined(__linux__) && defined(__GLIBC__)
+#if __GLIBC_PREREQ(2, 34)
+#define MCP_SWAP_HAS_CLOSEFROM 1
+#endif
+#endif
+#ifndef MCP_SWAP_HAS_CLOSEFROM
+#define MCP_SWAP_HAS_CLOSEFROM 0
+#endif
+
 static void copy_stat(const struct stat *source, struct mcp_swap_file_stat *result) {
     result->device = (uint64_t)source->st_dev;
     result->inode = (uint64_t)source->st_ino;
@@ -149,9 +158,21 @@ static int set_close_on_exec(int descriptor) {
     return flags < 0 ? -1 : fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC);
 }
 
+int mcp_swap_spawn_supported(void) {
+#if defined(__APPLE__) || MCP_SWAP_HAS_CLOSEFROM
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 int mcp_swap_spawn(const char *command, const char *arguments, uint64_t arguments_size,
                    const char *environment, uint64_t environment_size,
                    struct mcp_swap_child *child) {
+    if (!mcp_swap_spawn_supported()) {
+        errno = ENOTSUP;
+        return -1;
+    }
     int input[2] = {-1, -1};
     int output[2] = {-1, -1};
     int error_pipe[2] = {-1, -1};
@@ -193,7 +214,11 @@ int mcp_swap_spawn(const char *command, const char *arguments, uint64_t argument
         goto cleanup;
     }
     attributes_ready = 1;
-    result = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
+    short flags = POSIX_SPAWN_SETPGROUP;
+#if defined(__APPLE__)
+    flags |= POSIX_SPAWN_CLOEXEC_DEFAULT;
+#endif
+    result = posix_spawnattr_setflags(&attributes, flags);
     if (result != 0) {
         goto cleanup;
     }
@@ -211,6 +236,11 @@ int mcp_swap_spawn(const char *command, const char *arguments, uint64_t argument
     for (size_t index = 0; result == 0 && index < sizeof(all_descriptors) / sizeof(int); index++) {
         result = posix_spawn_file_actions_addclose(&actions, all_descriptors[index]);
     }
+#if MCP_SWAP_HAS_CLOSEFROM
+    if (result == 0) {
+        result = posix_spawn_file_actions_addclosefrom_np(&actions, STDERR_FILENO + 1);
+    }
+#endif
     if (result != 0) {
         goto cleanup;
     }
