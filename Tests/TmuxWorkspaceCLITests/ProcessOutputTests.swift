@@ -345,15 +345,22 @@ struct ProcessOutputTests {
         }
     }
 
-    @Test("error-level logging hides bootstrap diagnostics without hiding its result")
-    func filteredBootstrap() async throws { try await filteredOutput(shell: false) }
+    @Test(
+        "logging filters bootstrap diagnostics without hiding its result",
+        arguments: ["warning", "error"])
+    func filteredBootstrap(_ level: String) async throws {
+        try await filteredOutput(shell: false, level: level)
+    }
 
     @Test(
-        "error-level logging hides shell diagnostics without losing captured bytes",
-        .enabled(if: ProcessInfo.processInfo.environment["TMUX_WORKSPACE_TEST_PYTHON"] != nil))
-    func filteredShell() async throws { try await filteredOutput(shell: true) }
+        "logging filters shell diagnostics without losing captured bytes",
+        .enabled(if: ProcessInfo.processInfo.environment["TMUX_WORKSPACE_TEST_PYTHON"] != nil),
+        arguments: ["warning", "error"])
+    func filteredShell(_ level: String) async throws {
+        try await filteredOutput(shell: true, level: level)
+    }
 
-    private func filteredOutput(shell: Bool) async throws {
+    private func filteredOutput(shell: Bool, level: String) async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
@@ -378,16 +385,26 @@ struct ProcessOutputTests {
                     Value.object([
                         "session_name": .string("quiet"),
                         "before_script": .string(
-                            "printf 'visible result'; printf 'quiet diagnostic' >&2"),
+                            "/bin/sh -c \"printf 'visible result'; printf 'quiet diagnostic' >&2\""),
                         "windows": .array([.object(["panes": .array([.null])])]),
                     ]).encoded().utf8
                 ).write(to: file)
                 arguments = ["load", file.path, "-d"]
             }
             let status = await WorkspaceCLI.run(
-                arguments + ["-S", socket, "--json", "--log-level", "error"], context: context)
+                arguments + ["-S", socket, "--json", "--log-level", level], context: context)
             #expect(status == 0)
-            #expect(await captured.diagnostics.isEmpty)
+            if level == "error" {
+                #expect(await captured.diagnostics.isEmpty)
+            } else {
+                let stdout = await captured.stdout
+                if shell {
+                    #expect(stdout.hasSuffix("visible result\n"))
+                } else {
+                    #expect(stdout == "visible result")
+                }
+                #expect(await captured.stderr == "quiet diagnostic" + (shell ? "\n" : ""))
+            }
             let records = await captured.records
             #expect(records.count == 1)
             let result = try #require(
