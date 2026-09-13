@@ -122,11 +122,14 @@ to named path/environment fields; it is not a general output redactor.
 `TMUX_WORKSPACE_PYTHON` (default `python3`). It checks that version before
 execution and uses the selected native tmux executable and explicit endpoint.
 Backend selectors and startup/vi-mode toggles retain their command meanings;
-the last paired toggle wins. Machine calls require `-c` and capture child
-output in one bounded result. Interactive backends require a terminal.
+the last paired toggle wins. Machine calls require `-c` and retain complete
+captured stdout/stderr in the final result. Captured calls stream output while
+the child runs, with a one MiB limit per stream. Human output preserves line
+breaks and tabs, escaping other terminal controls. Interactive backends require
+a terminal.
 The live bridge test is enabled by setting `TMUX_WORKSPACE_TEST_PYTHON` to
-the compatible interpreter. Optional interactive backend packages and
-incremental NDJSON child records still need verification and implementation.
+the compatible interpreter. Optional interactive backend packages still need
+broader verification.
 
 `load` creates sessions on an explicit `-S` or `-L` endpoint, or the
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
@@ -224,16 +227,27 @@ Every implemented command accepts `--json` and `--ndjson` before or after the
 command name. NDJSON wins when both are present. NDJSON listing and search read
 documents on demand and emit each result before continuing. Load streams
 sequenced events ending in one completed or failed event while the output
-stream remains writable. JSON load failures include retained
-successful sessions. NDJSON conversion, capture and import results include a
+stream remains writable. Cancellation attempts the terminal result and fatal
+diagnostic with a bounded write; an interrupted diagnostic on blocked stderr
+may end mid-record. JSON load failures include retained successful sessions.
+NDJSON conversion, capture and import results include a
 versioned envelope and nested `workspace` document. Diagnostics use stderr.
 Machine output bypasses color.
 
 `--log-level debug|info|warning|error|critical` selects the minimum advisory
-diagnostic severity, defaulting to `warning`. Capture/import/bootstrap warnings
-are hidden at `error` or `critical`. Result data and fatal errors remain visible.
+diagnostic severity, defaulting to `warning`. Capture/import/bootstrap/shell
+warnings are hidden at `error` or `critical`. Result data and fatal errors remain
+visible.
 Human bootstrap output retains its original stdout/stderr stream; its file-log
 copy follows the threshold.
+
+`before_script` and captured `shell -c` output arrives in decoded UTF-8 chunks.
+Split characters are retained until complete; invalid bytes use replacement
+characters. Machine calls send `bootstrap_stdout`, `bootstrap_stderr`,
+`shell_stdout` and `shell_stderr` warning records to stderr. Each stream is
+limited to one MiB; overflow, a failed output write or cancellation terminates
+the captured process group. Output follows sink backpressure without replaying
+earlier chunks. A closed reader is detected on the next pending write.
 
 `load --log-file PATH` appends compact JSON records to a regular file. The
 selected log level controls lifecycle events (`info`), bootstrap warnings and
@@ -258,8 +272,8 @@ supplies its default. The panel retains at most 65,536 UTF-8 bytes; original
 captured child output still goes to its destination. The display updates from
 native build events without polling tmux, uses conservative Unicode clipping,
 and clears on completion or interruption. It reads terminal size once and does
-not track resize events. Child output is collected before display, not streamed
-while the script runs.
+not track resize events. Bootstrap output updates the panel while the script
+runs.
 
 `--no-progress`, `TMUXP_PROGRESS=0`, `TERM=dumb`, redirected stderr and machine
 output disable the display. NDJSON receives discrete window/pane events.
