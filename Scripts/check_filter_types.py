@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import re
@@ -27,6 +28,54 @@ DIAGNOSTICS = {
 }
 
 
+def _dependency_checkout(swift: list[str], identity: str) -> pathlib.Path:
+    """Find where SwiftPM resolved one dependency to, by package identity.
+
+    `.build/checkouts/<name>` assumes the checkout directory is always named
+    after the package and always lives under `checkouts`, which stops holding
+    the moment a dependency moves to a renamed fork or a local path override.
+    Asking SwiftPM directly reports whatever a bump or an override actually
+    resolved to, so a missing header reports as the dependency it belongs to
+    rather than as an unrelated filter-type regression.
+
+    Parameters
+    ----------
+    swift : list[str]
+        The `swift` invocation, already split into argv.
+    identity : str
+        The package identity to find, as SwiftPM names it.
+
+    Returns
+    -------
+    pathlib.Path
+        Where that dependency's sources are checked out.
+    """
+    described = json.loads(
+        subprocess.check_output(
+            [*swift, "package", "show-dependencies", "--format", "json"],
+            cwd=ROOT,
+            text=True,
+        )
+    )
+
+    def walk(node: dict) -> pathlib.Path | None:
+        if node.get("identity") == identity:
+            return pathlib.Path(node["path"])
+        for child in node.get("dependencies", []):
+            found = walk(child)
+            if found is not None:
+                return found
+        return None
+
+    found = walk(described)
+    if found is None:
+        message = (
+            f"dependency {identity!r} is not resolved; run `swift package resolve`"
+        )
+        raise SystemExit(message)
+    return found
+
+
 def main() -> int:
     """Check successful imports before attributing failures to the type system."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -48,6 +97,8 @@ def main() -> int:
             text=True,
         ).strip()
     )
+    swift_system = _dependency_checkout(swift, "swift-system")
+    swift_subprocess = _dependency_checkout(swift, "swift-subprocess")
     command = [
         *swiftc,
         "-typecheck",
@@ -59,11 +110,9 @@ def main() -> int:
         "-I",
         str(binary / "Modules"),
         "-I",
-        str(ROOT / ".build/checkouts/swift-system/Sources/CSystem/include"),
+        str(swift_system / "Sources" / "CSystem" / "include"),
         "-I",
-        str(
-            ROOT / ".build/checkouts/swift-subprocess/Sources/_SubprocessCShims/include"
-        ),
+        str(swift_subprocess / "Sources" / "_SubprocessCShims" / "include"),
     ]
     fixtures = [("filter-fields.swift", None), *DIAGNOSTICS.items()]
     for name, diagnostic in fixtures:
