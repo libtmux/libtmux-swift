@@ -1,5 +1,6 @@
 // The examples in <doc:Snapshots>.
 
+import Foundation
 import LibTmux
 
 public func walkOneSnapshot(
@@ -23,4 +24,10 @@ public func talkToTheServerThatLaunchedYou() async throws {
         let here = try await server.sessions().first { $0.id == context.sessionID }
         print(here?.name ?? "not in a session")
     }
+}
+
+public func readCreationDate(_ session: Session) -> Date {
+    let created = session.creationDate
+    print(created)
+    return created
 }

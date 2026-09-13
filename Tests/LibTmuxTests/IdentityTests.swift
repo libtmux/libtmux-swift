@@ -6,6 +6,29 @@ import TmuxFixture
 
 @Suite("server identity", .timeLimit(.minutes(1)))
 struct IdentityTests {
+    @Test("session dates preserve integer wire timestamps and daemon identity")
+    func sessionDatesPreserveWireTimestamps() throws {
+        let identity = ServerIncarnation(
+            endpoint: .socketPath("/tmp/libtmux-swift-test/date-fixture"),
+            socketPath: "/tmp/libtmux-swift-test/date-fixture",
+            processID: 7, startedAt: 9_007_199_254_740_993
+        )
+        let session = Session(
+            id: "$1", name: "dated", windowCount: 1, isAttached: false,
+            createdAt: 1_700_000_000, incarnation: identity
+        )
+        #expect(session.creationDate.timeIntervalSince1970 == 1_700_000_000)
+        let data = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(Session.self, from: data)
+        #expect(decoded.createdAt == 1_700_000_000)
+        #expect(decoded.incarnation.startedAt == 9_007_199_254_740_993)
+        #expect(decoded.incarnation == identity)
+        #expect(decoded.creationDate == session.creationDate)
+        let document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(document["creationDate"] == nil)
+        #expect(document["createdAt"] as? Int == 1_700_000_000)
+    }
+
     @Test("typed ids reject malformed decoded values and stay compact")
     func typedIDsValidateTheirWireForm() throws {
         let session: SessionID = "$42"

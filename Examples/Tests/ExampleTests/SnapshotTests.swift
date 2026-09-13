@@ -9,6 +9,8 @@ struct SnapshotTests {
     func aSnapshotResolvesItsRelations() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
+            let created = readCreationDate(session)
+            #expect(created.timeIntervalSince1970 == Double(session.createdAt))
             let snapshot = try await walkOneSnapshot(server, session)
 
             #expect(!snapshot.windows(of: session).isEmpty)

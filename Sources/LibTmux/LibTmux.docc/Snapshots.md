@@ -21,6 +21,17 @@ Another client can still mutate the same daemon between listings, so a snapshot
 is not a tmux transaction and does not promise that every returned value
 existed together at one moment.
 
+``Session/creationDate`` exposes the captured creation time as a Foundation
+`Date`, without another read:
+
+```swift
+let created = session.creationDate
+print(created)
+```
+
+``Session/createdAt`` remains integer epoch seconds in encoded snapshots.
+``ServerIncarnation/startedAt`` remains an exact integer used for daemon identity.
+
 ## Finding the server you are already inside
 
 A program started from a pane is told where its tmux is, in `$TMUX`.
