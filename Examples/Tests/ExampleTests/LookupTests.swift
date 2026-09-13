@@ -5,6 +5,16 @@ import TmuxFixture
 
 @Suite("lookup examples", .timeLimit(.minutes(2)))
 struct LookupExampleTests {
+    @Test("error messages retain command details through Foundation")
+    func errorMessagesRetainCommandDetails() {
+        let error = TmuxError.commandFailed(
+            command: "list-panes", exitCode: 7, reason: "permission denied")
+        let message = reportFailure(error)
+        #expect(message.contains("list-panes"))
+        #expect(message.contains("7"))
+        #expect(message.contains("permission denied"))
+    }
+
     @Test("finding one object without listing the rest")
     func findsOneObject() async throws {
         try await withTmuxServer { server in
