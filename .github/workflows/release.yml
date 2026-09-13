@@ -49,7 +49,7 @@ jobs:
           declared=$(sed -n 's/.*static let current = "\([^"]*\)".*/\1/p' \
             Sources/LibTmux/LibTmuxVersion.swift)
           if [ -z "$declared" ]; then
-            echo '::error::no `static let current` in LibTmuxVersion.swift'
+            echo '::error::LibTmuxVersion.current was not found'
             exit 1
           fi
           if [ "$REF_TYPE" = "tag" ]; then
@@ -95,15 +95,14 @@ jobs:
           # what keeps it out of "latest" for a reader arriving at the
           # repository. Semver spells that with a hyphen.
           case "$VERSION" in
-            *-*) prerelease="--prerelease" ;;
-            *) prerelease="" ;;
+            *-*) prerelease=(--prerelease) ;;
+            *) prerelease=() ;;
           esac
-          # shellcheck disable=SC2086 — empty or one flag.
           gh release create "$VERSION" \
             --title "$VERSION" \
             --notes-file notes.md \
             --verify-tag \
-            $prerelease
+            "${prerelease[@]}"
 
       - name: Say what a dry run skipped
         if: github.ref_type != 'tag'
