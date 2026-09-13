@@ -472,6 +472,20 @@ callers building the same workspace should not silently share one. A later
 failure removes the exact session this build created; a rollback failure
 reports both errors.
 
+The builder validates every layout before creating the session. The same
+native guard protects `Server.selectLayout(_:_:)` and MCP `select_layout`.
+Custom builders can check a complete batch with desired pane counts first:
+
+```swift
+try await server.validateLayouts([("even-h", 2), ("tiled", 1)])
+```
+
+Names accept unique abbreviations for the running daemon's version. Saved
+layouts require a checksum, nonempty tree and enough cells; tmux still owns
+geometry and pruning. An empty batch performs no I/O unless cancelled. A
+version-sensitive name on an unbound cold endpoint uses the configured tmux
+client; permission, protocol and retained-connection errors propagate.
+
 JSON needs no trait, because tmuxp's keys decode straight into these types.
 Reading the YAML that tmuxp files are usually written in needs a parser, which
 is what the `YAMLWorkspaces` trait pulls in:
