@@ -59,7 +59,7 @@ jobs:
         if: steps.tmux-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          configure_flags=""
+          configure_flags=()
           # Exported here rather than into the environment every later step
           # inherits: these point at Homebrew's copies of libevent and ncurses,
           # and nothing but tmux's configure should be reading them.
@@ -69,23 +69,24 @@ jobs:
             # told, and fails in a way that reads like a missing library.
             PATH="$(brew --prefix bison)/bin:${PATH}"
             export PATH
-            export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
-            export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
-            export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+            libevent_prefix=$(brew --prefix libevent)
+            ncurses_prefix=$(brew --prefix ncurses)
+            export PKG_CONFIG_PATH="${libevent_prefix}/lib/pkgconfig:${ncurses_prefix}/lib/pkgconfig"
+            export LDFLAGS="-L${libevent_prefix}/lib -L${ncurses_prefix}/lib"
+            export CPPFLAGS="-I${libevent_prefix}/include -I${ncurses_prefix}/include"
             # From 3.7, tmux's configure refuses to guess on Darwin: it warns
             # that macOS renders complex codepoints poorly without utf8proc and
             # exits unless told which way to go. Nothing here reads a pane for
             # emoji, so the answer that keeps the lane closest to the Linux one
             # is to build without it.
-            configure_flags="--disable-utf8proc"
+            configure_flags=(--disable-utf8proc)
           fi
           curl --location --fail --silent --show-error \
             "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
             --output tmux.tar.gz
           tar -xzf tmux.tar.gz
           cd "tmux-${{ matrix.tmux }}"
-          # shellcheck disable=SC2086 — empty on Linux, one flag on Darwin.
-          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" $configure_flags
+          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" "${configure_flags[@]}"
           make -j"$(getconf _NPROCESSORS_ONLN)"
           make install
 
@@ -99,9 +100,27 @@ jobs:
           restore-keys: swiftpm-linux-
 
       - name: Set up Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.2"
+        # https://www.swift.org/install/linux/tarball/
+        env:
+          SWIFT_VERSION: "6.2.1"
+          GNUPGHOME: ${{ runner.temp }}/swift-gnupg
+        run: |
+          set -euo pipefail
+          mkdir -p "$GNUPGHOME" "${RUNNER_TEMP}/swift"
+          chmod 700 "$GNUPGHOME"
+          cd "${RUNNER_TEMP}/swift"
+          platform="ubuntu$(lsb_release --short --release)"
+          release="swift-${SWIFT_VERSION}-RELEASE"
+          url="https://download.swift.org/swift-${SWIFT_VERSION}-release/${platform//./}/${release}/${release}-${platform}.tar.gz"
+          curl --location --fail --silent --show-error "$url" --output swift.tar.gz
+          curl --location --fail --silent --show-error "$url.sig" --output swift.tar.gz.sig
+          curl --location --fail --silent --show-error \
+            https://www.swift.org/keys/all-keys.asc --output swift-keys.asc
+          gpg --batch --import swift-keys.asc
+          gpg --batch --verify swift.tar.gz.sig swift.tar.gz
+          tar -xzf swift.tar.gz --strip-components=1
+          echo "${RUNNER_TEMP}/swift/usr/bin" >> "$GITHUB_PATH"
+          ./usr/bin/swift --version
 
       - name: Check formatting
         run: >-

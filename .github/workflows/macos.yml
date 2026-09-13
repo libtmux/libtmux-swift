@@ -69,9 +69,11 @@ jobs:
           # told, and fails in a way that reads like a missing library.
           PATH="$(brew --prefix bison)/bin:${PATH}"
           export PATH
-          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
-          export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
-          export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+          libevent_prefix=$(brew --prefix libevent)
+          ncurses_prefix=$(brew --prefix ncurses)
+          export PKG_CONFIG_PATH="${libevent_prefix}/lib/pkgconfig:${ncurses_prefix}/lib/pkgconfig"
+          export LDFLAGS="-L${libevent_prefix}/lib -L${ncurses_prefix}/lib"
+          export CPPFLAGS="-I${libevent_prefix}/include -I${ncurses_prefix}/include"
           curl --location --fail --silent --show-error \
             "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
             --output tmux.tar.gz
