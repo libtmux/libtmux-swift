@@ -589,8 +589,9 @@ extension TmuxTools {
     }
 
     func capabilitySelectLayout(_ arguments: Arguments) async throws -> ToolOutcome {
-        let window = try await capabilityWindow(try arguments.string("windowId"))
         let layout = try arguments.string("layout")
+        try await server.validateLayouts([(layout, 1)])
+        let window = try await capabilityWindow(try arguments.string("windowId"))
         try await server.selectLayout(window, layout)
         return .init(
             structured: .object([
