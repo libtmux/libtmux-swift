@@ -77,10 +77,13 @@ interactive behavior or full capture fidelity.
 ## Commands
 
 `ls` discovers global workspaces and local `.tmuxp.yaml`, `.tmuxp.yml` and
-`.tmuxp.json` files. `TMUXP_CONFIGDIR` overrides the global directories;
-otherwise they are `$XDG_CONFIG_HOME/tmuxp` (defaulting to `~/.config/tmuxp`)
-and `~/.tmuxp`. Bare names resolve globally. Paths and names with an extension
-resolve relative to the invocation directory.
+`.tmuxp.json` files. The first existing directory among `TMUXP_CONFIGDIR`,
+`$XDG_CONFIG_HOME/tmuxp` and `~/.tmuxp` supplies global workspaces and bare-name
+lookup. An existing empty directory remains authoritative; missing paths and
+regular files fall through. If none exists, `~/.tmuxp` remains the selected
+path without being created. Empty or unset `XDG_CONFIG_HOME` uses
+`~/.config`; tmuxp 1.74.0 instead treats an empty value as the current directory.
+Paths and names with an extension resolve relative to the invocation directory.
 
 `search` supports field prefixes, repeated field restrictions, literal or
 native ICU regular expressions, case and word matching, inversion and OR
@@ -94,7 +97,8 @@ an explicit destination returns a versioned save result.
 
 `import teamocil` and `import tmuxinator` translate a required source file or
 name. Bare names use `~/.teamocil` or `TMUXINATOR_CONFIG` (defaulting to
-`~/.tmuxinator`). Import preserves the translated command, directory and layout
+`~/.tmuxinator`), without falling back to tmuxp directories. Import preserves
+the translated command, directory and layout
 structure and warns about untranslated fields. It rejects ERB templates.
 `--save-to`, `--workspace-format` and `--force` control optional file output,
 defaulting to YAML.
