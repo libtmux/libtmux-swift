@@ -179,6 +179,17 @@ public indirect enum FilterExpr<Root: Filterable>: Sendable, Hashable, Codable {
     case or([FilterExpr<Root>])
     case not(FilterExpr<Root>)
 
+    /// Builds a comparison from a supported, typed field.
+    ///
+    /// Each model's `FilterFields` namespace lists the available fields.
+    /// Unsupported fields and operators cannot form a typed comparison.
+    public static func `where`<Value>(
+        _ field: FilterField<Root, Value>,
+        _ operation: FilterOperator<Value>
+    ) -> Self {
+        .comparison(field: field.id, operation: operation.operation)
+    }
+
     /// Builds a comparison from a key path.
     ///
     /// The key path is lowered to a stable field id here and then discarded —

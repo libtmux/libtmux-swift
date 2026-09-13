@@ -234,6 +234,10 @@ jobs:
       - name: Build with default traits
         run: swift build --force-resolved-versions
 
+      - name: Check public filter type contracts
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_filter_types.py --skip-build
+
       - name: Test
         run: |
           # Every test resolves its tmux through this, so the whole suite runs

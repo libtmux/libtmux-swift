@@ -22,7 +22,7 @@ public func letTmuxDoTheNarrowing(
 
 public func askTmuxForTheEditors(_ server: Server) async throws -> [Pane] {
     let editors = try await server.panes(
-        where: .where(\.currentCommand, .isIn(["nvim", "vim"]))
+        where: .where(Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
     )
     return editors
 }

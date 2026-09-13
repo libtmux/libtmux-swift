@@ -212,6 +212,13 @@ that package:
 $ python3 Scripts/check_examples.py --min-executed 40
 ```
 
+Typed-filter consumers compile through the public module. Unsupported fields,
+operators, model roots and identifier types must fail type checking:
+
+```console
+$ python3 Scripts/check_filter_types.py
+```
+
 Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 

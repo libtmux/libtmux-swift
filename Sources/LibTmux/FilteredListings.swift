@@ -20,7 +20,7 @@ public enum FilteredListingError: Error, Sendable, Hashable {
 ///
 /// ```swift
 /// let editors = try await server.panes(
-///     where: .where(\.currentCommand, .isIn(["nvim", "vim"]))
+///     where: .where(Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
 /// )
 /// ```
 ///

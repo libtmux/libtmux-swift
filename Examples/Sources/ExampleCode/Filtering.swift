@@ -8,14 +8,15 @@ public func locally(_ server: Server) async throws -> [Pane] {
 }
 
 public func travelling(_ server: Server) async throws -> [Pane] {
-    let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+    let expression = FilterExpr<Pane>.where(
+        Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
     let matching = try await server.panes().filter(expression)
     return matching
 }
 
 public func travellingByPattern(_ server: Server) async throws -> [Pane] {
     let editors = try RegexPattern("^(n?vim|hx)$", options: [.caseInsensitive])
-    let expression = try FilterExpr<Pane>.where(\.currentCommand, .matches(editors))
+    let expression = FilterExpr<Pane>.where(Pane.FilterFields.currentCommand, .matches(editors))
     let matching = try await server.panes().filter(expression)
     return matching
 }
