@@ -61,6 +61,26 @@ import Testing
     }
 }
 
+@Test func preflightConnectsEveryStreamWhenCallerStandardDescriptorsAreClosed() throws {
+    try withPreflightFixture { root in
+        let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sources = tests.deletingLastPathComponent().appending(path: "Sources/CMcpSwap")
+        let executable = root.appending(path: "descriptor-fixture")
+        let compilation = try descriptorProcess([
+            "cc", "-Wall", "-Wextra", "-Werror", "-pthread", "-I",
+            sources.appending(path: "include").path,
+            tests.appending(path: "Fixtures/PreflightDescriptors.c").path,
+            sources.appending(path: "mcp_swap.c").path, "-o", executable.path,
+        ])
+        try #require(compilation.status == 0, "\(compilation.output)")
+        for mask in 1...7 {
+            let result = try descriptorProcess([executable.path, String(mask)])
+            #expect(result.status == 0, "\(result.output)")
+        }
+    }
+}
+
 @Test func preflightResolvesAnInstalledCommandFromTheFinalEnvironmentPath() throws {
     try withPreflightFixture { root in
         let bin = root.appending(path: "bin")
@@ -254,6 +274,22 @@ private func script(_ body: String, at url: URL) throws {
     try body.write(to: url, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes(
         [.posixPermissions: NSNumber(value: UInt16(0o700))], ofItemAtPath: url.path)
+}
+
+private func descriptorProcess(_ arguments: [String]) throws -> (status: Int32, output: String) {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = arguments
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    process.waitUntilExit()
+    return (
+        process.terminationStatus,
+        String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    )
 }
 
 private func withPreflightFixture(_ body: (URL) throws -> Void) throws {
