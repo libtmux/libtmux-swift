@@ -79,6 +79,34 @@ struct WorkspaceDecodingTests {
 
 @Suite("workspace building", .timeLimit(.minutes(5)))
 struct WorkspaceBuildingTests {
+    @Test("three panes retain source order and focus after detached splits")
+    func threePaneOrderAndFocus() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let directories = (0..<3).map { root.appendingPathComponent("pane-\($0)") }
+            for directory in directories {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: false)
+            }
+            let workspace = Workspace(
+                sessionName: "ordered",
+                windows: [
+                    WindowPlan(
+                        panes: directories.enumerated().map { index, directory in
+                            PanePlan(startDirectory: directory.path, focus: index == 1)
+                        })
+                ])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let panes = snapshot.panes(of: session)
+            #expect(
+                panes.map { URL(fileURLWithPath: $0.currentPath).resolvingSymlinksInPath().path }
+                    == directories.map { $0.resolvingSymlinksInPath().path })
+            #expect(panes.filter(\.isActive).map(\.index) == [1])
+        }
+    }
+
     @Test("first-pane directories override session and window directories")
     func firstPaneDirectoryOverridesItsParents() async throws {
         try await withTmuxServer { server in
