@@ -11,6 +11,33 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `FilterField` exposes supported choices through each model's `FilterFields`
+  namespace, so completion lists valid fields and the compiler rejects
+  unsupported predicates. Existing key-path filters and dynamic expression
+  validation remain available. (#15)
+
+- `TmuxError` and query, decoding and matching errors provide readable
+  `description` and `localizedDescription` text while retaining structured cases
+  and command diagnostics. Descriptions omit raw decoded values and predicate
+  literals. (#15)
+
+- `Session.creationDate` exposes the captured creation time as a Foundation
+  `Date`. Encoded snapshots keep the exact integer timestamps used by
+  `Session.createdAt` and daemon identity. (#15)
+
+- `WindowLayout` offers named choices and `WindowLayout.custom(_:)` for saved
+  layouts in `Server.selectLayout(_:_:)` and `WindowPlan`. Existing string calls
+  and workspace JSON/YAML remain compatible. (#15)
+
+### Fixed
+
+- `run_shell_command` runs long commands without truncation and preserves
+  inherited shell traps. Interrupted calls retain pane input ownership until
+  completion or owner termination; permanent staged-command cleanup failures
+  report an explicit diagnostic. (#15)
+
 ## [0.1.0-alpha.5] - 2026-09-12
 
 ### Added
