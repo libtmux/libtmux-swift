@@ -214,7 +214,15 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
             env,
             interrupt=child_marker,
         )
-        assert code == 130 and err.endswith(b"\x1b[0J"), (code, out, err)
+        cleared, separator, diagnostic = err.rpartition(b"\x1b[0J")
+        assert (
+            code == 130
+            and cleared
+            and separator
+            and diagnostic.startswith(b"Error: ")
+            and diagnostic.endswith(b"\r\n")
+            and diagnostic.count(b"\n") == 1
+        ), (code, out, err)
         sessions = subprocess.check_output(
             [tmux, "-S", socket, "list-sessions", "-F", "#{session_name}"]
         ).splitlines()

@@ -66,7 +66,17 @@ enum ProcessCommands {
         if let window = command.windowName { arguments.append(window) }
         var childContext = context
         childContext.environment["TMUX_WORKSPACE_TMUX"] = server.tmuxExecutable
-        let result = try await run(arguments, context: childContext, terminal: interactive)
+        let result = try await run(arguments, context: childContext, terminal: interactive) {
+            text, stream in
+            if command.output.machine {
+                try await output.warning(text, code: "shell_" + stream)
+            } else {
+                let sink =
+                    stream == "stdout"
+                    ? context.rawOutput ?? context.output : context.rawError ?? context.error
+                try await sink(Presenter.sanitizeChildOutput(text))
+            }
+        }
         if command.output.machine {
             try await output.result(
                 .object([
@@ -75,11 +85,6 @@ enum ProcessCommands {
                     "exit_code": .integer(Int64(result.code)), "stdout": .string(result.output),
                     "stderr": .string(result.error), "bridge": .string("tmuxp 1.74.0"),
                 ]))
-        } else {
-            if !result.output.isEmpty {
-                try await context.output(Presenter.sanitize(result.output))
-            }
-            if !result.error.isEmpty { try await context.error(Presenter.sanitize(result.error)) }
         }
         return result.code
     }
@@ -231,7 +236,8 @@ enum ProcessCommands {
     }
 
     static func run(
-        _ arguments: [String], context: CLIContext, terminal: Bool = false
+        _ arguments: [String], context: CLIContext, terminal: Bool = false,
+        onOutput: (@Sendable (String, String) async throws -> Void)? = nil
     ) async throws -> Result {
         guard let executable = arguments.first, !executable.isEmpty else {
             throw CLIError("command_argv", "Command must name an executable.", status: 2)
@@ -283,6 +289,27 @@ enum ProcessCommands {
             try Task.checkCancellation()
             return Result(code: exitCode(result.terminationStatus))
         }
+        if let onOutput {
+            let captured = CapturedOutput(sink: onOutput)
+            let result = try await Subprocess.run(
+                configuration, input: .none, output: .sequence, error: .sequence
+            ) { execution in
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        try await collect(
+                            execution.standardOutput, stream: "stdout", into: captured)
+                    }
+                    group.addTask {
+                        try await collect(execution.standardError, stream: "stderr", into: captured)
+                    }
+                    while try await group.next() != nil {}
+                }
+            }
+            try Task.checkCancellation()
+            return await Result(
+                code: exitCode(result.terminationStatus),
+                output: captured.stdout, error: captured.stderr)
+        }
         let result = try await Subprocess.run(
             configuration, input: .none, output: .data(limit: 1_048_576),
             error: .data(limit: 1_048_576))
@@ -291,6 +318,17 @@ enum ProcessCommands {
             code: exitCode(result.terminationStatus),
             output: String(decoding: result.standardOutput, as: UTF8.self),
             error: String(decoding: result.standardError, as: UTF8.self))
+    }
+
+    private static func collect(
+        _ sequence: SubprocessOutputSequence, stream: String, into captured: CapturedOutput
+    ) async throws {
+        for try await chunk in sequence {
+            try Task.checkCancellation()
+            let bytes = chunk.withUnsafeBytes { Data($0) }
+            try await captured.append(bytes, stream: stream)
+        }
+        try await captured.append(Data(), stream: stream, finished: true)
     }
 
     private static func exitCode(_ status: TerminationStatus) -> Int32 {
