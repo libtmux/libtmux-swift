@@ -98,13 +98,32 @@ an explicit destination returns a versioned save result.
 `import teamocil` and `import tmuxinator` translate a required source file or
 name. Bare names use `~/.teamocil` or `TMUXINATOR_CONFIG` (defaulting to
 `~/.tmuxinator`), without falling back to tmuxp directories. Import preserves
-the translated command, directory and layout
-structure and warns about untranslated fields. It rejects ERB templates.
+ordered windows and panes, names, commands, directories and layouts. Teamocil
+`commands` and legacy `cmd` lists become one `; `-joined command group.
+Tmuxinator window command lists remain sequential commands in one pane;
+explicit `panes` lists create separate panes. Tmuxinator project `pre_window`
+lists become one `; `-joined group; window `pre` lists become one ` && `-joined
+group. Each group runs before pane commands.
+Window `pre` requires explicit panes. Project lifecycle hooks are unsupported.
+
+Project roots resolve against the invocation directory and are saved as
+absolute paths, preserving the working directory when output moves. Teamocil
+window roots also resolve against the invocation directory; pane roots resolve
+against their window. Tmuxinator window roots resolve against the project.
+The first requested Teamocil focus is retained; otherwise the first window and
+first pane in each window receive focus. `blank` and `pane` source commands
+remain executable commands.
+
+Unsupported fields fail before printing a document or replacing a destination.
+These include ERB templates, lifecycle hooks, endpoint and runtime controls,
+named pane titles, synchronization, Teamocil widths, clearing and filters.
+Imported directories reject dollar expansion and named-user home shortcuts.
+Import validates the translated document with the loader's configuration
+validator; load also checks layout syntax against the selected tmux version.
+Imported commands follow the loader's environment-variable expansion rules.
 `--save-to`, `--workspace-format` and `--force` control optional file output,
-defaulting to YAML.
-Without a destination, import previews the translated document. The importer
-combines tmuxinator `pre` and `pre_window` as inherited pane commands; it does
-not reconstruct tmuxinator's Ruby lifecycle.
+defaulting to YAML. Without a destination, import previews the translated
+document. Generic `convert` continues to preserve untranslated mapping values.
 
 `edit` resolves a workspace and runs `EDITOR` (default `vi`) with its path.
 Quoted executable paths and arguments are supported without an implicit shell.
@@ -235,7 +254,7 @@ versioned envelope and nested `workspace` document. Diagnostics use stderr.
 Machine output bypasses color.
 
 `--log-level debug|info|warning|error|critical` selects the minimum advisory
-diagnostic severity, defaulting to `warning`. Capture/import/bootstrap/shell
+diagnostic severity, defaulting to `warning`. Capture/bootstrap/shell
 warnings are hidden at `error` or `critical`. Result data and fatal errors remain
 visible.
 Human bootstrap output retains its original stdout/stderr stream; its file-log
