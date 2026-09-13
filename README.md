@@ -371,6 +371,18 @@ overload of the scopes is unreachable, because a closure literal's thrown type
 is never inferred from its body, and a scope that fails on its own behalf has no
 way to rethrow that as the body's error type.
 
+`TmuxError` and the query/matching error enums provide readable
+`CustomStringConvertible` and Foundation `LocalizedError` descriptions:
+
+```swift
+let message = error.localizedDescription
+print(message)
+```
+
+The enum cases and associated values remain available for structured handling.
+Descriptions omit raw decoded values and predicate literals. Command failure
+reasons retain tmux's diagnostic text.
+
 ## Waiting without polling
 
 tmux has no hook that fires when a pane prints something, so a wait built from
