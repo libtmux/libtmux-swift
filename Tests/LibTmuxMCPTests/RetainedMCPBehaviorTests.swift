@@ -479,9 +479,11 @@ struct RetainedMCPBehaviorTests {
             )
             #expect(await TmuxTools.paneRuns.isHeld(pane))
             await transport.allowReleaseReply()
-            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "release reply lost"))) {
-                try await running.value
-            }
+            // The command already completed: a lost release reply is retried
+            // in the background rather than discarding the result the caller
+            // is waiting on.
+            let outcome = try await running.value
+            #expect(outcome.structured["exitStatus"]?.intValue == 0)
             try #require(
                 try await waitUntil(within: .seconds(3)) {
                     !(await TmuxTools.paneRuns.isHeld(pane))
@@ -532,7 +534,11 @@ struct RetainedMCPBehaviorTests {
                 }
             )
             if let running {
-                await #expect(throws: ToolError.self) { try await running.value }
+                // The foreground command already completed: a cleanup failure
+                // after that is retried in the background rather than
+                // discarding the result the caller is waiting on.
+                let outcome = try await running.value
+                #expect(outcome.structured["exitStatus"]?.intValue == 0)
             }
             let channel = try #require(await transport.releaseChannel)
             let nonce = String(channel.dropFirst("libtmux-mcp-release-".count))
@@ -1068,10 +1074,12 @@ struct RetainedMCPBehaviorTests {
                     [.posixPermissions: 0o700], ofItemAtPath: directory.path)
             }
             try await fixture.signal(release)
-            await #expect(
-                throws: TmuxError.invocationFailed(
-                    reason: "run_shell_command could not remove its command")
-            ) { try await running.value }
+            // The command ran to completion despite the directory denying its
+            // cleanup: a completed result is not discarded over a cleanup
+            // failure, so the caller still sees the real exit status while the
+            // staged file is retried in the background below.
+            let outcome = try await running.value
+            #expect(outcome.structured["exitStatus"]?.intValue == 0)
             try #require(FileManager.default.fileExists(atPath: staged.path))
             try await fixture.killServer()
             if replaceServer {

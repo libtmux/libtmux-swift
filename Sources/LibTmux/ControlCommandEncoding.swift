@@ -42,7 +42,7 @@ package func shellQuoted(_ argument: String) -> String {
 /// sent: `#` opens a comment, and whitespace and quotes separate or group.
 /// A format like `#{session_name}` therefore has to be quoted or it vanishes
 /// mid-command.
-func tmuxQuoted(_ argument: String) -> String {
+package func tmuxQuoted(_ argument: String) -> String {
     let safe = argument.allSatisfy { character in
         character.isLetter || character.isNumber
             || "_-./=:@%+,".contains(character)
