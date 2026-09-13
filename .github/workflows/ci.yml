@@ -114,7 +114,7 @@ jobs:
           url="https://download.swift.org/swift-${SWIFT_VERSION}-release/${platform//./}/${release}/${release}-${platform}.tar.gz"
           curl --location --fail --silent --show-error "$url" --output swift.tar.gz
           curl --location --fail --silent --show-error "$url.sig" --output swift.tar.gz.sig
-          curl --location --fail --silent --show-error \
+          curl --compressed --location --fail --silent --show-error \
             https://www.swift.org/keys/all-keys.asc --output swift-keys.asc
           gpg --batch --import swift-keys.asc
           gpg --batch --verify swift.tar.gz.sig swift.tar.gz
