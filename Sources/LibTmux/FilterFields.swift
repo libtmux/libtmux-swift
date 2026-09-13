@@ -17,6 +17,11 @@ public struct FilterField<Root: Filterable, Value>: Sendable {
 ///
 /// Descriptors, key paths and value lookups share wire ids. Renaming a Swift
 /// property must not change the ids encoded in configurations and requests.
+///
+/// A typo in one of these ids compiles, type-checks, and builds a filter that
+/// silently never matches. `FilterSchemaTests.typedDescriptorsMatchTheSchemaExactly`
+/// is what catches that: it reads every descriptor's id back and checks it
+/// against the schema below.
 
 extension Session: Filterable {
     /// Supported fields for typed filter construction.
