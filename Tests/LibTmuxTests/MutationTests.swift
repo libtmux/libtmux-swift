@@ -41,6 +41,20 @@ struct MutationTests {
     @Test("a custom layout value is never parsed as one of tmux's own flags")
     func customLayoutValueIsNeverParsedAsAFlag() async throws {
         try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version.major != 3 || version.minor != 3 else {
+                // 3.3 and 3.3a free an uninitialized `cause` in
+                // cmd_select_layout_exec when layout_parse's checksum-prefix
+                // scan rejects a string -- true of any invalid layout,
+                // dash-prefixed or not, since a real layout dump always
+                // starts with four hex digits. Fixed in 3.4 ("CHANGES FROM
+                // 3.3a to 3.4"): the same branch there sets `cause` before
+                // returning. Proving the `--` guard below has to send an
+                // invalid layout past it, which crashes these two releases'
+                // daemon rather than rejecting the string, so it is skipped
+                // on exactly them.
+                return
+            }
             let window = try #require(try await server.windows().first)
             let link = try #require(try await server.windowLinks().first)
             for _ in 0..<3 { _ = try await server.splitWindow(window) }
