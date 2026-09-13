@@ -444,11 +444,12 @@ extension TmuxTools {
         }
     }
 
-    private static func finishTimedOutRun(
+    static func finishTimedOutRun(
         _ cleanup: RunShellCleanup,
         server: Server,
         reservation: PaneInputReservation,
-        releaseObserved: Bool
+        releaseObserved: Bool,
+        proofTimeout: Duration = retainedRunProofTimeout
     ) async {
         let (proofs, continuation) = AsyncStream<RetainedRunProof>.makeStream(
             bufferingPolicy: .bufferingOldest(1)
@@ -491,17 +492,45 @@ extension TmuxTools {
                 }
             }
         }
-        var iterator = proofs.makeAsyncIterator()
-        guard let proof = await iterator.next() else { return }
+        // Bounded so a proof that never arrives cannot strand the reservation
+        // and staged file forever: `completion` and `presence` otherwise
+        // retry with no overall deadline, and `paneRuns` is process-wide, so
+        // a stuck permit blocks every later run_shell_command on the pane
+        // rather than just this one.
+        let proof: RetainedRunProof? = await withTaskGroup(of: RetainedRunProof?.self) { group in
+            group.addTask {
+                var iterator = proofs.makeAsyncIterator()
+                return await iterator.next()
+            }
+            group.addTask {
+                try? await Task.sleep(for: proofTimeout)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
         continuation.finish()
         completion.cancel()
         presence.cancel()
         await paneRuns.release(reservation)
         releaseRunShellFile(cleanup.stagedFile)
+        if proof == nil {
+            let message =
+                "libtmux-mcp: run_shell_command retained cleanup gave up confirming "
+                + "release after \(proofTimeout); releasing the pane anyway\n"
+            FileHandle.standardError.write(Data(message.utf8))
+        }
         if proof == .ended {
             _ = try? await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
         }
     }
+
+    /// How long retained cleanup waits for confirmation that a run released
+    /// or its pane ended before giving up and releasing anyway. Matches
+    /// `retryRunShellFileRemoval`'s default budget for the same reason: an
+    /// unbounded wait here would hold a process-wide permit forever.
+    private static let retainedRunProofTimeout = Duration.seconds(30)
 
     private static func retainedRunState(
         _ cleanup: RunShellCleanup,
@@ -758,7 +787,7 @@ extension TmuxTools {
         let isDead: Bool
     }
 
-    private struct RunShellCleanup: Sendable {
+    struct RunShellCleanup: Sendable {
         let pane: Pane
         let channel: String
         let releaseChannel: String

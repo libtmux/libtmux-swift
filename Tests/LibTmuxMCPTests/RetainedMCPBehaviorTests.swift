@@ -1160,6 +1160,46 @@ struct RetainedMCPBehaviorTests {
         }
     }
 
+    @Test("retained cleanup releases its permit even when nothing ever confirms the run")
+    func retainedCleanupReleasesWithoutConfirmation() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let reservation = try #require(await TmuxTools.paneRuns.reserve([pane]))
+            let capture = try await server.captureBounded(
+                pane, since: nil, maximumLines: 1, perStreamOutputLimit: 4_096)
+            let cleanup = TmuxTools.RunShellCleanup(
+                pane: pane,
+                channel: "unused-done",
+                releaseChannel: "unused-release",
+                // A status option nothing ever sets: retainedRunState reads
+                // it as neither completed nor released, and the live pane
+                // never satisfies retainedRunEnded either, so nothing this
+                // function polls for ever arrives on its own.
+                statusOption: "@libtmux_mcp_test_unset_status",
+                cursor: capture.cursor,
+                startMarker: [],
+                endMarker: [],
+                payload: "",
+                scriptPath: "/tmp/libtmux-swift-test/unused-\(UUID().uuidString)"
+            )
+            let started = ContinuousClock.now
+            await TmuxTools.finishTimedOutRun(
+                cleanup,
+                server: server,
+                reservation: reservation,
+                releaseObserved: false,
+                proofTimeout: .milliseconds(200)
+            )
+            // Bounded, not stuck: without a deadline this awaits forever,
+            // since nothing here ever yields a proof on its own.
+            #expect(ContinuousClock.now - started < .seconds(2))
+            #expect(!(await TmuxTools.paneRuns.isHeld(pane)))
+            // A subsequent run_shell_command on the same pane must not find
+            // the permit still held by the one that never confirmed.
+            #expect(await TmuxTools.paneRuns.reserve([pane]) != nil)
+        }
+    }
+
     @Test("permanent local cleanup failure ends retries and reports manual recovery")
     func localFileRetryHasTerminalFailure() async throws {
         let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
