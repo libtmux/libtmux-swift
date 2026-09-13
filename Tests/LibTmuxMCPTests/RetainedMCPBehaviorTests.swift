@@ -5,6 +5,12 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
+
 private actor RecordedProtocolLines {
     private(set) var values: [String] = []
 
@@ -56,6 +62,7 @@ struct RetainedMCPBehaviorTests {
         using server: Server,
         controlledBy fixture: Server,
         interruption: RetainedRunInterruption,
+        afterRelease: String = ":",
         beforeInterruption: (@Sendable () async throws -> Void)? = nil
     ) async throws -> String {
         let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -69,7 +76,7 @@ struct RetainedMCPBehaviorTests {
                     arguments: .object([
                         "command": .string(
                             "\(tmux) wait-for -S \(started); "
-                                + "\(tmux) wait-for \(release)"
+                                + "\(tmux) wait-for \(release); \(afterRelease)"
                         ),
                         "paneId": .string(pane.id.rawValue),
                         "timeoutMs": .integer(interruption == .timeout ? 2_000 : 20_000),
@@ -360,6 +367,886 @@ struct RetainedMCPBehaviorTests {
     }
 
     @Test(
+        "retained cleanup retries release without replaying pane input",
+        arguments: RetainedReleaseFailure.allCases
+    )
+    func retainedReleaseRetries(_ failure: RetainedReleaseFailure) async throws {
+        try await withProbeServer { fixture, server, pane, transport in
+            let output = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+                .appendingPathComponent("release-retry-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: output) }
+            await transport.failRelease(with: failure)
+            let release = try await retainRun(
+                on: pane,
+                using: server,
+                controlledBy: fixture,
+                interruption: .cancel,
+                afterRelease: "printf x >> \(shellQuoted(output.path))"
+            )
+            try await fixture.signal(release)
+            try #require(try await waitUntil { await transport.releaseFailureWasInjected })
+            let channel = try #require(await transport.releaseChannel)
+            let nonce = String(channel.dropFirst("libtmux-mcp-release-".count))
+            let status = "@libtmux_mcp_\(nonce)_status"
+            let script = "/tmp/libtmux-mcp-run-\(nonce)"
+
+            if failure != .replyLost {
+                #expect(await TmuxTools.paneRuns.isHeld(pane))
+                #expect(try await fixture.option(status, scope: .pane(pane)) == "0")
+                #expect(FileManager.default.fileExists(atPath: script))
+                await #expect(throws: ToolError.self) {
+                    try await tools(server).call(
+                        ToolCall(
+                            name: "send_keys",
+                            arguments: .object([
+                                "force": .bool(true),
+                                "keys": .array([.string("must-not-overlap")]),
+                                "literal": .bool(true),
+                                "paneId": .string(pane.id.rawValue),
+                            ])
+                        )
+                    )
+                }
+                await transport.allowRelease()
+                try #require(
+                    try await waitUntil(within: .seconds(3)) {
+                        await transport.releaseAttempts > 1
+                    }
+                )
+            }
+
+            try #require(
+                try await waitUntil {
+                    !(await TmuxTools.paneRuns.isHeld(pane))
+                        && !FileManager.default.fileExists(atPath: script)
+                }
+            )
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            #expect(try String(contentsOf: output, encoding: .utf8) == "x")
+            #expect(await transport.inputDispatches == 1)
+            let next = try await tools(server).call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("printf 'release-retry-recovered\\n'"),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(5_000),
+                    ])
+                )
+            )
+            #expect(next.structured["exitStatus"]?.intValue == 0)
+        }
+    }
+
+    @Test("a lost foreground release reply retains its cleanup proof")
+    func foregroundReleaseReplyLost() async throws {
+        try await withProbeServer { fixture, server, pane, transport in
+            let output = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+                .appendingPathComponent("foreground-release-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: output) }
+            await transport.failRelease(with: .replyLost)
+            await transport.holdReleaseReply()
+            let running = Task {
+                try await tools(server).call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string("printf x >> \(shellQuoted(output.path))"),
+                            "paneId": .string(pane.id.rawValue),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
+                )
+            }
+            defer {
+                running.cancel()
+                Task { await transport.allowReleaseReply() }
+            }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    await transport.releaseWasDelivered
+                }
+            )
+            let channel = try #require(await transport.releaseChannel)
+            let nonce = String(channel.dropFirst("libtmux-mcp-release-".count))
+            let status = "@libtmux_mcp_\(nonce)_status"
+            let script = "/tmp/libtmux-mcp-run-\(nonce)"
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    let value = try await fixture.option(status, scope: .pane(pane))
+                    return value == nil || value == "released"
+                }
+            )
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
+            await transport.allowReleaseReply()
+            await #expect(throws: ToolError.tmux(.invocationFailed(reason: "release reply lost"))) {
+                try await running.value
+            }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    !(await TmuxTools.paneRuns.isHeld(pane))
+                        && !FileManager.default.fileExists(atPath: script)
+                }
+            )
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            #expect(try String(contentsOf: output, encoding: .utf8) == "x")
+            #expect(await transport.inputDispatches == 1)
+        }
+    }
+
+    @Test(
+        "acknowledged cleanup retries without releasing pane input",
+        arguments: [false, true],
+        [RetainedReleaseFailure.notSubmitted, .replyLost]
+    )
+    func acknowledgedCleanupRetries(_ retained: Bool, _ failure: RetainedReleaseFailure)
+        async throws
+    {
+        try await withProbeServer { fixture, server, pane, transport in
+            await transport.failCleanup(with: failure)
+            defer { Task { await transport.allowCleanup() } }
+            let running: Task<ToolOutcome, any Error>?
+            if retained {
+                let release = try await retainRun(
+                    on: pane, using: server, controlledBy: fixture, interruption: .cancel)
+                try await fixture.signal(release)
+                running = nil
+            } else {
+                running = Task {
+                    try await tools(server).call(
+                        ToolCall(
+                            name: "run_shell_command",
+                            arguments: .object([
+                                "command": .string("printf 'foreground-cleanup\\n'"),
+                                "paneId": .string(pane.id.rawValue),
+                                "timeoutMs": .integer(5_000),
+                            ])
+                        )
+                    )
+                }
+            }
+            defer { running?.cancel() }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    await transport.cleanupFailureWasInjected
+                }
+            )
+            if let running {
+                await #expect(throws: ToolError.self) { try await running.value }
+            }
+            let channel = try #require(await transport.releaseChannel)
+            let nonce = String(channel.dropFirst("libtmux-mcp-release-".count))
+            let status = "@libtmux_mcp_\(nonce)_status"
+            let script = "/tmp/libtmux-mcp-run-\(nonce)"
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
+            #expect(FileManager.default.fileExists(atPath: script))
+            #expect(
+                try await fixture.option(status, scope: .pane(pane))
+                    == (failure == .notSubmitted ? "released" : nil)
+            )
+            await transport.allowCleanup()
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    !(await TmuxTools.paneRuns.isHeld(pane))
+                        && !FileManager.default.fileExists(atPath: script)
+                }
+            )
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            #expect(await transport.inputDispatches == 1)
+        }
+    }
+
+    @Test(
+        "shell acknowledgment retries without replaying input or recreating cleared state",
+        arguments: [nil, RetainedRunInterruption.cancel, .timeout],
+        [RetainedReleaseFailure.notSubmitted, .replyLost]
+    )
+    func shellAcknowledgmentRetries(
+        _ interruption: RetainedRunInterruption?, _ failure: RetainedReleaseFailure
+    ) async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("release-acknowledgment-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let injected = directory.appendingPathComponent("injected")
+        let waiting = directory.appendingPathComponent("waiting")
+        let retried = directory.appendingPathComponent("retried")
+        let permit = directory.appendingPathComponent("permit")
+        let output = directory.appendingPathComponent("output")
+        let wrapper = directory.appendingPathComponent("tmux")
+        try await withTmuxServer { fixture in
+            let deliver =
+                failure == .replyLost
+                ? "\(shellQuoted(fixture.tmuxExecutable)) \"$@\" || exit $?" : ":"
+            let script = """
+                #!/bin/sh
+                acknowledgment=0
+                for argument do
+                    case "$argument" in released|*' released') acknowledgment=1 ;; esac
+                done
+                if [ "$acknowledgment" = 1 ]; then
+                    if [ ! -e \(shellQuoted(injected.path)) ]; then
+                        : > \(shellQuoted(injected.path))
+                        \(deliver)
+                        exit 72
+                    fi
+                    : > \(shellQuoted(waiting.path))
+                    while [ ! -e \(shellQuoted(permit.path)) ]; do sleep 0.01; done
+                    \(shellQuoted(fixture.tmuxExecutable)) "$@"
+                    result=$?
+                    : > \(shellQuoted(retried.path))
+                    exit "$result"
+                fi
+                exec \(shellQuoted(fixture.tmuxExecutable)) "$@"
+                """
+            try script.write(to: wrapper, atomically: false, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
+            defer { try? Data().write(to: permit) }
+            let transport = RetainedProbeFailureTransport()
+            let server = Server(
+                endpoint: fixture.endpoint, tmuxExecutable: wrapper.path, transport: transport)
+            let pane = try #require(try await server.panes().first)
+            let command = "printf x >> \(shellQuoted(output.path))"
+            let running: Task<ToolOutcome, any Error>?
+            if let interruption {
+                let release = try await retainRun(
+                    on: pane, using: server, controlledBy: fixture,
+                    interruption: interruption, afterRelease: command)
+                try await fixture.signal(release)
+                running = nil
+            } else {
+                running = Task {
+                    try await tools(server).call(
+                        ToolCall(
+                            name: "run_shell_command",
+                            arguments: .object([
+                                "command": .string(command),
+                                "paneId": .string(pane.id.rawValue),
+                                "timeoutMs": .integer(5_000),
+                            ])
+                        )
+                    )
+                }
+            }
+            defer { running?.cancel() }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    FileManager.default.fileExists(atPath: injected.path)
+                }
+            )
+            let channel = try #require(await transport.releaseChannel)
+            let nonce = String(channel.dropFirst("libtmux-mcp-release-".count))
+            let status = "@libtmux_mcp_\(nonce)_status"
+            let staged = "/tmp/libtmux-mcp-run-\(nonce)"
+            if failure == .notSubmitted {
+                #expect(await TmuxTools.paneRuns.isHeld(pane))
+                #expect(try await fixture.option(status, scope: .pane(pane)) == "releasing")
+                #expect(FileManager.default.fileExists(atPath: staged))
+                await #expect(throws: ToolError.self) {
+                    try await tools(server).call(
+                        ToolCall(
+                            name: "send_keys",
+                            arguments: .object([
+                                "force": .bool(true),
+                                "keys": .array([.string("must-not-overlap")]),
+                                "literal": .bool(true),
+                                "paneId": .string(pane.id.rawValue),
+                            ])
+                        )
+                    )
+                }
+            } else {
+                try #require(
+                    try await waitUntil(within: .seconds(3)) {
+                        !(await TmuxTools.paneRuns.isHeld(pane))
+                            && !FileManager.default.fileExists(atPath: staged)
+                    }
+                )
+                #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    FileManager.default.fileExists(atPath: waiting.path)
+                }
+            )
+            try Data().write(to: permit)
+            if let running {
+                #expect(try await running.value.structured["exitStatus"]?.intValue == 0)
+            }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    !(await TmuxTools.paneRuns.isHeld(pane))
+                        && !FileManager.default.fileExists(atPath: staged)
+                        && FileManager.default.fileExists(atPath: retried.path)
+                }
+            )
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            #expect(try String(contentsOf: output, encoding: .utf8) == "x")
+            #expect(await transport.inputDispatches == 1)
+            #expect(await transport.releaseAttempts == 1)
+            let next = try await tools(server).call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("printf 'acknowledgment-recovered\\n'"),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(5_000),
+                    ])
+                )
+            )
+            #expect(next.structured["exitStatus"]?.intValue == 0)
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+        }
+    }
+
+    @Test(
+        "numeric publication retries preserve the exit status and later protocol states",
+        arguments: [nil, RetainedRunInterruption.cancel, .timeout],
+        [RetainedReleaseFailure.notSubmitted, .replyLost]
+    )
+    func numericPublicationRetries(
+        _ interruption: RetainedRunInterruption?, _ failure: RetainedReleaseFailure
+    ) async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("numeric-publication-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let injected = directory.appendingPathComponent("injected")
+        let waiting = directory.appendingPathComponent("waiting")
+        let replay = directory.appendingPathComponent("replay")
+        let permit = directory.appendingPathComponent("permit")
+        let output = directory.appendingPathComponent("output")
+        let wrapper = directory.appendingPathComponent("tmux")
+        try await withTmuxServer { fixture in
+            let native = shellQuoted(fixture.tmuxExecutable)
+            let deliver = failure == .replyLost ? "\(native) \"$@\" || exit $?" : ":"
+            let script = """
+                #!/bin/sh
+                previous=
+                for argument do previous=$argument; done
+                case "$previous" in
+                    37|*' 37')
+                        if [ ! -e \(shellQuoted(injected.path)) ]; then
+                            printf '%s\\n' "$@" > \(shellQuoted(injected.path))
+                            printf '%s ' 'exec' \(shellQuoted(native)) > \(shellQuoted(replay.path))
+                            for argument do
+                                printf "'%s' " "$argument" >> \(shellQuoted(replay.path))
+                            done
+                            \(deliver)
+                            exit 72
+                        fi
+                        : > \(shellQuoted(waiting.path))
+                        while [ ! -e \(shellQuoted(permit.path)) ]; do sleep 0.01; done ;;
+                esac
+                exec \(native) "$@"
+                """
+            try script.write(to: wrapper, atomically: false, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
+            defer { try? Data().write(to: permit) }
+            let transport = RetainedProbeFailureTransport()
+            let server = Server(
+                endpoint: fixture.endpoint, tmuxExecutable: wrapper.path, transport: transport)
+            let pane = try #require(try await server.panes().first)
+            let command = "printf x >> \(shellQuoted(output.path)); exit 37"
+            let running: Task<ToolOutcome, any Error>?
+            if let interruption {
+                let release = try await retainRun(
+                    on: pane, using: server, controlledBy: fixture,
+                    interruption: interruption, afterRelease: command)
+                try await fixture.signal(release)
+                running = nil
+            } else {
+                running = Task {
+                    try await tools(server).call(
+                        ToolCall(
+                            name: "run_shell_command",
+                            arguments: .object([
+                                "command": .string(command),
+                                "paneId": .string(pane.id.rawValue),
+                                "timeoutMs": .integer(5_000),
+                            ])
+                        )
+                    )
+                }
+            }
+            defer { running?.cancel() }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    FileManager.default.fileExists(atPath: waiting.path)
+                }
+            )
+            let arguments = try String(contentsOf: injected, encoding: .utf8)
+            let range = try #require(
+                arguments.range(of: "@libtmux_mcp_[a-f0-9]{32}_status", options: .regularExpression)
+            )
+            let status = String(arguments[range])
+            let nonce = status.dropFirst("@libtmux_mcp_".count).dropLast("_status".count)
+            let staged = "/tmp/libtmux-mcp-run-\(nonce)"
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
+            #expect(FileManager.default.fileExists(atPath: staged))
+            if failure == .notSubmitted {
+                #expect(try await fixture.option(status, scope: .pane(pane)) == "pending")
+            } else if interruption == nil {
+                #expect(try await fixture.option(status, scope: .pane(pane)) == "37")
+            } else {
+                try #require(
+                    try await waitUntil(within: .seconds(3)) {
+                        try await fixture.option(status, scope: .pane(pane)) == "releasing"
+                    }
+                )
+            }
+            try Data().write(to: permit)
+            if let running {
+                #expect(try await running.value.structured["exitStatus"]?.intValue == 37)
+            }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    !(await TmuxTools.paneRuns.isHeld(pane))
+                        && !FileManager.default.fileExists(atPath: staged)
+                }
+            )
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            let delayed = try await SubprocessTransport().run(
+                executable: "/bin/sh", arguments: [replay.path],
+                environment: ProcessInfo.processInfo.environment, perStreamOutputLimit: 4_096)
+            #expect(delayed.isSuccess)
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            #expect(try String(contentsOf: output, encoding: .utf8) == "x")
+            #expect(await transport.inputDispatches == 1)
+            #expect(await transport.releaseAttempts == 1)
+            let next = try await tools(server).call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("printf 'publication-recovered\\n'"),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(5_000),
+                    ])
+                )
+            )
+            #expect(next.structured["exitStatus"]?.intValue == 0)
+            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+        }
+    }
+
+    @Test(
+        "shell protocol retries end with their original live pane",
+        arguments: RetainedRunEndProof.allCases.flatMap { end in
+            [(acknowledgment: false, end: end), (acknowledgment: true, end: end)]
+        }, [false, true]
+    )
+    func shellRetriesEndWithDaemon(
+        _ phase: (acknowledgment: Bool, end: RetainedRunEndProof), ignoreHUP: Bool
+    ) async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("daemon-retry-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let attempts = directory.appendingPathComponent("attempts")
+        let ready = directory.appendingPathComponent("ready")
+        let output = directory.appendingPathComponent("output")
+        let traps = directory.appendingPathComponent("traps")
+        let functionStatus = directory.appendingPathComponent("function-status")
+        let permit = directory.appendingPathComponent("permit")
+        let waiting = directory.appendingPathComponent("waiting")
+        let wrapper = directory.appendingPathComponent("tmux")
+        try await withTmuxServer { fixture in
+            let pattern = phase.acknowledgment ? "*' released'" : "*'_status 0'"
+            let secondAttempt =
+                phase.end != .daemonEnd
+                ? "if [ -e \(shellQuoted(attempts.path)) ]; then "
+                    + ": > \(shellQuoted(waiting.path)); "
+                    + "while [ ! -e \(shellQuoted(permit.path)) ]; do /bin/sleep 0.01; done; "
+                    + "exec \(shellQuoted(fixture.tmuxExecutable)) \"$@\"; fi"
+                : ":"
+            let script = """
+                #!/bin/sh
+                previous=
+                for argument do previous=$argument; done
+                case "$previous" in
+                    \(pattern))
+                        \(secondAttempt)
+                        printf '%s\\n' "$PPID" >> \(shellQuoted(attempts.path))
+                        exit 72 ;;
+                esac
+                exec \(shellQuoted(fixture.tmuxExecutable)) "$@"
+                """
+            try script.write(to: wrapper, atomically: false, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
+            defer { try? Data().write(to: permit) }
+            let server = Server(endpoint: fixture.endpoint, tmuxExecutable: wrapper.path)
+            let pane = try #require(try await server.panes().first)
+            if phase.end == .paneMissing || phase.end == .paneDead {
+                let keepalive = try await fixture.run(
+                    TmuxCommand("new-session", ["-d", "-s", "keepalive", "/bin/sh"]))
+                try #require(keepalive.isSuccess)
+            }
+            let parentText = try #require(
+                try await fixture.format("#{pane_pid}", addressing: pane.id.rawValue))
+            let parent = try #require(Int32(parentText))
+            try #require(parent > 0)
+            defer { _ = kill(parent, SIGKILL) }
+            let configure =
+                "kill() { :; }; " + (ignoreHUP ? "trap '' HUP; " : "")
+                + "printf ready > \(shellQuoted(ready.path))"
+            try await fixture.sendKeys([configure, "Enter"], to: pane)
+            try #require(
+                try await waitUntil {
+                    FileManager.default.fileExists(atPath: ready.path)
+                }
+            )
+            let running = Task {
+                try await tools(server).call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string(
+                                "trap > \(shellQuoted(traps.path)); "
+                                    + "kill -0 2147483647; "
+                                    + "printf '%s' \"$?\" > \(shellQuoted(functionStatus.path)); "
+                                    + "printf x >> \(shellQuoted(output.path))"),
+                            "paneId": .string(pane.id.rawValue),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
+                )
+            }
+            defer { running.cancel() }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    if phase.end != .daemonEnd {
+                        return FileManager.default.fileExists(atPath: waiting.path)
+                    }
+                    return (try? String(contentsOf: attempts, encoding: .utf8))?
+                        .split(separator: "\n").count ?? 0 >= 2
+                }
+            )
+            let processIDs = try String(contentsOf: attempts, encoding: .utf8)
+                .split(separator: "\n").compactMap { Int32($0) }
+            let frame = try #require(processIDs.first)
+            try #require(frame > 0 && frame != parent && processIDs.allSatisfy { $0 == frame })
+            defer { _ = kill(frame, SIGKILL) }
+            #expect(try String(contentsOf: traps, encoding: .utf8).contains("HUP") == ignoreHUP)
+            #expect(try String(contentsOf: functionStatus, encoding: .utf8) == "0")
+            switch phase.end {
+            case .daemonEnd:
+                try await fixture.killServer()
+            case .daemonReplacement:
+                try await fixture.killServer()
+                let root = URL(fileURLWithPath: pane.incarnation.socketPath)
+                    .deletingLastPathComponent()
+                let reply = try await fixture.run(
+                    TmuxCommandList([
+                        TmuxCommand("new-session", ["-d", "-s", "replacement", "/bin/sh"]),
+                        try reaperCommand(root: root),
+                    ]))
+                try #require(reply.isSuccess)
+                try #require(try await fixture.incarnation() != pane.incarnation)
+            case .paneMissing:
+                let reply = try await fixture.run(
+                    TmuxCommand("kill-pane", ["-t", pane.id.rawValue]))
+                try #require(reply.isSuccess)
+            case .paneDead:
+                let reply = try await fixture.run(
+                    TmuxCommand(
+                        "set-option", ["-p", "-t", pane.id.rawValue, "remain-on-exit", "on"]))
+                try #require(reply.isSuccess)
+                try #require(kill(parent, SIGKILL) == 0)
+                try #require(
+                    try await waitUntil {
+                        try await fixture.format("#{pane_dead}", addressing: pane.id.rawValue)
+                            == "1"
+                    }
+                )
+            }
+            try Data().write(to: permit)
+            _ = await running.result
+            #expect(
+                try await waitUntil(within: .seconds(3)) {
+                    kill(frame, 0) == -1 && errno == ESRCH
+                }
+            )
+            let stopped = try String(contentsOf: attempts, encoding: .utf8)
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(try String(contentsOf: attempts, encoding: .utf8) == stopped)
+            #expect(try String(contentsOf: output, encoding: .utf8) == "x")
+            try await expectReleased(pane)
+        }
+    }
+
+    @Test("shell protocol targets its captured pane when another session is current")
+    func shellProtocolTargetsCapturedPane() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let other = try await fixture.run(
+                TmuxCommand("new-session", ["-d", "-s", "other", "/bin/sh"]))
+            try #require(other.isSuccess)
+            let current = try await fixture.run(
+                TmuxCommand("display-message", ["-p", "#{pane_id}"]))
+            try #require(
+                current.text.trimmingCharacters(in: .whitespacesAndNewlines) != pane.id.rawValue)
+            let ready = URL(fileURLWithPath: pane.incarnation.socketPath)
+                .deletingLastPathComponent().appendingPathComponent("target-ready")
+            try await fixture.sendKeys(
+                ["unset TMUX TMUX_PANE; : > \(shellQuoted(ready.path))", "Enter"], to: pane)
+            try #require(
+                try await waitUntil { FileManager.default.fileExists(atPath: ready.path) })
+            let result = try await tools(fixture).call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string("printf 'captured-pane\\n'"),
+                        "paneId": .string(pane.id.rawValue),
+                        "timeoutMs": .integer(5_000),
+                    ])
+                )
+            )
+            #expect(result.structured["exitStatus"]?.intValue == 0)
+            #expect(result.structured["output"]?.arrayValue == [.string("captured-pane")])
+            try await expectReleased(pane)
+        }
+    }
+
+    @Test(
+        "local cleanup survives daemon termination and preserves replacement state",
+        arguments: [false, true]
+    )
+    func localCleanupSurvivesTermination(replaceServer: Bool) async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("terminal-unlink-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let staged = directory.appendingPathComponent("command")
+        let output = directory.appendingPathComponent("body-output")
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let surface = tools(fixture)
+            let release = "libtmux-swift-file-release-\(UUID().uuidString)"
+            let request = ToolCall(
+                name: "run_shell_command",
+                arguments: .object([
+                    "command": .string(
+                        "printf x >> \(shellQuoted(output.path)); "
+                            + "\(fixture.shellInvocation) wait-for \(release)"),
+                    "paneId": .string(pane.id.rawValue),
+                    "timeoutMs": .integer(5_000),
+                ])
+            )
+            let arguments = try Arguments(request, for: #require(TmuxTools.byName[request.name]))
+            let running = Task { try await surface.runShell(arguments, stagingAt: staged.path) }
+            defer { running.cancel() }
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    (try? String(contentsOf: output, encoding: .utf8)) == "x"
+                }
+            )
+            let payload = try String(contentsOf: staged, encoding: .utf8)
+            let range = try #require(
+                payload.range(of: "@libtmux_mcp_[a-f0-9]{32}_status", options: .regularExpression))
+            let status = String(payload[range])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o500], ofItemAtPath: directory.path)
+            defer {
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            }
+            try await fixture.signal(release)
+            await #expect(
+                throws: TmuxError.invocationFailed(
+                    reason: "run_shell_command could not remove its command")
+            ) { try await running.value }
+            try #require(FileManager.default.fileExists(atPath: staged.path))
+            try await fixture.killServer()
+            if replaceServer {
+                let root = URL(fileURLWithPath: pane.incarnation.socketPath)
+                    .deletingLastPathComponent()
+                let reply = try await fixture.run(
+                    TmuxCommandList([
+                        TmuxCommand("new-session", ["-d", "-s", "replacement", "/bin/sh"]),
+                        try reaperCommand(root: root),
+                    ]))
+                try #require(reply.isSuccess)
+                try #require(try await fixture.incarnation() != pane.incarnation)
+                _ = try await fixture.run(
+                    TmuxCommand("set-option", ["-p", "-t", "%0", status, "replacement-state"]))
+            }
+            // Keep deletion denied through the retained monitor's terminal probe.
+            try await Task.sleep(for: .seconds(1))
+            try #require(FileManager.default.fileExists(atPath: staged.path))
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            #expect(
+                try await waitUntil(within: .seconds(3)) {
+                    !FileManager.default.fileExists(atPath: staged.path)
+                }
+            )
+            #expect(try String(contentsOf: output, encoding: .utf8) == "x")
+            if replaceServer {
+                let replacement = try #require(try await fixture.panes().first)
+                #expect(
+                    try await fixture.option(status, scope: .pane(replacement))
+                        == "replacement-state")
+            }
+        }
+    }
+
+    @Test(
+        "local file retries recover permissions and preserve replacement files",
+        arguments: [false, true])
+    func localFileRetryOwnership(replaceFile: Bool) async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("owned-retry-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("command")
+        try Data("owned command".utf8).write(to: path)
+        let handle = try FileHandle(forReadingFrom: path)
+        let file = try TmuxTools.RunShellFile(path: path.path, descriptor: handle.fileDescriptor)
+        try handle.close()
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        }
+        try #require(file.remove() == .failed(POSIXErrorCode.EACCES.rawValue))
+        let messages = RecordedProtocolLines()
+        if replaceFile {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try FileManager.default.moveItem(
+                at: path, to: directory.appendingPathComponent("original"))
+            try Data("foreign replacement".utf8).write(to: path)
+        }
+        let cleanup = Task {
+            await TmuxTools.retryRunShellFileRemoval(file, within: .seconds(2)) {
+                await messages.append($0)
+            }
+        }
+        if !replaceFile {
+            try await Task.sleep(for: .milliseconds(150))
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        }
+        await cleanup.value
+        if replaceFile {
+            #expect(try String(contentsOf: path, encoding: .utf8) == "foreign replacement")
+            #expect(await messages.values.count == 1)
+            #expect(await messages.values.first?.contains("preserved a replacement") == true)
+        } else {
+            #expect(!FileManager.default.fileExists(atPath: path.path))
+            #expect(await messages.values.isEmpty)
+        }
+    }
+
+    @Test("permanent local cleanup failure ends retries and reports manual recovery")
+    func localFileRetryHasTerminalFailure() async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("permanent-retry-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("command")
+        try Data("owned command".utf8).write(to: path)
+        let handle = try FileHandle(forReadingFrom: path)
+        let file = try TmuxTools.RunShellFile(path: path.path, descriptor: handle.fileDescriptor)
+        try handle.close()
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        }
+        let messages = RecordedProtocolLines()
+        let started = ContinuousClock.now
+        await TmuxTools.retryRunShellFileRemoval(file, within: .milliseconds(250)) {
+            await messages.append($0)
+        }
+        #expect(ContinuousClock.now - started < .seconds(3))
+        #expect(FileManager.default.fileExists(atPath: path.path))
+        #expect(await messages.values.count == 1)
+        #expect(await messages.values.first?.contains("automatic retry budget expired") == true)
+        #expect(await messages.values.first?.contains("manual removal is required") == true)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(FileManager.default.fileExists(atPath: path.path))
+    }
+
+    @Test("a delayed duplicate release cannot consume the frame's wakeup")
+    func delayedReleaseRemainsIdempotent() async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("release-waiter-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let waiting = directory.appendingPathComponent("waiting")
+        let permit = directory.appendingPathComponent("permit")
+        let wrapper = directory.appendingPathComponent("tmux")
+        try await withTmuxServer { fixture in
+            let script = """
+                #!/bin/sh
+                waiting=0; signal=0; release=0
+                for argument do
+                    case "$argument" in
+                        wait-for) waiting=1 ;;
+                        -S) if [ "$waiting" = 1 ]; then signal=1; fi ;;
+                        libtmux-mcp-release-*) release=1 ;;
+                        'wait-for libtmux-mcp-release-'*) waiting=1; release=1 ;;
+                    esac
+                done
+                if [ "$waiting$signal$release" = 101 ]; then
+                    : > \(shellQuoted(waiting.path))
+                    while [ ! -e \(shellQuoted(permit.path)) ]; do sleep 0.01; done
+                fi
+                exec \(shellQuoted(fixture.tmuxExecutable)) "$@"
+                """
+            try script.write(to: wrapper, atomically: false, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
+            defer { try? Data().write(to: permit) }
+            let transport = RetainedProbeFailureTransport()
+            await transport.delayFirstRelease()
+            let server = Server(
+                endpoint: fixture.endpoint, tmuxExecutable: wrapper.path, transport: transport)
+            let pane = try #require(try await server.panes().first)
+            let release = try await retainRun(
+                on: pane, using: server, controlledBy: fixture, interruption: .cancel)
+            try await fixture.signal(release)
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    await transport.delayedReleaseWasDelivered
+                        && FileManager.default.fileExists(atPath: waiting.path)
+                }
+            )
+            #expect(await TmuxTools.paneRuns.isHeld(pane))
+            #expect(await transport.releaseAttempts == 2)
+            try Data().write(to: permit)
+            try #require(
+                try await waitUntil(within: .seconds(3)) {
+                    !(await TmuxTools.paneRuns.isHeld(pane))
+                }
+            )
+            #expect(await transport.inputDispatches == 1)
+        }
+    }
+
+    @Test(
         "an ambiguous retained-run probe keeps the pane lease",
         arguments: RetainedRunInterruption.allCases,
         RetainedProbeFailure.allCases
@@ -594,6 +1481,12 @@ enum RetainedRunEndProof: String, CaseIterable, Sendable {
     case daemonReplacement
 }
 
+enum RetainedReleaseFailure: String, CaseIterable, Sendable {
+    case notSubmitted
+    case unknownDelivery
+    case replyLost
+}
+
 private actor RetainedProbeFailureTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private var armedFailure: RetainedProbeFailure?
@@ -601,9 +1494,52 @@ private actor RetainedProbeFailureTransport: ProcessTransport {
     private var returnsFirstWaitEarly = false
     private var statusOverride: String?
     private var useRealStatus = false
+    private var releaseFailure: RetainedReleaseFailure?
+    private var releaseAllowed = false
+    private var releaseReplyHeld = false
+    private var cleanupFailure: RetainedReleaseFailure?
+    private var cleanupAllowed = false
+    private var cleanupWasDelivered = false
+    private var delayingFirstRelease = false
+    private var delayedReleaseArguments: [String]?
     private(set) var failureWasInjected = false
     private(set) var earlyWaitReturned = false
     private(set) var statusOverrideWasReturned = false
+    private(set) var releaseFailureWasInjected = false
+    private(set) var releaseChannel: String?
+    private(set) var releaseAttempts = 0
+    private(set) var inputDispatches = 0
+    private(set) var releaseWasDelivered = false
+    private(set) var cleanupFailureWasInjected = false
+    private(set) var delayedReleaseWasDelivered = false
+
+    func failRelease(with failure: RetainedReleaseFailure) {
+        releaseFailure = failure
+    }
+
+    func allowRelease() {
+        releaseAllowed = true
+    }
+
+    func holdReleaseReply() {
+        releaseReplyHeld = true
+    }
+
+    func allowReleaseReply() {
+        releaseReplyHeld = false
+    }
+
+    func failCleanup(with failure: RetainedReleaseFailure) {
+        cleanupFailure = failure
+    }
+
+    func allowCleanup() {
+        cleanupAllowed = true
+    }
+
+    func delayFirstRelease() {
+        delayingFirstRelease = true
+    }
 
     func arm(_ failure: RetainedProbeFailure) {
         armedFailure = failure
@@ -627,6 +1563,84 @@ private actor RetainedProbeFailureTransport: ProcessTransport {
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
+        if arguments.contains(where: { $0.contains("send-keys") }) {
+            inputDispatches += 1
+        }
+        let commandText = arguments.joined(separator: " ")
+        if commandText.contains("set-option"), commandText.contains("_status"),
+            !commandText.contains("releasing"), !commandText.contains("send-keys"),
+            let cleanupFailure, !cleanupAllowed
+        {
+            if cleanupFailure == .replyLost, !cleanupWasDelivered {
+                _ = try await underlying.run(
+                    executable: executable,
+                    arguments: arguments,
+                    environment: environment,
+                    perStreamOutputLimit: perStreamOutputLimit
+                )
+                cleanupWasDelivered = true
+            }
+            cleanupFailureWasInjected = true
+            if cleanupFailure == .notSubmitted { throw .requestNotSubmitted }
+            throw .invocationFailed(reason: "cleanup reply lost")
+        }
+        let releasePrefix = "libtmux-mcp-release-"
+        if commandText.contains("wait-for"), commandText.contains("-S"),
+            let range = commandText.range(of: releasePrefix)
+        {
+            let channel =
+                releasePrefix + commandText[range.upperBound...].prefix(while: \.isHexDigit)
+            releaseChannel = channel
+            releaseAttempts += 1
+            if delayingFirstRelease {
+                delayingFirstRelease = false
+                delayedReleaseArguments = arguments
+                throw .invocationFailed(reason: "release is still in transit")
+            }
+            if let delayedReleaseArguments {
+                self.delayedReleaseArguments = nil
+                let reply = try await underlying.run(
+                    executable: executable,
+                    arguments: arguments,
+                    environment: environment,
+                    perStreamOutputLimit: perStreamOutputLimit
+                )
+                _ = try await underlying.run(
+                    executable: executable,
+                    arguments: delayedReleaseArguments,
+                    environment: environment,
+                    perStreamOutputLimit: perStreamOutputLimit
+                )
+                delayedReleaseWasDelivered = true
+                return reply
+            }
+            if let releaseFailure, !releaseAllowed {
+                releaseFailureWasInjected = true
+                switch releaseFailure {
+                case .notSubmitted:
+                    throw .requestNotSubmitted
+                case .unknownDelivery:
+                    throw .invocationFailed(reason: "release delivery unknown")
+                case .replyLost:
+                    self.releaseFailure = nil
+                    _ = try await underlying.run(
+                        executable: executable,
+                        arguments: arguments,
+                        environment: environment,
+                        perStreamOutputLimit: perStreamOutputLimit
+                    )
+                    releaseWasDelivered = true
+                    while releaseReplyHeld {
+                        do {
+                            try await Task.sleep(for: .milliseconds(5))
+                        } catch {
+                            throw .cancelled
+                        }
+                    }
+                    throw .invocationFailed(reason: "release reply lost")
+                }
+            }
+        }
         if let waitIndex = arguments.firstIndex(of: "wait-for"),
             arguments[waitIndex...].contains(where: { $0.hasPrefix("libtmux-mcp-done-") })
         {
