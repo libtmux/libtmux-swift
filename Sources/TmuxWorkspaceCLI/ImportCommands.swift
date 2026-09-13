@@ -6,13 +6,13 @@ enum ImportCommands {
     {
         let kind = type(of: command).importer
         let format = command.save.format ?? .yaml
-        var sourceContext = context
-        sourceContext.environment["TMUXP_CONFIGDIR"] =
+        let sourceDirectory =
             kind == "tmuxinator"
             ? context.environment["TMUXINATOR_CONFIG"] ?? "~/.tmuxinator"
             : "~/.teamocil"
-        let store = DocumentStore(context: sourceContext)
-        let source = try store.read(store.resolve(command.file))
+        let store = DocumentStore(context: context)
+        let source = try store.read(
+            store.resolve(command.file, in: [store.path(sourceDirectory)]))
         if try source.encoded().contains("<%") {
             throw CLIError(
                 "unsupported_template",
