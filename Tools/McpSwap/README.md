@@ -258,6 +258,12 @@ environment, reports the tail of stderr when no response arrives, and terminates
 descendants on success, timeout, malformed output, or oversized output. No config,
 backup, or ledger write begins until every required probe succeeds.
 
+Only the configured stdin, stdout, and stderr reach the child; other open
+descriptors stay in the caller. Preflight requires macOS or Linux with glibc 2.34
+or newer for atomic descriptor exclusion. On older glibc the private tool still
+compiles, but refuses preflight before spawning or changing configuration. This
+requirement does not apply to the library or workspace CLI.
+
 ## Recovery state
 
 All ports coordinate mutation with the shared lock:
