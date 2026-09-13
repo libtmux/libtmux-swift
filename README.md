@@ -210,13 +210,19 @@ _ = try await server.run(plan)
 
 Filter with the standard library when the predicate is local to your code.
 `FilterExpr` is for when the filter has to leave it — stored in a config, sent to
-another process, handed to a tool. It is built from key paths, so the compiler
-rejects a text operator on a number, and it holds no closures, so it encodes:
+another process, handed to a tool. Each model's `FilterFields` lists supported
+fields. The compiler checks the field, model and operator types, and expressions
+contain no closures, so they encode:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = FilterExpr<Pane>.where(
+    Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
 let matching = try await server.panes().filter(expression)
 ```
+
+Descriptor construction does not throw. Existing key-path construction remains
+available with `QueryConstructionError` for unsupported fields. Validate decoded
+or dynamically built expressions with `validate()` before evaluating them.
 
 The same expression can also travel all the way to tmux, so the rows that would
 have been discarded never cross the process boundary:
