@@ -23,6 +23,36 @@ public enum ResizeDirection: Sendable, Hashable, Codable {
     }
 }
 
+/// A named tmux window layout or an explicitly supplied custom layout.
+///
+/// Encodes as tmux's layout string, so stored layouts and tmuxp documents keep
+/// their existing wire representation. Custom strings are validated by tmux
+/// when applied, allowing layouts saved from `window_layout` and future names.
+public struct WindowLayout: Sendable, Hashable, Codable {
+    /// The text passed to tmux's `select-layout` command.
+    public let rawValue: String
+
+    private init(_ value: String) { rawValue = value }
+
+    public static let evenHorizontal = Self("even-horizontal")
+    public static let evenVertical = Self("even-vertical")
+    public static let mainHorizontal = Self("main-horizontal")
+    public static let mainVertical = Self("main-vertical")
+    public static let tiled = Self("tiled")
+
+    /// Uses a saved layout or a layout name supplied at runtime.
+    public static func custom(_ value: String) -> Self { Self(value) }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 extension Server {
     // MARK: Changing
 
@@ -40,6 +70,14 @@ extension Server {
                 "rename-window", ["-t", window.id.rawValue, "--", tmuxLiteralArgument(name)]),
             guardedBy: [.window(window)]
         )
+    }
+
+    /// Applies a named or custom layout to a window.
+    public func selectLayout(
+        _ window: Window,
+        _ layout: WindowLayout
+    ) async throws(TmuxError) {
+        try await selectLayout(window, layout.rawValue)
     }
 
     /// Applies one of tmux's own layouts — `even-horizontal`, `tiled`, and the
