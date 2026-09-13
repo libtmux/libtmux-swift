@@ -184,9 +184,12 @@ public enum WorkspaceBuilder {
         // The window arrives with one pane; only the rest are split in.
         var panes = try await server.snapshot().panes(of: created)
         for pane in window.panes.dropFirst() {
+            guard let previous = panes.last else {
+                throw TmuxError.invocationFailed(reason: "workspace window has no panes")
+            }
             panes.append(
-                try await server.splitWindow(
-                    created,
+                try await server.split(
+                    previous,
                     startDirectory: pane.startDirectory ?? window.startDirectory
                         ?? workspace.startDirectory
                 )
