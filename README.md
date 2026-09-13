@@ -93,7 +93,7 @@ Neither is what you want from alpha software, so name an exact release:
 
 > [!NOTE]
 > This page documents unreleased `master`. The exact dependency above installs
-> the released alpha.3 API; [read that tag's README][alpha3-readme] for matching
+> the released alpha.5 API; [read that tag's README][alpha5-readme] for matching
 > examples. To compile the examples on this page, depend on `master`:
 
 ```swift
@@ -911,4 +911,4 @@ MIT. See [LICENSE](LICENSE).
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
-[alpha3-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.3/README.md
+[alpha5-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.5/README.md
