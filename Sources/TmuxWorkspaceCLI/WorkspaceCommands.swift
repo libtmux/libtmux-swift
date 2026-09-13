@@ -102,12 +102,9 @@ enum WorkspaceCommands {
                                 processContext.directory = URL(
                                     fileURLWithPath: plan.workspace.startDirectory!)
                                 let result = try await ProcessCommands.run(
-                                    script, context: processContext)
-                                if !result.output.isEmpty {
-                                    try await output.bootstrap(result.output, stream: "stdout")
-                                }
-                                if !result.error.isEmpty {
-                                    try await output.bootstrap(result.error, stream: "stderr")
+                                    script, context: processContext
+                                ) { text, stream in
+                                    try await output.bootstrap(text, stream: stream)
                                 }
                                 guard result.code == 0 else {
                                     throw CLIError(
@@ -213,10 +210,7 @@ enum WorkspaceCommands {
                 ])
             }
             let result = Value.object(fields)
-            try? await output.event("failed", command: "load", data: result)
-            if command.output.json && !command.output.ndjson {
-                try? await output.result(result)
-            }
+            await output.failedLoad(result)
             throw error
         }
         if case let .attached(client) = target, let session = lastSession {

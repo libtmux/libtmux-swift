@@ -253,7 +253,18 @@ actor Presenter {
     func failure(_ error: CLIError) async {
         await finishProgress()
         await log(.error, fields: ["code": .string(error.code), "message": .string(error.message)])
-        await WorkspaceCLI.diagnostic(error, machine: options.machine, context: context)
+        await Self.finalOutput { [options, context] in
+            await WorkspaceCLI.diagnostic(error, machine: options.machine, context: context)
+        }
+    }
+
+    func failedLoad(_ value: Value) async {
+        await Self.finalOutput {
+            try await self.event("failed", command: "load", data: value)
+            if self.options.json && !self.options.ndjson {
+                try await self.result(value)
+            }
+        }
     }
 
     func prepareProgress(_ command: Load) throws {
@@ -287,7 +298,12 @@ actor Presenter {
     private func finishProgress() async {
         guard let clear = progress?.clear(), !clear.isEmpty else { return }
         let sink = context.rawError ?? context.error
-        let cleanup = Task.detached { try await sink(clear) }
+        await Self.finalOutput { try await sink(clear) }
+    }
+
+    private static func finalOutput(_ operation: @escaping @Sendable () async throws -> Void) async
+    {
+        let cleanup = Task.detached { try await operation() }
         let deadline = Task.detached {
             do {
                 try await Task.sleep(for: .milliseconds(200))
@@ -334,9 +350,18 @@ actor Presenter {
     }
 
     static func sanitize(_ value: String) -> String {
+        sanitize(value, preservingLines: false)
+    }
+
+    static func sanitizeChildOutput(_ value: String) -> String {
+        sanitize(value, preservingLines: true)
+    }
+
+    private static func sanitize(_ value: String, preservingLines: Bool) -> String {
         value.unicodeScalars.map { scalar in
-            scalar.value < 32 || (127...159).contains(scalar.value)
-                ? String(format: "\\u%04x", scalar.value) : String(scalar)
+            let control = scalar.value < 32 || (127...159).contains(scalar.value)
+            let lineSpace = preservingLines && (scalar.value == 9 || scalar.value == 10)
+            return control && !lineSpace ? String(format: "\\u%04x", scalar.value) : String(scalar)
         }.joined()
     }
 }
