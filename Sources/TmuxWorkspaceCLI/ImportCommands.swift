@@ -13,10 +13,14 @@ enum ImportCommands {
         let store = DocumentStore(context: context)
         let file = try store.resolve(command.file, in: [store.path(sourceDirectory)])
         let source = try store.read(file)
-        if try source.encoded().contains("<%") {
+        // Tmuxinator expands ERB through Ruby before it parses YAML, and no
+        // native reader does, so markup that reaches this point would
+        // otherwise become a literal command. Teamocil evaluates no
+        // templates, so the same markup there is ordinary text.
+        if kind == "tmuxinator", try source.encoded().contains("<%") {
             throw CLIError(
                 "unsupported_template",
-                "ERB templates require tmuxinator; provide expanded YAML or JSON.")
+                "tmuxinator ERB templates are unsupported; expand them before import.")
         }
         var document =
             try kind == "teamocil"

@@ -59,6 +59,21 @@ struct WorkspaceCLITests {
                     #"{"name":"test","windows":[{"name":"work","panes":[{"commands":[42]}]}]}"#
                 ),
                 ("tmuxinator", #"{"name":"test","windows":[]}"#),
+                // tmuxinator expands ERB through Ruby before parsing; a
+                // native reader cannot, so markup in a value, a command, or
+                // a mapping key must all be refused before conversion.
+                (
+                    "tmuxinator",
+                    #"{"name":"test","root":"<%= dynamic_root %>","windows":[{"work":":"}]}"#
+                ),
+                (
+                    "tmuxinator",
+                    #"{"name":"test","windows":[{"work":"echo <%= dynamic_command %>"}]}"#
+                ),
+                (
+                    "tmuxinator",
+                    #"{"name":"test","windows":[{"<%= dynamic_window %>":":"}]}"#
+                ),
             ] {
                 try Data(source.utf8).write(to: file)
                 for save in [false, true] {
@@ -70,6 +85,11 @@ struct WorkspaceCLITests {
                     #expect(result.code == 1, "\(kind): \(source): \(result.output)")
                     #expect(result.output.isEmpty)
                     #expect(try Data(contentsOf: destination) == original)
+                    if source.contains("<%") {
+                        #expect(
+                            result.error.joined().contains("ERB"),
+                            "\(kind): \(source): \(result.error)")
+                    }
                 }
             }
         }
@@ -581,15 +601,23 @@ struct WorkspaceCLITests {
             #expect(panes[0]["focus"] as? Bool == true)
             let teamocil = root.appendingPathComponent("team.json")
             try Data(
-                #"{"session":{"name":"team","windows":[{"name":"shell","splits":[{"cmd":"echo imported"}]}]}}"#
+                #"{"session":{"name":"team","windows":[{"name":"shell","splits":[{"cmd":"echo <%= literal %>"}]}]}}"#
                     .utf8
             ).write(to: teamocil)
             let streamed = await invoke(
                 ["import", "teamocil", teamocil.path, "--ndjson"], in: root)
-            #expect(streamed.code == 0)
+            #expect(streamed.code == 0, "\(streamed.error)")
             let envelope = try streamed.json()
             #expect(envelope["schema_version"] as? Int == 1)
-            #expect((envelope["workspace"] as? [String: Any])?["session_name"] as? String == "team")
+            let teamocilWorkspace = try #require(envelope["workspace"] as? [String: Any])
+            #expect(teamocilWorkspace["session_name"] as? String == "team")
+            let teamocilWindows = try #require(teamocilWorkspace["windows"] as? [[String: Any]])
+            let teamocilPanes = try #require(teamocilWindows.first?["panes"] as? [[String: Any]])
+            // Teamocil evaluates no templates, so this markup is ordinary text
+            // and must survive the import unchanged.
+            #expect(
+                teamocilPanes.first?["shell_command"] as? [String: String]
+                    == ["cmd": "echo <%= literal %>"])
             let missing = await invoke(["import", "teamocil", "--json"], in: root)
             #expect(missing.code == 2)
             #expect(missing.output.isEmpty)
