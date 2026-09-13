@@ -645,6 +645,121 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "discovery and bare names share the first existing configuration directory",
+        arguments: [
+            "configured", "configured-empty", "missing-configured", "file-configured",
+            "xdg-empty", "legacy", "none", "empty-xdg", "symlink-configured",
+        ])
+    func activeConfigurationDirectory(_ scenario: String) async throws {
+        try await withFiles { root in
+            let configured = root.appendingPathComponent("configured")
+            let xdg = root.appendingPathComponent("xdg/tmuxp")
+            let legacy = root.appendingPathComponent(".tmuxp")
+            let fallback = root.appendingPathComponent(".config/tmuxp")
+            for (directory, name) in [
+                (configured, "configured"), (xdg, "xdg"), (legacy, "legacy"),
+                (fallback, "default"),
+            ] {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: true)
+                try Data("{\"session_name\":\"\(name)\",\"windows\":[]}".utf8).write(
+                    to: directory.appendingPathComponent(name + ".json"))
+            }
+            var active = configured
+            var name: String? = "configured"
+            if scenario == "configured-empty" {
+                try FileManager.default.removeItem(
+                    at: configured.appendingPathComponent("configured.json"))
+                name = nil
+            } else if scenario != "configured" {
+                try FileManager.default.removeItem(at: configured)
+                active = xdg
+                name = "xdg"
+                if scenario == "file-configured" { try Data().write(to: configured) }
+                if scenario == "xdg-empty" {
+                    try FileManager.default.removeItem(at: xdg.appendingPathComponent("xdg.json"))
+                    name = nil
+                } else if ["legacy", "none"].contains(scenario) {
+                    try FileManager.default.removeItem(at: xdg)
+                    active = legacy
+                    name = "legacy"
+                    if scenario == "none" {
+                        try FileManager.default.removeItem(at: legacy)
+                        name = nil
+                    }
+                } else if scenario == "empty-xdg" {
+                    active = fallback
+                    name = "default"
+                } else if scenario == "symlink-configured" {
+                    try FileManager.default.createSymbolicLink(
+                        at: configured, withDestinationURL: legacy)
+                    active = configured
+                    name = "legacy"
+                }
+            }
+            let environment = [
+                "TMUXP_CONFIGDIR": configured.path,
+                "XDG_CONFIG_HOME": scenario == "empty-xdg"
+                    ? "" : xdg.deletingLastPathComponent().path,
+            ]
+            let listed = await invoke(["ls", "--json"], in: root, extra: environment)
+            #expect(listed.code == 0)
+            let document = try listed.json()
+            #expect(document["global_workspace_dirs"] as? [String] == [active.path])
+            let workspaces = try #require(document["workspaces"] as? [[String: Any]])
+            #expect(workspaces.compactMap { $0["name"] as? String } == name.map { [$0] } ?? [])
+            if let name {
+                #expect(
+                    workspaces.first?["path"] as? String
+                        == active.appendingPathComponent(name + ".json").path)
+                let resolved = await invoke(
+                    ["convert", name, "--json"], in: root, extra: environment)
+                #expect(resolved.code == 0, "\(resolved.error)")
+                #expect(try resolved.json()["session_name"] as? String == name)
+            }
+            if name != "legacy" {
+                let inactive = await invoke(
+                    ["convert", "legacy", "--json"], in: root, extra: environment)
+                #expect(inactive.code == 1)
+                #expect(inactive.error.joined().contains("workspace_not_found"))
+            }
+            if scenario == "none" {
+                #expect(!FileManager.default.fileExists(atPath: configured.path))
+                #expect(!FileManager.default.fileExists(atPath: xdg.path))
+                #expect(!FileManager.default.fileExists(atPath: legacy.path))
+            }
+        }
+    }
+
+    @Test("import names stay in their source directory", arguments: ["teamocil", "tmuxinator"])
+    func importDirectoryIsolation(_ kind: String) async throws {
+        try await withFiles { root in
+            let global = root.appendingPathComponent(".tmuxp")
+            try FileManager.default.createDirectory(at: global, withIntermediateDirectories: true)
+            try Data(#"{"name":"decoy","windows":[]}"#.utf8).write(
+                to: global.appendingPathComponent("work.json"))
+            let source = root.appendingPathComponent("." + kind)
+            let environment = [
+                "TMUXINATOR_CONFIG": source.path,
+                "XDG_CONFIG_HOME": root.appendingPathComponent("xdg").path,
+            ]
+            let missing = await invoke(
+                ["import", kind, "work", "--json"], in: root, extra: environment)
+            #expect(missing.code == 1)
+            #expect(missing.output.isEmpty)
+            #expect(missing.error.joined().contains("workspace_not_found"))
+            #expect(!FileManager.default.fileExists(atPath: source.path))
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+            try Data(#"{"name":"imported","windows":[]}"#.utf8).write(
+                to: source.appendingPathComponent("work.json"))
+            let imported = await invoke(
+                ["import", kind, "work", "--json"], in: root, extra: environment)
+            #expect(imported.code == 0, "\(imported.error)")
+            #expect(try imported.json()["session_name"] as? String == "imported")
+        }
+    }
+
     @Test("bare names resolve globally and explicit files resolve locally")
     func workspaceResolution() async throws {
         try await withFiles { root in

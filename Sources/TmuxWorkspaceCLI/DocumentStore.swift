@@ -63,10 +63,22 @@ struct DocumentStore: Sendable {
     static let extensions = ["yaml", "yml", "json"]
 
     var globalDirectories: [URL] {
-        if let root = context.environment["TMUXP_CONFIGDIR"], !root.isEmpty { return [path(root)] }
         let home = context.environment["HOME"] ?? context.directory.path
-        let xdg = context.environment["XDG_CONFIG_HOME"] ?? home + "/.config"
-        return [path(xdg + "/tmuxp"), path(home + "/.tmuxp")]
+        let xdg =
+            context.environment["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? home + "/.config"
+        let legacy = path(home + "/.tmuxp")
+        var candidates: [URL] = []
+        if let root = context.environment["TMUXP_CONFIGDIR"], !root.isEmpty {
+            candidates.append(path(root))
+        }
+        candidates += [path(xdg + "/tmuxp"), legacy]
+        let active = candidates.first { candidate in
+            var directory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: candidate.path, isDirectory: &directory)
+                && directory.boolValue
+        }
+        return [active ?? legacy]
     }
 
     func path(_ text: String, relativeTo directory: URL? = nil) -> URL {
@@ -78,7 +90,7 @@ struct DocumentStore: Sendable {
         return URL(fileURLWithPath: expanded, relativeTo: base).standardizedFileURL
     }
 
-    func resolve(_ input: String) throws -> URL {
+    func resolve(_ input: String, in directories: [URL]? = nil) throws -> URL {
         let explicit =
             input.contains("/") || input.hasPrefix(".") || input.hasPrefix("~")
             || Self.extensions.contains((input as NSString).pathExtension)
@@ -94,7 +106,7 @@ struct DocumentStore: Sendable {
                 candidates = [location]
             }
         } else {
-            candidates = globalDirectories.flatMap { directory in
+            candidates = (directories ?? globalDirectories).flatMap { directory in
                 Self.extensions.map { directory.appendingPathComponent(input + "." + $0) }
             }
         }
@@ -204,9 +216,12 @@ struct DocumentStore: Sendable {
         var files = Set<URL>()
         for directory in globalDirectories {
             if let entries = try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+                at: directory.resolvingSymlinksInPath(), includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles)
             {
-                files.formUnion(entries.filter { Self.extensions.contains($0.pathExtension) })
+                files.formUnion(
+                    entries.filter { Self.extensions.contains($0.pathExtension) }
+                        .map { directory.appendingPathComponent($0.lastPathComponent) })
             }
         }
         for ext in Self.extensions {
