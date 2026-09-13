@@ -7,6 +7,22 @@ import TmuxFixture
 
 @Suite("workspace decoding", .timeLimit(.minutes(1)))
 struct WorkspaceDecodingTests {
+    @Test("typed workspace layouts preserve tmuxp JSON")
+    func typedWorkspaceLayoutsPreserveJSON() throws {
+        let typed = WindowPlan(layout: .evenHorizontal, panes: [PanePlan(), PanePlan()])
+        let legacy = WindowPlan(layout: "even-horizontal", panes: [PanePlan(), PanePlan()])
+        #expect(typed == legacy)
+        let encoded = try JSONEncoder().encode(typed)
+        let decoded = try JSONDecoder().decode(WindowPlan.self, from: encoded)
+        #expect(decoded.layout == "even-horizontal")
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["layout"] as? String == "even-horizontal")
+        let custom = WindowPlan(layout: .custom("saved-layout"), panes: [PanePlan()])
+        #expect(custom.layout == "saved-layout")
+        #expect(WindowPlan(panes: [PanePlan()]).layout == nil)
+        #expect(WindowPlan(layout: nil, panes: [PanePlan()]).layout == nil)
+    }
+
     @Test("a tmuxp file decodes through its own key names")
     func tmuxpFileDecodes() throws {
         let json = Data(
@@ -127,7 +143,7 @@ struct WorkspaceBuildingTests {
                 sessionName: "laid-out",
                 windows: [
                     WindowPlan(
-                        layout: "even-horizontal",
+                        layout: .evenHorizontal,
                         panes: [PanePlan(), PanePlan()]
                     )
                 ]

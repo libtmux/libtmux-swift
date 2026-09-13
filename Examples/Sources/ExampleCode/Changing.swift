@@ -24,3 +24,13 @@ public func spendOneProcessOnAllOfIt(_ server: Server) async throws {
     }
     _ = try await server.run(plan)
 }
+
+public func arrangeSideBySide(_ server: Server, _ window: Window) async throws(TmuxError) {
+    try await server.selectLayout(window, .evenHorizontal)
+}
+
+public func restoreSavedLayout(
+    _ server: Server, _ window: Window, _ savedLayout: String
+) async throws(TmuxError) {
+    try await server.selectLayout(window, .custom(savedLayout))
+}

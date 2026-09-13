@@ -6,6 +6,38 @@ import TmuxFixture
 
 @Suite("mutations", .timeLimit(.minutes(1)))
 struct MutationTests {
+    @Test("typed and custom layouts preserve tmux's layout strings")
+    func typedLayoutsReachTmux() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            let layouts: [(WindowLayout, String)] = [
+                (.evenHorizontal, "even-horizontal"), (.evenVertical, "even-vertical"),
+                (.mainHorizontal, "main-horizontal"), (.mainVertical, "main-vertical"),
+                (.tiled, "tiled"),
+            ]
+            for (typed, name) in layouts {
+                try await server.selectLayout(window, name)
+                let expected = try #require(try await server.format("#{window_layout}", for: link))
+                let reset = name == "even-horizontal" ? "even-vertical" : "even-horizontal"
+                try await server.selectLayout(window, reset)
+                try await server.selectLayout(window, typed)
+                #expect(try await server.format("#{window_layout}", for: link) == expected)
+                let encoded = try JSONEncoder().encode(typed)
+                #expect(try JSONDecoder().decode(String.self, from: encoded) == name)
+                #expect(try JSONDecoder().decode(WindowLayout.self, from: encoded) == typed)
+            }
+            let saved = try #require(try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenVertical)
+            let custom = WindowLayout.custom(saved)
+            let decoded = try JSONDecoder().decode(
+                WindowLayout.self, from: JSONEncoder().encode(custom))
+            try await server.selectLayout(window, decoded)
+            #expect(try await server.format("#{window_layout}", for: link) == saved)
+        }
+    }
+
     @Test("creating an object returns it, already read back")
     func creatingReturnsTheObject() async throws {
         try await withTmuxServer { server in

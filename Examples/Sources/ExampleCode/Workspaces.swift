@@ -10,7 +10,7 @@ public func describeAWorkspaceInSwift() -> Workspace {
         windows: [
             WindowPlan(
                 windowName: "editor",
-                layout: "even-horizontal",
+                layout: .evenHorizontal,
                 panes: [PanePlan(), PanePlan()]
             ),
             WindowPlan(

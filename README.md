@@ -216,6 +216,19 @@ for name in ["edit", "test", "logs"] {
 _ = try await server.run(plan)
 ```
 
+Named layouts use `WindowLayout`; saved tmux layout strings use `custom`:
+
+```swift
+try await server.selectLayout(window, .evenHorizontal)
+```
+
+```swift
+try await server.selectLayout(window, .custom(savedLayout))
+```
+
+The string overload remains available. `WindowPlan` also accepts typed layouts;
+its stored layout and JSON/YAML representation remain strings.
+
 ## Filters that travel
 
 Filter with the standard library when the predicate is local to your code.
@@ -479,7 +492,7 @@ let workspace = Workspace(
     windows: [
         WindowPlan(
             windowName: "editor",
-            layout: "even-horizontal",
+            layout: .evenHorizontal,
             panes: [PanePlan(), PanePlan()]
         ),
         WindowPlan(
