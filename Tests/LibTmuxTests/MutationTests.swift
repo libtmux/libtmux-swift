@@ -38,6 +38,27 @@ struct MutationTests {
         }
     }
 
+    @Test("a custom layout value is never parsed as one of tmux's own flags")
+    func customLayoutValueIsNeverParsedAsAFlag() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            try await server.selectLayout(window, .evenHorizontal)
+            let beforeAttempt = try #require(
+                try await server.format("#{window_layout}", for: link))
+            // "-o" is select-layout's own "apply the last set layout" flag.
+            // Without a `--` terminator it reaches tmux as a flag, not a
+            // value, and select-layout succeeds by reapplying tiled instead
+            // of rejecting the string.
+            await #expect(throws: TmuxError.self) {
+                try await server.selectLayout(window, WindowLayout.custom("-o"))
+            }
+            #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
+        }
+    }
+
     @Test("creating an object returns it, already read back")
     func creatingReturnsTheObject() async throws {
         try await withTmuxServer { server in

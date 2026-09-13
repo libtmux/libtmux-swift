@@ -87,7 +87,7 @@ extension Server {
         _ layout: String
     ) async throws(TmuxError) {
         try await expectSuccess(
-            TmuxCommand("select-layout", ["-t", window.id.rawValue, layout]),
+            TmuxCommand("select-layout", ["-t", window.id.rawValue, "--", layout]),
             guardedBy: [.window(window)]
         )
     }

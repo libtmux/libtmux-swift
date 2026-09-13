@@ -29,7 +29,8 @@ version number says only which alpha you have. Pin an exact one.
 
 - `WindowLayout` offers named choices and `WindowLayout.custom(_:)` for saved
   layouts in `Server.selectLayout(_:_:)` and `WindowPlan`. Existing string calls
-  and workspace JSON/YAML remain compatible. (#15)
+  and workspace JSON/YAML remain compatible. A custom value starting with `-`
+  reaches tmux as a literal layout, never as a flag. (#15)
 
 ### Fixed
 
