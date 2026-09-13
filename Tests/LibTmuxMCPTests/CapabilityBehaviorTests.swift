@@ -490,7 +490,8 @@ struct CapabilityBehaviorTests {
                     )
                 }
                 let resourcesBefore = try shellResources(for: shellProcessID)
-                let stagedFilesBefore = try runShellStagedFiles()
+                let stagedFilesBefore = try runShellStagedFiles(
+                    forSocket: pane.incarnation.socketPath)
 
                 let surface = tools(server)
                 let run: (String) async throws -> ToolOutcome = { command in
@@ -626,7 +627,8 @@ struct CapabilityBehaviorTests {
                 )
                 #expect(
                     try await waitUntil {
-                        try runShellStagedFiles().subtracting(stagedFilesBefore).isEmpty
+                        try runShellStagedFiles(forSocket: pane.incarnation.socketPath)
+                            .subtracting(stagedFilesBefore).isEmpty
                     }
                 )
                 if let resourcesBefore {
@@ -982,10 +984,27 @@ enum LeadingDashOperand: String, CaseIterable, CustomStringConvertible, Sendable
     var description: String { rawValue }
 }
 
-private func runShellStagedFiles() throws -> Set<String> {
-    Set(
-        try FileManager.default.contentsOfDirectory(atPath: "/tmp")
-            .filter { $0.hasPrefix("libtmux-mcp-run-") }
+// A staged file's prefix is shared by every port's MCP that stages a run the
+// same way, and each one lives for the whole run rather than the brief window
+// a trap file does, so a concurrently running sibling port can genuinely still
+// hold a same-prefixed file when this snapshot is taken. Its payload embeds
+// this test's own socket path, though, so content -- not just the name --
+// tells this test's staged files apart from a sibling port's.
+private func runShellStagedFiles(forSocket socketPath: String) throws -> Set<String> {
+    let prefix = "libtmux-mcp-run-"
+    let names = try FileManager.default.contentsOfDirectory(atPath: "/tmp")
+        .filter { $0.hasPrefix(prefix) }
+    return Set(
+        names.filter { name in
+            // A file that vanished between listing and reading was already
+            // cleaned up, by us or by whoever staged it; either way it is not
+            // a file to report as left behind.
+            guard
+                let content = try? String(
+                    contentsOfFile: "/tmp/\(name)", encoding: .utf8)
+            else { return false }
+            return content.contains(socketPath)
+        }
     )
 }
 
