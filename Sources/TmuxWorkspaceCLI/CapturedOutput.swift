@@ -5,7 +5,9 @@ actor CapturedOutput {
     private var output = UTF8Output()
     private var error = UTF8Output()
     private var busy = false
-    private var waiter: CheckedContinuation<Void, Never>?
+    private var waiters: [Int: CheckedContinuation<Void, Error>] = [:]
+    private var waiterOrder: [Int] = []
+    private var nextWaiterID = 0
     private var failure: (any Error)?
 
     init(sink: @escaping @Sendable (String, String) async throws -> Void) {
@@ -16,19 +18,40 @@ actor CapturedOutput {
     var stderr: String { error.value }
 
     func append(_ bytes: Data, stream: String, finished: Bool = false) async throws {
-        // Exactly two readers share a sink; a suspended write must retain its whole record.
+        // Readers share a sink, and a suspended write must retain its whole
+        // record, so each waits its turn in arrival order.
         if busy {
-            await withCheckedContinuation { waiter = $0 }
+            let id = nextWaiterID
+            nextWaiterID += 1
+            // Cancellation runs outside the actor, and a parked waiter can
+            // only be released from inside it.
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation {
+                    (continuation: CheckedContinuation<Void, Error>) in
+                    guard !Task.isCancelled else {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    waiters[id] = continuation
+                    waiterOrder.append(id)
+                }
+            } onCancel: {
+                Task { await self.cancelWaiter(id) }
+            }
         } else {
             busy = true
         }
         defer {
-            if let waiter {
-                self.waiter = nil
-                waiter.resume()
-            } else {
-                busy = false
+            var handedOff = false
+            while let nextID = waiterOrder.first {
+                waiterOrder.removeFirst()
+                if let next = waiters.removeValue(forKey: nextID) {
+                    next.resume()
+                    handedOff = true
+                    break
+                }
             }
+            if !handedOff { busy = false }
         }
         if let failure { throw failure }
         do {
@@ -41,6 +64,14 @@ actor CapturedOutput {
             failure = error
             throw error
         }
+    }
+
+    /// Releases a waiter cancelled before its turn, so it throws instead of
+    /// staying parked; one already dequeued is no longer here to find.
+    private func cancelWaiter(_ id: Int) {
+        guard let continuation = waiters.removeValue(forKey: id) else { return }
+        waiterOrder.removeAll { $0 == id }
+        continuation.resume(throwing: CancellationError())
     }
 }
 

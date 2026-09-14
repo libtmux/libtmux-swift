@@ -418,6 +418,46 @@ struct ProcessOutputTests {
         }
     }
 
+    @Test("captured output serializes every writer, not only the first two")
+    func capturedOutputSerializesEveryWriter() async throws {
+        let sink = SuspendedSink()
+        let captured = CapturedOutput { text, stream in
+            try await sink.append(text, stream: stream)
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<8 {
+                group.addTask {
+                    try? await captured.append(Data("\(index)".utf8), stream: "stdout")
+                }
+            }
+        }
+        #expect(await sink.maximum == 1)
+        #expect(await captured.stdout.sorted() == "01234567".sorted())
+    }
+
+    @Test("a writer cancelled before its turn throws instead of staying parked")
+    func cancelledQueuedWriterThrows() async throws {
+        let rendezvous = Rendezvous()
+        let captured = CapturedOutput { _, _ in await rendezvous.arrive() }
+        let holder = Task {
+            try? await captured.append(Data("holder".utf8), stream: "stdout")
+        }
+        // The holder is inside the sink, so `busy` stays set until it is
+        // released below — the queued writer below can never acquire its turn.
+        await rendezvous.waitForArrival()
+
+        let queued = Task {
+            try await captured.append(Data("queued".utf8), stream: "stdout")
+        }
+        queued.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await queued.value
+        }
+
+        await rendezvous.release()
+        _ = await holder.value
+    }
+
     @Test("child environments refuse names no environ entry can express")
     func invalidEnvironmentName() async throws {
         for name in ["A=B", "", "A\0B"] {
@@ -451,6 +491,34 @@ private actor ProcessReceipt {
             if let end = prefix.firstIndex(of: "\n") { pid = Int32(prefix[..<end]) }
         }
         writes += 1
+    }
+}
+
+/// Lets a test hold a `CapturedOutput` sink open on demand instead of on a
+/// timer, so a second writer is provably still queued when it is cancelled.
+private actor Rendezvous {
+    private var arrivedContinuation: CheckedContinuation<Void, Never>?
+    private var didArrive = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var released = false
+
+    func arrive() async {
+        didArrive = true
+        arrivedContinuation?.resume()
+        arrivedContinuation = nil
+        guard !released else { return }
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func waitForArrival() async {
+        guard !didArrive else { return }
+        await withCheckedContinuation { arrivedContinuation = $0 }
+    }
+
+    func release() {
+        released = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
     }
 }
 
