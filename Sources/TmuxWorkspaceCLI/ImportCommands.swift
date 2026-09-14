@@ -113,7 +113,7 @@ enum ImportCommands {
                     window["shell_command_before"] = before
                     window["start_directory"] = .string(
                         try directory(details["root"], parent: root, store: store).path)
-                    window["layout"] = details["layout"]
+                    window["layout"] = defined(details["layout"])
                 } else {
                     window["panes"] = .array([
                         .object(["shell_command": .array(try commands(value))])
@@ -134,7 +134,7 @@ enum ImportCommands {
         try requireKeys(source, known: ["name", "root", "windows"], at: "workspace")
         let root = try directory(source["root"], parent: store.context.directory, store: store)
         var result: [String: Value] = [
-            "session_name": source["name"]
+            "session_name": defined(source["name"])
                 ?? .string(file.deletingPathExtension().lastPathComponent),
             "start_directory": .string(root.path),
         ]
@@ -148,33 +148,32 @@ enum ImportCommands {
                     sourceWindow,
                     known: ["name", "root", "splits", "panes", "layout", "focus"],
                     at: "window")
-                var window: [String: Value] = ["window_name": sourceWindow["name"] ?? .null]
+                var window: [String: Value] = [:]
+                window["window_name"] = defined(sourceWindow["name"])
                 let windowRoot = try directory(
                     sourceWindow["root"], parent: store.context.directory, store: store,
                     fallback: root)
                 window["start_directory"] = .string(windowRoot.path)
-                window["layout"] = sourceWindow["layout"]
-                window["focus"] = sourceWindow["focus"]
+                window["layout"] = defined(sourceWindow["layout"])
+                window["focus"] = defined(sourceWindow["focus"])
                 guard let panes = try alias(sourceWindow, "splits", "panes")?.array else {
                     throw CLIError("import_document", "teamocil panes must be a list.")
                 }
                 window["panes"] = .array(
                     try panes.map { pane in
+                        var result: [String: Value] = [:]
                         guard let mapping = pane.object else {
-                            return .object([
-                                "shell_command": try group(pane, separator: "; ") ?? .null
-                            ])
+                            result["shell_command"] = try group(pane, separator: "; ")
+                            return .object(result)
                         }
                         try requireKeys(
                             mapping, known: ["cmd", "commands", "root", "focus"], at: "pane")
-                        return .object([
-                            "shell_command": try group(
-                                alias(mapping, "commands", "cmd"), separator: "; ") ?? .null,
-                            "start_directory": .string(
-                                try directory(mapping["root"], parent: windowRoot, store: store)
-                                    .path),
-                            "focus": mapping["focus"] ?? .bool(false),
-                        ])
+                        result["shell_command"] = try group(
+                            alias(mapping, "commands", "cmd"), separator: "; ")
+                        result["start_directory"] = .string(
+                            try directory(mapping["root"], parent: windowRoot, store: store).path)
+                        result["focus"] = defined(mapping["focus"]) ?? .bool(false)
+                        return .object(result)
                     })
                 return .object(window)
             })
@@ -223,11 +222,17 @@ enum ImportCommands {
         ])
     }
 
+    /// An explicit null says the same thing as an absent key, and the workspace
+    /// schema has no field that accepts one, so both drop out here.
+    private static func defined(_ value: Value?) -> Value? {
+        value.flatMap { $0 == .null ? nil : $0 }
+    }
+
     private static func alias(_ mapping: [String: Value], _ first: String, _ second: String) throws
         -> Value?
     {
-        let left = mapping[first].flatMap { $0 == .null ? nil : $0 }
-        let right = mapping[second].flatMap { $0 == .null ? nil : $0 }
+        let left = defined(mapping[first])
+        let right = defined(mapping[second])
         if let left, let right, left != right {
             throw CLIError("import_document", "Conflicting \(first) and \(second) values.")
         }

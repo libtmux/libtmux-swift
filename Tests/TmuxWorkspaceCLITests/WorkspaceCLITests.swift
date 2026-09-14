@@ -618,6 +618,31 @@ struct WorkspaceCLITests {
             #expect(
                 teamocilPanes.first?["shell_command"] as? [String: String]
                     == ["cmd": "echo <%= literal %>"])
+            // An optional field left out, or written empty, has to leave the
+            // key out of the workspace rather than emit a null the loader then
+            // refuses as the wrong type.
+            let sparse = root.appendingPathComponent("sparse.json")
+            try Data(
+                #"{"session":{"name":"sparse","windows":[{"focus":null,"splits":[{}]}]}}"#.utf8
+            ).write(to: sparse)
+            let sparseImport = await invoke(
+                ["--json", "import", "teamocil", sparse.path], in: root)
+            #expect(sparseImport.code == 0, "\(sparseImport.error)")
+            let sparseWindows = try #require(try sparseImport.json()["windows"] as? [[String: Any]])
+            #expect(sparseWindows[0]["window_name"] == nil)
+            #expect(sparseWindows[0]["layout"] == nil)
+            let sparsePanes = try #require(sparseWindows[0]["panes"] as? [[String: Any]])
+            #expect(sparsePanes[0]["shell_command"] == nil)
+            let emptyLayout = source.appendingPathComponent("sparse.json")
+            try Data(
+                #"{"name":"sparse","windows":[{"editor":{"layout":null,"panes":["one"]}}]}"#.utf8
+            ).write(to: emptyLayout)
+            let layoutImport = await invoke(
+                ["--json", "import", "tmuxinator", "sparse"], in: root,
+                extra: ["TMUXINATOR_CONFIG": source.path])
+            #expect(layoutImport.code == 0, "\(layoutImport.error)")
+            let layoutWindows = try #require(try layoutImport.json()["windows"] as? [[String: Any]])
+            #expect(layoutWindows[0]["layout"] == nil)
             let missing = await invoke(["import", "teamocil", "--json"], in: root)
             #expect(missing.code == 2)
             #expect(missing.output.isEmpty)
