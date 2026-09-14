@@ -23,10 +23,45 @@ struct CLIContext: Sendable {
     var rawError: (@Sendable (String) async throws -> Void)?
 }
 
+/// Carries an interrupt that arrived before the work task existed.
+///
+/// Installing the signal sources first and adopting the task afterwards means
+/// no signal can reach the default disposition once this process has started.
+final class InterruptRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Int32, Never>?
+    private var interrupted = false
+
+    func cancel() {
+        lock.lock()
+        interrupted = true
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
+    }
+
+    func adopt(_ task: Task<Int32, Never>) {
+        lock.lock()
+        self.task = task
+        let interrupted = self.interrupted
+        lock.unlock()
+        if interrupted { task.cancel() }
+    }
+}
+
 @main
 enum WorkspaceCLI {
     static func main() async {
         signal(SIGPIPE, SIG_IGN)
+        signal(SIGINT, SIG_IGN)
+        signal(SIGTERM, SIG_IGN)
+        let relay = InterruptRelay()
+        let interrupts = [SIGINT, SIGTERM].map { number in
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+            source.setEventHandler { @Sendable in relay.cancel() }
+            source.resume()
+            return source
+        }
         do {
             let output = try NonblockingLineWriter(fileDescriptor: STDOUT_FILENO)
             let error = try NonblockingLineWriter(fileDescriptor: STDERR_FILENO)
@@ -54,14 +89,7 @@ enum WorkspaceCLI {
             let task = Task {
                 await run(Array(CommandLine.arguments.dropFirst()), context: context)
             }
-            signal(SIGINT, SIG_IGN)
-            signal(SIGTERM, SIG_IGN)
-            let interrupts = [SIGINT, SIGTERM].map { number in
-                let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-                source.setEventHandler { @Sendable in task.cancel() }
-                source.resume()
-                return source
-            }
+            relay.adopt(task)
             let status = await task.value
             for source in interrupts { source.cancel() }
             exit(status)

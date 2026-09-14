@@ -1818,6 +1818,22 @@ struct WorkspaceCLITests {
         return await Outcome(code: code, output: output.values, error: error.values)
     }
 
+    @Test("an interrupt cancels the work task whether it arrives before or after it")
+    func interruptsReachTheWorkTask() async {
+        for beforeTheTask in [true, false] {
+            let relay = InterruptRelay()
+            if beforeTheTask { relay.cancel() }
+            let task = Task { () -> Int32 in
+                await Task.yield()
+                return 0
+            }
+            relay.adopt(task)
+            if !beforeTheTask { relay.cancel() }
+            #expect(task.isCancelled)
+            _ = await task.value
+        }
+    }
+
     private func withFiles(_ body: (URL) async throws -> Void) async throws {
         let root = URL(fileURLWithPath: "/tmp/libtmux-swift-test").appendingPathComponent(
             "cli-\(UUID().uuidString)")
