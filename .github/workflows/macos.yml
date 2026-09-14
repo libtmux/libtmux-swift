@@ -110,6 +110,8 @@ jobs:
 
       - name: Test the private MCP swap tool
         if: matrix.tmux == '3.7b'
+        env:
+          MCP_SWAP_TEST_CC: "1"
         run: xcrun swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
 
       # Every pane is a pty, the suite runs its cases in parallel, and Darwin

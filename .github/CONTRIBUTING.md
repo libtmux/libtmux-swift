@@ -180,6 +180,17 @@ $ swift test \
     --force-resolved-versions
 ```
 
+One case there compiles the C shim with `cc` and spawns a child per descriptor
+mask, which is a build rather than a test run, so it waits to be asked for and
+CI's lane asks:
+
+```console
+$ MCP_SWAP_TEST_CC=1 swift test \
+    --package-path Tools/McpSwap \
+    --jobs 5 \
+    --force-resolved-versions
+```
+
 Its C portability shim has a package-local format policy:
 
 ```console

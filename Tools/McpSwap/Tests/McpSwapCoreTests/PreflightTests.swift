@@ -62,7 +62,11 @@ import Testing
     }
 }
 
-@Test func preflightConnectsEveryStreamWhenCallerStandardDescriptorsAreClosed() throws {
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["MCP_SWAP_TEST_CC"] != nil,
+        "compiles the C shim and spawns a child per descriptor mask; outer loop"))
+func preflightConnectsEveryStreamWhenCallerStandardDescriptorsAreClosed() throws {
     try withPreflightFixture { root in
         let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent()

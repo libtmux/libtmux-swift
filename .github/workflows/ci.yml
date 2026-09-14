@@ -112,6 +112,8 @@ jobs:
 
       - name: Test the private MCP swap tool
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        env:
+          MCP_SWAP_TEST_CC: "1"
         run: swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
 
       - name: Check the private MCP swap C shim formatting
