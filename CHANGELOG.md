@@ -35,6 +35,18 @@ version number says only which alpha you have. Pin an exact one.
   three or more panes, so directories, commands and focus follow source
   order. (#12)
 
+- `WorkspaceBuilder.build(_:on:)` focuses the pane its plan configured even
+  when the window arrives holding panes the workspace did not ask for, which a
+  user hook on `after-new-window` or `split-window` produces. Focus previously
+  landed on a pane that had run none of the plan's commands. (#12)
+
+- `Server.setEnvironment(_:to:in:)` and `Server.setOption(_:to:scope:)` keep a
+  value's trailing `;` instead of losing it and everything after it, which
+  tmux's argv parser reads as the end of the command. (#12)
+
+- `Server.setEnvironment(_:to:in:)` accepts a variable name beginning with
+  `-`, which tmux previously read as flags it does not have. (#12)
+
 - `tmux-workspace import` preserves Teamocil command groups, Tmuxinator
   sequential window commands, default focus and invocation-relative roots.
   Unsupported fields now fail before preview or destination replacement,
