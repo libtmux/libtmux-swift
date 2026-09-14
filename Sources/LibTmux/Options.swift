@@ -174,7 +174,7 @@ extension Server {
         try await runOptionCommand(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments + [name, value]
+                scope.selectorArguments + [name, tmuxArgumentData(value)]
             ),
             in: scope
         )

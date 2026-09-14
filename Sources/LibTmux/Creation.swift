@@ -115,11 +115,7 @@ extension Server {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]
         }
         let reply = try await run(
-            TmuxCommand(
-                "new-session",
-                arguments.map {
-                    $0.hasSuffix(";") ? String($0.dropLast()) + "\\;" : $0
-                }))
+            TmuxCommand("new-session", arguments.map(tmuxArgumentData)))
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }
