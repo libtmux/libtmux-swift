@@ -5,7 +5,7 @@ actor CapturedOutput {
     private var output = UTF8Output()
     private var error = UTF8Output()
     private var busy = false
-    private var waiter: CheckedContinuation<Void, Never>?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
     private var failure: (any Error)?
 
     init(sink: @escaping @Sendable (String, String) async throws -> Void) {
@@ -16,18 +16,18 @@ actor CapturedOutput {
     var stderr: String { error.value }
 
     func append(_ bytes: Data, stream: String, finished: Bool = false) async throws {
-        // Exactly two readers share a sink; a suspended write must retain its whole record.
+        // Readers share a sink, and a suspended write must retain its whole
+        // record, so each waits its turn in arrival order.
         if busy {
-            await withCheckedContinuation { waiter = $0 }
+            await withCheckedContinuation { waiters.append($0) }
         } else {
             busy = true
         }
         defer {
-            if let waiter {
-                self.waiter = nil
-                waiter.resume()
-            } else {
+            if waiters.isEmpty {
                 busy = false
+            } else {
+                waiters.removeFirst().resume()
             }
         }
         if let failure { throw failure }

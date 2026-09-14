@@ -418,6 +418,23 @@ struct ProcessOutputTests {
         }
     }
 
+    @Test("captured output serializes every writer, not only the first two")
+    func capturedOutputSerializesEveryWriter() async throws {
+        let sink = SuspendedSink()
+        let captured = CapturedOutput { text, stream in
+            try await sink.append(text, stream: stream)
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<8 {
+                group.addTask {
+                    try? await captured.append(Data("\(index)".utf8), stream: "stdout")
+                }
+            }
+        }
+        #expect(await sink.maximum == 1)
+        #expect(await captured.stdout.sorted() == "01234567".sorted())
+    }
+
     @Test("child environments refuse names no environ entry can express")
     func invalidEnvironmentName() async throws {
         for name in ["A=B", "", "A\0B"] {
