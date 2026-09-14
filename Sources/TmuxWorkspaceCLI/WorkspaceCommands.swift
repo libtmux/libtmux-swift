@@ -430,12 +430,31 @@ enum WorkspaceCommands {
     ) async throws -> [String: Value] {
         var values: [String: Value] = [:]
         for option in try await server.options(scope) {
-            guard let value = try await server.option(option.name, scope: scope) else {
+            if isListedVerbatim(option.value) {
+                values[option.name] = .string(option.value)
+                continue
+            }
+            guard let value = try await server.optionValue(option.name, scope: scope) else {
                 throw CLIError("stale_session", "An option disappeared during capture.")
             }
             values[option.name] = .string(value)
         }
         return values
+    }
+
+    /// Whether the listing can be trusted to have printed a value as tmux
+    /// stores it.
+    ///
+    /// `show-options` quotes a value holding whitespace or a quote, escapes a
+    /// backslash, and spells a newline `\n`, so a value made only of the
+    /// characters below went through none of that and needs no second read.
+    private static func isListedVerbatim(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.allSatisfy { character in
+                character.isASCII
+                    && (character.isLetter || character.isNumber
+                        || "_-./=:@%+,".contains(character))
+            }
     }
 
     private static func freezeSession(

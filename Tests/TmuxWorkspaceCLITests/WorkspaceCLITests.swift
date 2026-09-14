@@ -1519,6 +1519,9 @@ struct WorkspaceCLITests {
             let environmentValue = "first\nFREEZE_FAKE_VARIABLE=ghost\nlast=λ\n"
             try await server.setOption(
                 "@freeze-session", to: sessionValue, scope: .session(session))
+            // A value the listing prints as it is stored takes the short path
+            // through capture; the two above take the second read.
+            try await server.setOption("@freeze-plain", to: "plain/value", scope: .session(session))
             try await server.setOption("@freeze-window", to: windowValue, scope: .window(window))
             try await server.setEnvironment(
                 "FREEZE_VALUE", to: environmentValue, in: .session(session.id.rawValue))
@@ -1529,6 +1532,7 @@ struct WorkspaceCLITests {
             #expect(captured.code == 0, "\(captured.error)")
             let document = try captured.json()
             #expect((document["options"] as? [String: String])?["@freeze-session"] == sessionValue)
+            #expect((document["options"] as? [String: String])?["@freeze-plain"] == "plain/value")
             let windows = try #require(document["windows"] as? [[String: Any]])
             #expect((windows[0]["options"] as? [String: String])?["@freeze-window"] == windowValue)
             let variables = try #require(document["environment"] as? [String: String])
