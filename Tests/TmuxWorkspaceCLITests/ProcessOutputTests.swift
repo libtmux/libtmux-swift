@@ -190,7 +190,7 @@ struct ProcessOutputTests {
     @Test("child output stays serialized across suspended sink writes")
     func serializedSink() async throws {
         let sink = SuspendedSink()
-        let context = context()
+        let context = try context()
         let result = try await ProcessCommands.run(
             [
                 "/bin/sh", "-c",
@@ -210,7 +210,7 @@ struct ProcessOutputTests {
     func failedSink() async throws {
         let task = Task {
             try await ProcessCommands.run(
-                ["/bin/sh", "-c", "printf ready >&2; exec sleep 30"], context: context()
+                ["/bin/sh", "-c", "printf ready >&2; exec sleep 30"], context: try context()
             ) { _, _ in throw CLIError("test_sink", "Sink refused output.") }
         }
         let deadline = Task {
@@ -261,7 +261,7 @@ struct ProcessOutputTests {
         let task = Task {
             try await ProcessCommands.run(
                 ["/bin/sh", "-c", "printf '%s\\n' $$; exec /usr/bin/yes output"],
-                context: context()
+                context: try context()
             ) { text, stream in
                 if stream == "stdout" {
                     await receipt.writing(text)
@@ -461,7 +461,7 @@ struct ProcessOutputTests {
     @Test("child environments refuse names no environ entry can express")
     func invalidEnvironmentName() async throws {
         for name in ["A=B", "", "A\0B"] {
-            var invalid = context()
+            var invalid = try context()
             invalid.environment[name] = "injected"
             await #expect(throws: CLIError.self) {
                 try await ProcessCommands.run(
@@ -469,13 +469,17 @@ struct ProcessOutputTests {
             }
         }
         let result = try await ProcessCommands.run(
-            ["/bin/sh", "-c", #"printf '%s' "${A-}""#], context: context())
+            ["/bin/sh", "-c", #"printf '%s' "${A-}""#], context: try context())
         #expect(result.code == 0)
     }
 
-    private func context() -> CLIContext {
-        CLIContext(
-            directory: URL(fileURLWithPath: "/tmp/libtmux-swift-test"),
+    /// A child cannot start in a directory that is not there, and the suite
+    /// root only exists once some case has made it.
+    private func context() throws -> CLIContext {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return CLIContext(
+            directory: directory,
             environment: ProcessInfo.processInfo.environment, output: { _ in }, error: { _ in })
     }
 }
