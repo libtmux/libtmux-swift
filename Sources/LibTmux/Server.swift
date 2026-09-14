@@ -149,6 +149,14 @@ public struct Server: Sendable, Hashable {
         )
     }
 
+    func recordedDaemonVersion() async -> TmuxVersion? {
+        await runtime.recordedDaemonVersion()
+    }
+
+    func recordDaemonVersion(_ version: TmuxVersion) async {
+        await runtime.recordDaemonVersion(version)
+    }
+
     /// Runs a command in a process of its own, whatever mode this server is in.
     ///
     /// For the one command that does not return promptly. tmux runs a control
@@ -408,6 +416,12 @@ actor ServerRuntime {
     private let tmuxExecutable: String
     private let clientArguments: [String]
     private let transport: any ProcessTransport
+    /// What the daemon at this endpoint answered when asked its version.
+    ///
+    /// Only a running daemon's answer is kept: a cold endpoint reports the
+    /// executable's version instead, and the daemon that starts later is the
+    /// one a layout has to be valid for.
+    private var daemonVersion: TmuxVersion?
 
     init(
         endpoint: Endpoint,
@@ -420,6 +434,10 @@ actor ServerRuntime {
         self.clientArguments = clientArguments
         self.transport = transport
     }
+
+    func recordedDaemonVersion() -> TmuxVersion? { daemonVersion }
+
+    func recordDaemonVersion(_ version: TmuxVersion) { daemonVersion = version }
 
     func run(
         rawArguments: [String],

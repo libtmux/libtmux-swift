@@ -96,6 +96,31 @@ struct LayoutTests {
         #expect(!calls.contains { $0.contains("-V") })
     }
 
+    @Test("a running daemon is asked its version once per endpoint")
+    func daemonVersionIsAskedOnce() async throws {
+        try await withTmuxServer { fixture in
+            let version = try await fixture.version()
+            let layout =
+                version < TmuxVersion(major: 3, minor: 5)
+                ? "main-h" : "main-horizontal-mirrored"
+            let transport = LayoutProbeTransport(forward: true)
+            let server = Server(
+                endpoint: fixture.endpoint, tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport)
+            let window = try #require(try await server.windows().first)
+            let before = await transport.arguments.count
+            for _ in 0..<3 {
+                try await server.validateLayouts([(layout, 1)])
+                try await server.selectLayout(window, layout)
+            }
+            let probes = await transport.arguments.filter {
+                $0.contains { $0.contains("#{version}") }
+            }
+            #expect(probes.count == 1)
+            #expect(await transport.arguments.count > before)
+        }
+    }
+
     @Test("versioned layouts remain on the selected control connection")
     func controlRouteAndClosedConnection() async throws {
         try await withTmuxServer { fixture in
