@@ -107,6 +107,41 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("focus follows its own plan when a hook adds panes to the window")
+    func focusFollowsItsPlanPastInheritedPanes() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let directories = (0..<2).map { root.appendingPathComponent("focus-\($0)") }
+            for directory in directories {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: false)
+            }
+            // A user hook that splits every new window leaves the window
+            // holding more panes than the workspace planned.
+            try await server.setHook("after-new-window", to: "split-window")
+            let workspace = Workspace(
+                sessionName: "hooked",
+                startDirectory: root.path,
+                windows: [
+                    WindowPlan(panes: [PanePlan()]),
+                    WindowPlan(
+                        panes: directories.enumerated().map { index, directory in
+                            PanePlan(startDirectory: directory.path, focus: index == 0)
+                        }),
+                ])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let hooked = try #require(snapshot.windows(of: session).last)
+            let panes = snapshot.panes(of: hooked)
+            try #require(panes.count > directories.count)
+            let active = try #require(panes.filter(\.isActive).first)
+            #expect(
+                URL(fileURLWithPath: active.currentPath).resolvingSymlinksInPath().path
+                    == directories[0].resolvingSymlinksInPath().path)
+        }
+    }
+
     @Test("first-pane directories override session and window directories")
     func firstPaneDirectoryOverridesItsParents() async throws {
         try await withTmuxServer { server in
