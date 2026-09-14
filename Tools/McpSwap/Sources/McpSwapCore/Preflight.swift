@@ -14,13 +14,16 @@ private let initializeFrame = Data(
     """.utf8
 )
 
+/// - Parameter spawnSupported: What the platform answers. Every supported
+///   build answers true, so the refusal below is only reachable from a test.
 func preflight(
     _ spec: ServerSpec,
     timeout: TimeInterval = 300,
     maximumOutputBytes: Int = 1024 * 1024,
-    baseEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+    spawnSupported: Bool = mcp_swap_spawn_supported() != 0
 ) throws {
-    guard mcp_swap_spawn_supported() != 0 else {
+    guard spawnSupported else {
         throw SwapError.message("MCP preflight requires macOS or Linux with glibc 2.34 or newer")
     }
     guard timeout > 0 else { throw SwapError.message("preflight timeout must be positive") }

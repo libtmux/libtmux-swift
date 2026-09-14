@@ -1,3 +1,4 @@
+import CMcpSwap
 import Foundation
 import Testing
 
@@ -266,6 +267,30 @@ import Testing
             Issue.record("preflight accepted combined output over the limit")
         } catch let error as SwapError {
             #expect(error.description.contains("output exceeded 1024 bytes"))
+        }
+    }
+}
+
+@Test func preflightRefusesAPlatformWithoutSpawnSupport() throws {
+    #expect(mcp_swap_spawn_supported() != 0)
+    try withPreflightFixture { root in
+        let server = root.appending(path: "server.sh")
+        try script(
+            """
+            #!/bin/sh
+            IFS= read -r request
+            printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}'
+            """,
+            at: server)
+        let spec = ServerSpec(command: server.path, arguments: [], environment: [:])
+
+        try preflight(spec, timeout: 3, spawnSupported: true)
+
+        do {
+            try preflight(spec, timeout: 3, spawnSupported: false)
+            Issue.record("preflight launched a server the platform cannot spawn")
+        } catch let error as SwapError {
+            #expect(error.description.contains("glibc 2.34 or newer"))
         }
     }
 }
