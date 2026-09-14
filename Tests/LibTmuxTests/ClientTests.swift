@@ -180,6 +180,15 @@ struct ClientTests {
         #expect(client.flags == ["active-pane", "read-only"])
         #expect(try JSONDecoder().decode(Client.self, from: JSONEncoder().encode(client)) == client)
 
+        var payload = try #require(
+            JSONSerialization.jsonObject(with: try JSONEncoder().encode(client))
+                as? [String: Any])
+        payload.removeValue(forKey: "flags")
+        let restored = try JSONDecoder().decode(
+            Client.self, from: try JSONSerialization.data(withJSONObject: payload))
+        #expect(restored.flags.isEmpty)
+        #expect(restored.activePaneID == client.activePaneID)
+
         for (field, malformed) in [
             ("pane_id", ""), ("pane_id", "7"),
             ("window_zoomed_flag", ""), ("window_zoomed_flag", "2"),
