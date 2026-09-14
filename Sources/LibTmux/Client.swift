@@ -60,6 +60,23 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
         self.isWindowZoomed = isWindowZoomed
         self.incarnation = incarnation
     }
+
+    /// Decodes a client, treating an absent ``flags`` as an empty set so that
+    /// a payload written before the field existed still reads back.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        incarnation = try container.decode(ServerIncarnation.self, forKey: .incarnation)
+        name = try container.decode(String.self, forKey: .name)
+        tty = try container.decode(String.self, forKey: .tty)
+        processID = try container.decode(Int.self, forKey: .processID)
+        width = try container.decodeIfPresent(Int.self, forKey: .width)
+        height = try container.decodeIfPresent(Int.self, forKey: .height)
+        isControlMode = try container.decode(Bool.self, forKey: .isControlMode)
+        sessionID = try container.decode(SessionID.self, forKey: .sessionID)
+        activePaneID = try container.decodeIfPresent(PaneID.self, forKey: .activePaneID)
+        isWindowZoomed = try container.decodeIfPresent(Bool.self, forKey: .isWindowZoomed)
+        flags = try container.decodeIfPresent(Set<String>.self, forKey: .flags) ?? []
+    }
 }
 
 extension Client {
