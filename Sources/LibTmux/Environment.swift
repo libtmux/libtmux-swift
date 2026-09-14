@@ -43,13 +43,21 @@ public struct TmuxEnvironmentVariable: Sendable, Hashable, Codable {
 }
 
 extension Server {
+    /// `--` ends the flags, so a name beginning with `-` reaches tmux as a
+    /// name rather than as flags it does not have.
+    private func setEnvironmentCommand(
+        _ name: String, to value: String, in scope: EnvironmentScope
+    ) -> TmuxCommand {
+        TmuxCommand("set-environment", scope.arguments + ["--", name, value])
+    }
+
+    /// Sets a variable in a session's environment, refusing if that session is
+    /// no longer the one this value names.
     package func setEnvironment(
         _ name: String, to value: String, in session: Session
     ) async throws(TmuxError) -> TmuxReply {
         try await runGuarded(
-            TmuxCommand(
-                "set-environment",
-                ["-t", session.id.rawValue, "--", name, value]),
+            setEnvironmentCommand(name, to: value, in: .session(session.id.rawValue)),
             by: [.session(session)])
     }
 
@@ -96,9 +104,9 @@ extension Server {
         to value: String,
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(
-            TmuxCommand("set-environment", scope.arguments + [name, tmuxArgumentData(value)])
-        )
+        // run(_:) hands argv to tmux, which ends a command at a trailing `;`.
+        // A guarded request is quoted as a command string and needs no escape.
+        try await run(setEnvironmentCommand(name, to: tmuxArgumentData(value), in: scope))
     }
 
     /// Unsets a variable, leaving no trace of it.

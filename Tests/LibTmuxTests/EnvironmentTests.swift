@@ -153,6 +153,19 @@ struct EnvironmentTests {
         }
     }
 
+    @Test("a name beginning with a dash is a name in every scope")
+    func dashPrefixedNamesReachEveryScope() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "dashes")
+            try await server.setEnvironment("-GLOBAL", to: "kept")
+            #expect(try await server.environmentValue("-GLOBAL") == "kept")
+            _ = try await server.setEnvironment("-BORROWED", to: "kept", in: session)
+            #expect(
+                try await server.environmentValue(
+                    "-BORROWED", in: .session(session.id.rawValue)) == "kept")
+        }
+    }
+
     @Test("a value ending in a separator survives being set")
     func trailingSeparatorValuesSurvive() async throws {
         try await withTmuxServer { server in
