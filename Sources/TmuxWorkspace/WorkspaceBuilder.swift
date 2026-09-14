@@ -218,11 +218,12 @@ public enum WorkspaceBuilder {
             }
             try await onEvent(.paneCompleted(windowIndex: windowIndex, index: index, pane: pane))
         }
-        if let focused = zip(window.panes.reversed(), panes.reversed()).first(where: {
-            $0.0.focus == true
-        }) {
-            try await server.select(focused.1)
-        }
+        // Pairing forward keeps this on the same pane the commands above
+        // reached; a window that arrived with panes of its own makes the two
+        // ends of the zip disagree.
+        var focused: Pane?
+        for (plan, pane) in zip(window.panes, panes) where plan.focus == true { focused = pane }
+        if let focused { try await server.select(focused) }
     }
 
 }
