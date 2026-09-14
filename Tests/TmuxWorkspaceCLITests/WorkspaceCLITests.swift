@@ -1520,7 +1520,7 @@ struct WorkspaceCLITests {
             try await server.setOption(
                 "@freeze-session", to: sessionValue, scope: .session(session))
             // A value the listing prints as it is stored takes the short path
-            // through capture; the two above take the second read.
+            // through capture; a quoted or escaped one takes the second read.
             try await server.setOption("@freeze-plain", to: "plain/value", scope: .session(session))
             try await server.setOption("@freeze-window", to: windowValue, scope: .window(window))
             try await server.setEnvironment(
