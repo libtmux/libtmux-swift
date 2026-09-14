@@ -244,7 +244,11 @@ enum ProcessCommands {
         }
         var environment: [Subprocess.Environment.Key: String] = [:]
         for (key, value) in context.environment {
-            guard let name = Subprocess.Environment.Key(rawValue: key) else {
+            // Key(rawValue:) accepts anything, so the name is checked here
+            // against the rule workspace environments already hold.
+            guard !key.isEmpty, !key.contains("="), !key.contains("\0"),
+                let name = Subprocess.Environment.Key(rawValue: key)
+            else {
                 throw CLIError("environment", "Invalid environment variable name.")
             }
             environment[name] = value

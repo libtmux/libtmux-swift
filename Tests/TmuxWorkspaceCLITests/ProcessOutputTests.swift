@@ -418,6 +418,21 @@ struct ProcessOutputTests {
         }
     }
 
+    @Test("child environments refuse names no environ entry can express")
+    func invalidEnvironmentName() async throws {
+        for name in ["A=B", "", "A\0B"] {
+            var invalid = context()
+            invalid.environment[name] = "injected"
+            await #expect(throws: CLIError.self) {
+                try await ProcessCommands.run(
+                    ["/bin/sh", "-c", #"printf '%s' "${A-}""#], context: invalid)
+            }
+        }
+        let result = try await ProcessCommands.run(
+            ["/bin/sh", "-c", #"printf '%s' "${A-}""#], context: context())
+        #expect(result.code == 0)
+    }
+
     private func context() -> CLIContext {
         CLIContext(
             directory: URL(fileURLWithPath: "/tmp/libtmux-swift-test"),
