@@ -40,7 +40,10 @@ version number says only which alpha you have. Pin an exact one.
   report an explicit diagnostic. A cleanup failure after a command has already
   completed retries in the background instead of discarding the caller's exit
   status and output, and staging no longer crashes on a Darwin filesystem with
-  a negative device number (FUSE, disk images, network filesystems). (#15)
+  a negative device number (FUSE, disk images, network filesystems). Retained
+  cleanup now gives up and releases a pane's reservation after 30 seconds if
+  nothing ever confirms the run ended, instead of holding it, and every later
+  `run_shell_command` on that pane, indefinitely. (#15)
 
 ## [0.1.0-alpha.5] - 2026-09-12
 
