@@ -310,11 +310,12 @@ private func descriptorProcess(_ arguments: [String]) throws -> (status: Int32, 
     process.standardOutput = output
     process.standardError = output
     try process.run()
+    // Both streams share one pipe, so waiting first deadlocks whenever the
+    // child outruns the buffer — which is the compiler failing, the case this
+    // is here to report.
+    let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
-    return (
-        process.terminationStatus,
-        String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    )
+    return (process.terminationStatus, String(decoding: data, as: UTF8.self))
 }
 
 private func withPreflightFixture(_ body: (URL) throws -> Void) throws {
