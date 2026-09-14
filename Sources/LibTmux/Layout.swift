@@ -44,11 +44,9 @@ extension Server {
     }
 
     private func layoutVersion(guarding window: Window?) async throws(TmuxError) -> TmuxVersion {
-        // A load validates the same layouts at the command, at the builder and
-        // again per window, and every version-sensitive one asks here. The
-        // daemon's answer does not change under one endpoint, so the process
-        // path asks once. Over a connection the question is also what proves
-        // the connection is still there, so it keeps being asked.
+        // A load asks here at the command, at the builder and once per window,
+        // and the daemon's answer does not change under one endpoint. Over a
+        // connection the probe is also what shows the connection is still there.
         if connection == nil, let recorded = await recordedDaemonVersion() { return recorded }
         let command = TmuxCommand("display-message", ["-p", "#{version}"])
         let reply: TmuxReply
