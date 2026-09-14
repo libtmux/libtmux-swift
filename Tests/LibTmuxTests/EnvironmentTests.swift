@@ -152,4 +152,30 @@ struct EnvironmentTests {
             #expect(TmuxEnvironmentVariable(line: line) == nil)
         }
     }
+
+    @Test("a value ending in a separator survives being set")
+    func trailingSeparatorValuesSurvive() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "separators")
+            for value in ["a;", "two;;", #"slash\;"#] {
+                try await server.setEnvironment("GLOBAL_VALUE", to: value)
+                #expect(try await server.environmentValue("GLOBAL_VALUE") == value)
+                try await server.setEnvironment(
+                    "SESSION_VALUE", to: value, in: .session(session.id.rawValue))
+                #expect(
+                    try await server.environmentValue(
+                        "SESSION_VALUE", in: .session(session.id.rawValue)) == value)
+                _ = try await server.setEnvironment("BORROWED_VALUE", to: value, in: session)
+                #expect(
+                    try await server.environmentValue(
+                        "BORROWED_VALUE", in: .session(session.id.rawValue)) == value)
+                try await server.setOption("@separator", to: value)
+                #expect(try await server.option("@separator") == value)
+                try await server.using(.connected(to: "bootstrap")) {
+                    try await $0.setEnvironment("CONNECTED_VALUE", to: value)
+                }
+                #expect(try await server.environmentValue("CONNECTED_VALUE") == value)
+            }
+        }
+    }
 }

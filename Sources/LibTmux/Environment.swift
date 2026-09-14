@@ -97,7 +97,7 @@ extension Server {
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> TmuxReply {
         try await run(
-            TmuxCommand("set-environment", scope.arguments + [name, value])
+            TmuxCommand("set-environment", scope.arguments + [name, tmuxArgumentData(value)])
         )
     }
 
