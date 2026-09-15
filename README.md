@@ -801,12 +801,12 @@ executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-47 documented examples mapped to consumer sources
-41 have live-test call sites
+57 documented examples mapped to consumer sources
+51 have live-test call sites
 ```
 
 That check fails if a fence here has no example behind it. The Examples test
-run is what compiles those sources and exercises the 41 live call sites; CI
+run is what compiles those sources and exercises the 51 live call sites; CI
 runs both gates.
 [`Examples/README.md`](Examples/) says how a fence is matched, and what the
 check cannot see.
