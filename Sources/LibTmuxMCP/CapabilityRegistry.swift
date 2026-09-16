@@ -25,11 +25,12 @@ extension TmuxTools {
         maximumUTF8Bytes: Int? = nil,
         pattern: String? = nil,
         tmuxFormatControl: TmuxFormatControl? = nil,
-        itemSchema: JSONValue? = nil
+        itemSchema: JSONValue? = nil,
+        summary: String? = nil
     ) -> ToolArgument {
         ToolArgument(
             name: name,
-            summary: "Caller-controlled \(name).",
+            summary: summary ?? "Caller-controlled \(name).",
             kind: kind,
             isRequired: required,
             allowed: allowed,
@@ -504,9 +505,20 @@ extension TmuxTools {
                 specialSinks: ["height": state, "width": state, "windowId": lookup],
                 handler: { try await $0.resizeWindow($1) }),
             capability(
-                .selectLayout, "Select layout", "Apply one named tmux layout to a window.",
+                .selectLayout, "Select layout",
+                "Apply a named tmux layout, or a window_layout string captured earlier, "
+                    + "to a window.",
                 toolset: .manage, reach: .none, effects: [.observe, .change], outputs: inspectMeta,
-                arguments: [argument("layout", required: true), windowID()],
+                arguments: [
+                    argument(
+                        "layout", required: true,
+                        summary: "even-horizontal, even-vertical, main-horizontal, "
+                            + "main-vertical, tiled, or a window_layout string this window "
+                            + "produced earlier, to restore it verbatim. tmux validates the "
+                            + "value and refuses an unrecognized one rather than this tool "
+                            + "checking its shape."),
+                    windowID(),
+                ],
                 specialSinks: ["layout": state, "windowId": lookup],
                 handler: { try await $0.capabilitySelectLayout($1) }),
             capability(
