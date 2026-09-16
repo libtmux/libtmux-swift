@@ -521,8 +521,15 @@ struct PaneInputGuardTests {
                 try resolve("%1", panes: [pane("%1", mode: mode)])
             }
         }
-        #expect(throws: ToolError.self) {
-            try resolve("%1", panes: [pane("%1", dead: true)], force: true)
+        do {
+            _ = try resolve("%1", panes: [pane("%1", dead: true)], force: true)
+            Issue.record("a dead pane accepted input")
+        } catch let error as ToolError {
+            // A refusal that only says no leaves an agent to guess; this one
+            // names the tool that clears the condition.
+            #expect(error.description.contains("respawn_pane"))
+        } catch {
+            Issue.record("unexpected error: \(error)")
         }
         #expect(throws: ToolError.self) {
             try resolve("%1", panes: [pane("%1", inputOff: true)], force: true)
