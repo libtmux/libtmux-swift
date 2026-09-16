@@ -73,8 +73,11 @@ extension Server {
     /// nothing — a control client with no target runs tmux's default command
     /// and creates a session. So the connection attaches to `session`, and that
     /// is visible in what the server reports about itself: that session reads
-    /// as attached, and ``Server/clients()`` includes the connection. Nothing
-    /// else differs.
+    /// as attached, and ``Server/clients()`` includes the connection. This
+    /// also negotiates JSON `window_layout` values on tmux 3.8 and later, so a
+    /// read or a `%layout-change` notification over the connection matches a
+    /// direct read rather than tmux's older, control-only compatibility form.
+    /// Nothing else differs.
     ///
     /// The connection is handed over too, because it can do one thing a
     /// process cannot: report what changed without being asked. That capability
@@ -217,6 +220,11 @@ extension Server {
                     return .streamEnded
                 }
                 try await control.waitUntilAttached()
+                // tmux 3.8+ sends `window_layout` as JSON only to a control
+                // client that asked; unrequested, this connection's reads and
+                // %layout-change events stay classic while a direct read gets
+                // JSON. Harmless on 3.7 and earlier (verified against 3.2a).
+                _ = try await control.send(TmuxCommand("refresh-client", ["-f", "new-layouts"]))
                 group.addTask {
                     defer { Task { await control.finish() } }
                     return .body(try await body(control))

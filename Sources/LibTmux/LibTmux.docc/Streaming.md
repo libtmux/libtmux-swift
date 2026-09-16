@@ -46,7 +46,7 @@ Measured by `swift run --package-path Benchmarks libtmux-bench`, noticing that a
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |
 | tmux processes spent | 2 | 1 |
-| round trips spent | 2 | 2 |
+| round trips spent | 2 | 3 |
 
 <!-- noticing-matrix:end -->
 

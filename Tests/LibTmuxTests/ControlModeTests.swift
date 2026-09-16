@@ -241,4 +241,28 @@ struct ControlModeTests {
             #expect(running)
         }
     }
+
+    @Test("a control connection reads window_layout as JSON, matching a direct read")
+    func controlConnectionMatchesDirectLayoutFormat() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version >= TmuxVersion(major: 3, minor: 8) else {
+                // Below 3.8 tmux has no JSON layout reader at all (see
+                // WindowLayout), so there is nothing for the negotiated form
+                // to change; verified locally against
+                // /home/d/.local/share/libtmux-tmux-matrix/master-e880cf63.
+                return
+            }
+            let link = try #require(try await server.windowLinks().first)
+            _ = try await server.splitWindow(try #require(try await server.windows().first))
+            let direct = try #require(try await server.format("#{window_layout}", for: link))
+            #expect(direct.hasPrefix("{"))
+
+            let overControl = try await server.connected(attachingTo: "bootstrap") {
+                connected, _ in
+                try await connected.format("#{window_layout}", for: link)
+            }
+            #expect(overControl?.hasPrefix("{") == true)
+        }
+    }
 }
