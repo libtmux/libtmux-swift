@@ -1545,7 +1545,9 @@ struct WorkspaceCLITests {
                 let result = await invoke(
                     ["load", file.path, "-d", "-S", "unavailable", "--json"], in: root)
                 #expect(result.code == 1)
-                #expect(result.error.joined().contains(#""code":"invalid_workspace""#), "\(result.error)")
+                #expect(
+                    result.error.joined().contains(#""code":"invalid_workspace""#),
+                    "\(result.error)")
             }
         }
     }
@@ -1566,7 +1568,9 @@ struct WorkspaceCLITests {
                 // the unreachable backend, never the boolean parse.
                 #expect(
                     !result.error.joined().contains("must be a boolean"), "\(result.error)")
-                #expect(!result.error.joined().contains(#""code":"invalid_workspace""#), "\(result.error)")
+                #expect(
+                    !result.error.joined().contains(#""code":"invalid_workspace""#),
+                    "\(result.error)")
             }
             let invalid = root.appendingPathComponent("focus-invalid.json")
             try Data(

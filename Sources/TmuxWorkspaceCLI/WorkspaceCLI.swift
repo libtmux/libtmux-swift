@@ -75,7 +75,7 @@ enum WorkspaceCLI {
             var stdoutSizeRaw = winsize()
             let stdoutSize: (columns: Int, rows: Int)? =
                 ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &stdoutSizeRaw) == 0
-                && stdoutSizeRaw.ws_col > 0 && stdoutSizeRaw.ws_row > 0
+                    && stdoutSizeRaw.ws_col > 0 && stdoutSizeRaw.ws_row > 0
                 ? (columns: Int(stdoutSizeRaw.ws_col), rows: Int(stdoutSizeRaw.ws_row)) : nil
             let inputTTY =
                 isatty(STDIN_FILENO) == 1 && tcgetpgrp(STDIN_FILENO) == getpgrp()

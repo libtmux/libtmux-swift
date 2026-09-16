@@ -831,7 +831,8 @@ enum WorkspaceCommands {
         guard windows.filter({ $0.focus == true }).count <= 1,
             windows.allSatisfy({ $0.panes.filter { $0.focus == true }.count <= 1 })
         else {
-            throw CLIError("invalid_workspace", "Choose one focused window and one focused pane per window.")
+            throw CLIError(
+                "invalid_workspace", "Choose one focused window and one focused pane per window.")
         }
         return PlannedWorkspace(
             source: file.path,
@@ -856,7 +857,8 @@ enum WorkspaceCommands {
     private static func windowIndex(_ value: Value?) throws -> Int? {
         guard let value else { return nil }
         guard case let .integer(index) = value, index >= 0, index <= Int32.max else {
-            throw CLIError("invalid_workspace", "window_index must be an integer from 0 through 2147483647.")
+            throw CLIError(
+                "invalid_workspace", "window_index must be an integer from 0 through 2147483647.")
         }
         return Int(index)
     }
@@ -905,7 +907,8 @@ enum WorkspaceCommands {
         }) {
             throw CLIError(
                 "unsupported_key",
-                "\(location).\(unknown) is not implemented; no session was created. Prefix a custom key with 'x-' to have it ignored.")
+                "\(location).\(unknown) is not implemented; no session was created. Prefix a custom key with 'x-' to have it ignored."
+            )
         }
         return object
     }
