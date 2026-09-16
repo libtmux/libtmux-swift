@@ -137,17 +137,45 @@ enum ProcessCommands {
                 environment[name] = .string(mask(value, context: context))
             }
         }
+        let directories = store.globalDirectories.map { mask($0.path, context: context) }
+        guard command.output.machine else {
+            func line(_ fields: [String: Value]) -> String {
+                fields.sorted(by: { $0.key < $1.key })
+                    .map { "\($0.key)=\(Presenter.sanitize(scalar($0.value)))" }
+                    .joined(separator: " ")
+            }
+            try await context.output(
+                [
+                    "tmux-workspace \(LibTmuxVersion.current)",
+                    "port: swift",
+                    "platform: \(ProcessInfo.processInfo.operatingSystemVersionString)",
+                    "tmux: \(line(tmux))",
+                    "workspace_directories: \(directories.joined(separator: ", "))",
+                    "environment: \(line(environment))",
+                ].joined(separator: "\n"))
+            return
+        }
         try await output.result(
             .object([
                 "schema_version": .integer(1), "command": .string("debug-info"),
                 "port": .string("swift"), "version": .string(LibTmuxVersion.current),
                 "platform": .string(ProcessInfo.processInfo.operatingSystemVersionString),
                 "tmux": .object(tmux), "environment": .object(environment),
-                "workspace_directories": .array(
-                    store.globalDirectories.map {
-                        .string(mask($0.path, context: context))
-                    }),
+                "workspace_directories": .array(directories.map(Value.string)),
             ]))
+    }
+
+    /// A `Value` leaf rendered as plain text for a human `debug-info` line —
+    /// never the Swift enum literal `String(describing:)` would print.
+    private static func scalar(_ value: Value) -> String {
+        switch value {
+        case let .string(text): return text
+        case let .bool(flag): return flag ? "true" : "false"
+        case let .integer(number): return String(number)
+        case let .number(number): return String(number)
+        case .null: return ""
+        case .object, .array: return (try? value.encoded()) ?? ""
+        }
     }
 
     private static func mask(_ value: String, context: CLIContext) -> String {
