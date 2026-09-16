@@ -103,7 +103,8 @@ extension TmuxTools {
             }
             guard !pane.isDead else {
                 throw ToolError.refusedForSafety(
-                    "pane \(pane.id.rawValue) input is refused because its process is dead"
+                    "pane \(pane.id.rawValue) input is refused because its process is dead; "
+                        + "respawn_pane starts a new one in it"
                 )
             }
             guard !pane.isInputOff else {
@@ -119,7 +120,9 @@ extension TmuxTools {
             }
             guard !attended.contains(pane.id) else {
                 throw ToolError.refusedForSafety(
-                    "pane \(pane.id.rawValue) input is refused because a terminal client attends it"
+                    "pane \(pane.id.rawValue) input is refused because a terminal client attends "
+                        + "it; get_tmux_variables with window_active_clients_list names who, and "
+                        + "input is available again once that client detaches or moves away"
                 )
             }
             try callerGuard.checkPaneInput(pane.id, override: force)
@@ -134,7 +137,10 @@ extension TmuxTools {
             }
             guard supportedPOSIXShell(source.currentCommand) else {
                 throw ToolError.refusedForSafety(
-                    "run_shell_command requires a supported POSIX shell in pane \(source.id.rawValue)"
+                    "run_shell_command requires a supported POSIX shell in pane "
+                        + "\(source.id.rawValue), observed \(source.currentCommand.debugDescription); "
+                        + "respawn_pane running one of "
+                        + "\(Self.supportedPOSIXShellNames.joined(separator: ", ")) first"
                 )
             }
         }
@@ -355,12 +361,17 @@ extension TmuxTools {
         }
     }
 
+    /// Named once so a refusal can name them without a second, driftable list.
+    private static let supportedPOSIXShellNames = [
+        "sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh",
+    ]
+
     private static func supportedPOSIXShell(_ command: String) -> Bool {
         var name =
             command.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init)
             ?? command
         if name.first == "-" { name.removeFirst() }
-        return ["sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh"].contains(name)
+        return supportedPOSIXShellNames.contains(name)
     }
 
     private static func hasASCIIControl(_ value: String) -> Bool {

@@ -24,8 +24,8 @@ actor PaneRunCoordinator {
                 var metadata = stat()
                 let result = path.withCString { stat($0, &metadata) }
                 guard result == 0 else { return nil }
-                self.device = UInt64(metadata.st_dev)
-                self.inode = UInt64(metadata.st_ino)
+                self.device = fileIdentityComponent(metadata.st_dev)
+                self.inode = fileIdentityComponent(metadata.st_ino)
             #else
                 return nil
             #endif

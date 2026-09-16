@@ -93,7 +93,7 @@ Neither is what you want from alpha software, so name an exact release:
 
 > [!NOTE]
 > This page documents unreleased `master`. The exact dependency above installs
-> the released alpha.3 API; [read that tag's README][alpha3-readme] for matching
+> the released alpha.5 API; [read that tag's README][alpha5-readme] for matching
 > examples. To compile the examples on this page, depend on `master`:
 
 ```swift
@@ -179,6 +179,16 @@ incarnation before and after them and reports a replacement, but another client
 can still mutate the same daemon between listings. The result is not a tmux
 transaction.
 
+Session creation times also have a local Foundation `Date` view:
+
+```swift
+let created = session.creationDate
+print(created)
+```
+
+`createdAt` remains exact integer epoch seconds in snapshots and encoded data.
+Daemon identity continues to use the original integer `startedAt`.
+
 ## Change what is there
 
 ```swift
@@ -206,17 +216,36 @@ for name in ["edit", "test", "logs"] {
 _ = try await server.run(plan)
 ```
 
+Named layouts use `WindowLayout`; saved tmux layout strings use `custom`:
+
+```swift
+try await server.selectLayout(window, .evenHorizontal)
+```
+
+```swift
+try await server.selectLayout(window, .custom(savedLayout))
+```
+
+The string overload remains available. `WindowPlan` also accepts typed layouts;
+its stored layout and JSON/YAML representation remain strings.
+
 ## Filters that travel
 
 Filter with the standard library when the predicate is local to your code.
 `FilterExpr` is for when the filter has to leave it — stored in a config, sent to
-another process, handed to a tool. It is built from key paths, so the compiler
-rejects a text operator on a number, and it holds no closures, so it encodes:
+another process, handed to a tool. Each model's `FilterFields` lists supported
+fields. The compiler checks the field, model and operator types, and expressions
+contain no closures, so they encode:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = FilterExpr<Pane>.where(
+    Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
 let matching = try await server.panes().filter(expression)
 ```
+
+Descriptor construction does not throw. Existing key-path construction remains
+available with `QueryConstructionError` for unsupported fields. Validate decoded
+or dynamically built expressions with `validate()` before evaluating them.
 
 The same expression can also travel all the way to tmux, so the rows that would
 have been discarded never cross the process boundary:
@@ -365,6 +394,18 @@ overload of the scopes is unreachable, because a closure literal's thrown type
 is never inferred from its body, and a scope that fails on its own behalf has no
 way to rethrow that as the body's error type.
 
+`TmuxError` and the query/matching error enums provide readable
+`CustomStringConvertible` and Foundation `LocalizedError` descriptions:
+
+```swift
+let message = error.localizedDescription
+print(message)
+```
+
+The enum cases and associated values remain available for structured handling.
+Descriptions omit raw decoded values and predicate literals. Command failure
+reasons retain tmux's diagnostic text.
+
 ## Waiting without polling
 
 tmux has no hook that fires when a pane prints something, so a wait built from
@@ -451,7 +492,7 @@ let workspace = Workspace(
     windows: [
         WindowPlan(
             windowName: "editor",
-            layout: "even-horizontal",
+            layout: .evenHorizontal,
             panes: [PanePlan(), PanePlan()]
         ),
         WindowPlan(
@@ -760,13 +801,12 @@ executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-47 documented examples mapped to consumer sources
-41 have live-test call sites
 ```
 
-That check fails if a fence here has no example behind it. The Examples test
-run is what compiles those sources and exercises the 41 live call sites; CI
-runs both gates.
+That check fails if a fence here has no example behind it, or if CI's
+`--min-executed` floor stops being met. The Examples test run is what compiles
+those sources and exercises the ones with a live-test call site; CI runs both
+gates.
 [`Examples/README.md`](Examples/) says how a fence is matched, and what the
 check cannot see.
 
@@ -870,4 +910,4 @@ MIT. See [LICENSE](LICENSE).
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
-[alpha3-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.3/README.md
+[alpha5-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.5/README.md

@@ -74,6 +74,56 @@ struct FilterSchemaTests {
         #expect(decoded.models.map(\.name) == ["session", "window", "pane", "client"])
     }
 
+    @Test("every typed FilterFields descriptor names a field the schema has")
+    func typedDescriptorsMatchTheSchemaExactly() {
+        // FilterFields spells each wire id a fourth time, by hand, next to the
+        // schema, the key-path switch, and the value switch. A typo here still
+        // compiles and type-checks; it just builds a filter that never matches.
+        // Reading each descriptor's `.id` and checking it against the schema
+        // -- rather than restating the id -- is what makes that typo fail here
+        // instead of silently at runtime.
+        func ids(for model: String) -> Set<String> {
+            Set(FilterSchema.current.models.first { $0.name == model }?.fields.map(\.id) ?? [])
+        }
+
+        #expect(
+            Set([
+                Session.FilterFields.id.id,
+                Session.FilterFields.name.id,
+                Session.FilterFields.windowCount.id,
+                Session.FilterFields.isAttached.id,
+            ]) == ids(for: "session")
+        )
+        #expect(
+            Set([
+                Window.FilterFields.id.id,
+                Window.FilterFields.name.id,
+                Window.FilterFields.paneCount.id,
+            ]) == ids(for: "window")
+        )
+        #expect(
+            Set([
+                Pane.FilterFields.id.id,
+                Pane.FilterFields.index.id,
+                Pane.FilterFields.currentCommand.id,
+                Pane.FilterFields.currentPath.id,
+                Pane.FilterFields.isActive.id,
+                Pane.FilterFields.isDead.id,
+                Pane.FilterFields.modeCount.id,
+                Pane.FilterFields.isSynchronized.id,
+                Pane.FilterFields.windowID.id,
+            ]) == ids(for: "pane")
+        )
+        #expect(
+            Set([
+                Client.FilterFields.name.id,
+                Client.FilterFields.tty.id,
+                Client.FilterFields.isControlMode.id,
+                Client.FilterFields.sessionID.id,
+            ]) == ids(for: "client")
+        )
+    }
+
     @Test("a field resolves by id, by Swift name, and by tmux format name")
     func fieldResolvesByEveryAlias() {
         let schema = FilterSchema.current

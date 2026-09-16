@@ -430,8 +430,8 @@ struct CapabilityBehaviorTests {
         }
     }
 
-    @Test("run_shell_command preserves inherited ERR and DEBUG traps")
-    func runPreservesInheritedShellTraps() async throws {
+    @Test("run_shell_command preserves inherited ERR and DEBUG traps", arguments: [false, true])
+    func runPreservesInheritedShellTraps(canonicalInput: Bool) async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
             var candidates: [(String, [String])] = [
@@ -443,8 +443,10 @@ struct CapabilityBehaviorTests {
             }
             for (path, flags) in candidates
             where FileManager.default.isExecutableFile(atPath: path) {
-                try await server.respawn(pane, running: [path] + flags)
                 let shell = URL(fileURLWithPath: path).lastPathComponent
+                if canonicalInput && shell != "bash" { continue }
+                let arguments = flags + (canonicalInput ? ["--noediting"] : [])
+                try await server.respawn(pane, running: [path] + arguments)
                 #expect(
                     try await waitUntil {
                         try await server.panes().first(where: { $0.id == pane.id })?
@@ -471,6 +473,7 @@ struct CapabilityBehaviorTests {
                     + "\\trap \(shellQuoted(errorAction)) ERR; "
                     + "\\set -e; \\set -x; "
                     + (shell == "bash" ? "\\set -f; " : "")
+                    + (canonicalInput ? "\\set -T; " : "")
                     + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(ready)
                 try await server.sendKeys([setup, "Enter"], to: pane)
@@ -487,6 +490,8 @@ struct CapabilityBehaviorTests {
                     )
                 }
                 let resourcesBefore = try shellResources(for: shellProcessID)
+                let stagedFilesBefore = try runShellStagedFiles(
+                    forSocket: pane.incarnation.socketPath)
 
                 let surface = tools(server)
                 let run: (String) async throws -> ToolOutcome = { command in
@@ -503,16 +508,31 @@ struct CapabilityBehaviorTests {
                     )
                 }
 
-                let successMarker = "trap-success-\(shell)"
+                let successMarker = "trap-success-\(shell)-'\"-λ雪"
+                let quotedData = "quoted-first-\(shell)\nquoted-second-\(shell)"
                 let requireNoglob =
                     shell == "bash" ? "case $- in *f*) ;; *) exit 92 ;; esac; " : ""
+                let requireFunctrace =
+                    canonicalInput ? "case $- in *T*) ;; *) exit 93 ;; esac; " : ""
+                let padding = String(repeating: "x", count: 8_192)
                 let success = try await run(
-                    requireNoglob + "/usr/bin/printf '%s\\n' \(shellQuoted(successMarker))"
+                    """
+                    __libtmux_test_padding=\(shellQuoted(padding))
+                    [ "${#__libtmux_test_padding}" -eq \(padding.count) ] || exit 94
+                    \(requireNoglob)\(requireFunctrace)
+                    /usr/bin/printf '%s\\n' \(shellQuoted(successMarker))
+                    /usr/bin/printf '%s\\n' \(shellQuoted(quotedData))
+                    """
                 )
+                try #require(success.structured["timedOut"]?.boolValue == false)
                 let successLines =
                     success.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
                 #expect(success.structured["exitStatus"]?.intValue == 0)
                 #expect(successLines.contains(successMarker), Comment(rawValue: shell))
+                #expect(
+                    quotedData.split(separator: "\n").allSatisfy {
+                        successLines.contains(String($0))
+                    })
                 #expect(successLines.contains(debugOut), Comment(rawValue: shell))
                 #expect(successLines.contains(debugError), Comment(rawValue: shell))
 
@@ -537,7 +557,7 @@ struct CapabilityBehaviorTests {
                 let parent = try await run(
                     "case $- in *e*) ;; *) exit 90 ;; esac; "
                         + "case $- in *x*) ;; *) exit 91 ;; esac; "
-                        + requireNoglob
+                        + requireNoglob + requireFunctrace
                         + "/usr/bin/printf '%s\\n' \(shellQuoted(parentMarker)); false"
                 )
                 let parentLines =
@@ -603,6 +623,12 @@ struct CapabilityBehaviorTests {
                 #expect(
                     try await waitUntil {
                         try runShellTrapFiles().subtracting(trapFilesBefore).isEmpty
+                    }
+                )
+                #expect(
+                    try await waitUntil {
+                        try runShellStagedFiles(forSocket: pane.incarnation.socketPath)
+                            .subtracting(stagedFilesBefore).isEmpty
                     }
                 )
                 if let resourcesBefore {
@@ -956,6 +982,30 @@ enum LeadingDashOperand: String, CaseIterable, CustomStringConvertible, Sendable
     case waitForChannel = "wait"
 
     var description: String { rawValue }
+}
+
+// A staged file's prefix is shared by every port's MCP that stages a run the
+// same way, and each one lives for the whole run rather than the brief window
+// a trap file does, so a concurrently running sibling port can genuinely still
+// hold a same-prefixed file when this snapshot is taken. Its payload embeds
+// this test's own socket path, though, so content -- not just the name --
+// tells this test's staged files apart from a sibling port's.
+private func runShellStagedFiles(forSocket socketPath: String) throws -> Set<String> {
+    let prefix = "libtmux-mcp-run-"
+    let names = try FileManager.default.contentsOfDirectory(atPath: "/tmp")
+        .filter { $0.hasPrefix(prefix) }
+    return Set(
+        names.filter { name in
+            // A file that vanished between listing and reading was already
+            // cleaned up, by us or by whoever staged it; either way it is not
+            // a file to report as left behind.
+            guard
+                let content = try? String(
+                    contentsOfFile: "/tmp/\(name)", encoding: .utf8)
+            else { return false }
+            return content.contains(socketPath)
+        }
+    )
 }
 
 private func runShellTrapFiles() throws -> Set<String> {

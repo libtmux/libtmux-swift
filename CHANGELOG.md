@@ -11,6 +11,52 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `FilterField` exposes supported choices through each model's `FilterFields`
+  namespace, so completion lists valid fields and the compiler rejects
+  unsupported predicates. Existing key-path filters and dynamic expression
+  validation remain available. (#15)
+
+- `TmuxError` and query, decoding and matching errors provide readable
+  `description` and `localizedDescription` text while retaining structured cases
+  and command diagnostics. Descriptions omit raw decoded values and predicate
+  literals. (#15)
+
+- `Session.creationDate` exposes the captured creation time as a Foundation
+  `Date`. Encoded snapshots keep the exact integer timestamps used by
+  `Session.createdAt` and daemon identity. (#15)
+
+- `WindowLayout` offers named choices and `WindowLayout.custom(_:)` for saved
+  layouts in `Server.selectLayout(_:_:)` and `WindowPlan`. Existing string calls
+  and workspace JSON/YAML remain compatible. A custom value starting with `-`
+  reaches tmux as a literal layout, never as a flag. (#15)
+
+### Fixed
+
+- `run_shell_command` runs long commands without truncation and preserves
+  inherited shell traps. Interrupted calls retain pane input ownership until
+  completion or owner termination; permanent staged-command cleanup failures
+  report an explicit diagnostic. A cleanup failure after a command has already
+  completed retries in the background instead of discarding the caller's exit
+  status and output, and staging no longer crashes on a Darwin filesystem with
+  a negative device number (FUSE, disk images, network filesystems). Retained
+  cleanup now gives up and releases a pane's reservation after 30 seconds if
+  nothing ever confirms the run ended, instead of holding it, and every later
+  `run_shell_command` on that pane, indefinitely. (#15)
+
+- `TmuxVersion` orders a tagged `TmuxVersion.build` — `next`, `master`,
+  `openbsd` — below the plain release at the same number instead of treating
+  the two as ordering-equal: `next-3.9` sorts above `3.8` and below `3.9`, so a
+  gate for "3.9 or later" is not satisfied by a build that only previews it.
+  (#15)
+
+- `Server.selectLayout(_:_:)` refuses a JSON-shaped `WindowLayout.custom(_:)`
+  value before dispatch on a server older than tmux 3.8, and refuses a value
+  that merely looks JSON-shaped but is not well-formed on every version.
+  Applying tmux 3.8's `window_layout` string to 3.3 or 3.3a previously reached
+  the daemon and crashed it instead of being rejected. (#15)
+
 ## [0.1.0-alpha.5] - 2026-09-12
 
 ### Added

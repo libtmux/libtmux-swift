@@ -70,6 +70,16 @@ struct CapabilityManifestTests {
             TmuxTools.definitions.first { $0.name == "set_synchronize_panes" }?.description
                 .contains("pane overrides determine effective synchronization") == true
         )
+        // A saved window_layout string is valid input here (measured: tmux
+        // accepts it back verbatim, JSON-shaped or classic, on every
+        // supported release), not only the five named presets. The schema
+        // says so, so a caller does not have to try it and read an opaque
+        // tmux refusal to learn that.
+        #expect(
+            TmuxTools.byName["select_layout"]?.arguments
+                .first { $0.name == "layout" }?.summary
+                .contains("window_layout") == true
+        )
         for definition in TmuxTools.definitions {
             #expect(!definition.tmuxEffects.isEmpty)
             #expect(!definition.outputClasses.isEmpty)

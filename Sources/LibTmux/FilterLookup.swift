@@ -5,7 +5,7 @@
 /// process. The spelling is the one Django and Python libtmux both use, so a
 /// lookup written for either reads the same here.
 ///
-/// Swift callers write ``FilterExpr`` from key paths instead and have the
+/// Swift callers use each model's `FilterFields` descriptors instead and have the
 /// compiler check the field and its type; nothing inside the library routes
 /// through this.
 public enum FilterLookup {

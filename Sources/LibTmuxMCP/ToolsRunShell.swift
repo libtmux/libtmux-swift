@@ -12,7 +12,8 @@ import LibTmux
 extension TmuxTools {
     func runShell(
         _ arguments: Arguments,
-        _ progress: ProgressReporter = .silent
+        _ progress: ProgressReporter = .silent,
+        stagingAt scriptPath: String? = nil
     ) async throws -> ToolOutcome {
         let requested = try arguments.string("paneId")
         let force = try arguments.bool("force", or: false)
@@ -41,6 +42,7 @@ extension TmuxTools {
             operation: "run_shell_command"
         )
         var lifetime = RunShellLifetime.preDispatch
+        var stagedFile: RunShellFile?
         do {
             try Task.checkCancellation()
             guard ContinuousClock.now < deadline else {
@@ -48,15 +50,15 @@ extension TmuxTools {
                     "run_shell_command exceeded its timeout before setup"
                 )
             }
-            let cleanup = try await prepareRunShell(
+            let prepared = try await prepareRunShell(
                 in: pane,
                 command: command,
                 tmuxInvocation: Self.pinnedTmuxInvocation(
                     executable: server.tmuxExecutable,
                     socketPath: pane.incarnation.socketPath
-                )
+                ),
+                scriptPath: scriptPath
             )
-            defer { unlink(cleanup.scriptPath) }
             try Task.checkCancellation()
             try Self.requireSafeShellRoute(
                 executable: server.tmuxExecutable,
@@ -73,8 +75,32 @@ extension TmuxTools {
                 reservation: reservation,
                 operation: "run_shell_command"
             )
+            let (cleanup, dispatch) = try stageRunShell(with: prepared)
+            stagedFile = cleanup.stagedFile
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else {
+                throw ToolError.refusedForSafety(
+                    "run_shell_command exceeded its timeout before input"
+                )
+            }
             lifetime = .submitting(cleanup)
-            try await dispatchRunShell(with: cleanup)
+            try await server.using(.direct) { server in
+                let target = cleanup.pane.id.rawValue
+                // `action` is a tmux command line if-shell will re-parse, not
+                // an argument handed to a POSIX shell, so it is quoted for
+                // tmux's own parser.
+                let action =
+                    "set-option -p -t \(target) \(cleanup.statusOption) pending ; "
+                    + ["send-keys", "-t", target, "--", dispatch, "Enter"]
+                    .map(tmuxQuoted).joined(separator: " ")
+                let command = TmuxCommand("if-shell", ["-F", "1", action])
+                let reply = try await server.runIsolated(
+                    command, expecting: cleanup.pane.incarnation, perStreamOutputLimit: 4_096)
+                guard reply.isSuccess else {
+                    throw TmuxError.commandFailed(
+                        command: "send-keys", exitCode: reply.exitCode, reason: reply.errorText)
+                }
+            }
             lifetime = .started(cleanup)
             let finished = try await waitForRunShell(
                 cleanup,
@@ -85,25 +111,52 @@ extension TmuxTools {
                 lifetime = .finishing(cleanup)
             }
             try Task.checkCancellation()
-            let outcome = try await finishRunShell(
+            let result = try await finishRunShell(
                 cleanup,
                 finished: finished,
                 enforcedTimeout: enforced,
                 maxLines: maxLines,
                 started: started
             )
-            if finished {
-                await Self.paneRuns.release(reservation)
+            if let status = result.exitStatus {
+                // The command already ran, and `result` already carries its
+                // exit status and output. A cleanup hiccup from here on must
+                // not turn a completed call into a thrown error that discards
+                // it, so a failure here falls back to the same background
+                // retry the timeout path already relies on instead of
+                // propagating and losing `result`.
+                var releaseObserved = false
+                do {
+                    try await server.using(.direct) { server in
+                        try await Self.releaseRunShell(cleanup, status: status, server: server)
+                        try await Self.waitForRunShellRelease(cleanup, server: server)
+                    }
+                    releaseObserved = true
+                    try await server.using(.direct) { server in
+                        try await Self.clearRunShellStatus(cleanup, server: server)
+                    }
+                    Self.releaseRunShellFile(cleanup.stagedFile)
+                    await Self.paneRuns.release(reservation)
+                } catch {
+                    let message =
+                        "libtmux-mcp: run_shell_command completed but cleanup failed "
+                        + "(\(error)); retrying in the background\n"
+                    FileHandle.standardError.write(Data(message.utf8))
+                    schedulePaneRunCleanup(
+                        cleanup, reservation: reservation, releaseObserved: releaseObserved)
+                }
             } else {
                 schedulePaneRunCleanup(cleanup, reservation: reservation)
             }
-            return outcome
+            return .init(result)
         } catch {
             switch lifetime {
             case .preDispatch:
+                Self.releaseRunShellFile(stagedFile)
                 await Self.paneRuns.release(reservation)
             case .submitting(let cleanup):
                 if Self.definitelyDidNotDispatch(error) {
+                    Self.releaseRunShellFile(cleanup.stagedFile)
                     await Self.paneRuns.release(reservation)
                 } else {
                     abandonRunShell(
@@ -129,16 +182,10 @@ extension TmuxTools {
     private func prepareRunShell(
         in pane: Pane,
         command: String,
-        tmuxInvocation: String
+        tmuxInvocation: String,
+        scriptPath: String?
     ) async throws -> RunShellCleanup {
-        // Sixteen hex digits, not thirty-two. The framing names every variable,
-        // channel, and option after this, fifty-five times over, and tmux drops
-        // the line whole once it grows past what it will carry -- which cost
-        // Darwin every run in a bash pane. Sixty-four bits is still more than a
-        // hostile parent shell can guess at, and it buys back 880 bytes.
-        let nonce = String(
-            UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)
-        )
+        let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         let markerNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let channel = "libtmux-mcp-done-\(nonce)"
         let releaseChannel = "libtmux-mcp-release-\(nonce)"
@@ -169,7 +216,7 @@ extension TmuxTools {
             startMarker: Self.markerRows("S\(markerNonce)", width: markerWidth),
             endMarker: Self.markerRows("E\(markerNonce)", width: markerWidth),
             payload: "",
-            scriptPath: "/tmp/libtmux-mcp-run-\(nonce)"
+            scriptPath: scriptPath ?? "/tmp/libtmux-mcp-run-\(nonce)"
         )
         return RunShellCleanup(
             pane: partial.pane,
@@ -189,41 +236,8 @@ extension TmuxTools {
         )
     }
 
-    /// Hands the framing to the pane through a file it sources.
-    ///
-    /// A tty in canonical mode discards input past `MAX_CANON`, which is 1024
-    /// on Darwin against 4096 on Linux, and the framing is longer than either
-    /// bound leaves room for. Shells driving readline -- bash, zsh -- put the
-    /// tty in raw mode and never meet the limit, so a pane running one of them
-    /// hides it; dash and a plain `sh` stay canonical, and there the line is
-    /// cut, the command never completes, and the run holds its lease until it
-    /// times out. Sourcing keeps what reaches the tty to a short line whatever
-    /// the shell and the platform.
-    ///
-    /// The file is the process's own: created exclusively so an existing path
-    /// is never followed or reused, and readable only by its owner. It holds
-    /// the framing verbatim -- a line ahead of it would run under the caller's
-    /// inherited traps and change what the capture is measuring -- and the
-    /// caller unlinks it once the run is no longer reading.
-    private func dispatchRunShell(with cleanup: RunShellCleanup) async throws {
-        // A shell driving readline -- bash, zsh -- puts the tty in raw mode and
-        // reads a line of any length, and those are exactly the shells whose
-        // inherited traps this framing captures. Typing keeps that capture
-        // measuring what it measures today. The rest stay canonical, where the
-        // tty discards input past MAX_CANON, and those skip trap capture
-        // entirely, so sourcing costs them nothing.
-        // bash does not expose an inherited DEBUG trap inside a sourced file --
-        // `trap -p DEBUG` there reports nothing, the same way it does not reach
-        // a function without functrace -- and capturing that trap is the whole
-        // of what this framing promises those shells. So they are typed, and
-        // the shells that cannot take a long line are exactly the ones with no
-        // DEBUG trap to lose.
-        guard !Self.capturesInheritedTraps(cleanup.pane.currentCommand) else {
-            try await server.using(.direct) { server in
-                try await server.sendKeys([cleanup.payload, "Enter"], to: cleanup.pane)
-            }
-            return
-        }
+    /// Stages the frame so dispatch fits a canonical terminal's input limit.
+    private func stageRunShell(with cleanup: RunShellCleanup) throws -> (RunShellCleanup, String) {
         let script = "\(cleanup.payload)\n"
         let descriptor = cleanup.scriptPath.withCString {
             open($0, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
@@ -233,35 +247,49 @@ extension TmuxTools {
                 reason: "run_shell_command could not stage its command"
             )
         }
-        var wrote = false
-        var bytes = Array(script.utf8)
-        wrote = bytes.withUnsafeBytes { buffer -> Bool in
+        defer { close(descriptor) }
+        let stagedFile: RunShellFile
+        do {
+            stagedFile = try RunShellFile(path: cleanup.scriptPath, descriptor: descriptor)
+        } catch {
+            // The descriptor above is closed by `defer`, but nothing else
+            // unlinks a path opened with O_CREAT|O_EXCL, and the path is
+            // nonce-derived, so nothing will ever reuse or clean it up.
+            _ = cleanup.scriptPath.withCString { unlink($0) }
+            throw error
+        }
+        let bytes = Array(script.utf8)
+        let wrote = bytes.withUnsafeBytes { buffer -> Bool in
             var offset = 0
             while offset < buffer.count {
                 let written = write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
-                if written <= 0 { return false }
+                if written < 0 {
+                    // A signal-interrupted write is not a failure: the tests
+                    // deliberately push payloads large enough to make EINTR
+                    // more likely, and retrying is the standard POSIX response.
+                    if errno == EINTR { continue }
+                    return false
+                }
+                if written == 0 { return false }
                 offset += written
             }
             return true
         }
-        close(descriptor)
         guard wrote else {
-            unlink(cleanup.scriptPath)
+            Self.releaseRunShellFile(stagedFile)
             throw TmuxError.invocationFailed(
                 reason: "run_shell_command could not stage its command"
             )
         }
-        do {
-            try await server.using(.direct) { server in
-                try await server.sendKeys(
-                    [". \(shellQuoted(cleanup.scriptPath))", "Enter"],
-                    to: cleanup.pane
-                )
-            }
-        } catch {
-            unlink(cleanup.scriptPath)
-            throw error
-        }
+        // Sourcing hides inherited Bash DEBUG declarations. Evaluating the file
+        // read preserves them without capturing trap output from a cat command.
+        let path = shellQuoted(cleanup.scriptPath)
+        let dispatch =
+            Self.capturesInheritedTraps(cleanup.pane.currentCommand)
+            ? "\\eval \"$(<\(path))\"" : ". \(path)"
+        var staged = cleanup
+        staged.stagedFile = stagedFile
+        return (staged, dispatch)
     }
 
     private func waitForRunShell(
@@ -303,7 +331,7 @@ extension TmuxTools {
         enforcedTimeout: Double,
         maxLines: Int,
         started: ContinuousClock.Instant
-    ) async throws -> ToolOutcome {
+    ) async throws -> RunShellResult {
         try await server.using(.direct) { server in
             let captureLimit = try cleanup.captureLineLimit(for: maxLines)
             let captureDeadline = ContinuousClock.now.advanced(
@@ -366,30 +394,24 @@ extension TmuxTools {
                     )
                 }
             }
-            if finished {
-                try await server.signal(cleanup.releaseChannel)
-                await Self.clearRunShellOptions(cleanup, server: server)
-            }
-
-            return .init(
-                RunShellResult(
-                    paneRef: WireReferenceCodec.processLocal.reference(to: cleanup.pane),
-                    pane: cleanup.pane.id.rawValue,
-                    exitStatus: status,
-                    timedOut: !finished,
-                    output: output.lines,
-                    linesMissed: output.linesMissed,
-                    droppedLines: output.droppedLines,
-                    seconds: Self.elapsed(since: started),
-                    effectiveTimeout: enforcedTimeout
-                ),
+            return RunShellResult(
+                paneRef: WireReferenceCodec.processLocal.reference(to: cleanup.pane),
+                pane: cleanup.pane.id.rawValue,
+                exitStatus: status,
+                timedOut: !finished,
+                output: output.lines,
+                linesMissed: output.linesMissed,
+                droppedLines: output.droppedLines,
+                seconds: Self.elapsed(since: started),
+                effectiveTimeout: enforcedTimeout
             )
         }
     }
 
     private func schedulePaneRunCleanup(
         _ cleanup: RunShellCleanup,
-        reservation: PaneInputReservation
+        reservation: PaneInputReservation,
+        releaseObserved: Bool = false
     ) {
         let server = server
         Task {
@@ -397,7 +419,8 @@ extension TmuxTools {
                 await Self.finishTimedOutRun(
                     cleanup,
                     server: server,
-                    reservation: reservation
+                    reservation: reservation,
+                    releaseObserved: releaseObserved
                 )
             }
         }
@@ -421,19 +444,35 @@ extension TmuxTools {
         }
     }
 
-    private static func finishTimedOutRun(
+    static func finishTimedOutRun(
         _ cleanup: RunShellCleanup,
         server: Server,
-        reservation: PaneInputReservation
+        reservation: PaneInputReservation,
+        releaseObserved: Bool,
+        proofTimeout: Duration = retainedRunProofTimeout
     ) async {
         let (proofs, continuation) = AsyncStream<RetainedRunProof>.makeStream(
             bufferingPolicy: .bufferingOldest(1)
         )
         let completion = Task {
+            var releaseObserved = releaseObserved
             while !Task.isCancelled {
-                if await retainedRunCompleted(cleanup, server: server) {
-                    continuation.yield(.completed)
-                    return
+                if !releaseObserved {
+                    switch await retainedRunState(cleanup, server: server) {
+                    case .completed(let status):
+                        try? await releaseRunShell(cleanup, status: status, server: server)
+                    case .released:
+                        releaseObserved = true
+                    case .releasing, nil:
+                        break
+                    }
+                }
+                if releaseObserved {
+                    do {
+                        try await clearRunShellStatus(cleanup, server: server)
+                        continuation.yield(.released)
+                        return
+                    } catch {}
                 }
                 guard !Task.isCancelled else { return }
                 do {
@@ -453,34 +492,111 @@ extension TmuxTools {
                 }
             }
         }
-        var iterator = proofs.makeAsyncIterator()
-        guard let proof = await iterator.next() else { return }
+        // Bounded so a proof that never arrives cannot strand the reservation
+        // and staged file forever: `completion` and `presence` otherwise
+        // retry with no overall deadline, and `paneRuns` is process-wide, so
+        // a stuck permit blocks every later run_shell_command on the pane
+        // rather than just this one.
+        let proof: RetainedRunProof? = await withTaskGroup(of: RetainedRunProof?.self) { group in
+            group.addTask {
+                var iterator = proofs.makeAsyncIterator()
+                return await iterator.next()
+            }
+            group.addTask {
+                try? await Task.sleep(for: proofTimeout)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
         continuation.finish()
         completion.cancel()
         presence.cancel()
         await paneRuns.release(reservation)
-        if proof == .completed {
-            try? await server.signal(cleanup.releaseChannel)
+        releaseRunShellFile(cleanup.stagedFile)
+        if proof == nil {
+            let message =
+                "libtmux-mcp: run_shell_command retained cleanup gave up confirming "
+                + "release after \(proofTimeout); releasing the pane anyway\n"
+            FileHandle.standardError.write(Data(message.utf8))
         }
-        await clearRunShellOptions(cleanup, server: server)
+        if proof == .ended {
+            _ = try? await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
+        }
     }
 
-    private static func retainedRunCompleted(
+    /// How long retained cleanup waits for confirmation that a run released
+    /// or its pane ended before giving up and releasing anyway. Matches
+    /// `retryRunShellFileRemoval`'s default budget for the same reason: an
+    /// unbounded wait here would hold a process-wide permit forever.
+    private static let retainedRunProofTimeout = Duration.seconds(30)
+
+    private static func retainedRunState(
         _ cleanup: RunShellCleanup,
         server: Server
-    ) async -> Bool {
+    ) async -> RunShellState? {
         do {
             let before = try await server.incarnation()
-            guard before == cleanup.pane.incarnation else { return false }
+            guard before == cleanup.pane.incarnation else { return nil }
             let status = try await server.option(
                 cleanup.statusOption,
                 scope: .pane(cleanup.pane)
             )
             let after = try await server.incarnation()
-            guard after == cleanup.pane.incarnation else { return false }
-            return status.flatMap(runShellStatus) != nil
+            guard after == cleanup.pane.incarnation else { return nil }
+            if status == "releasing" { return .releasing }
+            if status == "released" { return .released }
+            return status.flatMap(runShellStatus).map(RunShellState.completed)
         } catch {
-            return false
+            return nil
+        }
+    }
+
+    private static func releaseRunShell(
+        _ cleanup: RunShellCleanup,
+        status: Int,
+        server: Server
+    ) async throws {
+        let target = cleanup.pane.id.rawValue
+        // tmux toggles unmatched signals. Record release in the same command
+        // queue so a lost reply cannot make a retry consume the pending signal.
+        let action =
+            "set-option -p -t \(target) \(cleanup.statusOption) releasing ; "
+            + "wait-for -S -- \(cleanup.releaseChannel)"
+        let command = TmuxCommand(
+            "if-shell",
+            [
+                "-F", "-t", target,
+                "#{==:#{\(cleanup.statusOption)},\(status)}", action,
+            ]
+        )
+        let reply = try await server.runIsolated(
+            command,
+            expecting: cleanup.pane.incarnation,
+            perStreamOutputLimit: 4_096
+        )
+        guard reply.isSuccess else {
+            throw TmuxError.commandFailed(
+                command: command.name, exitCode: reply.exitCode, reason: reply.errorText)
+        }
+    }
+
+    private static func waitForRunShellRelease(
+        _ cleanup: RunShellCleanup,
+        server: Server
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: runShellCaptureSettleTimeout)
+        var settle = firstSettleDelay
+        while true {
+            try Task.checkCancellation()
+            if await retainedRunState(cleanup, server: server) == .released { return }
+            guard ContinuousClock.now < deadline else {
+                throw TmuxError.invocationFailed(
+                    reason: "run_shell_command release was not acknowledged")
+            }
+            try await Task.sleep(for: settle)
+            settle = nextSettleDelay(after: settle)
         }
     }
 
@@ -538,11 +654,109 @@ extension TmuxTools {
         return kill(pid_t(processID), 0) == -1 && errno == ESRCH
     }
 
-    private static func clearRunShellOptions(
+    private static func clearRunShellStatus(
         _ cleanup: RunShellCleanup,
         server: Server
+    ) async throws {
+        let reply = try await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
+        guard reply.isSuccess else {
+            throw TmuxError.commandFailed(
+                command: "set-option", exitCode: reply.exitCode, reason: reply.errorText)
+        }
+    }
+
+    private static func releaseRunShellFile(_ file: RunShellFile?) {
+        guard let file, file.remove() != .removed else { return }
+        Task { await retryRunShellFileRemoval(file) }
+    }
+
+    /// Retries only local removal; pane or daemon lifetime cannot cancel ownership.
+    static func retryRunShellFileRemoval(
+        _ file: RunShellFile,
+        within timeout: Duration = .seconds(30),
+        reporting report: @Sendable (String) async -> Void = { message in
+            FileHandle.standardError.write(Data("libtmux-mcp: \(message)\n".utf8))
+        }
     ) async {
-        _ = try? await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        var delay = Duration.milliseconds(100)
+        while true {
+            switch file.remove() {
+            case .removed:
+                return
+            case .replaced:
+                await report(
+                    "run_shell_command cleanup stopped; preserved a replacement at \(file.path)")
+                return
+            case .failed(let code):
+                guard ContinuousClock.now < deadline else {
+                    await report(
+                        "run_shell_command cleanup stopped for \(file.path) (errno \(code)); "
+                            + "automatic retry budget expired; manual removal is required")
+                    return
+                }
+            }
+            do {
+                try await Task.sleep(for: min(delay, ContinuousClock.now.duration(to: deadline)))
+            } catch {
+                await report(
+                    "run_shell_command cleanup cancelled for \(file.path); manual removal is required"
+                )
+                return
+            }
+            delay = min(delay * 2, .seconds(1))
+        }
+    }
+
+    struct RunShellFile: Sendable {
+        let path: String
+        private let device: UInt64
+        private let inode: UInt64
+
+        init(path: String, descriptor: Int32) throws(TmuxError) {
+            var metadata = stat()
+            guard fstat(descriptor, &metadata) == 0 else {
+                throw .invocationFailed(
+                    reason: "run_shell_command could not identify its staged command at \(path); "
+                        + "manual removal is required")
+            }
+            self.path = path
+            device = fileIdentityComponent(metadata.st_dev)
+            inode = fileIdentityComponent(metadata.st_ino)
+        }
+
+        enum Removal: Equatable {
+            case removed
+            case replaced
+            case failed(Int32)
+        }
+
+        func remove() -> Removal {
+            var metadata = stat()
+            // errno is captured inside each closure, immediately after the
+            // call that set it: `withCString` bridges the Swift `String` to a
+            // temporary C string and tears that buffer down once the closure
+            // returns, and that teardown is free to touch errno before a
+            // caller reading it afterward ever gets to.
+            let (lstatResult, lstatErrno) = path.withCString { pointer -> (Int32, Int32) in
+                let result = lstat(pointer, &metadata)
+                return (result, errno)
+            }
+            guard lstatResult == 0 else {
+                return lstatErrno == ENOENT ? .removed : .failed(lstatErrno)
+            }
+            guard fileIdentityComponent(metadata.st_dev) == device,
+                fileIdentityComponent(metadata.st_ino) == inode
+            else {
+                return .replaced
+            }
+            let (unlinkResult, unlinkErrno) = path.withCString { pointer -> (Int32, Int32) in
+                let result = unlink(pointer)
+                return (result, errno)
+            }
+            if unlinkResult == 0 || unlinkErrno == ENOENT { return .removed }
+            return .failed(unlinkErrno)
+        }
     }
 
     private enum RunShellLifetime {
@@ -553,8 +767,14 @@ extension TmuxTools {
     }
 
     private enum RetainedRunProof {
-        case completed
+        case released
         case ended
+    }
+
+    private enum RunShellState: Equatable {
+        case completed(Int)
+        case releasing
+        case released
     }
 
     private struct RetainedPaneState: Equatable {
@@ -563,7 +783,7 @@ extension TmuxTools {
         let isDead: Bool
     }
 
-    private struct RunShellCleanup: Sendable {
+    struct RunShellCleanup: Sendable {
         let pane: Pane
         let channel: String
         let releaseChannel: String
@@ -573,6 +793,7 @@ extension TmuxTools {
         let endMarker: [String]
         let payload: String
         let scriptPath: String
+        var stagedFile: RunShellFile?
 
         func captureLineLimit(for maximumLines: Int) throws -> Int {
             // Separator, cursor row, and one row that proves truncation.
@@ -729,15 +950,40 @@ extension TmuxTools {
         let target = shellQuoted(cleanup.pane.id.rawValue)
         let start = markerCommand(cleanup.startMarker)
         let end = markerCommand(cleanup.endMarker)
+        let originalDaemon =
+            "#{&&:#{==:#{pid},\(cleanup.pane.incarnation.processID)},"
+            + "#{==:#{start_time},\(cleanup.pane.incarnation.startedAt)}}"
+        let originalPane =
+            "#{&&:\(originalDaemon),#{&&:#{==:#{pane_id},\(cleanup.pane.id.rawValue)},"
+            + "#{==:#{pane_dead},0}}}"
+        // A lost acknowledgment reply may be retried after cleanup removed it.
+        // The guard prevents that retry from recreating the completed state.
+        let acknowledge =
+            "\(tmuxInvocation) if-shell -F -t \(target) "
+            + "\(shellQuoted("#{&&:\(originalPane),#{==:#{\(cleanup.statusOption)},releasing}}")) "
+            + shellQuoted(
+                "set-option -p -t \(cleanup.pane.id.rawValue) \(cleanup.statusOption) released")
+        let publish =
+            "\(tmuxInvocation) if-shell -F -t \(target) "
+            + "\(shellQuoted("#{&&:\(originalPane),#{==:#{\(cleanup.statusOption)},pending}}")) "
+            + "\"set-option -p -t \(cleanup.pane.id.rawValue) "
+            + "\(cleanup.statusOption) $\(status)\""
+        let retry =
+            "/bin/kill -0 \(cleanup.pane.incarnation.processID) 2>/dev/null || \\exit 0; "
+            + "/bin/sleep 0.1"
+        let completion =
+            "\(tmuxInvocation) if-shell -F -t \(target) \(shellQuoted(originalPane)) "
+            + shellQuoted("wait-for -S \(cleanup.channel)")
+        let release =
+            "\(tmuxInvocation) if-shell -F -t \(target) \(shellQuoted(originalPane)) "
+            + shellQuoted("wait-for \(cleanup.releaseChannel)")
         let finish =
             "\(status)=$?; "
-            + "\(tmuxInvocation) set-option -p -t \(target) "
-            + "\(shellQuoted(cleanup.statusOption)) \"$\(status)\"; "
+            + "until \(publish); do \(retry); done; "
             + "/usr/bin/printf '\\r\\n'; \(end); "
-            + "\(tmuxInvocation) wait-for -S \(shellQuoted(cleanup.channel)); "
-            + "\(tmuxInvocation) wait-for \(shellQuoted(cleanup.releaseChannel)); "
-            + "\(tmuxInvocation) set-option -pu -t \(target) "
-            + "\(shellQuoted(cleanup.statusOption)); \\exit 0"
+            + "until \(completion); do \(retry); done; "
+            + "until \(release); do \(retry); done; "
+            + "until \(acknowledge); do \(retry); done; \\exit 0"
         let remember =
             "case $- in *e*x*|*x*e*) \(flags)=ex ;; *e*) \(flags)=e ;; "
             + "*x*) \(flags)=x ;; *) \(flags)=none ;; esac"

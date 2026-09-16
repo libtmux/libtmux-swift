@@ -85,6 +85,21 @@ public struct WindowPlan: Sendable, Hashable, Codable {
         self.panes = panes
     }
 
+    /// Describes a window using a named or custom typed layout.
+    ///
+    /// The stored ``layout`` and its JSON/YAML representation remain strings.
+    public init(
+        windowName: String? = nil,
+        startDirectory: String? = nil,
+        layout: WindowLayout,
+        panes: [PanePlan]
+    ) {
+        self.init(
+            windowName: windowName, startDirectory: startDirectory,
+            layout: layout.rawValue, panes: panes
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case windowName = "window_name"
         case startDirectory = "start_directory"

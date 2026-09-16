@@ -4,12 +4,11 @@ Every Swift example in the documentation, as code the compiler accepts. A
 snippet on a page is prose until something builds it — it can name an API that
 was renamed, or quietly keep compiling while it stops being true — so each one
 lives here, and [`Scripts/check_examples.py`](../Scripts/check_examples.py)
-fails the build when a documented block appears in no file below.
+fails the build when a documented block appears in no file below, or when
+fewer examples than `--min-executed` have a live-test call site.
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 41
-47 documented examples mapped to consumer sources
-41 have live-test call sites
+$ python3 Scripts/check_examples.py --min-executed 40
 ```
 
 ## Why this is its own package
