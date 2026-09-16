@@ -47,6 +47,13 @@ struct WorkspaceRoot: WorkspaceAction {
     static let configuration = CommandConfiguration(
         commandName: "tmux-workspace",
         abstract: "Manage native tmux workspaces.",
+        discussion: """
+            Generate a shell completion script with the built-in \
+            --generate-completion-script <shell> flag (bash, zsh or fish); \
+            source the result from your shell's startup file. It is \
+            ArgumentParser's own flag and takes no other value, so it \
+            appears here rather than in the subcommand list above.
+            """,
         subcommands: [
             Load.self, Freeze.self, ListWorkspaces.self, Search.self, Convert.self, ImportRoot.self,
             Edit.self, DebugInfo.self, Shell.self,
