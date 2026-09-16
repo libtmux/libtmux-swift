@@ -51,6 +51,12 @@ version number says only which alpha you have. Pin an exact one.
   gate for "3.9 or later" is not satisfied by a build that only previews it.
   (#15)
 
+- `Server.selectLayout(_:_:)` refuses a JSON-shaped `WindowLayout.custom(_:)`
+  value before dispatch on a server older than tmux 3.8, and refuses a value
+  that merely looks JSON-shaped but is not well-formed on every version.
+  Applying tmux 3.8's `window_layout` string to 3.3 or 3.3a previously reached
+  the daemon and crashed it instead of being rejected. (#15)
+
 ## [0.1.0-alpha.5] - 2026-09-12
 
 ### Added

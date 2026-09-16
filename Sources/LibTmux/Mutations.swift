@@ -28,6 +28,17 @@ public enum ResizeDirection: Sendable, Hashable, Codable {
 /// Encodes as tmux's layout string, so stored layouts and tmuxp documents keep
 /// their existing wire representation. Custom strings are validated by tmux
 /// when applied, allowing layouts saved from `window_layout` and future names.
+///
+/// One shape is checked before that, not after: a JSON-encoded layout --
+/// `window_layout` on tmux 3.8 and later -- reads back a `{`-prefixed string,
+/// and applying that to a server older than 3.8 is not merely rejected. tmux
+/// 3.3 and 3.3a free an uninitialized `cause` while rejecting a layout their
+/// grammar does not recognize, which JSON is not, and any string reaching
+/// that path there kills the daemon rather than reporting an error (fixed in
+/// 3.4). `Server.selectLayout` guards this: it refuses a `{`-shaped layout
+/// client-side rather than dispatching it, either because the string is not
+/// valid JSON at all (every version) or because the server is older than 3.8
+/// (that version and later apply it normally).
 public struct WindowLayout: Sendable, Hashable, Codable {
     /// The text passed to tmux's `select-layout` command.
     public let rawValue: String
@@ -51,6 +62,24 @@ public struct WindowLayout: Sendable, Hashable, Codable {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }
+}
+
+/// Whether a layout string is the JSON form, decided exactly as tmux's own
+/// `layout_construct` decides it: skip leading whitespace, then look at one
+/// byte. Nothing past that byte is inspected here.
+private func layoutOpensAsJSON(_ layout: String) -> Bool {
+    layout.first(where: { !$0.isWhitespace }) == "{"
+}
+
+/// Whether a `{`-shaped layout is at least syntactically valid JSON.
+///
+/// Answers nothing about whether tmux's own reader would accept the
+/// object's fields — that is `layout_parse_json`'s job on the versions that
+/// have it, and this never looks past `{"V":...,"L":{...}}`'s outermost
+/// braces to check.
+private func isSyntacticallyValidJSON(_ layout: String) -> Bool {
+    guard let data = layout.data(using: .utf8) else { return false }
+    return (try? JSONSerialization.jsonObject(with: data)) != nil
 }
 
 extension Server {
@@ -82,10 +111,44 @@ extension Server {
 
     /// Applies one of tmux's own layouts — `even-horizontal`, `tiled`, and the
     /// rest — to a window.
+    ///
+    /// A `{`-shaped `layout` — the JSON `window_layout` tmux 3.8 and later
+    /// report — is checked before it reaches tmux at all, rather than after:
+    /// see ``WindowLayout`` for why. This never inspects the JSON body past
+    /// confirming it parses; the shape it accepts or rejects is exactly what
+    /// `layout_construct` accepts or rejects, not a grammar of its own.
     public func selectLayout(
         _ window: Window,
         _ layout: String
     ) async throws(TmuxError) {
+        if layoutOpensAsJSON(layout) {
+            guard isSyntacticallyValidJSON(layout) else {
+                throw .invocationFailed(
+                    reason:
+                        "layout is not valid JSON: \(layout.debugDescription)"
+                )
+            }
+            // tmux 3.8 (commit bf43fdc0, tag 3.8-rc, verified against
+            // ~/study/c/tmux) is the first release with a JSON layout
+            // reader. Every earlier release runs the same string past its
+            // checksum-prefixed grammar instead, which a JSON string never
+            // matches; on 3.4 and later that fails cleanly, but 3.3 and
+            // 3.3a's rejection path frees an uninitialized `cause` and kills
+            // the daemon (see ``WindowLayout``). A `next-3.8` build is
+            // deliberately excluded too — TmuxVersion.< ranks a development
+            // build below the release it names, since which commit it was
+            // built from, and so whether this reader is even in it yet, is
+            // exactly what a preview build does not promise.
+            let running = try await version()
+            guard running >= TmuxVersion(major: 3, minor: 8) else {
+                throw .invocationFailed(
+                    reason:
+                        "a JSON layout needs tmux 3.8 or later; this server reports "
+                        + "\(running), and forwarding one to 3.3 or 3.3a crashes it "
+                        + "rather than being rejected"
+                )
+            }
+        }
         try await expectSuccess(
             TmuxCommand("select-layout", ["-t", window.id.rawValue, "--", layout]),
             guardedBy: [.window(window)]
