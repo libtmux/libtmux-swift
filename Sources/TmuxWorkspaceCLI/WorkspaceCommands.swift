@@ -133,6 +133,14 @@ enum WorkspaceCommands {
                                 try requireSuccess(
                                     await server.setOption(name, to: value, scope: .window(window)))
                             }
+                        },
+                        configureWindowAfter: { window, index in
+                            for (name, value) in plan.windowOptionsAfter[index].sorted(by: {
+                                $0.key < $1.key
+                            }) {
+                                try requireSuccess(
+                                    await server.setOption(name, to: value, scope: .window(window)))
+                            }
                         }, borrowing: borrowed,
                         onEvent: { event in
                             let name: String
@@ -363,18 +371,27 @@ enum WorkspaceCommands {
         let snapshot = try await server.snapshot()
         let session = try await freezeSession(
             command, snapshot: snapshot, server: server, context: context)
+        // Compared against `#{pane_current_command}`, which tmux already
+        // reports without a directory, to decide whether a pane is worth
+        // writing a `shell_command` for at all.
+        let defaultShell = try await defaultShellCommand(for: session, server: server)
         var windows: [Value] = []
         for link in snapshot.windowLinks(of: session).sorted(by: { $0.index < $1.index }) {
             guard let window = snapshot.windows.first(where: { $0.id == link.windowID }) else {
                 throw CLIError("stale_session", "A captured window disappeared.")
             }
-            let panes = snapshot.panes(of: window).map { pane in
-                Value.object([
+            let panes = snapshot.panes(of: window).map { pane -> Value in
+                var fields: [String: Value] = [
                     "start_directory": .string(pane.currentPath),
                     "focus": .bool(pane.isActive),
-                    "shell_command": .array(
-                        pane.currentCommand.isEmpty ? [] : [.string(pane.currentCommand)]),
-                ])
+                ]
+                // Omitted for the session's own default shell so the pane
+                // reloads plain; emitted for anything else, so a real
+                // command is not silently dropped.
+                if !pane.currentCommand.isEmpty, pane.currentCommand != defaultShell {
+                    fields["shell_command"] = .array([.string(pane.currentCommand)])
+                }
+                return .object(fields)
             }
             var value: [String: Value] = [
                 "window_name": .string(window.name), "panes": .array(panes),
@@ -383,26 +400,21 @@ enum WorkspaceCommands {
             if let layout = try await server.format("#{window_layout}", for: link) {
                 value["layout"] = .string(layout)
             }
-            value["options"] = .object(try await freezeOptions(.window(window), server: server))
+            // Written as `options_after`, not `options`: a captured
+            // `automatic-rename off` only holds when it is applied once the
+            // panes already exist, which is what `options_after` means on
+            // load.
+            value["options_after"] = .object(
+                try await freezeOptions(.window(window), server: server))
             windows.append(.object(value))
-        }
-        let scope = EnvironmentScope.session(session.id.rawValue)
-        var environment: [String: Value] = [:]
-        for variable in try await server.environment(scope) {
-            // A multiline value can resemble another listing row. A direct
-            // lookup authenticates each name and preserves the complete value.
-            if let value = try await server.environmentValue(variable.name, in: scope) {
-                environment[variable.name] = .string(value)
-            }
         }
         let document = Value.object([
             "session_name": .string(session.name), "windows": .array(windows),
             "options": .object(try await freezeOptions(.session(session), server: server)),
-            "environment": .object(environment),
         ])
         if !command.quiet {
             try await output.warning(
-                "Capture preserves current commands, directories, layouts, indexes, focus, local options and session environment values. Original arguments and scripts are unavailable; global settings and environment removal markers are omitted."
+                "Capture preserves current commands, directories, layouts, indexes, focus and local options. Original arguments, scripts and session environment values are unavailable; global settings are omitted."
             )
         }
         if let destination = command.destination {
@@ -423,6 +435,19 @@ enum WorkspaceCommands {
             try await context.output(
                 DocumentStore(context: context).encode(document, format: command.format ?? .yaml))
         }
+    }
+
+    /// The basename of the session's effective `default-shell`, e.g. `zsh`
+    /// for `/usr/bin/zsh`, matching how tmux itself reports
+    /// `#{pane_current_command}`. Empty when tmux has no answer for it,
+    /// which keeps every pane's command significant rather than silently
+    /// dropped.
+    private static func defaultShellCommand(
+        for session: Session, server: Server
+    ) async throws -> String {
+        guard let shell = try await server.resolvedOption("default-shell", scope: .session(session))
+        else { return "" }
+        return URL(fileURLWithPath: shell).lastPathComponent
     }
 
     private static func freezeOptions(
@@ -516,6 +541,7 @@ enum WorkspaceCommands {
         let environment: [String: String]
         let options: [String: String]
         let windowOptions: [[String: String]]
+        let windowOptionsAfter: [[String: String]]
         let beforeScript: [String]?
     }
 
@@ -575,17 +601,24 @@ enum WorkspaceCommands {
             throw CLIError("document", "windows must be a nonempty list.")
         }
         var windowOptions: [[String: String]] = []
+        var windowOptionsAfter: [[String: String]] = []
         let windows = try source.enumerated().map { index, item in
             let window = try mapping(
                 item,
                 allowed: [
                     "window_name", "start_directory", "layout", "panes", "shell_command_before",
-                    "suppress_history", "options", "window_index", "focus",
+                    "suppress_history", "options", "options_after", "window_index", "focus",
                 ], at: "windows[\(index)]")
             windowOptions.append(
                 inheritedOptions.merging(
                     try scalarMapping(window["options"], at: "window.options", store: store)
                 ) { _, local in local })
+            // `freeze` writes local window options under `options_after`
+            // because `automatic-rename off` only holds once the panes
+            // exist; both spellings load the same way tmuxp accepts them.
+            windowOptionsAfter.append(
+                try scalarMapping(
+                    window["options_after"], at: "window.options_after", store: store))
             let windowDirectory =
                 try directory(
                     window["start_directory"], parent: URL(fileURLWithPath: rootDirectory),
@@ -662,7 +695,7 @@ enum WorkspaceCommands {
             workspace: Workspace(
                 sessionName: name, startDirectory: rootDirectory, windows: windows),
             environment: environment, options: options, windowOptions: windowOptions,
-            beforeScript: beforeScript)
+            windowOptionsAfter: windowOptionsAfter, beforeScript: beforeScript)
     }
 
     private static func containsNUL(_ value: Value) -> Bool {

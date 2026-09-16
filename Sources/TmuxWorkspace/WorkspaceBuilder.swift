@@ -37,6 +37,7 @@ public enum WorkspaceBuilder {
         environment: [String: String],
         configureSession: @Sendable (Session) async throws -> Void,
         configureWindow: @Sendable (Window, Int) async throws -> Void,
+        configureWindowAfter: @Sendable (Window, Int) async throws -> Void = { _, _ in },
         borrowing borrowed: Session? = nil,
         onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void = { _ in }
     ) async throws(WorkspaceBuilderError) -> Session {
@@ -102,6 +103,10 @@ public enum WorkspaceBuilder {
                 try await onEvent(.windowStarted(index: index, window: created))
                 try await build(
                     window, at: index, in: created, of: workspace, on: server, onEvent: onEvent)
+                // Applied only once every pane in the window exists: an option
+                // such as `automatic-rename off` only holds if it lands after
+                // whatever created the panes could have renamed the window.
+                try await configureWindowAfter(created, index)
                 try await onEvent(.windowCompleted(index: index, window: created))
                 if window.focus == true { focusedWindow = created }
             }
