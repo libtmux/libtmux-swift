@@ -1460,6 +1460,35 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("focus accepts the quoted strings tmuxp freeze writes")
+    func focusAcceptsQuotedBoolean() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("focus-quoted.json")
+            for windows in [
+                #"[{"focus":"true","panes":[{"focus":"false"}]}]"#,
+                #"[{"panes":[{"focus":"true"}]}]"#,
+            ] {
+                try Data("{\"session_name\":\"quoted\",\"windows\":\(windows)}".utf8)
+                    .write(to: file)
+                let result = await invoke(
+                    ["load", file.path, "-d", "-S", "unavailable", "--json"], in: root)
+                // The document must clear validation; what stops the load next is
+                // the unreachable backend, never the boolean parse.
+                #expect(
+                    !result.error.joined().contains("must be a boolean"), "\(result.error)")
+                #expect(!result.error.joined().contains(#""code":"document""#), "\(result.error)")
+            }
+            let invalid = root.appendingPathComponent("focus-invalid.json")
+            try Data(
+                #"{"session_name":"invalid","windows":[{"panes":[{"focus":"maybe"}]}]}"#.utf8
+            ).write(to: invalid)
+            let result = await invoke(
+                ["load", invalid.path, "-d", "-S", "unavailable", "--json"], in: root)
+            #expect(result.code == 1)
+            #expect(result.error.joined().contains("must be a boolean"), "\(result.error)")
+        }
+    }
+
     @Test("freeze selects explicit, pane-context and sole sessions without guessing")
     func freezeSessionSelection() async throws {
         try await withTmuxServer { server in
