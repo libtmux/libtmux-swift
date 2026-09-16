@@ -59,6 +59,33 @@ struct CaptureSinceTests {
         }
     }
 
+    @Test("a dead pane with no process still answers an incremental capture")
+    func deadPaneStillAnswersIncrementalCapture() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            // Global rather than per-pane: it has to be in place before the
+            // respawn whose exit is what kills the pane's process, and there
+            // is no pane left afterward to set a pane-scoped option on.
+            try await server.setOption("remain-on-exit", to: "on", scope: .globalWindow)
+            try await server.respawn(pane, running: ["true"])
+            try #require(
+                try await waitUntil {
+                    try await server.panes().first(where: { $0.id == pane.id })?.isDead == true
+                }
+            )
+
+            // `#{pane_pid}` for a pane with no process is `"0"` on tmux before
+            // 3.8 and the empty string from 3.8 on (tmux CHANGES, 3.7c -> 3.8).
+            // Both are opaque text as far as this call is concerned, so either
+            // one answers rather than throwing -- the establishing read and
+            // the incremental one that follows it, which additionally compares
+            // the value against itself to decide the pane did not restart.
+            let first = try await server.capture(pane, since: nil)
+            let second = try await server.capture(pane, since: first.cursor)
+            #expect(second.lines.isEmpty)
+        }
+    }
+
     @Test("incremental capture bounds pane output at the transport")
     func incrementalCaptureIsSourceBounded() async throws {
         try await withTmuxServer { fixture in
