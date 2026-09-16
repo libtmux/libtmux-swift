@@ -1535,7 +1535,34 @@ struct WorkspaceCLITests {
         }
     }
 
-    @Test("freeze and reload preserve local options and multiline environment values")
+    @Test("load applies window options_after once every pane in the window exists")
+    func windowOptionsAfterAppliesPostPane() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("options-after.json")
+            // java and rs freeze window options under this key; swift's
+            // loader refused it outright before M13's fix.
+            try Data(
+                #"""
+                {"session_name":"options-after","windows":[{"window_name":"one","options_after":{"automatic-rename":"off"},"panes":["true","true","true"]}]}
+                """#.utf8
+            ).write(to: file)
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            let loaded = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "options-after" })
+            let window = try #require(snapshot.windows(of: session).first)
+            #expect(snapshot.panes(of: window).count == 3)
+            #expect(try await server.option("automatic-rename", scope: .window(window)) == "off")
+        }
+    }
+
+    @Test(
+        "freeze and reload preserve local options as options_after, without leaking environment or a default shell"
+    )
     func freezeSettingsRoundTrip() async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }
@@ -1545,16 +1572,17 @@ struct WorkspaceCLITests {
             let window = try #require(snapshot.windows(of: session).first)
             let sessionValue = "session 'quoted' \\ λ\nnext"
             let windowValue = "window \"quoted\" #{session_name}\nlast"
-            let environmentValue = "first\nFREEZE_FAKE_VARIABLE=ghost\nlast=λ\n"
             try await server.setOption(
                 "@freeze-session", to: sessionValue, scope: .session(session))
             // A value the listing prints as it is stored takes the short path
             // through capture; a quoted or escaped one takes the second read.
             try await server.setOption("@freeze-plain", to: "plain/value", scope: .session(session))
             try await server.setOption("@freeze-window", to: windowValue, scope: .window(window))
+            // A caller's own environment, not only the ambient SSH/display
+            // values M11 was filed against, still must not appear: the
+            // top-level block is gone outright, not merely filtered.
             try await server.setEnvironment(
-                "FREEZE_VALUE", to: environmentValue, in: .session(session.id.rawValue))
-            try await server.removeEnvironment("FREEZE_REMOVED", in: .session(session.id.rawValue))
+                "FREEZE_VALUE", to: "should not be captured", in: .session(session.id.rawValue))
             let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
             let captured = await invoke(
                 ["freeze", "bootstrap", "-S", socket, "--json"], in: root, extra: environment)
@@ -1562,12 +1590,17 @@ struct WorkspaceCLITests {
             let document = try captured.json()
             #expect((document["options"] as? [String: String])?["@freeze-session"] == sessionValue)
             #expect((document["options"] as? [String: String])?["@freeze-plain"] == "plain/value")
+            #expect(document["environment"] == nil, "\(document)")
             let windows = try #require(document["windows"] as? [[String: Any]])
-            #expect((windows[0]["options"] as? [String: String])?["@freeze-window"] == windowValue)
-            let variables = try #require(document["environment"] as? [String: String])
-            #expect(variables["FREEZE_VALUE"] == environmentValue)
-            #expect(variables["FREEZE_FAKE_VARIABLE"] == nil)
-            #expect(variables["FREEZE_REMOVED"] == nil)
+            #expect(windows[0]["options"] == nil, "\(windows[0])")
+            #expect(
+                (windows[0]["options_after"] as? [String: String])?["@freeze-window"]
+                    == windowValue)
+            let panes = try #require(windows[0]["panes"] as? [[String: Any]])
+            // The lone pane runs the session's own default shell, which
+            // `shell_command` omits so the reload starts a plain pane
+            // instead of a shell inside a shell.
+            #expect(panes[0]["shell_command"] == nil, "\(panes[0])")
             let quiet = await invoke(
                 ["freeze", "bootstrap", "-S", socket, "--json", "-q"], in: root, extra: environment)
             #expect(quiet.code == 0)
@@ -1588,9 +1621,6 @@ struct WorkspaceCLITests {
             #expect(
                 try await server.option("@freeze-window", scope: .window(replayedWindow))
                     == windowValue)
-            #expect(
-                try await server.environmentValue(
-                    "FREEZE_VALUE", in: .session(replayed.id.rawValue)) == environmentValue)
         }
     }
 
