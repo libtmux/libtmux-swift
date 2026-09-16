@@ -2,6 +2,7 @@ import Foundation
 import LibTmux
 
 package enum WorkspaceBuildEvent: Sendable {
+    case sessionCreated(session: Session)
     case windowStarted(index: Int, window: Window, session: Session)
     case paneStarted(windowIndex: Int, index: Int, pane: Pane, window: Window, session: Session)
     case paneCompleted(windowIndex: Int, index: Int, pane: Pane, window: Window, session: Session)
@@ -35,6 +36,8 @@ public enum WorkspaceBuilder {
         _ workspace: Workspace,
         on server: Server,
         environment: [String: String],
+        width: Int? = nil,
+        height: Int? = nil,
         configureSession: @Sendable (Session) async throws -> Void,
         configureWindow: @Sendable (Window, Int) async throws -> Void,
         configureWindowAfter: @Sendable (Window, Int) async throws -> Void = { _, _ in },
@@ -67,15 +70,25 @@ public enum WorkspaceBuilder {
                 let directory =
                     window.panes.first?.startDirectory
                     ?? window.startDirectory ?? workspace.startDirectory
+                // The window's first pane takes its own environment/shell
+                // over the window's, matching tmuxp: a pane that names one
+                // overrides what its window would otherwise supply.
+                let firstPane = window.panes.first
+                let windowEnvironment = firstPane?.environment ?? window.environment ?? [:]
+                let windowShell = nonEmpty(firstPane?.shell) ?? window.windowShell
                 let created: Window
                 if index == 0 && borrowed == nil {
                     let made = try await server.newSession(
                         named: workspace.sessionName,
                         startDirectory: directory,
                         windowName: window.windowName,
-                        environment: environment
+                        width: width,
+                        height: height,
+                        environment: environment.merging(windowEnvironment) { _, new in new },
+                        shell: windowShell
                     )
                     session = made
+                    try await onEvent(.sessionCreated(session: made))
                     try await configureSession(made)
                     let snapshot = try await server.snapshot()
                     guard let first = snapshot.windows(of: made).first
@@ -96,7 +109,9 @@ public enum WorkspaceBuilder {
                         in: session,
                         named: window.windowName,
                         startDirectory: directory,
-                        at: borrowed == nil ? window.windowIndex : nil
+                        at: borrowed == nil ? window.windowIndex : nil,
+                        environment: windowEnvironment,
+                        shell: windowShell
                     ).window
                 }
                 guard let activeSession = session else {
@@ -202,7 +217,9 @@ public enum WorkspaceBuilder {
                 try await server.split(
                     previous,
                     startDirectory: pane.startDirectory ?? window.startDirectory
-                        ?? workspace.startDirectory
+                        ?? workspace.startDirectory,
+                    environment: pane.environment ?? window.environment ?? [:],
+                    shell: nonEmpty(pane.shell) ?? window.windowShell
                 )
             )
             // Halving each pane in turn runs out of room by the fifth;
@@ -222,6 +239,9 @@ public enum WorkspaceBuilder {
                     windowIndex: windowIndex, index: index, pane: pane, window: created,
                     session: session))
             for command in plan.shellCommands {
+                if let seconds = plan.sleepBefore, seconds > 0 {
+                    try await Task.sleep(for: .seconds(seconds))
+                }
                 if command.enter {
                     try await server.run(command.command, in: pane)
                 } else {
@@ -232,6 +252,9 @@ public enum WorkspaceBuilder {
                         to: pane,
                         literally: true
                     )
+                }
+                if let seconds = plan.sleepAfter, seconds > 0 {
+                    try await Task.sleep(for: .seconds(seconds))
                 }
             }
             try await onEvent(
@@ -269,6 +292,13 @@ private actor RollbackRaceGate {
         if let result { return result }
         return await withCheckedContinuation { waiter = $0 }
     }
+}
+
+/// tmuxp treats an empty pane-level `shell`/`window_shell` override the same
+/// as one left out, rather than as a command to run nothing.
+private func nonEmpty(_ value: String?) -> String? {
+    guard let value, !value.isEmpty else { return nil }
+    return value
 }
 
 /// Why a workspace could not be built, including what happened while undoing.

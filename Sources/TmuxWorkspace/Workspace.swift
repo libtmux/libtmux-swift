@@ -73,6 +73,12 @@ public struct WindowPlan: Sendable, Hashable, Codable {
     public let windowIndex: Int?
     /// Selects this window after the workspace is built.
     public let focus: Bool?
+    /// Environment entries for the window's first pane, unless that pane
+    /// names its own. `nil` means no window-level entries were given.
+    public let environment: [String: String]?
+    /// Replaces the first pane's shell as the command tmux spawns, unless
+    /// that pane names its own `shell`.
+    public let windowShell: String?
     /// The panes to open. The first is the window itself; each one after it
     /// splits what is already there.
     public let panes: [PanePlan]
@@ -83,7 +89,9 @@ public struct WindowPlan: Sendable, Hashable, Codable {
         layout: String? = nil,
         panes: [PanePlan],
         windowIndex: Int? = nil,
-        focus: Bool? = nil
+        focus: Bool? = nil,
+        environment: [String: String]? = nil,
+        windowShell: String? = nil
     ) {
         self.windowName = windowName
         self.startDirectory = startDirectory
@@ -91,6 +99,8 @@ public struct WindowPlan: Sendable, Hashable, Codable {
         self.panes = panes
         self.windowIndex = windowIndex
         self.focus = focus
+        self.environment = environment
+        self.windowShell = windowShell
     }
 
     enum CodingKeys: String, CodingKey {
@@ -100,6 +110,8 @@ public struct WindowPlan: Sendable, Hashable, Codable {
         case panes
         case windowIndex = "window_index"
         case focus
+        case environment
+        case windowShell = "window_shell"
     }
 }
 
@@ -169,19 +181,39 @@ public struct PanePlan: Sendable, Hashable, Codable {
     public let startDirectory: String?
     /// Selects this pane after its window's commands are sent.
     public let focus: Bool?
+    /// Environment entries for this pane, overriding the window's.
+    /// `nil` falls back to the window's own entries.
+    public let environment: [String: String]?
+    /// Replaces this pane's shell as the command tmux spawns, overriding the
+    /// window's `window_shell`. `nil` falls back to the window's own.
+    public let shell: String?
+    /// Seconds to wait before sending this pane's commands.
+    public let sleepBefore: Double?
+    /// Seconds to wait after sending this pane's commands.
+    public let sleepAfter: Double?
 
     public init(
-        shellCommands: [TmuxShellCommand] = [], startDirectory: String? = nil, focus: Bool? = nil
+        shellCommands: [TmuxShellCommand] = [], startDirectory: String? = nil, focus: Bool? = nil,
+        environment: [String: String]? = nil, shell: String? = nil, sleepBefore: Double? = nil,
+        sleepAfter: Double? = nil
     ) {
         self.shellCommands = shellCommands
         self.startDirectory = startDirectory
         self.focus = focus
+        self.environment = environment
+        self.shell = shell
+        self.sleepBefore = sleepBefore
+        self.sleepAfter = sleepAfter
     }
 
     enum CodingKeys: String, CodingKey {
         case shellCommands = "shell_command"
         case startDirectory = "start_directory"
         case focus
+        case environment
+        case shell
+        case sleepBefore = "sleep_before"
+        case sleepAfter = "sleep_after"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -203,6 +235,11 @@ public struct PanePlan: Sendable, Hashable, Codable {
             forKey: .startDirectory
         )
         let focus = try container.decodeIfPresent(Bool.self, forKey: .focus)
+        let environment = try container.decodeIfPresent(
+            [String: String].self, forKey: .environment)
+        let shell = try container.decodeIfPresent(String.self, forKey: .shell)
+        let sleepBefore = try container.decodeIfPresent(Double.self, forKey: .sleepBefore)
+        let sleepAfter = try container.decodeIfPresent(Double.self, forKey: .sleepAfter)
         // `shell_command` is a string or a list of them, depending on who wrote
         // the file.
         // Elements are optional because a list is allowed to hold a null
@@ -212,7 +249,9 @@ public struct PanePlan: Sendable, Hashable, Codable {
             forKey: .shellCommands
         ) {
             self.init(
-                shellCommands: list.compactMap { $0 }, startDirectory: directory, focus: focus)
+                shellCommands: list.compactMap { $0 }, startDirectory: directory, focus: focus,
+                environment: environment, shell: shell, sleepBefore: sleepBefore,
+                sleepAfter: sleepAfter)
         } else {
             let single = try container.decodeIfPresent(
                 TmuxShellCommand.self,
@@ -220,7 +259,8 @@ public struct PanePlan: Sendable, Hashable, Codable {
             )
             self.init(
                 shellCommands: single.map { [$0] } ?? [],
-                startDirectory: directory, focus: focus
+                startDirectory: directory, focus: focus, environment: environment, shell: shell,
+                sleepBefore: sleepBefore, sleepAfter: sleepAfter
             )
         }
     }
@@ -230,5 +270,9 @@ public struct PanePlan: Sendable, Hashable, Codable {
         try container.encode(shellCommands, forKey: .shellCommands)
         try container.encodeIfPresent(startDirectory, forKey: .startDirectory)
         try container.encodeIfPresent(focus, forKey: .focus)
+        try container.encodeIfPresent(environment, forKey: .environment)
+        try container.encodeIfPresent(shell, forKey: .shell)
+        try container.encodeIfPresent(sleepBefore, forKey: .sleepBefore)
+        try container.encodeIfPresent(sleepAfter, forKey: .sleepAfter)
     }
 }
