@@ -29,6 +29,15 @@ public enum ResizeDirection: Sendable, Hashable, Codable {
 /// their existing wire representation. Custom strings are validated by tmux
 /// when applied, allowing layouts saved from `window_layout` and future names.
 ///
+/// Restoring a saved layout onto the window it came from puts every pane back
+/// in its cell only from a JSON string (tmux 3.8 and later, read by a client
+/// that has negotiated it -- see ``Server/connected(attachingTo:_:)``): the
+/// classic string carries cell positions but no pane identity, so a pane can
+/// land in a different cell of the same shape (verified against tmux 3.7c).
+/// Applying a saved layout to a window with a different pane count is not
+/// refused either way -- tmux fits what panes there are to the tree and drops
+/// the rest, silently.
+///
 /// One shape is checked before that, not after: a JSON-encoded layout --
 /// `window_layout` on tmux 3.8 and later -- reads back a `{`-prefixed string,
 /// and applying that to a server older than 3.8 is not merely rejected. tmux

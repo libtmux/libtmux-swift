@@ -136,6 +136,34 @@ struct MutationTests {
         }
     }
 
+    @Test("a saved layout with more panes than the target window degrades without error")
+    func customLayoutWithExtraPanesDegradesSilently() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version >= TmuxVersion(major: 3, minor: 8) else {
+                // The classic form has no pane count of its own to read back
+                // against a mismatched window; verified locally against
+                // /home/d/.local/share/libtmux-tmux-matrix/master-e880cf63.
+                return
+            }
+            let session = try #require(try await server.sessions().first)
+            let source = try #require(try await server.windows().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(source) }
+            try await server.selectLayout(source, .tiled)
+            let sourceLink = try #require(
+                try await server.windowLinks().first { $0.windowID == source.id })
+            let saved = try #require(try await server.format("#{window_layout}", for: sourceLink))
+
+            let target = try await server.newWindow(in: session, named: "fewer-panes").window
+            try await server.selectLayout(target, WindowLayout.custom(saved))
+            let targetPanes = try await server.panes().filter { $0.windowID == target.id }
+            // Raw tmux applies the same four-leaf tree to a one-pane window
+            // without refusing it; this is tmux's own behavior (see
+            // WindowLayout), not something this method validates.
+            #expect(targetPanes.count == 1)
+        }
+    }
+
     @Test("creating an object returns it, already read back")
     func creatingReturnsTheObject() async throws {
         try await withTmuxServer { server in
