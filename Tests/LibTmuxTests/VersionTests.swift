@@ -55,6 +55,32 @@ struct VersionTests {
         #expect(TmuxVersion(parsing: "3.9")! < TmuxVersion(parsing: "3.10")!)
     }
 
+    @Test("a tagged build sorts between the release before it and the one it names")
+    func taggedBuildsPreviewRatherThanEqual() throws {
+        let previous = TmuxVersion(major: 3, minor: 8)
+        let preview = TmuxVersion(major: 3, minor: 9, build: "next")
+        let release = TmuxVersion(major: 3, minor: 9)
+        // A gate for "3.9 or later" must not be satisfied by a build that
+        // only previews 3.9 -- half-landed features are exactly the risk.
+        #expect(previous < preview)
+        #expect(preview < release)
+        #expect(!(release < preview))
+        #expect(preview != release)
+
+        // The same rule for a vendored tag, not only a development one: a
+        // fork claiming a number is not proven to behave like the release.
+        #expect(TmuxVersion(major: 3, minor: 2, build: "openbsd") < TmuxVersion(major: 3, minor: 2))
+
+        // Two different tags at the same number are still totally ordered,
+        // by their own text, so a mixed list always sorts without ties.
+        let master = TmuxVersion(major: 3, minor: 4, build: "master")
+        let openbsd = TmuxVersion(major: 3, minor: 4, build: "openbsd")
+        #expect(master < openbsd)
+        #expect(!(openbsd < master))
+        let mixed = [openbsd, TmuxVersion(major: 3, minor: 4), master]
+        #expect(mixed.sorted() == [master, openbsd, TmuxVersion(major: 3, minor: 4)])
+    }
+
     @Test("it round-trips through its own description")
     func descriptionRoundTrips() throws {
         for text in ["3.2a", "3.4", "3.7b", "3.4-master", "3.8-next"] {
