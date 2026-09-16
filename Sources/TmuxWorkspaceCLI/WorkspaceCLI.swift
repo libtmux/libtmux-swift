@@ -124,11 +124,15 @@ enum WorkspaceCLI {
             switch action {
             case let command as WorkspaceRoot:
                 if command.version {
-                    try await output.result(
-                        .object([
-                            "name": .string("tmux-workspace"),
-                            "version": .string(LibTmuxVersion.current),
-                        ]))
+                    if command.output.machine {
+                        try await output.result(
+                            .object([
+                                "name": .string("tmux-workspace"),
+                                "version": .string(LibTmuxVersion.current),
+                            ]))
+                    } else {
+                        try await context.output("tmux-workspace \(LibTmuxVersion.current)")
+                    }
                 } else if command.output.machine {
                     throw CLIError("usage", "Choose a workspace command or --version.", status: 2)
                 } else {

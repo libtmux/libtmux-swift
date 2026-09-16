@@ -303,6 +303,18 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("human --version prints a plain line, not JSON")
+    func humanVersionIsPlainText() async throws {
+        try await withFiles { root in
+            let result = await invoke(["--version"], in: root)
+            #expect(result.code == 0)
+            #expect(result.output == ["tmux-workspace \(LibTmuxVersion.current)"])
+            #expect(
+                (try? JSONSerialization.jsonObject(with: Data(result.output.joined().utf8)))
+                    == nil)
+        }
+    }
+
     @Test("invalid options are structured before backend access")
     func invalidOption() async throws {
         try await withFiles { root in
@@ -935,6 +947,18 @@ struct WorkspaceCLITests {
             #expect(
                 (try available.json()["tmux"] as? [String: Any])?["version"] as? String
                     == "tmux 3.2a")
+        }
+    }
+
+    @Test("human debug-info prints plain lines, not JSON")
+    func humanDiagnosticsAreLines() async throws {
+        try await withFiles { root in
+            let result = await invoke(["debug-info"], in: root)
+            #expect(result.code == 0)
+            let text = result.output.joined(separator: "\n")
+            #expect((try? JSONSerialization.jsonObject(with: Data(text.utf8))) == nil)
+            #expect(text.contains("swift"))
+            #expect(text.contains(LibTmuxVersion.current))
         }
     }
 
