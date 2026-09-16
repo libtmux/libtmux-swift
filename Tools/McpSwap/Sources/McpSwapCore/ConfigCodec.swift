@@ -675,8 +675,15 @@ private func nextJSONEdit(text: String, desired: [String: Any], path: [String]) 
         let currentText = String(blankedCharacters[member.valueStart..<member.valueEnd])
         let current = try JSONSerialization.jsonObject(
             with: Data(currentText.utf8), options: .fragmentsAllowed)
+        // Recursing unconditionally re-parses and re-scans `text` from the
+        // top for every sibling object, even ones with nothing changed --
+        // quadratic in a config with many sibling entries at one level, such
+        // as Claude Code's per-project settings map. Comparing first keeps
+        // the recursion to the one subtree that actually differs.
         if let desiredObject = value as? [String: Any], current is [String: Any] {
-            if let nested = try nextJSONEdit(text: text, desired: desiredObject, path: path + [key])
+            if !jsonEqual(current, value),
+                let nested = try nextJSONEdit(
+                    text: text, desired: desiredObject, path: path + [key])
             {
                 return nested
             }

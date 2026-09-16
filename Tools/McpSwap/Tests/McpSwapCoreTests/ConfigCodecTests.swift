@@ -84,6 +84,62 @@ import Testing
     }
 }
 
+@Test func settingServerScalesWithFileSizeNotSiblingProjectCount() throws {
+    let client = fixtureClient(.claude)
+    let targetPath = "/repo/target"
+    var projects: [String: Any] = [
+        targetPath: [
+            "allowedTools": [String](), "mcpContextUris": [String](),
+            "mcpServers": ["keep": ["command": "echo", "args": ["existing"]]],
+            "env": [String: String](),
+        ]
+    ]
+    for index in 0..<400 {
+        projects["/repo/sibling-\(index)"] = [
+            "allowedTools": ["Bash(ls:*)", "Bash(git:*)"],
+            "mcpContextUris": [String](),
+            "mcpServers": [String: Any](),
+            "history": Array(
+                repeating: "a synthetic history line padding this sibling project entry",
+                count: 8
+            ),
+        ]
+    }
+    let original = try JSONSerialization.data(
+        withJSONObject: ["numStartups": 1, "projects": projects],
+        options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    )
+    let spec = ServerSpec(
+        command: "/repo/.build/debug/libtmux-mcp", arguments: [], environment: [:])
+
+    let started = ContinuousClock.now
+    let result = try ConfigCodec.settingServer(
+        client: client,
+        bytes: original,
+        server: "libtmux",
+        spec: spec,
+        repo: URL(fileURLWithPath: targetPath),
+        scope: .project
+    )
+    let elapsed = ContinuousClock.now - started
+
+    // Recursing into every sibling project before comparing it made this
+    // scale with (sibling count x file size); comparing first makes it scale
+    // with file size alone, so 400 untouched siblings cost about what one
+    // would.
+    #expect(elapsed < .seconds(5))
+    #expect(result.action == .added)
+    #expect(
+        try ConfigCodec.readServer(
+            client: client, bytes: result.bytes, server: "libtmux",
+            repo: URL(fileURLWithPath: targetPath), scope: .project
+        ) == spec
+    )
+    let text = String(decoding: result.bytes, as: UTF8.self)
+    #expect(text.contains("/repo/sibling-399"))
+    #expect(text.contains("synthetic history line"))
+}
+
 @Test func JSONCPreservesCommentsTrailingCommaAndEntryRationale() throws {
     let client = fixtureClient(.opencode)
     let original = Data(
