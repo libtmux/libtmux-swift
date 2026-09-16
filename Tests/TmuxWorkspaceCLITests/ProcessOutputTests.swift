@@ -64,7 +64,9 @@ struct ProcessOutputTests {
             }
             let failed = records.filter { $0["event"] as? String == "failed" }
             #expect(failed.count == 1)
-            let data = try #require(failed.first?["data"] as? [String: Any])
+            // Event fields sit at the top level of the record, not nested
+            // under a `data` key.
+            let data = try #require(failed.first)
             #expect(data["status"] as? String == (append ? "partial" : "error"))
             if append {
                 #expect(
