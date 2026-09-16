@@ -2,6 +2,7 @@ import ArgumentParser
 import Dispatch
 import Foundation
 import LibTmux
+import TmuxWorkspace
 
 #if canImport(Darwin)
     import Darwin
@@ -160,7 +161,7 @@ enum WorkspaceCLI {
             let failure =
                 error as? CLIError
                 ?? CLIError(
-                    Task.isCancelled ? "cancelled" : "operation", String(describing: error),
+                    Task.isCancelled ? "cancelled" : "operation", message(for: error),
                     status: Task.isCancelled ? 130 : 1)
             await output.failure(failure)
             return failure.status
@@ -175,6 +176,79 @@ enum WorkspaceCLI {
         ])
         try? await context.error(
             machine ? value.encoded() : "Error: \(Presenter.sanitize(error.message))")
+    }
+
+    /// A plain sentence for an error a `CLIError` never wrapped — a
+    /// `WorkspaceBuilderError` or `TmuxError` that escaped `load`'s own
+    /// catch, or anything else no call site recognised. `String(describing:)`
+    /// prints the Swift enum literal (`invocationFailed(reason: "...")`,
+    /// `tmux(LibTmux.TmuxError.invocationFailed(reason: "..."))`), which is
+    /// implementation detail rather than a diagnosis; every case below is
+    /// something a user can act on without knowing this is Swift.
+    static func message(for error: any Error) -> String {
+        if let error = error as? WorkspaceBuilderError { return message(for: error) }
+        if let error = error as? TmuxError { return message(for: error) }
+        return String(describing: error)
+    }
+
+    private static func message(for error: WorkspaceBuilderError) -> String {
+        switch error {
+        case .noWindows:
+            return "The workspace has no windows."
+        case let .sessionExists(name):
+            return "A session named \(name) already exists."
+        case let .sessionVanished(name):
+            return "Session \(name) disappeared while the workspace was being built."
+        case let .tmux(inner):
+            return message(for: inner)
+        case let .rollbackFailed(original, cleanup):
+            return
+                "\(message(for: original)) Rolling back the partial session also failed: \(message(for: cleanup))"
+        }
+    }
+
+    private static func message(for error: TmuxError) -> String {
+        switch error {
+        case let .processLaunchFailed(reason): return reason
+        case .requestNotSubmitted: return "The command was never sent to tmux."
+        case let .invocationFailed(reason): return reason
+        case let .commandTooLarge(actualBytes, maximumBytes):
+            return "The command was \(actualBytes) bytes, over the \(maximumBytes)-byte limit."
+        case let .commandFailed(command, exitCode, reason):
+            return "\(command) failed (exit \(exitCode)): \(reason)"
+        case let .outputLimitExceeded(perStreamBytes):
+            return "tmux's reply exceeded the \(perStreamBytes)-byte-per-stream limit."
+        case let .invalidEndpoint(reason):
+            switch reason {
+            case .empty: return "The tmux endpoint is empty."
+            case let .socketPathTooLong(actualBytes, maximumBytes):
+                return
+                    "The socket path is \(actualBytes) bytes, over the \(maximumBytes)-byte limit."
+            }
+        case let .decodingFailed(reason):
+            switch reason {
+            case let .fieldCountMismatch(rowIndex, expected, actual):
+                return "tmux row \(rowIndex) had \(actual) fields, expected \(expected)."
+            case let .invalidEncoding(rowIndex):
+                return "tmux row \(rowIndex) was not valid UTF-8."
+            case let .invalidValue(rowIndex, field, raw):
+                return "tmux row \(rowIndex) field \(field) had an invalid value: \(raw)"
+            }
+        case .serverRestarted:
+            return "The tmux server restarted while the request was in flight."
+        case .foreignServerValue:
+            return "That value belongs to a different tmux server."
+        case .staleServerValue:
+            return "That target no longer exists."
+        case .cancelled:
+            return "Cancelled."
+        case .connectionClosed:
+            return "The control connection closed while a command was still waiting."
+        case let .notificationBufferOverflow(limit):
+            return "More than \(limit) control notifications arrived unread."
+        case .outputContinuityLost:
+            return "Pane output could not be read continuously; some lines may have been missed."
+        }
     }
 
     private static func write(

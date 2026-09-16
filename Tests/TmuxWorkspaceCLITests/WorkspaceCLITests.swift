@@ -2,6 +2,7 @@ import Foundation
 import LibTmux
 import Testing
 import TmuxFixture
+import TmuxWorkspace
 
 @testable import TmuxWorkspaceCLI
 
@@ -1487,6 +1488,78 @@ struct WorkspaceCLITests {
             #expect(result.code == 1)
             #expect(result.error.joined().contains("must be a boolean"), "\(result.error)")
         }
+    }
+
+    @Test("tmux failures read as plain sentences, not Swift enum literals")
+    func tmuxFailuresReadAsSentences() async throws {
+        try await withFiles { root in
+            // No live server is contacted for either: an outright-invalid
+            // layout fails before any daemon probe, and the default test
+            // harness points LIBTMUX_TMUX_BIN at an executable that does
+            // not exist.
+            let badLayout = root.appendingPathComponent("bad-layout.json")
+            try Data(
+                #"""
+                {"session_name":"bad-layout","windows":[{"layout":"not-a-real-layout-string","panes":[null,null]}]}
+                """#.utf8
+            ).write(to: badLayout)
+            let layoutResult = await invoke(
+                ["load", badLayout.path, "-d", "-S", "nonexistent"], in: root)
+            #expect(layoutResult.code == 1)
+            #expect(
+                !layoutResult.error.joined().contains("invocationFailed(reason"),
+                "\(layoutResult.error)")
+            #expect(
+                layoutResult.error.joined().contains("Invalid window layout"),
+                "\(layoutResult.error)")
+
+            let plain = root.appendingPathComponent("plain.json")
+            try Data(#"{"session_name":"plain","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: plain)
+            let launchResult = await invoke(
+                ["load", plain.path, "-d", "-S", "nonexistent"], in: root)
+            #expect(launchResult.code == 1)
+            #expect(
+                !launchResult.error.joined().contains("processLaunchFailed(reason"),
+                "\(launchResult.error)")
+            #expect(
+                !launchResult.error.joined().contains("LibTmux.TmuxError"),
+                "\(launchResult.error)")
+        }
+    }
+
+    @Test("the error-to-sentence mapping covers every builder and tmux failure")
+    func errorMessageMapping() {
+        // Direct coverage of WorkspaceCLI.message(for:), because most of
+        // these -- a rollback whose cleanup also failed, a builder error
+        // wrapping tmux's own -- are impractical to force through the CLI
+        // deterministically. tmuxFailuresReadAsSentences covers the two
+        // that are.
+        let wrapped = WorkspaceCLI.message(
+            for: WorkspaceBuilderError.tmux(
+                .invocationFailed(reason: "size or position no space for a new pane")))
+        #expect(wrapped == "size or position no space for a new pane")
+        #expect(!wrapped.contains("tmux("))
+        #expect(!wrapped.contains("LibTmux"))
+
+        let rollback = WorkspaceCLI.message(
+            for: WorkspaceBuilderError.rollbackFailed(
+                original: .sessionVanished("gone"),
+                cleanup: .invocationFailed(reason: "cannot kill session")))
+        #expect(!rollback.contains("rollbackFailed("))
+        #expect(rollback.contains("gone"))
+        #expect(rollback.contains("cannot kill session"))
+
+        #expect(!WorkspaceCLI.message(for: WorkspaceBuilderError.noWindows).contains("noWindows"))
+        #expect(
+            !WorkspaceCLI.message(for: WorkspaceBuilderError.sessionExists("dup"))
+                .contains("sessionExists("))
+        #expect(
+            WorkspaceCLI.message(
+                for: TmuxError.commandFailed(
+                    command: "split-window", exitCode: 1, reason: "no space")
+            )
+            .contains("no space"))
     }
 
     @Test("freeze selects explicit, pane-context and sole sessions without guessing")
