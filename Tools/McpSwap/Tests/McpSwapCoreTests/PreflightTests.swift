@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import Testing
 
@@ -28,6 +29,71 @@ import Testing
         )
 
         try preflight(spec, timeout: 3)
+    }
+}
+
+/// Regression for an intermittent CI failure: `preflightBoundsOutputAndKillsTheProducingProcessTree`
+/// once failed to launch its just-written, just-`chmod`'d script with
+/// "Text file busy" (ETXTBSY).
+///
+/// The race needs a second thread. `String.write(to:atomically:)` creates its
+/// replacement file with `mkstemp`, which does not set `FD_CLOEXEC` on the
+/// descriptor it returns; if some *other* thread's `posix_spawn` forks while
+/// that descriptor is open, the child inherits it and holds the file's write
+/// count open for as long as that child (and anything it itself backgrounds)
+/// runs -- not merely the moment `mkstemp` is open, but potentially much
+/// longer, which is why the closed-off fix below matters as much as the
+/// retry. One thread alone never lands inside another thread's `mkstemp`
+/// window, so this drives several concurrently, each writing and
+/// immediately respawning its own path many times, to reproduce the timing
+/// a single-threaded loop cannot.
+@Test func concurrentWriteThenImmediateSpawnNeverSurfacesATransientTextFileBusy() throws {
+    try withPreflightFixture { root in
+        let lanes = 24
+        let iterationsPerLane = 80
+        let failures = LockedBox([String]())
+        DispatchQueue.concurrentPerform(iterations: lanes) { lane in
+            let server = root.appending(path: "server-\(lane).sh")
+            for _ in 0..<iterationsPerLane {
+                do {
+                    // Backgrounds a short sleep, as the real failing test's
+                    // fixture does: a spawned child that inherited a leaked
+                    // write-mode descriptor holds it open for as long as it
+                    // (or, here, its background job) lives, not merely for
+                    // the instant between the write and the exec.
+                    try script(
+                        """
+                        #!/bin/sh
+                        sleep 0.2 &
+                        IFS= read -r request
+                        printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}'
+                        """,
+                        at: server)
+                    try preflight(ServerSpec(command: server.path, arguments: [], environment: [:]))
+                } catch {
+                    failures.append("\(error)")
+                }
+            }
+        }
+        #expect(failures.values.isEmpty, "\(failures.values)")
+    }
+}
+
+/// A plain array behind a lock, since `DispatchQueue.concurrentPerform`'s
+/// closure runs on multiple threads at once and every lane can fail.
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Value
+    init(_ initial: Value) { storage = initial }
+    var values: Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+    func append<Element>(_ element: Element) where Value == [Element] {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(element)
     }
 }
 
