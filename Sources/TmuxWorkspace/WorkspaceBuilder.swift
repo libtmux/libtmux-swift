@@ -199,6 +199,12 @@ public enum WorkspaceBuilder {
                         ?? workspace.startDirectory
                 )
             )
+            // Splitting straight through halves whatever pane came before
+            // it, so a plain 80x24 window runs out of room by the fifth
+            // pane. Rebalancing after every split reclaims the space a
+            // later split needs; an explicit `window.layout` below still
+            // has the final say.
+            try await server.selectLayout(created, "tiled")
         }
 
         if let layout = window.layout, !layout.isEmpty {

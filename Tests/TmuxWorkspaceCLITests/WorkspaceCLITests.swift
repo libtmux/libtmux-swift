@@ -1535,6 +1535,69 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("load fits five or more panes in a window with no explicit layout")
+    func manyPanesFitWithoutExplicitLayout() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("many-panes.json")
+            // No layout key, default detached 80x24: splitting straight
+            // through halves whatever pane came before it and runs out of
+            // room by the fifth pane. Five siblings avoid that with an
+            // interim rebalance between splits; tmuxp itself does not.
+            try Data(
+                Value.object([
+                    "session_name": .string("many-panes"),
+                    "windows": .array([
+                        .object(["panes": .array(Array(repeating: .string("true"), count: 12))])
+                    ]),
+                ]).encoded().utf8
+            ).write(to: file)
+            let result = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root,
+                extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            #expect(result.code == 0, "\(result.error)")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "many-panes" })
+            let window = try #require(snapshot.windows(of: session).first)
+            #expect(snapshot.panes(of: window).count == 12)
+        }
+    }
+
+    @Test("an explicit layout still wins once the many-pane interim rebalance is done")
+    func explicitLayoutSurvivesManyPaneRebalance() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("layout-panes.json")
+            try Data(
+                Value.object([
+                    "session_name": .string("layout-panes"),
+                    "windows": .array([
+                        .object([
+                            "layout": .string("even-vertical"),
+                            "panes": .array(Array(repeating: .string("true"), count: 5)),
+                        ])
+                    ]),
+                ]).encoded().utf8
+            ).write(to: file)
+            let result = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root,
+                extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            #expect(result.code == 0, "\(result.error)")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "layout-panes" })
+            let window = try #require(snapshot.windows(of: session).first)
+            let panes = snapshot.panes(of: window)
+            #expect(panes.count == 5)
+            // even-vertical is a single column: every pane reaches the left
+            // edge. The interim rebalance uses a tiled grid, whose non-first
+            // columns would not, so this also proves it did not leak into
+            // the final layout.
+            #expect(panes.allSatisfy { $0.isAtLeft }, "\(panes)")
+        }
+    }
+
     @Test("load applies window options_after once every pane in the window exists")
     func windowOptionsAfterAppliesPostPane() async throws {
         try await withTmuxServer { server in
