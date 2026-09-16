@@ -721,12 +721,8 @@ extension TmuxTools {
                         + "manual removal is required")
             }
             self.path = path
-            // `truncatingIfNeeded` rather than a direct conversion: `dev_t` is
-            // unsigned on Linux but a signed Int32 on Darwin, where it is
-            // negative for major device numbers >= 128 (FUSE, disk images,
-            // network filesystems), and a plain `UInt64(_:)` traps on that.
-            device = UInt64(truncatingIfNeeded: metadata.st_dev)
-            inode = UInt64(truncatingIfNeeded: metadata.st_ino)
+            device = fileIdentityComponent(metadata.st_dev)
+            inode = fileIdentityComponent(metadata.st_ino)
         }
 
         enum Removal: Equatable {
@@ -749,8 +745,8 @@ extension TmuxTools {
             guard lstatResult == 0 else {
                 return lstatErrno == ENOENT ? .removed : .failed(lstatErrno)
             }
-            guard UInt64(truncatingIfNeeded: metadata.st_dev) == device,
-                UInt64(truncatingIfNeeded: metadata.st_ino) == inode
+            guard fileIdentityComponent(metadata.st_dev) == device,
+                fileIdentityComponent(metadata.st_ino) == inode
             else {
                 return .replaced
             }

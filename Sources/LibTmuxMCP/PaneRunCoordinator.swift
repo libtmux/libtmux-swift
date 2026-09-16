@@ -24,13 +24,8 @@ actor PaneRunCoordinator {
                 var metadata = stat()
                 let result = path.withCString { stat($0, &metadata) }
                 guard result == 0 else { return nil }
-                // `truncatingIfNeeded` rather than a direct conversion: `dev_t`
-                // is unsigned on Linux but a signed Int32 on Darwin, where it
-                // is negative for major device numbers >= 128 (FUSE, disk
-                // images, network filesystems), and a plain `UInt64(_:)` traps
-                // on that.
-                self.device = UInt64(truncatingIfNeeded: metadata.st_dev)
-                self.inode = UInt64(truncatingIfNeeded: metadata.st_ino)
+                self.device = fileIdentityComponent(metadata.st_dev)
+                self.inode = fileIdentityComponent(metadata.st_ino)
             #else
                 return nil
             #endif
