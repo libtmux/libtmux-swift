@@ -182,13 +182,8 @@ enum WorkspaceCLI {
             machine ? value.encoded() : "Error: \(Presenter.sanitize(error.message))")
     }
 
-    /// A plain sentence for an error a `CLIError` never wrapped — a
-    /// `WorkspaceBuilderError` or `TmuxError` that escaped `load`'s own
-    /// catch, or anything else no call site recognised. `String(describing:)`
-    /// prints the Swift enum literal (`invocationFailed(reason: "...")`,
-    /// `tmux(LibTmux.TmuxError.invocationFailed(reason: "..."))`), which is
-    /// implementation detail rather than a diagnosis; every case below is
-    /// something a user can act on without knowing this is Swift.
+    /// A plain sentence for an error no `CLIError` site recognised, instead
+    /// of `String(describing:)`'s Swift enum literal.
     static func message(for error: any Error) -> String {
         if let error = error as? WorkspaceBuilderError { return message(for: error) }
         if let error = error as? TmuxError { return message(for: error) }
@@ -320,9 +315,7 @@ actor Presenter {
         }
         guard options.ndjson else { return }
         sequence += 1
-        // Event fields sit at the top level of the streamed record, not
-        // nested under a `data` key: the shared NDJSON contract five of
-        // seven ports already agree on.
+        // Fields sit at the top level, not nested under `data`.
         var envelope: [String: Value] = [
             "schema_version": .integer(1), "sequence": .integer(Int64(sequence)),
             "command": .string(command), "event": .string(event),

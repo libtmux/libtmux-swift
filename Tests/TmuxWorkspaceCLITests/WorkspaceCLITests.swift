@@ -1575,10 +1575,8 @@ struct WorkspaceCLITests {
     @Test("tmux failures read as plain sentences, not Swift enum literals")
     func tmuxFailuresReadAsSentences() async throws {
         try await withFiles { root in
-            // No live server is contacted for either: an outright-invalid
-            // layout fails before any daemon probe, and the default test
-            // harness points LIBTMUX_TMUX_BIN at an executable that does
-            // not exist.
+            // No live server needed: an invalid layout fails before any
+            // daemon probe, and LIBTMUX_TMUX_BIN defaults to a missing binary.
             let badLayout = root.appendingPathComponent("bad-layout.json")
             try Data(
                 #"""
@@ -1612,11 +1610,8 @@ struct WorkspaceCLITests {
 
     @Test("the error-to-sentence mapping covers every builder and tmux failure")
     func errorMessageMapping() {
-        // Direct coverage of WorkspaceCLI.message(for:), because most of
-        // these -- a rollback whose cleanup also failed, a builder error
-        // wrapping tmux's own -- are impractical to force through the CLI
-        // deterministically. tmuxFailuresReadAsSentences covers the two
-        // that are.
+        // Most of these cases are impractical to force through the CLI
+        // deterministically; tmuxFailuresReadAsSentences covers the two that are.
         let wrapped = WorkspaceCLI.message(
             for: WorkspaceBuilderError.tmux(
                 .invocationFailed(reason: "size or position no space for a new pane")))
@@ -1650,10 +1645,8 @@ struct WorkspaceCLITests {
             ("bash", nil, true), ("-bash", nil, true), ("zsh", nil, true), ("-zsh", nil, true),
             ("sh", nil, true), ("fish", nil, true), ("python3", nil, false),
             ("-python3", nil, false), ("vim", nil, false),
-            // macOS's own login shell is zsh, but tmux's test harness sets
-            // default-shell to /bin/sh -- which is bash on macOS -- so the
-            // pane runs bash while default-shell resolves to "sh". A common
-            // name must win over a mismatched default-shell either way.
+            // A common name wins even over a mismatched default-shell --
+            // macOS's own /bin/sh is bash, not the "sh" it resolves to.
             ("bash", "sh", true), ("bash", "zsh", true),
         ])
     func defaultShellCommandRecognisesCommonNames(
@@ -1675,10 +1668,8 @@ struct WorkspaceCLITests {
     func defaultShellCommandFallsBackToResolvedBasename(
         command: String, defaultShell: String?, expected: Bool
     ) {
-        // A pure-function regression for a shell this port's static
-        // allowlist does not know: unmatched, freeze would write it back as
-        // an explicit shell_command even though it is the pane's ordinary,
-        // no-explicit-command shell.
+        // A live pane can't reach this path through the test fixture, so
+        // the pure function is tested directly.
         #expect(
             WorkspaceCommands.isDefaultShellCommand(command, defaultShell: defaultShell)
                 == expected, "\(command) / \(defaultShell ?? "nil")")
@@ -1736,10 +1727,8 @@ struct WorkspaceCLITests {
             guard case let .socketPath(socket) = server.endpoint else { return }
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
             let file = root.appendingPathComponent("many-panes.json")
-            // No layout key, default detached 80x24: splitting straight
-            // through halves whatever pane came before it and runs out of
-            // room by the fifth pane. Five siblings avoid that with an
-            // interim rebalance between splits; tmuxp itself does not.
+            // No layout key, default detached 80x24: runs out of room by
+            // the fifth pane without an interim rebalance between splits.
             try Data(
                 Value.object([
                     "session_name": .string("many-panes"),
@@ -1785,10 +1774,8 @@ struct WorkspaceCLITests {
             let window = try #require(snapshot.windows(of: session).first)
             let panes = snapshot.panes(of: window)
             #expect(panes.count == 5)
-            // even-vertical is a single column: every pane reaches the left
-            // edge. The interim rebalance uses a tiled grid, whose non-first
-            // columns would not, so this also proves it did not leak into
-            // the final layout.
+            // even-vertical is one column, so every pane is at the left
+            // edge; the interim tiled rebalance would not leave it so.
             #expect(panes.allSatisfy { $0.isAtLeft }, "\(panes)")
         }
     }
@@ -1857,14 +1844,12 @@ struct WorkspaceCLITests {
             // through capture; a quoted or escaped one takes the second read.
             try await server.setOption("@freeze-plain", to: "plain/value", scope: .session(session))
             try await server.setOption("@freeze-window", to: windowValue, scope: .window(window))
-            // A caller's own environment, not only the ambient SSH/display
-            // values M11 was filed against, still must not appear: the
-            // top-level block is gone outright, not merely filtered.
+            // The block is gone outright, not merely filtered to the
+            // ambient SSH/display values M11 was filed against.
             try await server.setEnvironment(
                 "FREEZE_VALUE", to: "should not be captured", in: .session(session.id.rawValue))
-            // The omission below must not depend on this matching what the
-            // pane is actually running: tmux sets default-shell from $SHELL
-            // once at server start, which is not always the pane's shell.
+            // Mismatched on purpose: the omission below must not depend on
+            // this matching what the pane is actually running.
             try await server.setOption(
                 "default-shell", to: "/completely/different/not-the-pane-shell",
                 scope: .session(session))
@@ -1882,9 +1867,7 @@ struct WorkspaceCLITests {
                 (windows[0]["options_after"] as? [String: String])?["@freeze-window"]
                     == windowValue)
             let panes = try #require(windows[0]["panes"] as? [[String: Any]])
-            // The lone pane runs the session's own default shell, which
-            // `shell_command` omits so the reload starts a plain pane
-            // instead of a shell inside a shell.
+            // The lone pane runs a plain shell, so shell_command is omitted.
             #expect(panes[0]["shell_command"] == nil, "\(panes[0])")
             let quiet = await invoke(
                 ["freeze", "bootstrap", "-S", socket, "--json", "-q"], in: root, extra: environment)
