@@ -27,6 +27,36 @@ enum WorkspaceCommands {
             configurationFile: configuration, force256Colors: colors256)
     }
 
+    /// Mirrors tmuxp's `TMUXP_DETECT_TERMINAL_SIZE`: the size passed to
+    /// `new-session -x/-y` so the session's first window — and, since no
+    /// client exists yet to force an early rescale, every window built after
+    /// it — is laid out at the size the attaching client will actually show,
+    /// not tmux's `default-size`. `nil` means detection is off: no -x/-y.
+    static func sessionDimensions(context: CLIContext) throws -> (width: Int, height: Int)? {
+        func named(_ names: [String], fallback: Int) throws -> Int {
+            for name in names {
+                guard let raw = context.environment[name], !raw.isEmpty else { continue }
+                guard let value = Int(raw), (1...65535).contains(value) else {
+                    throw CLIError("usage", "\(name) must be 1..65535", status: 2)
+                }
+                return value
+            }
+            return fallback
+        }
+        var width = try named(["TMUXP_DEFAULT_COLUMNS", "COLUMNS"], fallback: 80)
+        var height = try named(["TMUXP_DEFAULT_ROWS", "ROWS"], fallback: 24)
+        if let detect = context.environment["TMUXP_DETECT_TERMINAL_SIZE"], detect != "1" {
+            return nil
+        }
+        if let size = context.stdoutSize {
+            width = size.columns
+            height = size.rows
+        }
+        width = try named(["COLUMNS"], fallback: width)
+        height = try named(["LINES"], fallback: height)
+        return (width, height)
+    }
+
     static func load(_ command: Load, context: CLIContext, output: Presenter) async throws {
         guard !command.colors88 else {
             throw CLIError(
@@ -44,6 +74,9 @@ enum WorkspaceCommands {
                 "Attached load requires a foreground terminal. Use -d to load detached.",
                 status: 2)
         }
+        // Validated up front so a bad COLUMNS/LINES/TMUXP_DEFAULT_* fails the
+        // same way whether or not this load ends up creating a session.
+        let dimensions = try sessionDimensions(context: context)
         try await output.prepareProgress(command)
         let store = DocumentStore(context: context)
         if let file = command.logFile { try await output.openLog(store.path(file)) }
@@ -64,10 +97,12 @@ enum WorkspaceCommands {
         let retained = AppendState()
         var results: [Value] = []
         var lastSession: Session?
+        var currentInputIndex = 0
         try await output.event(
             "started", command: "load", data: .object(["inputs": .integer(Int64(plans.count))]))
         do {
             for (inputIndex, plan) in plans.enumerated() {
+                currentInputIndex = inputIndex
                 await retained.reset()
                 try Task.checkCancellation()
                 try await output.event(
@@ -95,6 +130,7 @@ enum WorkspaceCommands {
                 } else {
                     session = try await WorkspaceBuilder.build(
                         plan.workspace, on: server, environment: plan.environment,
+                        width: dimensions?.width, height: dimensions?.height,
                         configureSession: { session in
                             if borrowed != nil { await retained.begin() }
                             if let script = plan.beforeScript {
@@ -108,7 +144,7 @@ enum WorkspaceCommands {
                                 }
                                 guard result.code == 0 else {
                                     throw CLIError(
-                                        "before_script",
+                                        "script_failed",
                                         "before_script exited with status \(result.code).")
                                 }
                             }
@@ -154,6 +190,12 @@ enum WorkspaceCommands {
                                 "input_index": .integer(Int64(inputIndex))
                             ]
                             switch event {
+                            case let .sessionCreated(session):
+                                name = "session-created"
+                                fields.merge([
+                                    "session_id": .string(session.id.rawValue),
+                                    "session_name": .string(session.name),
+                                ]) { _, new in new }
                             case let .windowStarted(index, window, session):
                                 name = "window-created"
                                 fields.merge([
@@ -203,7 +245,12 @@ enum WorkspaceCommands {
                 lastSession = session
                 try await output.event("workspace-completed", command: "load", data: result)
             }
-            let result = Value.object(["status": .string("success"), "workspaces": .array(results)])
+            // The six-port envelope (S12): schema_version, command, status,
+            // results, errors — not swift's former status/workspaces pair.
+            let result = Value.object([
+                "schema_version": .integer(1), "command": .string("load"),
+                "status": .string("ok"), "results": .array(results), "errors": .array([]),
+            ])
             try await output.event("completed", command: "load", data: result)
             if command.output.json && !command.output.ndjson {
                 try await output.result(result)
@@ -219,8 +266,16 @@ enum WorkspaceCommands {
         } catch {
             let changed = await retained.started
             var fields: [String: Value] = [
+                "schema_version": .integer(1), "command": .string("load"),
                 "status": .string(results.isEmpty && !changed ? "error" : "partial"),
-                "workspaces": .array(results),
+                "results": .array(results),
+                "errors": .array([
+                    .object([
+                        "input_index": .integer(Int64(currentInputIndex)),
+                        "code": .string(WorkspaceCLI.canonicalCode(for: error)),
+                        "message": .string(WorkspaceCLI.message(for: error)),
+                    ])
+                ]),
             ]
             if let borrowed, changed {
                 fields["retained_state"] = .object([
@@ -300,7 +355,7 @@ enum WorkspaceCommands {
         if current.clients.count == 1 { return .attached(current.clients[0]) }
         guard !command.yes else {
             throw CLIError(
-                "load_context",
+                "confirmation_required",
                 "Several clients view this pane. Omit -y to choose a client, or use -d or --append.",
                 status: 2)
         }
@@ -571,7 +626,7 @@ enum WorkspaceCommands {
     }
 
     private static func requireSuccess(_ reply: TmuxReply) throws {
-        guard reply.isSuccess else { throw CLIError("tmux", reply.errorText) }
+        guard reply.isSuccess else { throw CLIError("tmux_failed", reply.errorText) }
     }
 
     static func validateImport(_ value: Value, file: URL, store: DocumentStore) throws {
@@ -582,7 +637,7 @@ enum WorkspaceCommands {
         _ value: Value, file: URL, override: String?, store: DocumentStore
     ) throws -> PlannedWorkspace {
         guard !containsNUL(value) else {
-            throw CLIError("document", "Workspace values and keys cannot contain NUL.")
+            throw CLIError("invalid_workspace", "Workspace values and keys cannot contain NUL.")
         }
         let root = try mapping(
             value,
@@ -598,7 +653,7 @@ enum WorkspaceCommands {
             !name.contains(":"), !name.contains("."), !name.contains("\n")
         else {
             throw CLIError(
-                "document",
+                "invalid_workspace",
                 "session_name must be a nonempty tmux session name without dots or colons.")
         }
         let rootDirectory =
@@ -609,7 +664,7 @@ enum WorkspaceCommands {
         let environment = try scalarMapping(root["environment"], at: "environment", store: store)
         for name in environment.keys where name.isEmpty || name.contains("=") || name.contains("\0")
         {
-            throw CLIError("document", "Invalid environment variable name.")
+            throw CLIError("invalid_workspace", "Invalid environment variable name.")
         }
         let options = try scalarMapping(root["options"], at: "options", store: store)
         // Distinct tmuxp keys, distinct set-option scopes.
@@ -624,10 +679,10 @@ enum WorkspaceCommands {
             beforeScript.isEmpty || beforeScript[0].isEmpty
                 || beforeScript.contains(where: { $0.contains("\0") })
         {
-            throw CLIError("document", "before_script must name an executable.")
+            throw CLIError("invalid_workspace", "before_script must name an executable.")
         }
         guard let source = root["windows"]?.array, !source.isEmpty else {
-            throw CLIError("document", "windows must be a nonempty list.")
+            throw CLIError("invalid_workspace", "windows must be a nonempty list.")
         }
         var windowOptions: [[String: String]] = []
         var windowOptionsAfter: [[String: String]] = []
@@ -637,6 +692,7 @@ enum WorkspaceCommands {
                 allowed: [
                     "window_name", "start_directory", "layout", "panes", "shell_command_before",
                     "suppress_history", "options", "options_after", "window_index", "focus",
+                    "environment", "window_shell",
                 ], at: "windows[\(index)]")
             windowOptions.append(
                 inheritedOptions.merging(
@@ -652,10 +708,22 @@ enum WorkspaceCommands {
                     store: store) ?? rootDirectory
             let suppress = try boolean(
                 window["suppress_history"], fallback: history, at: "suppress_history")
+            let windowEnvironment = try window["environment"].map {
+                try scalarMapping($0, at: "window.environment", store: store)
+            }
+            let windowShell = try optionalString(window["window_shell"], at: "window_shell")
             let before =
                 entries(root["shell_command_before"]) + entries(window["shell_command_before"])
-            guard let sourcePanes = window["panes"]?.array, !sourcePanes.isEmpty else {
-                throw CLIError("document", "panes must be a nonempty list.")
+            // `panes: []` builds one pane with no command, the same as
+            // omitting a command on the sole implicit pane.
+            let sourcePanes: [Value]
+            if let paneValue = window["panes"] {
+                guard let array = paneValue.array else {
+                    throw CLIError("invalid_workspace", "panes must be a list.")
+                }
+                sourcePanes = array.isEmpty ? [.null] : array
+            } else {
+                throw CLIError("invalid_workspace", "panes must be a nonempty list.")
             }
             let panes = try sourcePanes.map { item in
                 let pane: [String: Value]
@@ -665,7 +733,8 @@ enum WorkspaceCommands {
                         item,
                         allowed: [
                             "start_directory", "shell_command", "shell_command_before",
-                            "suppress_history", "enter", "focus",
+                            "suppress_history", "enter", "focus", "environment", "shell",
+                            "sleep_before", "sleep_after",
                         ], at: "pane")
                 default: pane = ["shell_command": item]
                 }
@@ -684,7 +753,7 @@ enum WorkspaceCommands {
                             let command = try mapping(
                                 value, allowed: ["cmd", "enter"], at: "command")
                             guard let cmd = command["cmd"]?.string else {
-                                throw CLIError("document", "cmd must be a string.")
+                                throw CLIError("invalid_workspace", "cmd must be a string.")
                             }
                             text = cmd
                             enter = try boolean(command["enter"], fallback: enter, at: "enter")
@@ -699,23 +768,30 @@ enum WorkspaceCommands {
                     startDirectory: try directory(
                         pane["start_directory"], parent: URL(fileURLWithPath: windowDirectory),
                         store: store) ?? windowDirectory,
-                    focus: try boolean(pane["focus"], fallback: false, at: "pane.focus"))
+                    focus: try boolean(pane["focus"], fallback: false, at: "pane.focus"),
+                    environment: try pane["environment"].map {
+                        try scalarMapping($0, at: "pane.environment", store: store)
+                    },
+                    shell: try optionalString(pane["shell"], at: "shell"),
+                    sleepBefore: try optionalDouble(pane["sleep_before"], at: "sleep_before"),
+                    sleepAfter: try optionalDouble(pane["sleep_after"], at: "sleep_after"))
             }
             return WindowPlan(
                 windowName: try optionalString(window["window_name"], at: "window_name"),
                 startDirectory: windowDirectory,
                 layout: try optionalString(window["layout"], at: "layout"), panes: panes,
                 windowIndex: try windowIndex(window["window_index"]),
-                focus: try boolean(window["focus"], fallback: false, at: "window.focus"))
+                focus: try boolean(window["focus"], fallback: false, at: "window.focus"),
+                environment: windowEnvironment, windowShell: windowShell)
         }
         let indexes = windows.compactMap(\.windowIndex)
         guard Set(indexes).count == indexes.count else {
-            throw CLIError("document", "Each explicit window_index must be unique.")
+            throw CLIError("invalid_workspace", "Each explicit window_index must be unique.")
         }
         guard windows.filter({ $0.focus == true }).count <= 1,
             windows.allSatisfy({ $0.panes.filter { $0.focus == true }.count <= 1 })
         else {
-            throw CLIError("document", "Choose one focused window and one focused pane per window.")
+            throw CLIError("invalid_workspace", "Choose one focused window and one focused pane per window.")
         }
         return PlannedWorkspace(
             source: file.path,
@@ -740,7 +816,7 @@ enum WorkspaceCommands {
     private static func windowIndex(_ value: Value?) throws -> Int? {
         guard let value else { return nil }
         guard case let .integer(index) = value, index >= 0, index <= Int32.max else {
-            throw CLIError("document", "window_index must be an integer from 0 through 2147483647.")
+            throw CLIError("invalid_workspace", "window_index must be an integer from 0 through 2147483647.")
         }
         return Int(index)
     }
@@ -750,11 +826,11 @@ enum WorkspaceCommands {
     {
         guard let value else { return [:] }
         guard let mapping = value.object else {
-            throw CLIError("document", "\(location) must be a mapping.")
+            throw CLIError("invalid_workspace", "\(location) must be a mapping.")
         }
         guard mapping.keys.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("-") && !$0.contains("\0") })
         else {
-            throw CLIError("document", "\(location) contains an invalid name.")
+            throw CLIError("invalid_workspace", "\(location) contains an invalid name.")
         }
         return try mapping.mapValues { value in
             let text: String
@@ -767,10 +843,10 @@ enum WorkspaceCommands {
                     location == "environment" ? (value ? "true" : "false") : (value ? "on" : "off")
             default:
                 throw CLIError(
-                    "document", "\(location) values must be strings, numbers or booleans.")
+                    "invalid_workspace", "\(location) values must be strings, numbers or booleans.")
             }
             guard !text.contains("\0") else {
-                throw CLIError("document", "\(location) values cannot contain NUL.")
+                throw CLIError("invalid_workspace", "\(location) values cannot contain NUL.")
             }
             return text
         }
@@ -780,12 +856,16 @@ enum WorkspaceCommands {
         -> [String: Value]
     {
         guard let object = value.object else {
-            throw CLIError("document", "\(location) must be a mapping.")
+            throw CLIError("invalid_workspace", "\(location) must be a mapping.")
         }
-        if let unknown = object.keys.sorted().first(where: { !allowed.contains($0) }) {
+        // An `x-` key is a caller's own extension, at any level: left alone
+        // at load and round-tripped by `convert`, never refused.
+        if let unknown = object.keys.sorted().first(where: {
+            !$0.hasPrefix("x-") && !allowed.contains($0)
+        }) {
             throw CLIError(
-                "unsupported_config",
-                "\(location).\(unknown) is not implemented; no session was created.")
+                "unsupported_key",
+                "\(location).\(unknown) is not implemented; no session was created. Prefix a custom key with 'x-' to have it ignored.")
         }
         return object
     }
@@ -798,9 +878,18 @@ enum WorkspaceCommands {
     private static func optionalString(_ value: Value?, at key: String) throws -> String? {
         guard let value else { return nil }
         guard let string = value.string else {
-            throw CLIError("document", "\(key) must be a string.")
+            throw CLIError("invalid_workspace", "\(key) must be a string.")
         }
         return string
+    }
+
+    private static func optionalDouble(_ value: Value?, at key: String) throws -> Double? {
+        guard let value else { return nil }
+        switch value {
+        case let .integer(number): return Double(number)
+        case let .number(number): return number
+        default: throw CLIError("invalid_workspace", "\(key) must be a number.")
+        }
     }
 
     /// A boolean field, also accepting `tmuxp freeze`'s quoted
@@ -811,7 +900,7 @@ enum WorkspaceCommands {
         case let .bool(flag): return flag
         case .string("true"): return true
         case .string("false"): return false
-        default: throw CLIError("document", "\(key) must be a boolean.")
+        default: throw CLIError("invalid_workspace", "\(key) must be a boolean.")
         }
     }
 
