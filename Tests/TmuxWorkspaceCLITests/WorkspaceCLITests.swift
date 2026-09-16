@@ -1645,17 +1645,43 @@ struct WorkspaceCLITests {
     }
 
     @Test(
-        "an ordinary shell is recognised with or without the login-shell dash",
+        "a common shell is recognised regardless of default-shell, with or without the login-shell dash",
         arguments: [
-            ("bash", true), ("-bash", true), ("zsh", true), ("-zsh", true), ("sh", true),
-            ("fish", true), ("python3", false), ("-python3", false), ("vim", false),
+            ("bash", nil, true), ("-bash", nil, true), ("zsh", nil, true), ("-zsh", nil, true),
+            ("sh", nil, true), ("fish", nil, true), ("python3", nil, false),
+            ("-python3", nil, false), ("vim", nil, false),
+            // macOS's own login shell is zsh, but tmux's test harness sets
+            // default-shell to /bin/sh -- which is bash on macOS -- so the
+            // pane runs bash while default-shell resolves to "sh". A common
+            // name must win over a mismatched default-shell either way.
+            ("bash", "sh", true), ("bash", "zsh", true),
         ])
-    func ordinaryShellRecognisesDashPrefix(command: String, expected: Bool) {
-        // macOS reports a login shell's process name with the leading `-`
-        // its argv0 carries far more often than Linux does; unmatched, this
-        // is exactly the macOS-only freeze failure `default-shell`
-        // comparison used to produce for a plain `bash` pane.
-        #expect(WorkspaceCommands.isOrdinaryShell(command) == expected, "\(command)")
+    func defaultShellCommandRecognisesCommonNames(
+        command: String, defaultShell: String?, expected: Bool
+    ) {
+        #expect(
+            WorkspaceCommands.isDefaultShellCommand(command, defaultShell: defaultShell)
+                == expected, "\(command) / \(defaultShell ?? "nil")")
+    }
+
+    @Test(
+        "an exotic default-shell is still recognised by its own resolved basename",
+        arguments: [
+            ("mycustomshell", "/opt/exotic/mycustomshell", true),
+            ("-mycustomshell", "/opt/exotic/mycustomshell", true),
+            ("mycustomshell", nil, false),
+            ("mycustomshell", "/opt/exotic/othershell", false),
+        ])
+    func defaultShellCommandFallsBackToResolvedBasename(
+        command: String, defaultShell: String?, expected: Bool
+    ) {
+        // A pure-function regression for a shell this port's static
+        // allowlist does not know: unmatched, freeze would write it back as
+        // an explicit shell_command even though it is the pane's ordinary,
+        // no-explicit-command shell.
+        #expect(
+            WorkspaceCommands.isDefaultShellCommand(command, defaultShell: defaultShell)
+                == expected, "\(command) / \(defaultShell ?? "nil")")
     }
 
     @Test("freeze selects explicit, pane-context and sole sessions without guessing")
