@@ -247,8 +247,9 @@ enum WorkspaceCommands {
                 lastSession = session
                 try await output.event("workspace-completed", command: "load", data: result)
             }
-            // The six-port envelope (S12): schema_version, command, status,
-            // results, errors — not swift's former status/workspaces pair.
+            // The envelope the other six ports already share: schema_version,
+            // command, status, results, errors — not the former
+            // status/workspaces pair.
             let result = Value.object([
                 "schema_version": .integer(1), "command": .string("load"),
                 "status": .string("ok"), "results": .array(results), "errors": .array([]),
@@ -974,7 +975,7 @@ enum WorkspaceCommands {
     }
 }
 
-/// Carries the specific S14 code for a failure raised inside a callback
+/// Carries the specific code for a failure raised inside a callback
 /// `WorkspaceBuilder.build` re-throws as a generic `WorkspaceBuilderError`,
 /// losing the original `CLIError.code` in the process. Read back in `load`'s
 /// catch block instead of trusting the generic mapping there.

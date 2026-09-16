@@ -195,9 +195,10 @@ enum WorkspaceCLI {
             machine ? value.encoded() : "Error: \(Presenter.sanitize(error.message))")
     }
 
-    /// The S14 code table's condition for an error, where the error's own
-    /// `CLIError.code` was not already written to match it. Conditions this
-    /// does not recognise keep their own lower-snake-case code.
+    /// The machine error code for a condition where the error's own
+    /// `CLIError.code` was not already written to match the shared table the
+    /// other six ports use. Conditions this does not recognise keep their
+    /// own lower-snake-case code.
     static func canonicalCode(for error: any Error) -> String {
         if Task.isCancelled || error is CancellationError { return "interrupted" }
         if let error = error as? WorkspaceBuilderError { return canonicalCode(for: error) }
