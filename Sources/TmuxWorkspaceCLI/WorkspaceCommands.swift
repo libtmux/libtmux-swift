@@ -742,12 +742,17 @@ enum WorkspaceCommands {
         return string
     }
 
+    /// A boolean field, also accepting the quoted `'true'`/`'false'` strings
+    /// `tmuxp freeze` writes for `focus` every time — its builder only tests
+    /// the value for truthiness, so the quoted form is not an edge case.
     private static func boolean(_ value: Value?, fallback: Bool, at key: String) throws -> Bool {
         guard let value else { return fallback }
-        guard case let .bool(flag) = value else {
-            throw CLIError("document", "\(key) must be a boolean.")
+        switch value {
+        case let .bool(flag): return flag
+        case .string("true"): return true
+        case .string("false"): return false
+        default: throw CLIError("document", "\(key) must be a boolean.")
         }
-        return flag
     }
 
     private static func directory(_ value: Value?, parent: URL, store: DocumentStore) throws
