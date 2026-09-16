@@ -20,6 +20,10 @@ struct CLIContext: Sendable {
     var input: (@Sendable () async throws -> String?)?
     var errorTerminal = false
     var terminalSize = (columns: 80, rows: 24)
+    /// stdout's own size, when it is a terminal — distinct from
+    /// `terminalSize` (read from stderr, for the progress panel). `nil` when
+    /// stdout is not a terminal or the kernel reports no size for it.
+    var stdoutSize: (columns: Int, rows: Int)?
     var rawOutput: (@Sendable (String) async throws -> Void)?
     var rawError: (@Sendable (String) async throws -> Void)?
 }
@@ -68,6 +72,11 @@ enum WorkspaceCLI {
             let error = try NonblockingLineWriter(fileDescriptor: STDERR_FILENO)
             var size = winsize()
             _ = ioctl(STDERR_FILENO, UInt(TIOCGWINSZ), &size)
+            var stdoutSizeRaw = winsize()
+            let stdoutSize: (columns: Int, rows: Int)? =
+                ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &stdoutSizeRaw) == 0
+                && stdoutSizeRaw.ws_col > 0 && stdoutSizeRaw.ws_row > 0
+                ? (columns: Int(stdoutSizeRaw.ws_col), rows: Int(stdoutSizeRaw.ws_row)) : nil
             let inputTTY =
                 isatty(STDIN_FILENO) == 1 && tcgetpgrp(STDIN_FILENO) == getpgrp()
                 ? ttyname(STDIN_FILENO).map { String(cString: $0) } : nil
@@ -84,6 +93,7 @@ enum WorkspaceCLI {
                     columns: size.ws_col > 0 ? Int(size.ws_col) : 80,
                     rows: size.ws_row > 0 ? Int(size.ws_row) : 24
                 ),
+                stdoutSize: stdoutSize,
                 rawOutput: { text in try await write(text, with: output, newline: false) },
                 rawError: { text in try await write(text, with: error, newline: false) }
             )
@@ -110,14 +120,17 @@ enum WorkspaceCLI {
             action = command
         } catch {
             let status = WorkspaceRoot.exitCode(for: error).rawValue
-            let message = WorkspaceRoot.fullMessage(for: error)
+            // `.message(for:)`, not `.fullMessage(for:)`: the full form already
+            // carries its own "Error: " prefix and a usage block joined by
+            // real newlines, and diagnostic() below would double both.
+            let message = WorkspaceRoot.message(for: error)
             if status == 0 {
                 try? await context.output(message)
-            } else {
-                await diagnostic(
-                    CLIError("usage", message, status: 2), machine: machine, context: context)
+                return 0
             }
-            return status == 0 ? 0 : 2
+            await diagnostic(
+                CLIError("usage", message, status: 2), machine: machine, context: context)
+            return 2
         }
         let output = Presenter(options: action.output, context: context)
         do {
@@ -165,7 +178,7 @@ enum WorkspaceCLI {
             let failure =
                 error as? CLIError
                 ?? CLIError(
-                    Task.isCancelled ? "cancelled" : "operation", message(for: error),
+                    canonicalCode(for: error), message(for: error),
                     status: Task.isCancelled ? 130 : 1)
             await output.failure(failure)
             return failure.status
@@ -175,11 +188,41 @@ enum WorkspaceCLI {
     fileprivate static func diagnostic(_ error: CLIError, machine: Bool, context: CLIContext) async
     {
         let value = Value.object([
-            "severity": .string("error"), "code": .string(error.code),
+            "schema_version": .integer(1), "code": .string(error.code),
             "message": .string(error.message),
         ])
         try? await context.error(
             machine ? value.encoded() : "Error: \(Presenter.sanitize(error.message))")
+    }
+
+    /// The S14 code table's condition for an error, where the error's own
+    /// `CLIError.code` was not already written to match it. Conditions this
+    /// does not recognise keep their own lower-snake-case code.
+    static func canonicalCode(for error: any Error) -> String {
+        if Task.isCancelled || error is CancellationError { return "interrupted" }
+        if let error = error as? WorkspaceBuilderError { return canonicalCode(for: error) }
+        if let error = error as? TmuxError { return canonicalCode(for: error) }
+        if let error = error as? CLIError { return error.code }
+        return "operation"
+    }
+
+    private static func canonicalCode(for error: WorkspaceBuilderError) -> String {
+        switch error {
+        case .noWindows: return "invalid_workspace"
+        case .sessionExists: return "session_exists"
+        case .sessionVanished: return "tmux_failed"
+        case let .tmux(inner): return canonicalCode(for: inner)
+        case let .rollbackFailed(original, _): return canonicalCode(for: original)
+        }
+    }
+
+    private static func canonicalCode(for error: TmuxError) -> String {
+        switch error {
+        // tmux itself could not be reached: no such executable, or the
+        // socket/endpoint it names is unusable.
+        case .processLaunchFailed, .invalidEndpoint: return "tmux_unavailable"
+        default: return "tmux_failed"
+        }
     }
 
     /// A plain sentence for an error no `CLIError` site recognised, instead
@@ -214,7 +257,9 @@ enum WorkspaceCLI {
         case let .commandTooLarge(actualBytes, maximumBytes):
             return "The command was \(actualBytes) bytes, over the \(maximumBytes)-byte limit."
         case let .commandFailed(command, exitCode, reason):
-            return "\(command) failed (exit \(exitCode)): \(reason)"
+            return reason.isEmpty
+                ? "\(command) failed (exit \(exitCode))"
+                : "\(command) failed (exit \(exitCode)): \(reason)"
         case let .outputLimitExceeded(perStreamBytes):
             return "tmux's reply exceeded the \(perStreamBytes)-byte-per-stream limit."
         case let .invalidEndpoint(reason):

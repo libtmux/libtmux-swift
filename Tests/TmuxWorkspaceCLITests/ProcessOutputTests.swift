@@ -412,7 +412,9 @@ struct ProcessOutputTests {
             let result = try #require(
                 try JSONSerialization.jsonObject(with: Data(records.joined().utf8))
                     as? [String: Any])
-            #expect(result["status"] as? String == "success")
+            // `shell -c` keeps its own "success"/"error" status word; `load`
+            // now uses the six-port envelope's "ok".
+            #expect(result["status"] as? String == (shell ? "success" : "ok"))
             if shell {
                 #expect((result["stdout"] as? String)?.hasSuffix("visible result\n") == true)
                 #expect(result["stderr"] as? String == "quiet diagnostic\n")
