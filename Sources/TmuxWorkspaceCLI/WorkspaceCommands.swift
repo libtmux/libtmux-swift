@@ -67,7 +67,7 @@ enum WorkspaceCommands {
         try await output.event(
             "started", command: "load", data: .object(["inputs": .integer(Int64(plans.count))]))
         do {
-            for plan in plans {
+            for (inputIndex, plan) in plans.enumerated() {
                 await retained.reset()
                 try Task.checkCancellation()
                 try await output.event(
@@ -124,6 +124,12 @@ enum WorkspaceCommands {
                                     await server.setOption(
                                         name, to: value, scope: .session(session)))
                             }
+                            for (name, value) in plan.globalOptions.sorted(by: {
+                                $0.key < $1.key
+                            }) {
+                                try requireSuccess(
+                                    await server.setOption(name, to: value, scope: .globalSession))
+                            }
                         },
                         configureWindow: { window, index in
                             if borrowed != nil { await retained.append(window.id.rawValue) }
@@ -144,37 +150,45 @@ enum WorkspaceCommands {
                         }, borrowing: borrowed,
                         onEvent: { event in
                             let name: String
-                            var fields: [String: Value] = [:]
+                            var fields: [String: Value] = [
+                                "input_index": .integer(Int64(inputIndex))
+                            ]
                             switch event {
-                            case let .windowStarted(index, window):
+                            case let .windowStarted(index, window, session):
                                 name = "window-created"
-                                fields = [
+                                fields.merge([
+                                    "session_id": .string(session.id.rawValue),
                                     "window_id": .string(window.id.rawValue),
                                     "window_name": .string(window.name),
                                     "window_index": .integer(Int64(index + 1)),
                                     "pane_total": .integer(
                                         Int64(plan.workspace.windows[index].panes.count)),
-                                ]
-                            case let .windowCompleted(index, window):
+                                ]) { _, new in new }
+                            case let .windowCompleted(index, window, session):
                                 name = "window-completed"
-                                fields = [
+                                fields.merge([
+                                    "session_id": .string(session.id.rawValue),
                                     "window_id": .string(window.id.rawValue),
                                     "window_index": .integer(Int64(index + 1)),
-                                ]
-                            case let .paneStarted(windowIndex, index, pane):
+                                ]) { _, new in new }
+                            case let .paneStarted(windowIndex, index, pane, window, session):
                                 name = "pane-created"
-                                fields = [
+                                fields.merge([
+                                    "session_id": .string(session.id.rawValue),
+                                    "window_id": .string(window.id.rawValue),
                                     "pane_id": .string(pane.id.rawValue),
                                     "window_index": .integer(Int64(windowIndex + 1)),
                                     "pane_index": .integer(Int64(index + 1)),
-                                ]
-                            case let .paneCompleted(windowIndex, index, pane):
+                                ]) { _, new in new }
+                            case let .paneCompleted(windowIndex, index, pane, window, session):
                                 name = "pane-completed"
-                                fields = [
+                                fields.merge([
+                                    "session_id": .string(session.id.rawValue),
+                                    "window_id": .string(window.id.rawValue),
                                     "pane_id": .string(pane.id.rawValue),
                                     "window_index": .integer(Int64(windowIndex + 1)),
                                     "pane_index": .integer(Int64(index + 1)),
-                                ]
+                                ]) { _, new in new }
                             }
                             try await output.event(name, command: "load", data: .object(fields))
                         })

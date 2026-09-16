@@ -316,11 +316,19 @@ actor Presenter {
         }
         guard options.ndjson else { return }
         sequence += 1
-        try await result(
-            .object([
-                "schema_version": .integer(1), "sequence": .integer(Int64(sequence)),
-                "command": .string(command), "event": .string(event), "data": data,
-            ]))
+        // Event fields sit at the top level of the streamed record, not
+        // nested under a `data` key: the shared NDJSON contract five of
+        // seven ports already agree on.
+        var envelope: [String: Value] = [
+            "schema_version": .integer(1), "sequence": .integer(Int64(sequence)),
+            "command": .string(command), "event": .string(event),
+        ]
+        if case let .object(fields) = data {
+            envelope.merge(fields) { existing, _ in existing }
+        } else if data != .null {
+            envelope["data"] = data
+        }
+        try await result(.object(envelope))
     }
 
     func row(_ value: Value, tree: Bool = false) async throws {

@@ -497,6 +497,51 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("ndjson load events are flat records carrying input, session and object ids")
+    func ndjsonEventContract() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("ndjson-events.json")
+            try Data(
+                #"{"session_name":"ndjson-events","windows":[{"panes":[null,null]}]}"#.utf8
+            ).write(to: file)
+            let result = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--ndjson"], in: root,
+                extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            #expect(result.code == 0, "\(result.error)")
+            let records = try result.output.map {
+                try JSONDecoder().decode(Value.self, from: Data($0.utf8))
+            }
+            // Event fields sit at the top level; five of seven ports already
+            // agree and dotnet and swift were the two holdouts.
+            #expect(records.allSatisfy { $0["data"] == nil }, "\(records)")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "ndjson-events" })
+            let windowCreated = try #require(
+                records.first { $0["event"] == .string("window-created") })
+            #expect(windowCreated["input_index"] == .integer(0))
+            #expect(windowCreated["session_id"] == .string(session.id.rawValue))
+            #expect(windowCreated["window_id"]?.string != nil)
+            let windowCompleted = try #require(
+                records.first { $0["event"] == .string("window-completed") })
+            #expect(windowCompleted["input_index"] == .integer(0))
+            #expect(windowCompleted["session_id"] == .string(session.id.rawValue))
+            #expect(windowCompleted["window_id"] == windowCreated["window_id"])
+            let paneCreated = try #require(
+                records.first { $0["event"] == .string("pane-created") })
+            #expect(paneCreated["input_index"] == .integer(0))
+            #expect(paneCreated["session_id"] == .string(session.id.rawValue))
+            #expect(paneCreated["window_id"] == windowCreated["window_id"])
+            #expect(paneCreated["pane_id"]?.string != nil)
+            #expect(paneCreated["pane_index"] == .integer(1))
+            let paneCompleted = try #require(
+                records.first { $0["event"] == .string("pane-completed") })
+            #expect(paneCompleted["pane_id"] == paneCreated["pane_id"])
+            #expect(paneCompleted["window_id"] == windowCreated["window_id"])
+        }
+    }
+
     @Test("log write failures retain the primary load outcome")
     func logWriteFailure() async throws {
         try await withTmuxServer { server in
@@ -1327,7 +1372,9 @@ struct WorkspaceCLITests {
             #expect(
                 records.filter { ["completed", "failed"].contains($0["event"] as? String ?? "") }
                     .count == 1)
-            #expect((records.last?["data"] as? [String: Any])?["status"] as? String == "partial")
+            // Event fields sit at the top level of the record now, not
+            // nested under a `data` key.
+            #expect(records.last?["status"] as? String == "partial")
             let detached = await invoke(
                 ["load", file.path, "--append", "-d", "--json"], in: root, extra: environment)
             #expect(detached.code == 0, "\(detached.error)")
