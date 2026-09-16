@@ -31,6 +31,32 @@ import Testing
     }
 }
 
+/// Regression for an intermittent CI failure: `preflightBoundsOutputAndKillsTheProducingProcessTree`
+/// once failed to launch its just-written, just-`chmod`'d script with
+/// "Text file busy" (ETXTBSY) -- a runner attempted `execve` on a path the
+/// preceding atomic write had not, from the kernel's point of view, finished
+/// releasing yet. ETXTBSY here is always transient (the writer that trips it
+/// is done or about to be), so `mcp_swap_spawn` retries it a bounded number
+/// of times before giving up. Rewriting and immediately respawning the same
+/// path hundreds of times reproduces the write-then-exec sequence that
+/// exposed the race, at a repetition this test can afford but a single CI
+/// run cannot.
+@Test func repeatedWriteThenImmediateSpawnNeverSurfacesATransientTextFileBusy() throws {
+    try withPreflightFixture { root in
+        let server = root.appending(path: "server.sh")
+        for _ in 0..<300 {
+            try script(
+                """
+                #!/bin/sh
+                IFS= read -r request
+                printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}'
+                """,
+                at: server)
+            try preflight(ServerSpec(command: server.path, arguments: [], environment: [:]))
+        }
+    }
+}
+
 @Test func preflightResolvesAnInstalledCommandFromTheFinalEnvironmentPath() throws {
     try withPreflightFixture { root in
         let bin = root.appending(path: "bin")

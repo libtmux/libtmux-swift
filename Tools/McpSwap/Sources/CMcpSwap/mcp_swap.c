@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #if defined(__linux__)
@@ -149,6 +150,33 @@ static int set_close_on_exec(int descriptor) {
     return flags < 0 ? -1 : fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC);
 }
 
+/* ETXTBSY from execve is always transient: it means some other process still
+ * holds the target open for writing at the instant the kernel checks, which
+ * on the caller side looks identical whether that writer is mid-rename from
+ * an atomic file write or a moment behind on closing a just-created script.
+ * Either way the writer is not this process and is not stuck -- it is done or
+ * about to be -- so a short bounded retry resolves the same race a shell's
+ * own exec loop resolves the same way, rather than surfacing a spawn failure
+ * for a file that is a few microseconds from being exec-ready. Five attempts
+ * over at most ~31ms; a real, permanent failure (the file genuinely missing,
+ * wrong permissions, ENOENT, and so on) never returns ETXTBSY, so this never
+ * masks one. */
+static int posix_spawnp_retrying(pid_t *pid, const char *command,
+                                 const posix_spawn_file_actions_t *actions,
+                                 const posix_spawnattr_t *attributes, char *const argv[],
+                                 char *const envp[]) {
+    int result;
+    for (int attempt = 0; attempt < 5; attempt++) {
+        result = posix_spawnp(pid, command, actions, attributes, argv, envp);
+        if (result != ETXTBSY || attempt == 4) {
+            return result;
+        }
+        struct timespec delay = {.tv_sec = 0, .tv_nsec = (1L << attempt) * 1000L * 1000L};
+        nanosleep(&delay, NULL);
+    }
+    return result;
+}
+
 int mcp_swap_spawn(const char *command, const char *arguments, uint64_t arguments_size,
                    const char *environment, uint64_t environment_size,
                    struct mcp_swap_child *child) {
@@ -216,7 +244,7 @@ int mcp_swap_spawn(const char *command, const char *arguments, uint64_t argument
     }
 
     pid_t pid = 0;
-    result = posix_spawnp(&pid, command, &actions, &attributes, argv, envp);
+    result = posix_spawnp_retrying(&pid, command, &actions, &attributes, argv, envp);
     if (result == 0) {
         close(input[0]);
         input[0] = -1;
