@@ -26,8 +26,8 @@ version number says only which alpha you have. Pin an exact one.
 
 - `tmux-workspace freeze` selects an explicit, current-pane or sole session,
   prompts human callers when several sessions remain, and captures local
-  session/window options and session environment values. `--quiet` preserves
-  documents and machine results while suppressing explanatory messages. (#12)
+  session/window options. `--quiet` preserves documents and machine results
+  while suppressing explanatory messages. (#12)
 
 ### Fixed
 
@@ -93,6 +93,50 @@ version number says only which alpha you have. Pin an exact one.
   layout names and saved-layout trees before scripts or session changes,
   protecting existing sessions from malformed layouts that can crash tmux.
   Geometry correction and pruning remain with tmux. (#12)
+
+- `tmux-workspace load` accepts `focus: 'true'`/`'false'`, the quoted string
+  `tmuxp freeze` always writes, instead of only a YAML boolean. A workspace
+  frozen from tmuxp previously failed to reload. (#12)
+
+- `tmux-workspace load` fits five or more panes in a window with no explicit
+  layout by rebalancing between splits, instead of running out of room and
+  refusing the whole workspace. (#12)
+
+- `tmux-workspace load` implements window `options_after`, applied once
+  every pane in the window exists. A document java or rs froze previously
+  failed to load. (#12)
+
+- `tmux-workspace load` implements `global_options`, applied with
+  `set-option -g`; it previously refused the key outright. (#12)
+
+- `freeze` no longer writes a top-level `environment` block, which captured
+  the caller's own `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `DISPLAY` and
+  `WAYLAND_DISPLAY` into every saved workspace. (#12)
+
+- `freeze` omits a pane's `shell_command` when it runs an ordinary
+  interactive shell rather than naming it, which built a shell inside a
+  shell on reload. (#12)
+
+- `freeze`'s shell recognition no longer trusts the session's
+  `default-shell` option alone. On macOS `/bin/sh` is bash, so a plain
+  pane's `shell_command` was wrongly written as `[bash]`; a document frozen
+  on macOS before this fix may still carry it. (#12)
+
+- `tmux-workspace --version` and `debug-info` print plain text unless
+  `--json` is given, instead of JSON either way. (#12)
+
+- `tmux-workspace` prints a plain sentence for an error no other handler
+  recognised, instead of a Swift enum literal such as
+  `invocationFailed(reason: "...")`. (#12)
+
+- `tmux-workspace load --ndjson` records carry event fields at the top
+  level, with `input_index`, `session_id` and (for pane events) `window_id`
+  alongside the existing ids, instead of nesting them under a `data` key.
+  (#12)
+
+- `tmux-workspace --help` documents the built-in
+  `--generate-completion-script` flag, previously absent from all help
+  output. (#12)
 
 ## [0.1.0-alpha.5] - 2026-09-12
 
