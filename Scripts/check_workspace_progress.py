@@ -204,7 +204,7 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
                 )
                 assert records[-1]["event"] == "completed"
             else:
-                assert records[0]["status"] == "success"
+                assert records[0]["status"] == "ok"
             checked += 1
         script.write_text(
             f"#!/bin/sh\nprintf '%s' $$ > '{child_marker}'\nexec sleep 30\n"
