@@ -73,6 +73,69 @@ struct MutationTests {
         }
     }
 
+    @Test("a JSON-shaped layout is refused before dispatch on a pre-3.8 server")
+    func jsonShapedLayoutIsRefusedClientSideBelowThreeEight() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version < TmuxVersion(major: 3, minor: 8) else {
+                // Covered the other way by wellFormedJSONLayoutAppliesFromThreeEight.
+                return
+            }
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            let beforeAttempt = try #require(
+                try await server.format("#{window_layout}", for: link))
+            // Well-formed JSON, but not a claim it is one this window's pane
+            // count could ever satisfy -- tmux never sees it either way.
+            let json = #"{"V":2,"L":{"t":"p","w":1,"h":1,"x":0,"y":0,"i":0,"I":"%0"}}"#
+            await #expect(throws: TmuxError.self) {
+                try await server.selectLayout(window, WindowLayout.custom(json))
+            }
+            // Unchanged layout is the observable proof select-layout never
+            // ran. On 3.3/3.3a specifically, this is the crash the guard
+            // exists for: unrefused, the same string kills the daemon
+            // (verified directly against a real 3.3a binary; see the
+            // remediation commit).
+            #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
+        }
+    }
+
+    @Test("a layout that only looks like JSON is refused on every version")
+    func malformedJSONShapedLayoutIsRefusedOnEveryVersion() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            do {
+                try await server.selectLayout(window, WindowLayout.custom("{not json"))
+                Issue.record("malformed JSON-shaped layout was accepted")
+            } catch let error as TmuxError {
+                #expect(error.description.contains("not valid JSON"))
+            }
+        }
+    }
+
+    @Test("a well-formed JSON layout applies from 3.8 onward")
+    func wellFormedJSONLayoutAppliesFromThreeEight() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version >= TmuxVersion(major: 3, minor: 8) else {
+                // The whole CI matrix predates 3.8; verified locally against
+                // /home/d/.local/share/libtmux-tmux-matrix/master-e880cf63,
+                // which reports next-3.9.
+                return
+            }
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            let saved = try #require(try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenVertical)
+            try await server.selectLayout(window, WindowLayout.custom(saved))
+            #expect(try await server.format("#{window_layout}", for: link) == saved)
+        }
+    }
+
     @Test("creating an object returns it, already read back")
     func creatingReturnsTheObject() async throws {
         try await withTmuxServer { server in
