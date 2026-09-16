@@ -108,9 +108,8 @@ public enum WorkspaceBuilder {
                 try await build(
                     window, at: index, in: created, of: workspace, on: server,
                     session: activeSession, onEvent: onEvent)
-                // Applied only once every pane in the window exists: an option
-                // such as `automatic-rename off` only holds if it lands after
-                // whatever created the panes could have renamed the window.
+                // `automatic-rename off` only holds once applied after the
+                // panes that could have renamed the window already exist.
                 try await configureWindowAfter(created, index)
                 try await onEvent(
                     .windowCompleted(index: index, window: created, session: activeSession))
@@ -206,11 +205,9 @@ public enum WorkspaceBuilder {
                         ?? workspace.startDirectory
                 )
             )
-            // Splitting straight through halves whatever pane came before
-            // it, so a plain 80x24 window runs out of room by the fifth
-            // pane. Rebalancing after every split reclaims the space a
-            // later split needs; an explicit `window.layout` below still
-            // has the final say.
+            // Halving each pane in turn runs out of room by the fifth;
+            // rebalancing after every split reclaims it. `window.layout`
+            // below still has the final say.
             try await server.selectLayout(created, "tiled")
         }
 

@@ -385,11 +385,7 @@ enum WorkspaceCommands {
         let snapshot = try await server.snapshot()
         let session = try await freezeSession(
             command, snapshot: snapshot, server: server, context: context)
-        // A fallback for a default-shell this port does not otherwise
-        // recognise. tmux sets the option from $SHELL once at server
-        // start, which is not necessarily what a given pane is actually
-        // running, so a common shell name always wins; this only matters
-        // for something exotic.
+        // Fallback for a shell not on the common-name list below.
         let defaultShell = try await defaultShellBasename(for: session, server: server)
         var windows: [Value] = []
         for link in snapshot.windowLinks(of: session).sorted(by: { $0.index < $1.index }) {
@@ -401,10 +397,8 @@ enum WorkspaceCommands {
                     "start_directory": .string(pane.currentPath),
                     "focus": .bool(pane.isActive),
                 ]
-                // Omitted for an ordinary interactive shell, or the
-                // session's own default-shell, so the pane reloads plain
-                // instead of running a shell inside a shell; emitted for
-                // anything else, so a real command is not silently dropped.
+                // Omitted for the pane's own shell so reload starts a
+                // plain pane, not a shell inside a shell.
                 if !pane.currentCommand.isEmpty,
                     !isDefaultShellCommand(pane.currentCommand, defaultShell: defaultShell)
                 {
@@ -419,10 +413,8 @@ enum WorkspaceCommands {
             if let layout = try await server.format("#{window_layout}", for: link) {
                 value["layout"] = .string(layout)
             }
-            // Written as `options_after`, not `options`: a captured
-            // `automatic-rename off` only holds when it is applied once the
-            // panes already exist, which is what `options_after` means on
-            // load.
+            // `options_after` applies once the panes exist, which is what
+            // a captured `automatic-rename off` needs to hold.
             value["options_after"] = .object(
                 try await freezeOptions(.window(window), server: server))
             windows.append(.object(value))
@@ -456,21 +448,15 @@ enum WorkspaceCommands {
         }
     }
 
-    /// Interactive shell basenames tmux itself ships or commonly links to.
-    /// A bare pane running one of these is the ordinary no-command pane
-    /// rather than something worth a `shell_command` entry, whatever the
-    /// session's own `default-shell` happens to say.
+    /// Common interactive shell basenames, recognised regardless of
+    /// `default-shell`.
     private static let ordinaryShellNames: Set<String> = [
         "sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "csh", "tcsh", "fish", "pwsh",
     ]
 
-    /// Whether a pane's `#{pane_current_command}` is the session's own
-    /// no-explicit-command pane rather than something worth freezing as an
-    /// `shell_command`. True for a common interactive shell name outright;
-    /// otherwise compared against `defaultShell`'s basename, for a custom
-    /// shell this port does not otherwise recognise. Either side is
-    /// stripped of the leading `-` a login shell's argv0 carries (`-bash`),
-    /// which macOS reports far more often than Linux does.
+    /// Whether `command` is the pane's own no-explicit-command shell:
+    /// a common name, or `defaultShell`'s basename. Both sides are
+    /// stripped of the login-shell dash (`-bash`) first.
     static func isDefaultShellCommand(_ command: String, defaultShell: String?) -> Bool {
         let name = command.hasPrefix("-") ? String(command.dropFirst()) : command
         if ordinaryShellNames.contains(name) { return true }
@@ -478,9 +464,8 @@ enum WorkspaceCommands {
         return name == URL(fileURLWithPath: defaultShell).lastPathComponent
     }
 
-    /// The basename of the session's effective `default-shell`, e.g. `zsh`
-    /// for `/usr/bin/zsh`. `nil` when tmux has no answer for it, which
-    /// keeps every pane's command significant rather than silently dropped.
+    /// The basename of the session's effective `default-shell`, or `nil`
+    /// if tmux has no answer for it.
     private static func defaultShellBasename(
         for session: Session, server: Server
     ) async throws -> String? {
@@ -627,9 +612,7 @@ enum WorkspaceCommands {
             throw CLIError("document", "Invalid environment variable name.")
         }
         let options = try scalarMapping(root["options"], at: "options", store: store)
-        // Session-local `options` and server-wide `global_options` are
-        // distinct tmuxp keys with distinct set-option scopes; tmuxp itself
-        // applies global_options with `global_=True`.
+        // Distinct tmuxp keys, distinct set-option scopes.
         let globalOptions = try scalarMapping(
             root["global_options"], at: "global_options", store: store)
         let inheritedOptions = try scalarMapping(
@@ -659,9 +642,7 @@ enum WorkspaceCommands {
                 inheritedOptions.merging(
                     try scalarMapping(window["options"], at: "window.options", store: store)
                 ) { _, local in local })
-            // `freeze` writes local window options under `options_after`
-            // because `automatic-rename off` only holds once the panes
-            // exist; both spellings load the same way tmuxp accepts them.
+            // Both spellings load; `freeze` emits `options_after`.
             windowOptionsAfter.append(
                 try scalarMapping(
                     window["options_after"], at: "window.options_after", store: store))
@@ -822,9 +803,8 @@ enum WorkspaceCommands {
         return string
     }
 
-    /// A boolean field, also accepting the quoted `'true'`/`'false'` strings
-    /// `tmuxp freeze` writes for `focus` every time — its builder only tests
-    /// the value for truthiness, so the quoted form is not an edge case.
+    /// A boolean field, also accepting `tmuxp freeze`'s quoted
+    /// `'true'`/`'false'` strings.
     private static func boolean(_ value: Value?, fallback: Bool, at key: String) throws -> Bool {
         guard let value else { return fallback }
         switch value {
