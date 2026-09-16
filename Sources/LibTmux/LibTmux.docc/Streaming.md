@@ -21,6 +21,10 @@ let firstLine: String? = try await server.connected(attachingTo: "work") { serve
 There is no way to write this against a server that has no connection — the
 value carrying the stream exists only inside the scope that opened one.
 
+> Important: Drive `notifications` and ``ControlSession/changes(named:)``
+> with `for try await`, as above. Calling their iterator's `next()` by hand
+> inside `try?` or a `do`/`catch` crashes the Swift 6.2.4 compiler.
+
 The loop leaves on the notification it was waiting for, and the stream ends by
 itself when the connection closes, which is what the `nil` answers. A loop with
 no way out is the easy thing to write here and the hard thing to stop: it holds
