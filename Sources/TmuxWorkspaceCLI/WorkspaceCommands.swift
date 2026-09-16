@@ -95,6 +95,7 @@ enum WorkspaceCommands {
         let borrowed: Session?
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }
         let retained = AppendState()
+        let failureCode = FailureCode()
         var results: [Value] = []
         var lastSession: Session?
         var currentInputIndex = 0
@@ -143,6 +144,7 @@ enum WorkspaceCommands {
                                     try await output.bootstrap(text, stream: stream)
                                 }
                                 guard result.code == 0 else {
+                                    await failureCode.set("script_failed")
                                     throw CLIError(
                                         "script_failed",
                                         "before_script exited with status \(result.code).")
@@ -265,6 +267,13 @@ enum WorkspaceCommands {
             }
         } catch {
             let changed = await retained.started
+            // WorkspaceBuilder.build's typed throws re-wraps whatever
+            // configureSession/configureWindow raised as a generic tmux
+            // failure, losing a CLIError's own code; failureCode carries the
+            // precise one back for the known cases that set it.
+            let overrideCode = await failureCode.value
+            let code = overrideCode ?? WorkspaceCLI.canonicalCode(for: error)
+            let message = WorkspaceCLI.message(for: error)
             var fields: [String: Value] = [
                 "schema_version": .integer(1), "command": .string("load"),
                 "status": .string(results.isEmpty && !changed ? "error" : "partial"),
@@ -272,8 +281,7 @@ enum WorkspaceCommands {
                 "errors": .array([
                     .object([
                         "input_index": .integer(Int64(currentInputIndex)),
-                        "code": .string(WorkspaceCLI.canonicalCode(for: error)),
-                        "message": .string(WorkspaceCLI.message(for: error)),
+                        "code": .string(code), "message": .string(message),
                     ])
                 ]),
             ]
@@ -288,6 +296,10 @@ enum WorkspaceCommands {
             }
             let result = Value.object(fields)
             await output.failedLoad(result)
+            // Re-throw with the restored code so the stderr diagnostic
+            // matches errors[0].code instead of the generic one the wrapped
+            // error would otherwise report.
+            if let overrideCode { throw CLIError(overrideCode, message) }
             throw error
         }
         if case let .attached(client) = target, let session = lastSession {
@@ -437,7 +449,7 @@ enum WorkspaceCommands {
 
     static func freeze(_ command: Freeze, context: CLIContext, output: Presenter) async throws {
         let server = try server(command.socket, context: context)
-        let snapshot = try await server.snapshot()
+        let snapshot = try await emptyTolerantSnapshot(server)
         let session = try await freezeSession(
             command, snapshot: snapshot, server: server, context: context)
         // Fallback for a shell not on the common-name list below.
@@ -478,6 +490,18 @@ enum WorkspaceCommands {
             "session_name": .string(session.name), "windows": .array(windows),
             "options": .object(try await freezeOptions(.session(session), server: server)),
         ])
+        // Checked before the warning below, not just inside store.save: a
+        // destination that already exists should fail cleanly, not print an
+        // explanatory note about a capture it is then refused. store.save's
+        // own atomic check still governs a race against this one.
+        if let destination = command.destination, !command.force {
+            let file = DocumentStore(context: context).path(destination)
+            guard !FileManager.default.fileExists(atPath: file.path) else {
+                throw CLIError(
+                    "destination_exists", "\(file.path) already exists; use --force to overwrite."
+                )
+            }
+        }
         if !command.quiet {
             try await output.warning(
                 "Capture preserves current commands, directories, layouts, indexes, focus and local options. Original arguments, scripts and session environment values are unavailable; global settings are omitted."
@@ -559,6 +583,22 @@ enum WorkspaceCommands {
                     && (character.isLetter || character.isNumber
                         || "_-./=:@%+,".contains(character))
             }
+    }
+
+    /// `server.snapshot()`, tolerant of a server with no sessions at all.
+    /// `list-windows -a`, `list-panes -a` and `list-clients` all fail
+    /// outright there ("no current target"), even though `-a` asks for
+    /// everything, so a plain snapshot would misreport an empty server as
+    /// unreachable rather than as having no session to freeze.
+    private static func emptyTolerantSnapshot(_ server: Server) async throws -> Snapshot {
+        do {
+            return try await server.snapshot()
+        } catch {
+            guard try await server.sessions().isEmpty else { throw error }
+            return Snapshot(
+                incarnation: try await server.incarnation(), sessions: [], windows: [],
+                windowLinks: [], panes: [], clients: [])
+        }
     }
 
     private static func freezeSession(
@@ -928,6 +968,17 @@ enum WorkspaceCommands {
             result.replaceSubrange(full, with: value)
         }
         return result
+    }
+}
+
+/// Carries the specific S14 code for a failure raised inside a callback
+/// `WorkspaceBuilder.build` re-throws as a generic `WorkspaceBuilderError`,
+/// losing the original `CLIError.code` in the process. Read back in `load`'s
+/// catch block instead of trusting the generic mapping there.
+private actor FailureCode {
+    private(set) var value: String?
+    func set(_ code: String) {
+        if value == nil { value = code }
     }
 }
 
