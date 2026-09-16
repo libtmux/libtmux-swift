@@ -208,6 +208,67 @@ struct CapabilityBehaviorTests {
         }
     }
 
+    @Test("wait_for_text without a cursor can match send_keys's own echo; a cursor avoids it")
+    func waitForTextEchoTrapAndItsRemedy() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let surface = tools(server)
+            let marker = "echo-trap-\(UUID().uuidString.prefix(8))"
+
+            _ = try await surface.call(
+                ToolCall(
+                    name: "send_keys",
+                    arguments: .object([
+                        "keys": .array([.string("sleep 0.3; echo \(marker)"), .string("Enter")]),
+                        "paneId": .string(pane.id.rawValue),
+                    ])
+                )
+            )
+            // Taken before the sleep elapses, so it marks a point after the
+            // echo and before the real output -- the cursor a caller would
+            // thread from its own send_keys, not one contrived for this test.
+            let sinceEcho = try await surface.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object(["paneId": .string(pane.id.rawValue)])
+                )
+            )
+            let cursor = try #require(sinceEcho.structured["cursor"]?.stringValue)
+
+            let withoutCursor = try await surface.call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string(marker)]),
+                        "timeoutMs": .integer(1_000),
+                    ])
+                )
+            )
+            // Matched at once, before the command could have run: the typed
+            // command line, not its output.
+            #expect(withoutCursor.structured["outcome"]?.stringValue == "matched")
+            #expect(withoutCursor.structured["matchedAtEntry"]?.boolValue == true)
+            #expect(withoutCursor.structured["sawNewOutput"]?.boolValue == false)
+
+            let withCursor = try await surface.call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "cursor": .string(cursor),
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string(marker)]),
+                        "timeoutMs": .integer(2_000),
+                    ])
+                )
+            )
+            // Deferred past the echo already on screen; the real output
+            // arrives afterward and is what matches.
+            #expect(withCursor.structured["outcome"]?.stringValue == "matched")
+            #expect(withCursor.structured["sawNewOutput"]?.boolValue == true)
+        }
+    }
+
     @Test("run_shell_command refuses a synchronized multi-pane cohort before input")
     func runRequiresSingularConfiguredPane() async throws {
         try await withTmuxServer { server in
