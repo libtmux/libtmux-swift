@@ -6,6 +6,25 @@ import Foundation
 /// a `break-pane` crash that 3.7a reverted, so code that has to know which one
 /// it is talking to needs `3.7 < 3.7a` to be true. Comparing on the numbers
 /// alone would make those two equal and the question unanswerable.
+///
+/// `build` breaks the tie the other way: at the same `(major, minor,
+/// pointRelease)`, a tagged build sorts below the untagged release it names,
+/// so `next-3.9 < 3.9` while `3.8 < next-3.9` — a development build previews
+/// the release, it is not equivalent to it. That is the answer this type
+/// gives to the question a feature gate actually asks: a check written as
+/// `version >= TmuxVersion(major: 3, minor: 9)` is **not** satisfied by
+/// `next-3.9`, on purpose, because a feature `3.9` will ship can still be
+/// half-landed in the build that only names it. A caller that means "some
+/// build previewing 3.9, half-landed features and all" compares `build`
+/// itself rather than relying on `<`.
+///
+/// The same rule applies to `openbsd`, not only to `next`/`master`: any tag
+/// at a given number sorts below the plain release at that number, because a
+/// vendored or forked build is not proven to behave like the release it
+/// claims to be either. Two different tags at the same number order by the
+/// tag's own text, which is arbitrary but keeps the relation total — nothing
+/// in this library depends on that ordering; it exists so sorting a mixed
+/// list never has to ask which of two builds "wins".
 public struct TmuxVersion: Sendable, Hashable, Comparable, Codable {
     /// The major version — `3` in `3.7a`.
     public let major: Int
@@ -62,8 +81,19 @@ public struct TmuxVersion: Sendable, Hashable, Comparable, Codable {
     }
 
     public static func < (lhs: TmuxVersion, rhs: TmuxVersion) -> Bool {
-        (lhs.major, lhs.minor, lhs.pointRelease)
-            < (rhs.major, rhs.minor, rhs.pointRelease)
+        let lhsKey = (lhs.major, lhs.minor, lhs.pointRelease)
+        let rhsKey = (rhs.major, rhs.minor, rhs.pointRelease)
+        guard lhsKey == rhsKey else { return lhsKey < rhsKey }
+        // Same numbered release: nil (the plain release) sorts last, so any
+        // tag — `next`, `master`, `openbsd` — sorts below it; two different
+        // tags at the same number order by name, so the relation stays total
+        // rather than leaving same-number, different-tag builds unordered.
+        switch (lhs.build, rhs.build) {
+        case (nil, nil): return false
+        case (nil, _): return false
+        case (_, nil): return true
+        case let (lhsBuild?, rhsBuild?): return lhsBuild < rhsBuild
+        }
     }
 }
 

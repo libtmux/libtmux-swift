@@ -45,6 +45,12 @@ version number says only which alpha you have. Pin an exact one.
   nothing ever confirms the run ended, instead of holding it, and every later
   `run_shell_command` on that pane, indefinitely. (#15)
 
+- `TmuxVersion` orders a tagged `TmuxVersion.build` — `next`, `master`,
+  `openbsd` — below the plain release at the same number instead of treating
+  the two as ordering-equal: `next-3.9` sorts above `3.8` and below `3.9`, so a
+  gate for "3.9 or later" is not satisfied by a build that only previews it.
+  (#15)
+
 ## [0.1.0-alpha.5] - 2026-09-12
 
 ### Added
