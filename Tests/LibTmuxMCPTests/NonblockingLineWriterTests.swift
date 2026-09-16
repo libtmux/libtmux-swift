@@ -1,3 +1,4 @@
+import LibTmux
 import Testing
 
 @testable import LibTmuxMCP
@@ -78,6 +79,49 @@ struct NonblockingLineWriterTests {
         try #require(count > 0)
 
         #expect(await completes(writing, within: .milliseconds(200)) == .written)
+    }
+
+    @Test("a closed reader wakes a full pipe's write readiness")
+    func closedReaderWakesWriteReadiness() async throws {
+        var descriptors = [Int32](repeating: 0, count: 2)
+        try #require(pipe(&descriptors) == 0)
+        let readDescriptor = descriptors[0]
+        let writeDescriptor = descriptors[1]
+        defer { _ = close(writeDescriptor) }
+        _ = try NonblockingLineWriter(fileDescriptor: writeDescriptor)
+        try fill(writeDescriptor)
+        let writing = Task {
+            await DescriptorReadiness(fileDescriptor: writeDescriptor, interest: .write).wait()
+                ? LineWriteResult.written : .cancelled
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        _ = close(readDescriptor)
+        #expect(await completes(writing, within: .milliseconds(200)) == .written)
+    }
+
+    @Test("closing and cancelling repeated waits cannot strand reused descriptors")
+    func closeCancellationRaces() async throws {
+        for attempt in 0..<100 {
+            var descriptors = [Int32](repeating: 0, count: 2)
+            try #require(pipe(&descriptors) == 0)
+            let readDescriptor = descriptors[0]
+            let writeDescriptor = descriptors[1]
+            _ = try NonblockingLineWriter(fileDescriptor: writeDescriptor)
+            try fill(writeDescriptor)
+            let writing = Task {
+                if attempt % 3 == 0 { withUnsafeCurrentTask { $0?.cancel() } }
+                return await DescriptorReadiness(fileDescriptor: writeDescriptor, interest: .write)
+                    .wait()
+                    ? LineWriteResult.written : .cancelled
+            }
+            if attempt % 3 == 1 { await Task.yield() }
+            if attempt % 3 == 2 { try await Task.sleep(for: .milliseconds(1)) }
+            _ = close(readDescriptor)
+            writing.cancel()
+            let outcome = await completes(writing, within: .milliseconds(200))
+            _ = close(writeDescriptor)
+            #expect(outcome == .written || outcome == .cancelled)
+        }
     }
 
     private func fill(_ descriptor: Int32) throws {

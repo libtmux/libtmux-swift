@@ -7,6 +7,62 @@ import TmuxFixture
 
 @Suite("capability regressions", .timeLimit(.minutes(1)))
 struct CapabilityRegressionTests {
+    @Test("invalid layout syntax is refused before MCP window lookup")
+    func invalidLayoutPrecedesLookup() async throws {
+        let transport = InvalidMCPLayoutProbeTransport()
+        let server = Server(
+            endpoint: try Endpoint(
+                socketPath: "/tmp/libtmux-swift-test/mcp-layout-preflight/socket"),
+            transport: transport)
+        await #expect(throws: (any Error).self) {
+            _ = try await tools(server).call(
+                ToolCall(
+                    name: "select_layout",
+                    arguments: .object([
+                        "windowId": .string("@999999"),
+                        "layout": .string("32d2,80x24,0,0{}"),
+                    ])))
+        }
+        #expect(await transport.calls == 0)
+    }
+
+    @Test("MCP layouts reuse native saved and daemon-sensitive named validation")
+    func nativeLayoutForms() async throws {
+        try await withTmuxServer { server in
+            let identity = try await server.incarnation()
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            let saved = try #require(try await server.format("#{window_layout}", for: link))
+            let uppercase = saved.prefix(4).uppercased() + saved.dropFirst(4)
+            let version = try await server.version()
+            let beforeMirrors = version < TmuxVersion(major: 3, minor: 5)
+            let versioned = beforeMirrors ? "main-h" : "main-horizontal-mirrored"
+            for layout in ["even-h", uppercase, versioned] {
+                let result = try await tools(server).call(
+                    ToolCall(
+                        name: "select_layout",
+                        arguments: .object([
+                            "windowId": .string(window.id.rawValue), "layout": .string(layout),
+                        ])))
+                #expect(result.structured["windowId"]?.stringValue == window.id.rawValue)
+            }
+            let refused = beforeMirrors ? "main-horizontal-mirrored" : "main-h"
+            await #expect(
+                throws: ToolError.tmux(
+                    .invocationFailed(reason: "Invalid window layout for tmux \(version)."))
+            ) {
+                _ = try await tools(server).call(
+                    ToolCall(
+                        name: "select_layout",
+                        arguments: .object([
+                            "windowId": .string(window.id.rawValue), "layout": .string(refused),
+                        ])))
+            }
+            #expect(try await server.incarnation() == identity)
+            #expect(try await server.window(window.id) != nil)
+        }
+    }
+
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(
             server: server,
@@ -234,5 +290,17 @@ struct CapabilityRegressionTests {
             #expect(returnedCursor != nil)
             #expect(returnedCursor?.isEmpty == false)
         }
+    }
+}
+
+private actor InvalidMCPLayoutProbeTransport: ProcessTransport {
+    private(set) var calls = 0
+
+    func run(
+        executable: String, arguments: [String], environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        calls += 1
+        return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
     }
 }

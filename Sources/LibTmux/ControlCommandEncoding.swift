@@ -109,6 +109,14 @@ extension ControlSession {
     }
 }
 
+/// Spells a caller's value as the argv `splitTmuxArgumentCommands` and tmux
+/// both read: a trailing `;` is structural, so data ending in one has to
+/// arrive as `\;` or the command stops there and the value loses its tail.
+func tmuxArgumentData(_ value: String) -> String {
+    guard value.hasSuffix(TmuxCommandList.separator) else { return value }
+    return String(value.dropLast()) + "\\" + TmuxCommandList.separator
+}
+
 private func splitTmuxArgumentCommands(_ arguments: [String]) -> [[String]] {
     // tmux's argv parser makes a trailing `;` structural and `\;` literal.
     // Recreate that result before quoting the control command line.

@@ -43,7 +43,7 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// A value from another endpoint cannot target this server.
     case foreignServerValue
 
-    /// A session-local target no longer names the object the value described.
+    /// A target no longer names the object or context the value described.
     case staleServerValue
 
     /// The task was cancelled. A cancelled request never reports an empty

@@ -17,8 +17,10 @@ struct WorkspaceDecodingTests {
               "windows": [
                 {
                   "window_name": "editor",
+                  "window_index": 7,
+                  "focus": true,
                   "layout": "even-horizontal",
-                  "panes": [{"shell_command": ["echo one"]}, "echo two"]
+                  "panes": [{"shell_command": ["echo one"], "focus": true}, "echo two"]
                 }
               ]
             }
@@ -32,6 +34,10 @@ struct WorkspaceDecodingTests {
         let window = try #require(workspace.windows.first)
         #expect(window.windowName == "editor")
         #expect(window.layout == "even-horizontal")
+        #expect(window.windowIndex == 7)
+        #expect(window.focus == true)
+        #expect(window.panes.first?.focus == true)
+        #expect(try Workspace.decode(json: JSONEncoder().encode(workspace)) == workspace)
         // tmuxp lets a pane be a bare string meaning "run this".
         #expect(window.panes.map(\.shellCommands) == [["echo one"], ["echo two"]])
     }
@@ -73,6 +79,103 @@ struct WorkspaceDecodingTests {
 
 @Suite("workspace building", .timeLimit(.minutes(1)))
 struct WorkspaceBuildingTests {
+    @Test("three panes retain source order and focus after detached splits")
+    func threePaneOrderAndFocus() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let directories = (0..<3).map { root.appendingPathComponent("pane-\($0)") }
+            for directory in directories {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: false)
+            }
+            let workspace = Workspace(
+                sessionName: "ordered",
+                windows: [
+                    WindowPlan(
+                        panes: directories.enumerated().map { index, directory in
+                            PanePlan(startDirectory: directory.path, focus: index == 1)
+                        })
+                ])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let panes = snapshot.panes(of: session)
+            #expect(
+                panes.map { URL(fileURLWithPath: $0.currentPath).resolvingSymlinksInPath().path }
+                    == directories.map { $0.resolvingSymlinksInPath().path })
+            #expect(panes.filter(\.isActive).map(\.index) == [1])
+        }
+    }
+
+    @Test("focus follows its own plan when a hook adds panes to the window")
+    func focusFollowsItsPlanPastInheritedPanes() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let directories = (0..<2).map { root.appendingPathComponent("focus-\($0)") }
+            for directory in directories {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: false)
+            }
+            // A user hook that splits every new window leaves the window
+            // holding more panes than the workspace planned.
+            try await server.setHook("after-new-window", to: "split-window")
+            let workspace = Workspace(
+                sessionName: "hooked",
+                startDirectory: root.path,
+                windows: [
+                    WindowPlan(panes: [PanePlan()]),
+                    WindowPlan(
+                        panes: directories.enumerated().map { index, directory in
+                            PanePlan(startDirectory: directory.path, focus: index == 0)
+                        }),
+                ])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let hooked = try #require(snapshot.windows(of: session).last)
+            let panes = snapshot.panes(of: hooked)
+            try #require(panes.count > directories.count)
+            let active = try #require(panes.filter(\.isActive).first)
+            #expect(
+                URL(fileURLWithPath: active.currentPath).resolvingSymlinksInPath().path
+                    == directories[0].resolvingSymlinksInPath().path)
+        }
+    }
+
+    @Test("first-pane directories override session and window directories")
+    func firstPaneDirectoryOverridesItsParents() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(path) = server.endpoint else {
+                Issue.record("The fixture must use an explicit socket path")
+                return
+            }
+            let root = URL(fileURLWithPath: path).deletingLastPathComponent()
+            let first = root.appendingPathComponent("first")
+            try FileManager.default.createDirectory(at: first, withIntermediateDirectories: false)
+            let workspace = Workspace(
+                sessionName: "first-pane",
+                startDirectory: root.path,
+                windows: [
+                    WindowPlan(panes: [PanePlan(startDirectory: first.path), PanePlan()]),
+                    WindowPlan(
+                        startDirectory: root.path, panes: [PanePlan(startDirectory: first.path)]),
+                ]
+            )
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let directories = snapshot.windows(of: session).map { window in
+                snapshot.panes(of: window).map {
+                    URL(fileURLWithPath: $0.currentPath).resolvingSymlinksInPath().path
+                }
+            }
+            #expect(
+                directories == [
+                    [first.resolvingSymlinksInPath().path, root.resolvingSymlinksInPath().path],
+                    [first.resolvingSymlinksInPath().path],
+                ])
+        }
+    }
+
     @Test("a workspace becomes the session, windows, and panes it describes")
     func workspaceBecomesWhatItDescribes() async throws {
         try await withTmuxServer { server in
@@ -174,21 +277,51 @@ struct WorkspaceBuildingTests {
     @Test("a failed build removes the exact session it created")
     func failedBuildRollsBackItsSession() async throws {
         try await withTmuxServer { server in
+            let before = try await server.snapshot()
             let workspace = Workspace(
                 sessionName: "rollback",
                 windows: [
                     WindowPlan(
-                        layout: "not-a-tmux-layout",
                         panes: [PanePlan(), PanePlan()]
                     )
                 ]
             )
 
             await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(
+                    workspace, on: server, environment: [:], configureSession: { _ in },
+                    configureWindow: { window, _ in
+                        try await server.expectSuccess(
+                            TmuxCommand(
+                                "set-option",
+                                ["-w", "-t", window.id.rawValue, "libtmux-invalid-option", "1"]))
+                    })
+            }
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+            #expect(after.panes.map(\.id) == before.panes.map(\.id))
+        }
+    }
+
+    @Test(
+        "invalid workspace layouts preserve existing sessions",
+        arguments: ["not-a-layout", "32d2,80x24,0,0{}"])
+    func invalidLayoutPreservesServer(layout: String) async throws {
+        try await withTmuxServer { server in
+            let before = try await server.snapshot()
+            let workspace = Workspace(
+                sessionName: "invalid-layout",
+                windows: [WindowPlan(layout: layout, panes: [PanePlan()])])
+            await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(workspace, on: server)
             }
-            let remains = try await server.hasSession("rollback")
-            #expect(!remains)
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+            #expect(after.panes.map(\.id) == before.panes.map(\.id))
         }
     }
 

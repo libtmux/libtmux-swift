@@ -11,6 +11,133 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `tmux-workspace` is a native executable for tmuxp workspaces: discovery,
+  loading, capture, conversion and imports, with JSON and NDJSON output,
+  terminal load progress and generated shell completion. (#12)
+
+- `Server.validateLayouts(_:)` checks a batch of named or saved layouts with
+  desired pane counts before mutation. Version-sensitive names follow the
+  selected daemon; only an unbound cold endpoint uses the configured
+  client. (#12)
+
+### Changed
+
+- `tmux-workspace freeze` selects an explicit, current-pane or sole session,
+  prompts human callers when several sessions remain, and captures local
+  session/window options. `--quiet` preserves documents and machine results
+  while suppressing explanatory messages. (#12)
+
+### Fixed
+
+- `WorkspaceBuilder.build(_:on:)` retains configured pane order when creating
+  three or more panes, so directories, commands and focus follow source
+  order. (#12)
+
+- `WorkspaceBuilder.build(_:on:)` focuses the pane its plan configured even
+  when the window arrives holding panes the workspace did not ask for, which a
+  user hook on `after-new-window` or `split-window` produces. Focus previously
+  landed on a pane that had run none of the plan's commands. (#12)
+
+- `Server.setEnvironment(_:to:in:)` and `Server.setOption(_:to:scope:)` keep a
+  value's trailing `;` instead of losing it and everything after it, which
+  tmux's argv parser reads as the end of the command. (#12)
+
+- `Server.setEnvironment(_:to:in:)` accepts a variable name beginning with
+  `-`, which tmux previously read as flags it does not have. (#12)
+
+- `tmux-workspace import` preserves Teamocil command groups, Tmuxinator
+  sequential window commands, default focus and invocation-relative roots.
+  Unsupported fields now fail before preview or destination replacement,
+  including lifecycle hooks, endpoint controls and Teamocil filters. Remove
+  unsupported settings before importing. (#12)
+
+- `tmux-workspace import tmuxinator` refuses unexpanded ERB markup in a value,
+  a command or a mapping key before any document prints or a destination is
+  replaced, naming the refusal explicitly. `import teamocil` evaluates no
+  templates, so the same markup there is ordinary text and is preserved. (#12)
+
+- Development MCP preflight children inherit only their configured standard
+  streams, preventing parallel launches from retaining writable files. Captured
+  streams also work when the caller starts with standard descriptors
+  closed. (#12)
+
+- `tmux-workspace load` streams bootstrap output while the script runs, and
+  captured `shell -c` calls stream output while retaining their final result.
+  Split UTF-8 characters survive chunk boundaries; output remains bounded to
+  one MiB per stream. Human shell output preserves line breaks and tabs.
+  Cancellation attempts one terminal load result and stops captured process
+  groups even when a destination stops reading or closes a full pipe on
+  Linux. (#12)
+
+- `tmux-workspace` discovers and resolves bare names in the first existing
+  configured, XDG or legacy directory. Missing configured paths fall through;
+  existing empty directories remain authoritative. Empty `XDG_CONFIG_HOME`
+  uses `~/.config`. Import names stay in their source directory. (#12)
+
+- `Server.selectLayout(_:_:)` and MCP `select_layout` reject malformed saved
+  trees and unsupported names before dispatch. MCP checks syntax before target
+  lookup. Core, MCP and workspace calls share one native guard while tmux
+  retains geometry correction and pruning. (#12)
+
+- `Server.environmentValue(_:in:)` preserves embedded and trailing newlines.
+  Missing sessions and other command failures throw; unknown variables and
+  removal markers still return `nil`. (#12)
+
+- `tmux-workspace freeze` infers JSON from a `.json` destination regardless of
+  letter case. Explicit `-f` overrides the suffix; quiet machine saves still
+  return their results. (#12)
+
+- `WorkspaceBuilder.build(_:on:)` and `tmux-workspace load` reject invalid
+  layout names and saved-layout trees before scripts or session changes,
+  protecting existing sessions from malformed layouts that can crash tmux.
+  Geometry correction and pruning remain with tmux. (#12)
+
+- `tmux-workspace load` accepts `focus: 'true'`/`'false'`, the quoted string
+  `tmuxp freeze` always writes, instead of only a YAML boolean. A workspace
+  frozen from tmuxp previously failed to reload. (#12)
+
+- `tmux-workspace load` fits five or more panes in a window with no explicit
+  layout by rebalancing between splits, instead of running out of room and
+  refusing the whole workspace. (#12)
+
+- `tmux-workspace load` implements window `options_after`, applied once
+  every pane in the window exists. A document java or rs froze previously
+  failed to load. (#12)
+
+- `tmux-workspace load` implements `global_options`, applied with
+  `set-option -g`; it previously refused the key outright. (#12)
+
+- `freeze` no longer writes a top-level `environment` block, which captured
+  the caller's own `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `DISPLAY` and
+  `WAYLAND_DISPLAY` into every saved workspace. (#12)
+
+- `freeze` omits a pane's `shell_command` when it runs an ordinary
+  interactive shell rather than naming it, which built a shell inside a
+  shell on reload. (#12)
+
+- `freeze`'s shell recognition no longer trusts the session's
+  `default-shell` option alone. On macOS `/bin/sh` is bash, so a plain
+  pane's `shell_command` was wrongly written as `[bash]`; a document frozen
+  on macOS before this fix may still carry it. (#12)
+
+- `tmux-workspace --version` and `debug-info` print plain text unless
+  `--json` is given, instead of JSON either way. (#12)
+
+- `tmux-workspace` prints a plain sentence for an error no other handler
+  recognised, instead of a Swift enum literal such as
+  `invocationFailed(reason: "...")`. (#12)
+
+- `tmux-workspace load --ndjson` records carry event fields at the top
+  level, with `input_index`, `session_id` and (for pane events) `window_id`
+  alongside the existing ids, instead of nesting them under a `data` key.
+  (#12)
+
+- `tmux-workspace --help` documents the built-in
+  `--generate-completion-script` flag, previously absent from all help
+  output. (#12)
+
 ## [0.1.0-alpha.5] - 2026-09-12
 
 ### Added

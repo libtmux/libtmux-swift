@@ -44,6 +44,13 @@ callers building the same workspace should not silently share one. A later
 failure removes the exact session this build created; a rollback failure
 reports both errors.
 
+Every configured layout is checked through `Server.validateLayouts(_:)`
+before session changes. The check uses each window's desired pane count and
+shares the native core and MCP grammar. Missing or empty layouts leave tmux's
+layout unchanged; named abbreviations follow the running daemon. Saved layouts
+require a checksum and a nonempty tree with enough pane cells. Geometry and
+pruning remain tmux's responsibility.
+
 ## YAML is behind a trait
 
 A workspace described in Swift or read from JSON needs no parser, so none is

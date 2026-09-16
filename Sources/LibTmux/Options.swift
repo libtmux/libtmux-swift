@@ -132,7 +132,18 @@ extension Server {
     ) async throws(TmuxError) -> String? {
         let listed = try await options(scope)
         guard listed.contains(where: { $0.name == name }) else { return nil }
+        return try await optionValue(name, scope: scope)
+    }
 
+    /// The stored value of an option a caller has already seen in the table.
+    ///
+    /// Skips the presence check ``option(_:scope:)`` pays for, so a caller
+    /// walking a listing does not re-read the whole table once per name.
+    /// Reports `nil` for a name tmux does not answer for.
+    package func optionValue(
+        _ name: String,
+        scope: OptionScope
+    ) async throws(TmuxError) -> String? {
         let reply = try await runOptionCommand(
             TmuxCommand(
                 "show-options",
@@ -174,7 +185,7 @@ extension Server {
         try await runOptionCommand(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments + [name, value]
+                scope.selectorArguments + [name, tmuxArgumentData(value)]
             ),
             in: scope
         )

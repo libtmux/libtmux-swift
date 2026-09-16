@@ -1,3 +1,4 @@
+import CMcpSwap
 import Foundation
 import Testing
 
@@ -28,6 +29,60 @@ import Testing
         )
 
         try preflight(spec, timeout: 3)
+    }
+}
+
+@Test func preflightDoesNotInheritUnrelatedWritableDescriptors() throws {
+    try withPreflightFixture { root in
+        let file = root.appending(path: "unrelated")
+        let descriptor = open(file.path, O_CREAT | O_EXCL | O_RDWR, mode_t(0o600))
+        #expect(descriptor >= 0)
+        guard descriptor >= 0 else { return }
+        defer { _ = close(descriptor) }
+        #expect(fcntl(descriptor, F_GETFD) & FD_CLOEXEC == 0)
+        let server = root.appending(path: "server.sh")
+        try script(
+            """
+            #!/bin/sh
+            if [ "/dev/fd/$UNRELATED_FD" -ef "$UNRELATED_PATH" ]; then
+                printf '%s\\n' 'inherited unrelated descriptor' >&2
+                exit 7
+            fi
+            IFS= read -r request
+            printf '%s\\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}'
+            """, at: server)
+
+        try preflight(
+            ServerSpec(
+                command: "/bin/sh", arguments: [server.path],
+                environment: [
+                    "UNRELATED_FD": String(descriptor), "UNRELATED_PATH": file.path,
+                ]), timeout: 3)
+        #expect(fcntl(descriptor, F_GETFD) & FD_CLOEXEC == 0)
+    }
+}
+
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["MCP_SWAP_TEST_CC"] != nil,
+        "compiles the C shim and spawns a child per descriptor mask; outer loop"))
+func preflightConnectsEveryStreamWhenCallerStandardDescriptorsAreClosed() throws {
+    try withPreflightFixture { root in
+        let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sources = tests.deletingLastPathComponent().appending(path: "Sources/CMcpSwap")
+        let executable = root.appending(path: "descriptor-fixture")
+        let compilation = try descriptorProcess([
+            "cc", "-Wall", "-Wextra", "-Werror", "-pthread", "-I",
+            sources.appending(path: "include").path,
+            tests.appending(path: "Fixtures/PreflightDescriptors.c").path,
+            sources.appending(path: "mcp_swap.c").path, "-o", executable.path,
+        ])
+        try #require(compilation.status == 0, "\(compilation.output)")
+        for mask in 1...7 {
+            let result = try descriptorProcess([executable.path, String(mask)])
+            #expect(result.status == 0, "\(result.output)")
+        }
     }
 }
 
@@ -220,10 +275,51 @@ import Testing
     }
 }
 
+@Test func preflightRefusesAPlatformWithoutSpawnSupport() throws {
+    #expect(mcp_swap_spawn_supported() != 0)
+    try withPreflightFixture { root in
+        let server = root.appending(path: "server.sh")
+        try script(
+            """
+            #!/bin/sh
+            IFS= read -r request
+            printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}'
+            """,
+            at: server)
+        let spec = ServerSpec(command: server.path, arguments: [], environment: [:])
+
+        try preflight(spec, timeout: 3, spawnSupported: true)
+
+        do {
+            try preflight(spec, timeout: 3, spawnSupported: false)
+            Issue.record("preflight launched a server the platform cannot spawn")
+        } catch let error as SwapError {
+            #expect(error.description.contains("glibc 2.34 or newer"))
+        }
+    }
+}
+
 private func script(_ body: String, at url: URL) throws {
     try body.write(to: url, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes(
         [.posixPermissions: NSNumber(value: UInt16(0o700))], ofItemAtPath: url.path)
+}
+
+private func descriptorProcess(_ arguments: [String]) throws -> (status: Int32, output: String) {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = arguments
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    // Both streams share one pipe, so waiting first deadlocks whenever the
+    // child outruns the buffer — which is the compiler failing, the case this
+    // is here to report.
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    return (process.terminationStatus, String(decoding: data, as: UTF8.self))
 }
 
 private func withPreflightFixture(_ body: (URL) throws -> Void) throws {

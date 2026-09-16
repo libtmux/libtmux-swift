@@ -28,6 +28,10 @@ public func buildItOnAServer(_ server: Server, _ workspace: Workspace) async thr
     return session
 }
 
+public func validateLayoutsBeforeBuilding(_ server: Server) async throws {
+    try await server.validateLayouts([("even-h", 2), ("tiled", 1)])
+}
+
 public func readAWorkspaceWrittenAsJSON(_ json: Data) throws -> Workspace {
     try Workspace.decode(json: json)
 }

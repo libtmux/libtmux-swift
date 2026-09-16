@@ -112,6 +112,8 @@ jobs:
 
       - name: Test the private MCP swap tool
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        env:
+          MCP_SWAP_TEST_CC: "1"
         run: swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
 
       - name: Check the private MCP swap C shim formatting
@@ -254,3 +256,14 @@ jobs:
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
           swift test --traits YAMLWorkspaces --force-resolved-versions
+
+      - name: Test the staged workspace CLI
+        run: |
+          set -euo pipefail
+          binary="${RUNNER_TEMP}/workspace-cli/bin/tmux-workspace"
+          mkdir -p "$(dirname "$binary")"
+          install -m 755 .build/debug/tmux-workspace "$binary"
+          tmux="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          python3 Scripts/check_workspace_terminal.py "$binary"
+          python3 Scripts/check_workspace_progress.py "$binary" "$tmux"
+          python3 Scripts/check_workspace_attach.py "$binary" "$tmux"
