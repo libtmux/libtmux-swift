@@ -183,13 +183,22 @@ inherited commands, history suppression and sequential `enter` settings.
 `window_index` selects an explicit slot; window and pane `focus` choose the
 active window and pane after creation. Duplicate explicit indexes and multiple
 focus selections fail during configuration validation.
-Session `environment` reaches the first pane at creation. Session `options`
-and inherited `window_options` apply before pane commands, with each window's
-`options` overriding inherited values. `before_script` runs direct argv after
-session creation, using the expanded session directory or invocation directory
-when omitted. It runs before options; its failure removes the created session.
-Unsupported execution keys fail before creation. Existing exact session names
-are reused. A failed build removes only the session that build created and
+A window naming no `layout` is tiled rather than stacked into tmuxp's
+halving splits, and the first pane is focused by default rather than the
+last; both are deliberate differences from tmuxp.
+Session, window and pane `environment` reach the pane they are given for at
+creation — session at the first pane, window at its own first pane unless
+that pane names its own, pane at that one split. Window `window_shell` and
+pane `shell` replace the shell tmux spawns the same way, with the pane-level
+key winning when both are given. Pane `sleep_before` and `sleep_after` wait
+around every command sent to that pane. Session `options` and inherited
+`window_options` apply before pane commands, with each window's `options`
+overriding inherited values. `before_script` runs direct argv after session
+creation, using the expanded session directory or invocation directory when
+omitted. It runs before options; its failure removes the created session.
+An unsupported execution key fails before creation; prefix a key with `x-`
+to have it ignored instead, at any level. Existing exact session names are
+reused. A failed build removes only the session that build created and
 reports earlier successful workspaces as partial results.
 
 `load --append` adds windows to the current pane's session. It requires a valid
