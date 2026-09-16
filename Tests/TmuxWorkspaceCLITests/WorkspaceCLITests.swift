@@ -1732,6 +1732,27 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("load applies global_options with set-option -g")
+    func globalOptionsApply() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("global-options.json")
+            // cxx, dotnet, go, java, ts and tmuxp all accept this key; swift
+            // and rs refused it outright.
+            try Data(
+                #"""
+                {"session_name":"global-options","global_options":{"status":false},"windows":[{"panes":[null]}]}
+                """#.utf8
+            ).write(to: file)
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            let loaded = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            #expect(try await server.option("status", scope: .globalSession) == "off")
+        }
+    }
+
     @Test("load applies window options_after once every pane in the window exists")
     func windowOptionsAfterAppliesPostPane() async throws {
         try await withTmuxServer { server in

@@ -557,6 +557,7 @@ enum WorkspaceCommands {
         let workspace: Workspace
         let environment: [String: String]
         let options: [String: String]
+        let globalOptions: [String: String]
         let windowOptions: [[String: String]]
         let windowOptionsAfter: [[String: String]]
         let beforeScript: [String]?
@@ -580,7 +581,8 @@ enum WorkspaceCommands {
             value,
             allowed: [
                 "session_name", "start_directory", "windows", "shell_command_before",
-                "suppress_history", "environment", "options", "window_options", "before_script",
+                "suppress_history", "environment", "options", "global_options", "window_options",
+                "before_script",
             ], at: "workspace")
         let expandedName = (override ?? root["session_name"]?.string).map {
             expand($0, environment: store.context.environment)
@@ -603,6 +605,11 @@ enum WorkspaceCommands {
             throw CLIError("document", "Invalid environment variable name.")
         }
         let options = try scalarMapping(root["options"], at: "options", store: store)
+        // Session-local `options` and server-wide `global_options` are
+        // distinct tmuxp keys with distinct set-option scopes; tmuxp itself
+        // applies global_options with `global_=True`.
+        let globalOptions = try scalarMapping(
+            root["global_options"], at: "global_options", store: store)
         let inheritedOptions = try scalarMapping(
             root["window_options"], at: "window_options", store: store)
         let beforeScript = try optionalString(root["before_script"], at: "before_script").map {
@@ -711,8 +718,9 @@ enum WorkspaceCommands {
             source: file.path,
             workspace: Workspace(
                 sessionName: name, startDirectory: rootDirectory, windows: windows),
-            environment: environment, options: options, windowOptions: windowOptions,
-            windowOptionsAfter: windowOptionsAfter, beforeScript: beforeScript)
+            environment: environment, options: options, globalOptions: globalOptions,
+            windowOptions: windowOptions, windowOptionsAfter: windowOptionsAfter,
+            beforeScript: beforeScript)
     }
 
     private static func containsNUL(_ value: Value) -> Bool {
