@@ -131,7 +131,7 @@ struct DocumentStore: Sendable {
                     documents.error == nil
                 else {
                     throw CLIError(
-                        "document", "A workspace must contain exactly one YAML document.")
+                        "invalid_workspace", "A workspace must contain exactly one YAML document.")
                 }
                 value = try YAMLDecoder().decode(Value.self, from: document)
             #else
@@ -140,7 +140,7 @@ struct DocumentStore: Sendable {
             #endif
         }
         guard value.object != nil else {
-            throw CLIError("document", "A workspace must be a mapping.")
+            throw CLIError("invalid_workspace", "A workspace must be a mapping.")
         }
         return value
     }
@@ -208,6 +208,10 @@ struct DocumentStore: Sendable {
         try handle.close()
         let published = overwrite ? rename(temporary, file.path) : link(temporary, file.path)
         guard published == 0 else {
+            if !overwrite, errno == EEXIST {
+                throw CLIError(
+                    "destination_exists", "\(file.path) already exists; use --force to overwrite.")
+            }
             throw CLIError("document_write", String(cString: strerror(errno)))
         }
     }

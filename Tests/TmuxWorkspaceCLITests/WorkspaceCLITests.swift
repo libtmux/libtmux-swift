@@ -503,7 +503,7 @@ struct WorkspaceCLITests {
                 ],
                 in: root, extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
             try #require(result.code == 0, "\(result.error)")
-            #expect(try result.json()["status"] as? String == "success")
+            #expect(try result.json()["status"] as? String == "ok")
             #expect(try await server.sessions().contains { $0.name == "logged" })
             let raw = try String(contentsOf: file, encoding: .utf8)
             #expect(!raw.contains("\u{1b}"))
@@ -512,8 +512,9 @@ struct WorkspaceCLITests {
             }
             #expect(
                 records.compactMap { $0["event"]?.string } == [
-                    "started", "workspace-started", "window-created", "pane-created",
-                    "pane-completed", "window-completed", "workspace-completed", "completed",
+                    "started", "workspace-started", "session-created", "window-created",
+                    "pane-created", "pane-completed", "window-completed", "workspace-completed",
+                    "completed",
                 ])
             #expect(records.contains { $0["code"] == .string("bootstrap_stdout") })
             #expect(result.error.joined().contains("bootstrap_stdout"))
@@ -605,7 +606,7 @@ struct WorkspaceCLITests {
                     #expect(process.terminationStatus == 0)
                     #expect(
                         try JSONDecoder().decode(Value.self, from: out)["status"]
-                            == .string("success"))
+                            == .string("ok"))
                 } else {
                     #expect(process.terminationStatus == 1)
                     #expect(out.isEmpty)
@@ -792,7 +793,7 @@ struct WorkspaceCLITests {
             #expect(result.output.isEmpty)
             let error = try JSONDecoder().decode(
                 Value.self, from: Data(result.error.joined().utf8))
-            #expect(error["code"] == .string("document"))
+            #expect(error["code"] == .string("invalid_workspace"))
             #expect(error["message"]?.string?.contains("NUL") == true)
         }
     }
@@ -1254,7 +1255,7 @@ struct WorkspaceCLITests {
             let rejected = await invoke(["load", file.path, "-d", "--json"], in: root)
             #expect(rejected.code == 1)
             #expect(rejected.output.isEmpty)
-            #expect(rejected.error.joined().contains("unsupported_config"))
+            #expect(rejected.error.joined().contains("unsupported_key"))
         }
     }
 
@@ -1269,7 +1270,9 @@ struct WorkspaceCLITests {
                     ["load", file.path, "-d", "--json"], in: root, extra: ["WORKSPACE_NAME": name])
                 #expect(result.code == 1)
                 #expect(result.output.isEmpty)
-                #expect(result.error.joined().contains("\"code\":\"document\""), "\(result.error)")
+                #expect(
+                    result.error.joined().contains("\"code\":\"invalid_workspace\""),
+                    "\(result.error)")
             }
         }
     }
@@ -1350,7 +1353,11 @@ struct WorkspaceCLITests {
             #expect(!sessions.contains("renamed"))
             let result = try failed.json()
             #expect(result["status"] as? String == "partial")
-            #expect((result["workspaces"] as? [Any])?.count == 1)
+            #expect((result["results"] as? [Any])?.count == 1)
+            let errors = try #require(result["errors"] as? [[String: Any]])
+            #expect(errors.count == 1)
+            #expect(errors[0]["input_index"] as? Int == 1)
+            #expect(!(errors[0]["code"] as? String ?? "").isEmpty)
         }
     }
 
@@ -1538,7 +1545,7 @@ struct WorkspaceCLITests {
                 let result = await invoke(
                     ["load", file.path, "-d", "-S", "unavailable", "--json"], in: root)
                 #expect(result.code == 1)
-                #expect(result.error.joined().contains(#""code":"document""#), "\(result.error)")
+                #expect(result.error.joined().contains(#""code":"invalid_workspace""#), "\(result.error)")
             }
         }
     }
@@ -1559,7 +1566,7 @@ struct WorkspaceCLITests {
                 // the unreachable backend, never the boolean parse.
                 #expect(
                     !result.error.joined().contains("must be a boolean"), "\(result.error)")
-                #expect(!result.error.joined().contains(#""code":"document""#), "\(result.error)")
+                #expect(!result.error.joined().contains(#""code":"invalid_workspace""#), "\(result.error)")
             }
             let invalid = root.appendingPathComponent("focus-invalid.json")
             try Data(
@@ -2099,7 +2106,7 @@ struct WorkspaceCLITests {
                 let result = await invoke(
                     ["load", first.path, second.path, "-d", "--json"], in: root)
                 #expect(result.code == 1)
-                #expect(result.error.joined().contains("document"))
+                #expect(result.error.joined().contains("invalid_workspace"))
                 #expect(result.output.isEmpty)
             }
         }
