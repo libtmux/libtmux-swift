@@ -387,6 +387,17 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("root --help documents the completion flag")
+    func completionFlagIsDocumented() async throws {
+        try await withFiles { root in
+            let result = await invoke(["--help"], in: root)
+            #expect(result.code == 0)
+            #expect(
+                result.output.joined(separator: "\n").contains("--generate-completion-script"),
+                "\(result.output)")
+        }
+    }
+
     @Test("diagnostic levels filter warnings without hiding results or failures")
     func diagnosticLevels() async throws {
         try await withTmuxServer { server in
