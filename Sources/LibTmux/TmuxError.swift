@@ -44,6 +44,13 @@ public enum TmuxError: Error, Sendable, Hashable {
     case foreignServerValue
 
     /// A session-local target no longer names the object the value described.
+    ///
+    /// Raised by a guarded call that checks the target before dispatching the
+    /// command, so it never carries tmux's own text -- tmux is never asked.
+    /// A method that dispatches unconditionally and lets tmux itself refuse a
+    /// missing target throws ``invocationFailed(reason:)`` with tmux's
+    /// message instead; ``Server/capture(_:includingHistory:)`` does this,
+    /// ``Server/sendKeys(_:to:literally:)`` does not.
     case staleServerValue
 
     /// The task was cancelled. A cancelled request never reports an empty
