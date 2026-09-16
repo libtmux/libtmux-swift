@@ -2,10 +2,10 @@ import Foundation
 import LibTmux
 
 package enum WorkspaceBuildEvent: Sendable {
-    case windowStarted(index: Int, window: Window)
-    case paneStarted(windowIndex: Int, index: Int, pane: Pane)
-    case paneCompleted(windowIndex: Int, index: Int, pane: Pane)
-    case windowCompleted(index: Int, window: Window)
+    case windowStarted(index: Int, window: Window, session: Session)
+    case paneStarted(windowIndex: Int, index: Int, pane: Pane, window: Window, session: Session)
+    case paneCompleted(windowIndex: Int, index: Int, pane: Pane, window: Window, session: Session)
+    case windowCompleted(index: Int, window: Window, session: Session)
 }
 
 /// Builds a workspace on a tmux server.
@@ -99,15 +99,21 @@ public enum WorkspaceBuilder {
                         at: borrowed == nil ? window.windowIndex : nil
                     ).window
                 }
+                guard let activeSession = session else {
+                    throw WorkspaceBuilderError.sessionVanished(workspace.sessionName)
+                }
                 try await configureWindow(created, index)
-                try await onEvent(.windowStarted(index: index, window: created))
+                try await onEvent(
+                    .windowStarted(index: index, window: created, session: activeSession))
                 try await build(
-                    window, at: index, in: created, of: workspace, on: server, onEvent: onEvent)
+                    window, at: index, in: created, of: workspace, on: server,
+                    session: activeSession, onEvent: onEvent)
                 // Applied only once every pane in the window exists: an option
                 // such as `automatic-rename off` only holds if it lands after
                 // whatever created the panes could have renamed the window.
                 try await configureWindowAfter(created, index)
-                try await onEvent(.windowCompleted(index: index, window: created))
+                try await onEvent(
+                    .windowCompleted(index: index, window: created, session: activeSession))
                 if window.focus == true { focusedWindow = created }
             }
 
@@ -184,6 +190,7 @@ public enum WorkspaceBuilder {
         in created: Window,
         of workspace: Workspace,
         on server: Server,
+        session: Session,
         onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void
     ) async throws {
         // The window arrives with one pane; only the rest are split in.
@@ -213,7 +220,10 @@ public enum WorkspaceBuilder {
 
         for (index, pair) in zip(window.panes, panes).enumerated() {
             let (plan, pane) = pair
-            try await onEvent(.paneStarted(windowIndex: windowIndex, index: index, pane: pane))
+            try await onEvent(
+                .paneStarted(
+                    windowIndex: windowIndex, index: index, pane: pane, window: created,
+                    session: session))
             for command in plan.shellCommands {
                 if command.enter {
                     try await server.run(command.command, in: pane)
@@ -227,7 +237,10 @@ public enum WorkspaceBuilder {
                     )
                 }
             }
-            try await onEvent(.paneCompleted(windowIndex: windowIndex, index: index, pane: pane))
+            try await onEvent(
+                .paneCompleted(
+                    windowIndex: windowIndex, index: index, pane: pane, window: created,
+                    session: session))
         }
         // Pairing forward keeps this on the same pane the commands above
         // reached; a window that arrived with panes of its own makes the two
