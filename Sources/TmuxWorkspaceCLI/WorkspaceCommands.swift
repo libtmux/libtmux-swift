@@ -385,6 +385,12 @@ enum WorkspaceCommands {
         let snapshot = try await server.snapshot()
         let session = try await freezeSession(
             command, snapshot: snapshot, server: server, context: context)
+        // A fallback for a default-shell this port does not otherwise
+        // recognise. tmux sets the option from $SHELL once at server
+        // start, which is not necessarily what a given pane is actually
+        // running, so a common shell name always wins; this only matters
+        // for something exotic.
+        let defaultShell = try await defaultShellBasename(for: session, server: server)
         var windows: [Value] = []
         for link in snapshot.windowLinks(of: session).sorted(by: { $0.index < $1.index }) {
             guard let window = snapshot.windows.first(where: { $0.id == link.windowID }) else {
@@ -395,13 +401,13 @@ enum WorkspaceCommands {
                     "start_directory": .string(pane.currentPath),
                     "focus": .bool(pane.isActive),
                 ]
-                // Omitted for an ordinary interactive shell so the pane
-                // reloads plain instead of running a shell inside a shell;
-                // emitted for anything else, so a real command is not
-                // silently dropped. `default-shell`'s resolved value is not
-                // used for this: tmux sets it from $SHELL once at server
-                // start, which is not necessarily what actually is running.
-                if !pane.currentCommand.isEmpty, !isOrdinaryShell(pane.currentCommand) {
+                // Omitted for an ordinary interactive shell, or the
+                // session's own default-shell, so the pane reloads plain
+                // instead of running a shell inside a shell; emitted for
+                // anything else, so a real command is not silently dropped.
+                if !pane.currentCommand.isEmpty,
+                    !isDefaultShellCommand(pane.currentCommand, defaultShell: defaultShell)
+                {
                     fields["shell_command"] = .array([.string(pane.currentCommand)])
                 }
                 return .object(fields)
@@ -451,20 +457,36 @@ enum WorkspaceCommands {
     }
 
     /// Interactive shell basenames tmux itself ships or commonly links to.
-    /// A bare pane running one of these, with or without the leading `-`
-    /// a login shell's argv0 carries, is the ordinary no-command pane
-    /// rather than something worth a `shell_command` entry.
+    /// A bare pane running one of these is the ordinary no-command pane
+    /// rather than something worth a `shell_command` entry, whatever the
+    /// session's own `default-shell` happens to say.
     private static let ordinaryShellNames: Set<String> = [
-        "sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "pwsh",
+        "sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "csh", "tcsh", "fish", "pwsh",
     ]
 
-    /// Whether a pane's `#{pane_current_command}` is an ordinary interactive
-    /// shell rather than something worth freezing as an explicit
-    /// `shell_command`. macOS reports a login shell's process name with the
-    /// leading `-` its argv0 carries (`-bash`) far more often than Linux
-    /// does, so that prefix is stripped before matching either platform.
-    static func isOrdinaryShell(_ command: String) -> Bool {
-        ordinaryShellNames.contains(command.hasPrefix("-") ? String(command.dropFirst()) : command)
+    /// Whether a pane's `#{pane_current_command}` is the session's own
+    /// no-explicit-command pane rather than something worth freezing as an
+    /// `shell_command`. True for a common interactive shell name outright;
+    /// otherwise compared against `defaultShell`'s basename, for a custom
+    /// shell this port does not otherwise recognise. Either side is
+    /// stripped of the leading `-` a login shell's argv0 carries (`-bash`),
+    /// which macOS reports far more often than Linux does.
+    static func isDefaultShellCommand(_ command: String, defaultShell: String?) -> Bool {
+        let name = command.hasPrefix("-") ? String(command.dropFirst()) : command
+        if ordinaryShellNames.contains(name) { return true }
+        guard let defaultShell else { return false }
+        return name == URL(fileURLWithPath: defaultShell).lastPathComponent
+    }
+
+    /// The basename of the session's effective `default-shell`, e.g. `zsh`
+    /// for `/usr/bin/zsh`. `nil` when tmux has no answer for it, which
+    /// keeps every pane's command significant rather than silently dropped.
+    private static func defaultShellBasename(
+        for session: Session, server: Server
+    ) async throws -> String? {
+        guard let shell = try await server.resolvedOption("default-shell", scope: .session(session))
+        else { return nil }
+        return URL(fileURLWithPath: shell).lastPathComponent
     }
 
     private static func freezeOptions(
