@@ -1609,6 +1609,20 @@ struct WorkspaceCLITests {
             .contains("no space"))
     }
 
+    @Test(
+        "an ordinary shell is recognised with or without the login-shell dash",
+        arguments: [
+            ("bash", true), ("-bash", true), ("zsh", true), ("-zsh", true), ("sh", true),
+            ("fish", true), ("python3", false), ("-python3", false), ("vim", false),
+        ])
+    func ordinaryShellRecognisesDashPrefix(command: String, expected: Bool) {
+        // macOS reports a login shell's process name with the leading `-`
+        // its argv0 carries far more often than Linux does; unmatched, this
+        // is exactly the macOS-only freeze failure `default-shell`
+        // comparison used to produce for a plain `bash` pane.
+        #expect(WorkspaceCommands.isOrdinaryShell(command) == expected, "\(command)")
+    }
+
     @Test("freeze selects explicit, pane-context and sole sessions without guessing")
     func freezeSessionSelection() async throws {
         try await withTmuxServer { server in
@@ -1766,6 +1780,12 @@ struct WorkspaceCLITests {
             // top-level block is gone outright, not merely filtered.
             try await server.setEnvironment(
                 "FREEZE_VALUE", to: "should not be captured", in: .session(session.id.rawValue))
+            // The omission below must not depend on this matching what the
+            // pane is actually running: tmux sets default-shell from $SHELL
+            // once at server start, which is not always the pane's shell.
+            try await server.setOption(
+                "default-shell", to: "/completely/different/not-the-pane-shell",
+                scope: .session(session))
             let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
             let captured = await invoke(
                 ["freeze", "bootstrap", "-S", socket, "--json"], in: root, extra: environment)
