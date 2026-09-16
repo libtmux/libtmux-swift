@@ -157,10 +157,10 @@ static int set_close_on_exec(int descriptor) {
  * Either way the writer is not this process and is not stuck -- it is done or
  * about to be -- so a short bounded retry resolves the same race a shell's
  * own exec loop resolves the same way, rather than surfacing a spawn failure
- * for a file that is a few microseconds from being exec-ready. Five attempts
- * over at most ~31ms; a real, permanent failure (the file genuinely missing,
- * wrong permissions, ENOENT, and so on) never returns ETXTBSY, so this never
- * masks one. */
+ * for a file that is a few microseconds from being exec-ready. Five attempts,
+ * the first four separated by a doubling delay (1, 2, 4, 8ms -- 15ms total).
+ * A real, permanent failure (the file genuinely missing, wrong permissions,
+ * ENOENT, and so on) never returns ETXTBSY, so this never masks one. */
 static int posix_spawnp_retrying(pid_t *pid, const char *command,
                                  const posix_spawn_file_actions_t *actions,
                                  const posix_spawnattr_t *attributes, char *const argv[],
@@ -239,9 +239,33 @@ int mcp_swap_spawn(const char *command, const char *arguments, uint64_t argument
     for (size_t index = 0; result == 0 && index < sizeof(all_descriptors) / sizeof(int); index++) {
         result = posix_spawn_file_actions_addclose(&actions, all_descriptors[index]);
     }
+    /* The known descriptors above are closed explicitly, but that leaves any
+     * *other* inherited descriptor open in the child regardless of its own
+     * CLOEXEC bit -- glibc's mkstemp, which an atomic file write underneath
+     * this process may be mid-call on, does not set FD_CLOEXEC on the
+     * temporary file it creates. A vfork landing inside that window carries
+     * the descriptor into this child, which then holds the temporary file's
+     * (and, past its rename, the destination's) write count open for as
+     * long as the child runs -- not the sub-millisecond vfork-to-exec gap
+     * `posix_spawnp_retrying` covers, but however long the spawned process
+     * lives, since a backgrounded child of its own inherits the same
+     * descriptor again. Closing every descriptor above stderr removes the
+     * leak at its source rather than racing it. */
+#if defined(__linux__)
+    if (result == 0) {
+        result = posix_spawn_file_actions_addclosefrom_np(&actions, 3);
+    }
+#endif
     if (result != 0) {
         goto cleanup;
     }
+#if defined(__APPLE__)
+    result =
+        posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT);
+    if (result != 0) {
+        goto cleanup;
+    }
+#endif
 
     pid_t pid = 0;
     result = posix_spawnp_retrying(&pid, command, &actions, &attributes, argv, envp);
