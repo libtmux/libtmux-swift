@@ -516,9 +516,9 @@ struct WorkspaceCLITests {
             }
             #expect(
                 records.compactMap { $0["event"]?.string } == [
-                    "started", "workspace-started", "session-created", "window-created",
-                    "pane-created", "pane-completed", "window-completed", "workspace-completed",
-                    "completed",
+                    "started", "workspace-started", "session-created", "script-started",
+                    "script-output", "script-completed", "window-created", "pane-created",
+                    "pane-completed", "window-completed", "workspace-completed", "completed",
                 ])
             #expect(records.contains { $0["code"] == .string("bootstrap_stdout") })
             #expect(result.error.joined().contains("bootstrap_stdout"))
@@ -1430,6 +1430,66 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("before_script brackets its live output with script-started/-output/-completed events")
+    func beforeScriptStreamsScriptEvents() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let script = root.appendingPathComponent("slow.sh")
+            try Data(
+                "#!/bin/sh\nprintf 'early\\n'\nsleep 2\nprintf 'late\\n'\n".utf8
+            ).write(to: script)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: script.path)
+            let file = root.appendingPathComponent("stream.json")
+            try Data(
+                Value.object([
+                    "session_name": .string("script-stream"),
+                    "before_script": .string(script.path),
+                    "windows": .array([.object(["panes": .array([.null])])]),
+                ]).encoded().utf8
+            ).write(to: file)
+            let arrivals = Timestamps()
+            let context = CLIContext(
+                directory: root,
+                environment: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable],
+                output: { line in await arrivals.record(line) }, error: { _ in })
+            let code = await WorkspaceCLI.run(
+                ["load", file.path, "-d", "-S", socket, "--ndjson"], context: context)
+            #expect(code == 0)
+            let records = try await arrivals.rows.map {
+                (
+                    elapsed: $0.elapsed,
+                    value: try JSONDecoder().decode(Value.self, from: Data($0.line.utf8))
+                )
+            }
+            let started = try #require(
+                records.first { $0.value["event"] == .string("script-started") })
+            #expect(started.value["input_index"] == .integer(0))
+            let early = try #require(
+                records.first {
+                    $0.value["event"] == .string("script-output")
+                        && $0.value["text"]?.string?.contains("early") == true
+                })
+            // The reference proof: this line must arrive well before the
+            // script's own 2-second sleep ends, not only once it exits.
+            #expect(early.elapsed < .seconds(1.5), "\(early.elapsed)")
+            #expect(early.value["input_index"] == .integer(0))
+            #expect(early.value["stream"] == .string("stdout"))
+            let late = try #require(
+                records.first {
+                    $0.value["event"] == .string("script-output")
+                        && $0.value["text"]?.string?.contains("late") == true
+                })
+            #expect(late.elapsed > early.elapsed + .seconds(1))
+            let completed = try #require(
+                records.first { $0.value["event"] == .string("script-completed") })
+            #expect(completed.value["input_index"] == .integer(0))
+            #expect(completed.value["child_status"] == .integer(0))
+            #expect(completed.elapsed > late.elapsed)
+        }
+    }
+
     @Test("load failures report retained sessions and roll back only the failed workspace")
     func partialLoad() async throws {
         try await withTmuxServer { server in
@@ -2312,6 +2372,15 @@ struct WorkspaceCLITests {
 private actor Lines {
     var values: [String] = []
     func append(_ value: String) { values.append(value) }
+}
+
+/// Each line's arrival time relative to when this actor was created, so a
+/// test can tell a line that streamed in while a child ran from one that
+/// only appeared once the whole command finished.
+private actor Timestamps {
+    private let start = ContinuousClock.now
+    var rows: [(elapsed: Duration, line: String)] = []
+    func record(_ line: String) { rows.append((start.duration(to: .now), line)) }
 }
 
 private actor Responses {

@@ -140,11 +140,20 @@ enum WorkspaceCommands {
                                 var processContext = context
                                 processContext.directory = URL(
                                     fileURLWithPath: plan.workspace.startDirectory!)
+                                try await output.event(
+                                    "script-started", command: "load",
+                                    data: .object(["input_index": .integer(Int64(inputIndex))]))
                                 let result: ProcessCommands.Result
                                 do {
                                     result = try await ProcessCommands.run(
                                         script, context: processContext
                                     ) { text, stream in
+                                        try await output.event(
+                                            "script-output", command: "load",
+                                            data: .object([
+                                                "input_index": .integer(Int64(inputIndex)),
+                                                "stream": .string(stream), "text": .string(text),
+                                            ]))
                                         try await output.bootstrap(text, stream: stream)
                                     }
                                 } catch {
@@ -153,11 +162,24 @@ enum WorkspaceCommands {
                                     // failure the same as a nonzero exit,
                                     // matching tmuxp's BeforeLoadScriptNotExists.
                                     if error is CancellationError { throw error }
+                                    try await output.event(
+                                        "script-completed", command: "load",
+                                        data: .object([
+                                            "input_index": .integer(Int64(inputIndex)),
+                                            "child_status": .integer(0), "truncated": .bool(false),
+                                        ]))
                                     await failureCode.set("script_failed")
                                     await failureCode.record(session)
                                     throw CLIError(
                                         "script_failed", WorkspaceCLI.message(for: error))
                                 }
+                                try await output.event(
+                                    "script-completed", command: "load",
+                                    data: .object([
+                                        "input_index": .integer(Int64(inputIndex)),
+                                        "child_status": .integer(Int64(result.code)),
+                                        "truncated": .bool(false),
+                                    ]))
                                 guard result.code == 0 else {
                                     await failureCode.set("script_failed")
                                     await failureCode.record(session)
