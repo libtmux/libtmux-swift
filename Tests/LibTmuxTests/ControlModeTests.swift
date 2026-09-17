@@ -123,6 +123,29 @@ struct ControlModeTests {
         }
     }
 
+    @Test("refresh-client -A parses a bare %pane:state token over the connection")
+    func refreshClientPaneStateTokenParses() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            try await server.withControlMode(attachingTo: "bootstrap") { control in
+                // `%0:off` sent bare parse-errors on every tmux 3.7c/master
+                // control connection -- `%` and `:` were both in
+                // `tmuxQuoted`'s "safe, no quoting needed" set, so the
+                // compound token went out unquoted and tmux's control-mode
+                // line parser, stricter here than its argv parser, rejected
+                // it.
+                let off = try await control.send(
+                    TmuxCommand("refresh-client", ["-A", "\(pane.id.rawValue):off"])
+                )
+                #expect(!off.isError)
+                let on = try await control.send(
+                    TmuxCommand("refresh-client", ["-A", "\(pane.id.rawValue):on"])
+                )
+                #expect(!on.isError)
+            }
+        }
+    }
+
     @Test("a command that prints nothing yields an empty reply")
     func silentCommandYieldsAnEmptyReply() async throws {
         try await withTmuxServer { server in

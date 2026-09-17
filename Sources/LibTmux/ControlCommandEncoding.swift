@@ -42,11 +42,21 @@ package func shellQuoted(_ argument: String) -> String {
 /// sent: `#` opens a comment, and whitespace and quotes separate or group.
 /// A format like `#{session_name}` therefore has to be quoted or it vanishes
 /// mid-command.
+///
+/// A leading `%` is never left bare, even though it is otherwise in the safe
+/// set: tmux's control-mode line parser -- stricter here than its argv parser
+/// -- parse-errors on an unquoted `%<id>:<word>` compound token such as
+/// `%0:off` (confirmed against a real `tmux -C attach-session` on 3.7c and
+/// master; the identical argument parses fine through plain CLI execve). A
+/// bare pane id alone, `%0`, already parses either way, and quoting it changes
+/// nothing it targets.
 package func tmuxQuoted(_ argument: String) -> String {
-    let safe = argument.allSatisfy { character in
-        character.isLetter || character.isNumber
-            || "_-./=:@%+,".contains(character)
-    }
+    let safe =
+        !argument.hasPrefix("%")
+        && argument.allSatisfy { character in
+            character.isLetter || character.isNumber
+                || "_-./=:@%+,".contains(character)
+        }
     if safe, !argument.isEmpty { return argument }
     return "'" + argument.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
 }
