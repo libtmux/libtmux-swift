@@ -238,6 +238,9 @@ public enum WorkspaceBuilder {
                 .paneStarted(
                     windowIndex: windowIndex, index: index, pane: pane, window: created,
                     session: session))
+            if !plan.shellCommands.isEmpty, nonEmpty(plan.shell) ?? window.windowShell == nil {
+                try await waitForPrompt(pane, on: server)
+            }
             for command in plan.shellCommands {
                 if let seconds = plan.sleepBefore, seconds > 0 {
                     try await Task.sleep(for: .seconds(seconds))
@@ -268,6 +271,23 @@ public enum WorkspaceBuilder {
         var focused: Pane?
         for (plan, pane) in zip(window.panes, panes) where plan.focus == true { focused = pane }
         if let focused { try await server.select(focused) }
+    }
+
+    /// Waits up to `timeout` for `pane`'s shell to draw its prompt — moving
+    /// the cursor away from the pane's top-left corner — so the first
+    /// command sent to a freshly created pane is not echoed ahead of the
+    /// prompt and then redrawn after it, showing twice. An unreadable pane
+    /// gives up and proceeds immediately rather than failing the load.
+    private static func waitForPrompt(
+        _ pane: Pane, on server: Server, timeout: Duration = .seconds(2)
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            guard let cursor = try? await server.formatGlobal("#{cursor_x},#{cursor_y}", for: pane)
+            else { return }
+            if cursor != "0,0" { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
     }
 
 }
