@@ -1388,6 +1388,48 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test(
+        "a before_script that cannot start is script_failed, not tmux_failed, with a results entry")
+    func beforeScriptLaunchFailureIsScriptFailed() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            // A path that names no file at all, not a script that runs and
+            // exits nonzero: the failure happens before the script starts.
+            let missingScript = root.appendingPathComponent("does-not-exist")
+            let file = root.appendingPathComponent("missing-script.json")
+            try Data(
+                Value.object([
+                    "session_name": .string("missing-script"),
+                    "before_script": .string(missingScript.path),
+                    "windows": .array([.object(["panes": .array([.null])])]),
+                ]).encoded().utf8
+            ).write(to: file)
+            let result = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root,
+                extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
+            #expect(result.code == 1)
+            let diagnostic =
+                try JSONSerialization.jsonObject(
+                    with: Data(result.error.joined().utf8)) as? [String: Any]
+            #expect(diagnostic?["code"] as? String == "script_failed", "\(result.error)")
+            let envelope = try result.json()
+            // No input completed, so this is a total failure, not partial,
+            // despite results[] now naming the session that was rolled back.
+            #expect(envelope["status"] as? String == "error")
+            let errors = try #require(envelope["errors"] as? [[String: Any]])
+            #expect(errors.first?["code"] as? String == "script_failed")
+            let results = try #require(envelope["results"] as? [[String: Any]])
+            try #require(results.count == 1, "\(envelope)")
+            #expect(results[0]["input"] as? String == file.path)
+            #expect(results[0]["input_index"] as? Int == 0)
+            #expect((results[0]["session_id"] as? String)?.isEmpty == false)
+            #expect(results[0]["session_name"] as? String == "missing-script")
+            #expect(results[0]["reused"] as? Bool == false)
+            #expect(try await !server.sessions().contains { $0.name == "missing-script" })
+        }
+    }
+
     @Test("load failures report retained sessions and roll back only the failed workspace")
     func partialLoad() async throws {
         try await withTmuxServer { server in
