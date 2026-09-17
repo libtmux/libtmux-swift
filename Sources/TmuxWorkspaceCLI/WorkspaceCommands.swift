@@ -97,6 +97,7 @@ enum WorkspaceCommands {
         let retained = AppendState()
         let failureCode = FailureCode()
         var results: [Value] = []
+        var completedCount = 0
         var lastSession: Session?
         var currentInputIndex = 0
         try await output.event(
@@ -139,13 +140,27 @@ enum WorkspaceCommands {
                                 var processContext = context
                                 processContext.directory = URL(
                                     fileURLWithPath: plan.workspace.startDirectory!)
-                                let result = try await ProcessCommands.run(
-                                    script, context: processContext
-                                ) { text, stream in
-                                    try await output.bootstrap(text, stream: stream)
+                                let result: ProcessCommands.Result
+                                do {
+                                    result = try await ProcessCommands.run(
+                                        script, context: processContext
+                                    ) { text, stream in
+                                        try await output.bootstrap(text, stream: stream)
+                                    }
+                                } catch {
+                                    // A script that cannot even start (missing,
+                                    // not executable, ...) is a before_script
+                                    // failure the same as a nonzero exit,
+                                    // matching tmuxp's BeforeLoadScriptNotExists.
+                                    if error is CancellationError { throw error }
+                                    await failureCode.set("script_failed")
+                                    await failureCode.record(session)
+                                    throw CLIError(
+                                        "script_failed", WorkspaceCLI.message(for: error))
                                 }
                                 guard result.code == 0 else {
                                     await failureCode.set("script_failed")
+                                    await failureCode.record(session)
                                     throw CLIError(
                                         "script_failed",
                                         "before_script exited with status \(result.code).")
@@ -247,6 +262,7 @@ enum WorkspaceCommands {
                         borrowed != nil ? "appended" : existing == nil ? "created" : "reused"),
                 ])
                 results.append(result)
+                completedCount += 1
                 lastSession = session
                 try await output.event("workspace-completed", command: "load", data: result)
             }
@@ -278,9 +294,22 @@ enum WorkspaceCommands {
             let overrideCode = await failureCode.value
             let code = overrideCode ?? WorkspaceCLI.canonicalCode(for: error)
             let message = WorkspaceCLI.message(for: error)
+            // before_script failed after creating (and then rolling back) an
+            // owned session: still name it, the way a later input's success
+            // would, rather than leaving this input out of results[].
+            if borrowed == nil, let failedSession = await failureCode.session {
+                results.append(
+                    .object([
+                        "input": .string(plans[currentInputIndex].source),
+                        "input_index": .integer(Int64(currentInputIndex)),
+                        "session_id": .string(failedSession.id),
+                        "session_name": .string(failedSession.name),
+                        "reused": .bool(false),
+                    ]))
+            }
             var fields: [String: Value] = [
                 "schema_version": .integer(1), "command": .string("load"),
-                "status": .string(results.isEmpty && !changed ? "error" : "partial"),
+                "status": .string(completedCount == 0 && !changed ? "error" : "partial"),
                 "results": .array(results),
                 "errors": .array([
                     .object([
@@ -984,8 +1013,12 @@ enum WorkspaceCommands {
 /// catch block instead of trusting the generic mapping there.
 private actor FailureCode {
     private(set) var value: String?
+    private(set) var session: (id: String, name: String)?
     func set(_ code: String) {
         if value == nil { value = code }
+    }
+    func record(_ session: Session) {
+        if self.session == nil { self.session = (session.id.rawValue, session.name) }
     }
 }
 
