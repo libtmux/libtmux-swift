@@ -104,6 +104,58 @@ private func layoutOpensAsClassic(_ layout: String) -> Bool {
     }
 }
 
+/// tmux's own preset names as `layout_set_lookup` sees them on `runningVersion`:
+/// the mirrored presets join the table only from tmux 3.5, so `main-v` is a
+/// unique prefix of `main-vertical` below that release and an ambiguous one
+/// (`main-vertical` vs. `main-vertical-mirrored`) at or above it. Trimming the
+/// candidate set to the five unconditional presets is safe against the 3.3/3.3a
+/// crash either way (an ambiguous prefix never reaches `layout_parse` on a
+/// version old enough for the crash to matter, since mirrored names do not
+/// exist there to make it ambiguous) but answers a different question than
+/// tmux itself does below 3.5 — a real client refuses `main-v` there when raw
+/// tmux accepts it.
+private func presetNames(runningOn runningVersion: TmuxVersion) -> Set<String> {
+    runningVersion >= TmuxVersion(major: 3, minor: 5)
+        ? layoutPresetNames.union(mirroredLayoutPresetNames)
+        : layoutPresetNames
+}
+
+/// Refuses `layout` unless it names exactly one of tmux's own preset layouts
+/// by prefix, the way `layout_set_lookup` resolves it: an exact match wins
+/// outright (checked by the caller before this runs), and otherwise a prefix
+/// naming exactly one preset is treated as that preset — before the string
+/// ever reaches `layout_parse`, the function whose failure path kills tmux
+/// 3.3 and 3.3a. An ambiguous prefix (`even-`, matching both `even-horizontal`
+/// and `even-vertical`) is refused by name rather than forwarded: tmux's own
+/// lookup treats an ambiguous prefix as unmatched too, which sends it down
+/// that same crash path rather than resolving it. The candidate set is the
+/// one `runningVersion` actually has, so `main-v`/`main-h` resolve uniquely
+/// below tmux 3.5 and are refused as ambiguous from 3.5 on, matching raw
+/// tmux exactly on both sides of that boundary.
+private func refuseUnlessUniquePresetPrefix(
+    _ layout: String,
+    runningVersion: TmuxVersion
+) throws(TmuxError) {
+    let candidates =
+        layout.isEmpty
+        ? []
+        : presetNames(runningOn: runningVersion).filter { $0.hasPrefix(layout) }.sorted()
+    if candidates.count == 1 { return }
+    if candidates.count > 1 {
+        throw .rejectedLocally(
+            reason:
+                "layout \(layout.debugDescription) matches more than one of tmux's own "
+                + "layout names (\(candidates.joined(separator: ", "))); name the one you mean"
+        )
+    }
+    throw .rejectedLocally(
+        reason:
+            "layout \(layout.debugDescription) is neither one of tmux's own layout "
+            + "names, a unique abbreviation of one, nor a layout string tmux reported; "
+            + "sending it to tmux 3.3 or 3.3a kills the daemon rather than being rejected"
+    )
+}
+
 /// Whether a `{`-shaped layout is at least syntactically valid JSON.
 ///
 /// Answers nothing about whether tmux's own reader would accept the
@@ -161,24 +213,20 @@ extension Server {
                 // refused below the release that knows it rather than sent.
                 let running = try await version()
                 guard running >= TmuxVersion(major: 3, minor: 5) else {
-                    throw .invocationFailed(
+                    throw .rejectedLocally(
                         reason:
                             "layout \(layout.debugDescription) needs tmux 3.5 or later; "
                             + "this server reports \(running)"
                     )
                 }
             } else if !layoutOpensAsJSON(layout) {
-                throw .invocationFailed(
-                    reason:
-                        "layout \(layout.debugDescription) is neither one of tmux's own "
-                        + "layout names nor a layout string tmux reported; sending it to "
-                        + "tmux 3.3 or 3.3a kills the daemon rather than being rejected"
-                )
+                let running = try await version()
+                try refuseUnlessUniquePresetPrefix(layout, runningVersion: running)
             }
         }
         if layoutOpensAsJSON(layout) {
             guard isSyntacticallyValidJSON(layout) else {
-                throw .invocationFailed(
+                throw .rejectedLocally(
                     reason:
                         "layout is not valid JSON: \(layout.debugDescription)"
                 )
@@ -196,7 +244,7 @@ extension Server {
             // exactly what a preview build does not promise.
             let running = try await version()
             guard running >= TmuxVersion(major: 3, minor: 8) else {
-                throw .invocationFailed(
+                throw .rejectedLocally(
                     reason:
                         "a JSON layout needs tmux 3.8 or later; this server reports "
                         + "\(running), and forwarding one to 3.3 or 3.3a crashes it "

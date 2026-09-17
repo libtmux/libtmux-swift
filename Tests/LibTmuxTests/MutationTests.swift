@@ -65,6 +65,60 @@ struct MutationTests {
         }
     }
 
+    @Test("a unique preset prefix applies the same as tmux's own prefix lookup")
+    func uniquePresetPrefixApplies() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+
+            try await server.selectLayout(window, .evenHorizontal)
+            try await server.selectLayout(window, WindowLayout.custom("tile"))
+            let viaPrefix = try #require(
+                try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenHorizontal)
+            try await server.selectLayout(window, .tiled)
+            let viaFullName = try #require(
+                try await server.format("#{window_layout}", for: link))
+            #expect(viaPrefix == viaFullName)
+
+            try await server.selectLayout(window, .evenVertical)
+            try await server.selectLayout(window, WindowLayout.custom("even-h"))
+            let viaOtherPrefix = try #require(
+                try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenVertical)
+            try await server.selectLayout(window, .evenHorizontal)
+            let viaEvenHorizontalName = try await server.format("#{window_layout}", for: link)
+            #expect(viaOtherPrefix == viaEvenHorizontalName)
+        }
+    }
+
+    @Test("an ambiguous preset prefix is refused before dispatch, not sent to layout_parse")
+    func ambiguousPresetPrefixIsRefusedClientSide() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            let beforeAttempt = try #require(
+                try await server.format("#{window_layout}", for: link))
+
+            // "even-" names both even-horizontal and even-vertical; tmux's own
+            // layout_set_lookup treats that the same as no match at all and
+            // falls through to layout_parse, which is the path that kills
+            // 3.3 and 3.3a -- so this is refused rather than forwarded.
+            do {
+                try await server.selectLayout(window, WindowLayout.custom("even-"))
+                Issue.record("an ambiguous preset prefix was accepted")
+            } catch let error as TmuxError {
+                #expect(error.description.contains("even-horizontal"))
+                #expect(error.description.contains("even-vertical"))
+                #expect(!error.description.contains("The tmux invocation failed"))
+            }
+            #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
+        }
+    }
+
     @Test("a mirrored preset is refused below the release that knows it")
     func mirroredPresetIsRefusedBelowThreeFive() async throws {
         try await withTmuxServer { server in
@@ -81,6 +135,49 @@ struct MutationTests {
                 }
             }
             #expect(try await server.windows().first != nil)
+        }
+    }
+
+    @Test("a mirrored-name prefix resolves against the presets the running tmux actually has")
+    func mirroredPrefixResolvesAgainstRunningVersion() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            _ = try await server.splitWindow(window)
+            let running = try await server.version()
+
+            if running >= TmuxVersion(major: 3, minor: 5) {
+                // The mirrored presets exist from here on, so "main-v" and
+                // "main-h" name two presets apiece (main-vertical and its
+                // mirror, main-horizontal and its mirror) -- ambiguous, same
+                // as "even-" above, not a unique match.
+                try await server.selectLayout(window, .tiled)
+                let beforeAttempt = try #require(
+                    try await server.format("#{window_layout}", for: link))
+                for (prefix, full) in [("main-v", "main-vertical"), ("main-h", "main-horizontal")] {
+                    do {
+                        try await server.selectLayout(window, WindowLayout.custom(prefix))
+                        Issue.record("\(prefix) resolved unambiguously on \(running)")
+                    } catch let error as TmuxError {
+                        #expect(error.description.contains(full))
+                        #expect(error.description.contains("\(full)-mirrored"))
+                    }
+                }
+                #expect(
+                    try await server.format("#{window_layout}", for: link) == beforeAttempt)
+            } else {
+                // Below 3.5 the mirrored presets are not registered at all,
+                // so "main-v"/"main-h" name only main-vertical/main-horizontal
+                // and resolve the same as any other unique prefix.
+                try await server.selectLayout(window, .evenHorizontal)
+                try await server.selectLayout(window, WindowLayout.custom("main-v"))
+                let viaPrefix = try #require(
+                    try await server.format("#{window_layout}", for: link))
+                try await server.selectLayout(window, .evenHorizontal)
+                try await server.selectLayout(window, .mainVertical)
+                let viaFullName = try await server.format("#{window_layout}", for: link)
+                #expect(viaPrefix == viaFullName)
+            }
         }
     }
 

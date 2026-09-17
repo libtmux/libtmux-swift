@@ -43,14 +43,31 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// A value from another endpoint cannot target this server.
     case foreignServerValue
 
+    /// A value from another pane on the *same* server cannot stand in for
+    /// this one.
+    ///
+    /// Distinct from ``foreignServerValue``: a cursor captured from a
+    /// different pane on the server being asked is a mismatched argument, not
+    /// evidence of a different daemon.
+    case foreignPaneValue
+
+    /// A command was refused before tmux ever saw it.
+    ///
+    /// Raised by a guard that rejects the argument outright -- a layout
+    /// spelling tmux's own preset lookup does not resolve, for instance --
+    /// so ``description`` never claims tmux was invoked.
+    /// A rejection tmux itself made after receiving the command throws
+    /// ``invocationFailed(reason:)`` with tmux's own text instead.
+    case rejectedLocally(reason: String)
+
     /// A session-local target no longer names the object the value described.
     ///
     /// Raised by a guarded call that checks the target before dispatching the
     /// command, so it never carries tmux's own text -- tmux is never asked.
-    /// A method that dispatches unconditionally and lets tmux itself refuse a
-    /// missing target throws ``invocationFailed(reason:)`` with tmux's
-    /// message instead; ``Server/capture(_:includingHistory:)`` does this,
-    /// ``Server/sendKeys(_:to:literally:)`` does not.
+    /// Every mutating call and read on a captured object goes through this
+    /// same atomic pre-check, so a gone pane, window, or session raises this
+    /// case consistently rather than surfacing tmux's own "can't find ..."
+    /// text from some methods and not others.
     case staleServerValue
 
     /// The task was cancelled. A cancelled request never reports an empty

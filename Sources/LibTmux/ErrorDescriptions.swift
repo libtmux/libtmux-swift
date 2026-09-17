@@ -13,6 +13,8 @@ extension TmuxError: CustomStringConvertible, LocalizedError {
             "The control connection closed before the request was submitted."
         case let .invocationFailed(reason):
             "The tmux invocation failed: \(reason)"
+        case let .rejectedLocally(reason):
+            "Refused without invoking tmux: \(reason)"
         case let .commandTooLarge(actualBytes, maximumBytes):
             "The tmux command needs \(actualBytes) bytes; the limit is \(maximumBytes)."
         case let .commandFailed(command, exitCode, reason):
@@ -29,6 +31,8 @@ extension TmuxError: CustomStringConvertible, LocalizedError {
             "The tmux server restarted before the operation completed."
         case .foreignServerValue:
             "The value belongs to a different tmux endpoint."
+        case .foreignPaneValue:
+            "The value belongs to a different pane on this server."
         case .staleServerValue:
             "The tmux target no longer identifies the captured object."
         case .cancelled:

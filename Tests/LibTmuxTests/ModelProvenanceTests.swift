@@ -1,4 +1,5 @@
 import Testing
+import TmuxFixture
 
 @testable import LibTmux
 
@@ -31,6 +32,20 @@ struct ModelProvenanceTests {
             try await server.waitForOutput(in: foreign.values.pane, timeout: .zero)
         }
         #expect(await transport.invocationCount == 0)
+    }
+
+    @Test("a cursor from a different pane on the same server is a foreign pane, not a server")
+    func sameServerCrossPaneCursorIsForeignPane() async throws {
+        try await withTmuxServer { server in
+            let paneA = try #require(try await server.panes().first)
+            let paneB = try await server.split(paneA)
+            let cursorFromB = try await server.capture(paneB, since: nil).cursor
+
+            await #expect(throws: OutputWaitError.tmux(.foreignPaneValue)) {
+                try await server.waitForOutput(
+                    in: paneA, startingAt: cursorFromB, timeout: .zero)
+            }
+        }
     }
 
     @Test(

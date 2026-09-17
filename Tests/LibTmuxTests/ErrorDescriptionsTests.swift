@@ -55,6 +55,24 @@ struct ErrorDescriptionsTests {
         #expect(operation == .contains("private-query-value"))
     }
 
+    @Test("a client-side refusal never claims tmux was invoked")
+    func rejectedLocallyDoesNotClaimInvocation() {
+        let error = TmuxError.rejectedLocally(reason: "layout \"e\" is ambiguous")
+        let message = String(describing: error)
+        #expect(message == "Refused without invoking tmux: layout \"e\" is ambiguous")
+        #expect(!message.contains("The tmux invocation failed"))
+        #expect((error as any Error).localizedDescription == message)
+    }
+
+    @Test("a foreign pane value names a pane, not a different endpoint")
+    func foreignPaneValueNamesAPane() {
+        let message = String(describing: TmuxError.foreignPaneValue)
+        #expect(message.contains("pane"))
+        #expect(!message.contains("endpoint"))
+        // The genuinely cross-endpoint case keeps its own, different text.
+        #expect(String(describing: TmuxError.foreignServerValue).contains("endpoint"))
+    }
+
     @Test("nested failures retain the useful matching and cardinality context")
     func nestedDescriptionsRetainContext() {
         let matching = RegexMatchError.workLimitExceeded(maximum: 123)

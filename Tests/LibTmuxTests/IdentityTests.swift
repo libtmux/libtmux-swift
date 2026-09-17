@@ -361,8 +361,8 @@ struct IdentityTests {
         }
     }
 
-    @Test("a killed pane fails sendKeys and capture with different error shapes")
-    func killedPaneFailsGuardedAndUnguardedReadsDifferently() async throws {
+    @Test("a killed pane fails sendKeys and capture with the same error shape")
+    func killedPaneFailsGuardedAndUnguardedReadsTheSameWay() async throws {
         try await withTmuxServer { server in
             let first = try #require(try await server.panes().first)
             let second = try await server.split(first, direction: .right)
@@ -371,15 +371,8 @@ struct IdentityTests {
             await #expect(throws: TmuxError.staleServerValue) {
                 try await server.sendKeys(["x"], to: second, literally: true)
             }
-            do {
+            await #expect(throws: TmuxError.staleServerValue) {
                 _ = try await server.capture(second)
-                Issue.record("capture on a killed pane did not throw")
-            } catch let error as TmuxError {
-                guard case let .invocationFailed(reason) = error else {
-                    Issue.record("expected invocationFailed, got \(error)")
-                    return
-                }
-                #expect(reason.contains("can't find pane"))
             }
         }
     }

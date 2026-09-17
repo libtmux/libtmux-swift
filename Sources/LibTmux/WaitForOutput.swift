@@ -157,7 +157,7 @@ extension Server {
         }
         if let cursor {
             guard cursor.pane == pane.id.rawValue else {
-                throw .tmux(.foreignServerValue)
+                throw .tmux(.foreignPaneValue)
             }
             guard cursor.incarnation == pane.incarnation else {
                 throw .tmux(.serverRestarted)

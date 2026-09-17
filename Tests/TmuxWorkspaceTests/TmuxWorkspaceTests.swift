@@ -158,6 +158,24 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("a unique layout preset abbreviation builds instead of rolling back")
+    func uniqueLayoutAbbreviationSurvivesBuild() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "abbrev",
+                windows: [
+                    WindowPlan(
+                        layout: "tile",
+                        panes: [PanePlan(), PanePlan()]
+                    )
+                ]
+            )
+            _ = try await WorkspaceBuilder.build(workspace, on: server)
+            let remains = try await server.hasSession("abbrev")
+            #expect(remains)
+        }
+    }
+
     @Test("building over an existing session is refused, not merged into it")
     func buildingOverAnExistingSessionIsRefused() async throws {
         try await withTmuxServer { server in

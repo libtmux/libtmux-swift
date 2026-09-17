@@ -362,8 +362,7 @@ extension Server {
         }
         let reply = try await runGuarded(
             TmuxCommand("capture-pane", arguments),
-            by: [.pane(pane)],
-            checkingTargets: false
+            by: [.pane(pane)]
         )
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
