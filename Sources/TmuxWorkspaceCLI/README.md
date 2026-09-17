@@ -178,12 +178,19 @@ broader verification.
 
 `load` creates sessions on an explicit `-S` or `-L` endpoint, or the
 inherited `TMUX` socket. Outside tmux, this checkpoint requires an endpoint.
-Human calls with a foreground terminal attach to the last loaded workspace.
-Inside tmux, a prompt offers switching, detached loading, appending or
-cancellation. `-y` skips the mode prompt. When several clients view the current
-pane, choose one interactively; `-y` refuses that ambiguity. Switching verifies
-the pane's terminal, server identity and selected client's current PID, session
-and globally active pane. Clients using independent `active-pane` focus on the
+An endpoint that names a different server than the inherited `TMUX` is
+refused before anything is built, whether or not that server is already
+running. Human calls with a foreground terminal attach to the last loaded
+workspace. Inside tmux, loading a new session prompts to switch, load
+detached, append or cancel; loading a session that already exists asks once
+whether to attach, defaulting to yes, and never the new-session prompt. `-y`
+skips both. A pane the invoking process cannot identify — a `run-shell` key
+binding sets `TMUX` without `TMUX_PANE` — still switches without a terminal
+of its own; only outside tmux does an attached load require one. When
+several clients view the current pane, choose one interactively; `-y`
+refuses that ambiguity. Switching verifies the pane's terminal, server
+identity and selected client's current PID, session and globally active
+pane. Clients using independent `active-pane` focus on the
 invoking pane's window prevent switching; detached and append choices remain
 available. A selected client that gains this flag before handoff is refused,
 preserving the loaded workspace. tmux client names can be reused between the
