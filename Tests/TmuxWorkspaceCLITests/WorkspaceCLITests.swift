@@ -1954,15 +1954,25 @@ struct WorkspaceCLITests {
             #expect(ambiguous.code == 2)
             #expect(ambiguous.output.isEmpty)
             #expect(ambiguous.error.joined().contains("session_required"))
+            // A destination keeps these calls out of the "needs a
+            // destination" usage error below while still exercising the
+            // interactive session chooser, which only runs in human mode.
+            let selectedDestination = root.appendingPathComponent("selected.json")
             let selected = await invoke(
-                ["freeze", "-S", socket, "-f", "json"], in: root, extra: environment,
-                responses: [String(Int.min), "invalid", "2"])
-            #expect(selected.code == 0)
-            #expect(try selected.json()["session_name"] as? String == "other")
+                ["freeze", "-S", socket, "-f", "json", "--save-to", selectedDestination.path],
+                in: root, extra: environment, responses: [String(Int.min), "invalid", "2"])
+            #expect(selected.code == 0, "\(selected.error)")
+            let savedSelected =
+                try JSONSerialization.jsonObject(with: Data(contentsOf: selectedDestination))
+                as! [String: Any]
+            #expect(savedSelected["session_name"] as? String == "other")
+            let cancelledDestination = root.appendingPathComponent("cancelled.json")
             let cancelled = await invoke(
-                ["freeze", "-S", socket], in: root, extra: environment, responses: ["q"])
+                ["freeze", "-S", socket, "--save-to", cancelledDestination.path], in: root,
+                extra: environment, responses: ["q"])
             #expect(cancelled.code == 130)
             #expect(cancelled.output.isEmpty)
+            #expect(!FileManager.default.fileExists(atPath: cancelledDestination.path))
             environment["TMUX"] = "\(socket),\(snapshot.serverProcessID),999"
             environment["TMUX_PANE"] = pane.id.rawValue
             let current = await invoke(["freeze", "--json"], in: root, extra: environment)
@@ -1977,6 +1987,22 @@ struct WorkspaceCLITests {
                 ["freeze", "bootstrap", "-S", socket, "--json"], in: root, extra: environment)
             #expect(explicit.code == 0)
             #expect(try explicit.json()["session_name"] as? String == "bootstrap")
+        }
+    }
+
+    @Test("freeze without a destination or a machine format is a usage error")
+    func freezeNeedsADestination() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
+            ]
+            let result = await invoke(
+                ["freeze", "bootstrap", "-S", socket], in: root, extra: environment)
+            #expect(result.code == 2)
+            #expect(result.output.isEmpty)
+            #expect(result.error.joined().contains("--save-to"), "\(result.error)")
         }
     }
 

@@ -594,6 +594,12 @@ enum WorkspaceCommands {
     }
 
     static func freeze(_ command: Freeze, context: CLIContext, output: Presenter) async throws {
+        guard command.destination != nil || command.output.machine else {
+            throw CLIError(
+                "usage",
+                "freeze needs a destination: pass --save-to, or --json/--ndjson to print the workspace.",
+                status: 2)
+        }
         let server = try server(command.socket, context: context)
         let snapshot = try await emptyTolerantSnapshot(server)
         let session = try await freezeSession(
@@ -665,11 +671,10 @@ enum WorkspaceCommands {
             } else if !command.quiet {
                 try await context.output("Saved \(Presenter.sanitize(file.path))")
             }
-        } else if command.output.machine {
-            try await output.document(document, command: "freeze")
         } else {
-            try await context.output(
-                DocumentStore(context: context).encode(document, format: command.format ?? .yaml))
+            // The guard above requires --json/--ndjson without a
+            // destination, so this is always a machine call.
+            try await output.document(document, command: "freeze")
         }
     }
 

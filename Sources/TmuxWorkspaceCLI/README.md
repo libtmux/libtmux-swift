@@ -247,8 +247,9 @@ Otherwise it authenticates the current pane's tmux context or selects the sole
 session. With several sessions, a human caller can choose; machine calls require
 an explicit target. A stale or foreign pane context fails.
 
-Freeze writes a document to stdout unless `--save-to` selects a file; an existing
-file requires `--force`. A `.json` destination selects JSON regardless of letter
+Freeze requires `--save-to` or a machine format; a human call given neither is a
+usage error naming both, and prints nothing. An existing destination file
+requires `--force`. A `.json` destination selects JSON regardless of letter
 case; other destinations default to YAML. Explicit `-f` overrides the suffix.
 Original command arguments, scripts, global settings
 and environment removal markers are omitted. `--quiet` suppresses explanatory
