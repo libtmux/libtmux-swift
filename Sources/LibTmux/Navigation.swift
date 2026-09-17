@@ -245,6 +245,16 @@ extension Server {
             guardedBy: [.client(client), .session(session)])
     }
 
+    /// Switches to `session` without naming a client, so tmux applies it to
+    /// whichever client it considers current. The only way to move an
+    /// attached load's terminal when the invoking process has no client of
+    /// its own to name, such as a `run-shell` key binding.
+    package func switchClient(to session: Session) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("switch-client", ["-t", session.id.rawValue]),
+            guardedBy: [.session(session)])
+    }
+
     /// Detaches a client from the server it is attached to.
     ///
     /// A server operation despite the name: it acts on a client the server

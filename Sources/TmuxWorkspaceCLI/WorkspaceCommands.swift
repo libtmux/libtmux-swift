@@ -67,10 +67,15 @@ enum WorkspaceCommands {
         guard !command.output.machine || command.detached || command.append else {
             throw CLIError("usage", "Machine load requires -d or --append.", status: 2)
         }
-        guard command.detached || command.append || (context.terminal && context.inputTTY != nil)
+        // Inside tmux an attached load ends in switch-client, which needs no
+        // terminal of its own; only outside tmux does attaching require one.
+        guard
+            command.detached || command.append
+                || !(context.environment["TMUX"] ?? "").isEmpty
+                || (context.terminal && context.inputTTY != nil)
         else {
             throw CLIError(
-                "terminal_required",
+                "usage",
                 "Attached load requires a foreground terminal. Use -d to load detached.",
                 status: 2)
         }
@@ -90,8 +95,11 @@ enum WorkspaceCommands {
         let server = try server(
             command.socket, configuration: command.configurationFile, colors256: command.colors256,
             context: context)
+        // Context is resolved — and a cross-server load refused — before
+        // anything touches the selected server, including layout validation.
+        let target = try await loadTarget(
+            command, plans: plans, server: server, context: context, output: output)
         try await WorkspaceLayout.validate(plans.map(\.workspace), on: server)
-        let target = try await loadTarget(command, server: server, context: context, output: output)
         let borrowed: Session?
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }
         let retained = AppendState()
@@ -357,7 +365,9 @@ enum WorkspaceCommands {
             if let overrideCode { throw CLIError(overrideCode, message) }
             throw error
         }
-        if case let .attached(client) = target, let session = lastSession {
+        if case .switched = target, let session = lastSession {
+            try await server.switchClient(to: session)
+        } else if case let .attached(client) = target, let session = lastSession {
             if let client {
                 try await server.switchClient(client, to: session)
             } else {
@@ -387,23 +397,52 @@ enum WorkspaceCommands {
         case detached
         case append(Session)
         case attached(Client?)
+        /// Inside tmux, with no client identified for the invoking pane — a
+        /// `run-shell` key binding sets `TMUX` but not `TMUX_PANE`. Switches
+        /// without naming a client, letting tmux pick its own.
+        case switched
     }
 
     private static func loadTarget(
-        _ command: Load, server: Server, context: CLIContext, output: Presenter
+        _ command: Load, plans: [PlannedWorkspace], server: Server, context: CLIContext,
+        output: Presenter
     ) async throws -> LoadTarget {
         if command.detached { return .detached }
         if command.append {
             return .append(
                 try await currentTarget(server, context: context, verifyTerminal: false).session)
         }
-        guard let tmux = context.environment["TMUX"], !tmux.isEmpty else { return .attached(nil) }
+        let insideTmux = !(context.environment["TMUX"] ?? "").isEmpty
+        if insideTmux {
+            guard let inherited = TmuxContext(parsing: context.environment["TMUX"] ?? "") else {
+                throw CLIError(
+                    "usage", "TMUX does not contain a valid socket, PID and session index.",
+                    status: 2)
+            }
+            // The context is decided before anything is built: a load aimed
+            // at a server other than the current pane's is refused here,
+            // whether or not that server is already running.
+            try await verifySelectedServerMatches(inherited, selected: server)
+        }
+        let existingSession = try await existingTargetSession(plans, server: server)
+        // Prompting needs a real foreground terminal on both ends; without
+        // one this proceeds as though the default answer (yes) had been
+        // given, the same as a script — including one with stdin closed
+        // rather than piped, which a redirected stdout alone would miss.
+        let canPrompt = context.terminal && context.inputTTY != nil
+        if !command.yes, canPrompt, let existingSession {
+            let answer = try await prompt(
+                "\(existingSession.name) is already running. Attach? [Y/n]", context: context)
+            if ["n", "no"].contains(answer) { return .detached }
+        }
+        guard insideTmux else { return .attached(nil) }
+        guard let rawPane = context.environment["TMUX_PANE"], PaneID(rawValue: rawPane) != nil
+        else { return .switched }
         let current = try await currentTarget(server, context: context, verifyTerminal: true)
-        if !command.yes {
+        if !command.yes, canPrompt, existingSession == nil {
             while true {
                 let answer = try await prompt(
-                    "Load: [y] switch, [n] detached, [a] append, [q] cancel (y)",
-                    context: context, output: output)
+                    "Load: [y] switch, [n] detached, [a] append, [q] cancel (y)", context: context)
                 if ["n", "no", "d", "detached"].contains(answer) { return .detached }
                 if ["a", "append"].contains(answer) { return .append(current.session) }
                 if ["", "y", "yes", "s", "switch"].contains(answer) { break }
@@ -433,7 +472,7 @@ enum WorkspaceCommands {
         }
         while true {
             let answer = try await prompt(
-                "Choose client (1-\(clients.count), q to cancel):", context: context, output: output
+                "Choose client (1-\(clients.count), q to cancel):", context: context
             )
             if let number = Int(answer), clients.indices.contains(number - 1) {
                 return .attached(clients[number - 1])
@@ -441,10 +480,40 @@ enum WorkspaceCommands {
         }
     }
 
-    private static func prompt(_ message: String, context: CLIContext, output: Presenter)
+    /// The already-running session a load with this target name would
+    /// switch or attach to, or `nil` when none by that name exists yet.
+    private static func existingTargetSession(
+        _ plans: [PlannedWorkspace], server: Server
+    ) async throws -> Session? {
+        guard let sessionName = plans.last?.workspace.sessionName, try await server.isRunning()
+        else { return nil }
+        return try await server.sessions().first { $0.name == sessionName }
+    }
+
+    /// Confirms `selected` — chosen via `-S`/`-L`, or inherited from `$TMUX`
+    /// when neither was given — is the running server `$TMUX` names, without
+    /// needing to identify a pane. Refuses with the same message whether or
+    /// not `selected` is running yet, never a raw connection error.
+    private static func verifySelectedServerMatches(
+        _ inherited: TmuxContext, selected: Server
+    ) async throws {
+        let mismatch = CLIError(
+            "usage", "Selected endpoint does not identify the current pane's server.", status: 2)
+        guard
+            let origin = try? await inherited.server(tmuxExecutable: selected.tmuxExecutable)
+                .incarnation(),
+            let incarnation = try? await selected.incarnation(),
+            origin.processID == inherited.serverProcessID,
+            incarnation.processID == origin.processID,
+            incarnation.startedAt == origin.startedAt,
+            incarnation.socketPath == origin.socketPath
+        else { throw mismatch }
+    }
+
+    private static func prompt(_ message: String, context: CLIContext)
         async throws -> String
     {
-        try await output.row(.object(["name": .string(message)]))
+        try await context.output(message)
         guard let input = context.input, let line = try await input() else {
             throw CLIError("cancelled", "Load cancelled.", status: 130)
         }
@@ -459,13 +528,26 @@ enum WorkspaceCommands {
         _ selected: Server, context: CLIContext, verifyTerminal: Bool,
         code requestedCode: String? = nil
     ) async throws -> (session: Session, clients: [Client], hasIndependentPaneClient: Bool) {
-        let code = requestedCode ?? (verifyTerminal ? "load_context" : "append_context")
+        // A context refusal — about how the command was invoked, not about
+        // what tmux did — is code usage, exit 2, unless a caller (freeze)
+        // asked for its own code, which keeps status 1.
+        let code = requestedCode ?? "usage"
+        let status: Int32 = requestedCode == nil ? 2 : 1
         guard let inherited = TmuxContext.current(environment: context.environment),
             let rawPane = context.environment["TMUX_PANE"], let paneID = PaneID(rawValue: rawPane)
-        else { throw CLIError(code, "A valid TMUX and TMUX_PANE are required.") }
+        else { throw CLIError(code, "A valid TMUX and TMUX_PANE are required.", status: status) }
         let origin = try await inherited.server(tmuxExecutable: selected.tmuxExecutable)
             .incarnation()
-        let snapshot = try await selected.snapshot()
+        // Never a raw connection error: an unreachable or not-yet-running
+        // selected server is exactly a server that isn't the current pane's.
+        let snapshot: Snapshot
+        do {
+            snapshot = try await selected.snapshot()
+        } catch {
+            throw CLIError(
+                code, "Selected endpoint does not identify the current pane's server.",
+                status: status)
+        }
         guard origin.processID == inherited.serverProcessID,
             snapshot.incarnation.processID == origin.processID,
             snapshot.incarnation.startedAt == origin.startedAt,
@@ -473,7 +555,8 @@ enum WorkspaceCommands {
             let pane = snapshot.panes.first(where: { $0.id == paneID })
         else {
             throw CLIError(
-                code, "Selected endpoint does not identify the current pane's server.")
+                code, "Selected endpoint does not identify the current pane's server.",
+                status: status)
         }
         let links = snapshot.windowLinks.filter { $0.windowID == pane.windowID }
         let link =
@@ -481,12 +564,15 @@ enum WorkspaceCommands {
             ?? (links.count == 1 ? links.first : nil)
         guard let link, let session = snapshot.sessions.first(where: { $0.id == link.sessionID })
         else {
-            throw CLIError(code, "The current pane's session is missing or ambiguous.")
+            throw CLIError(
+                code, "The current pane's session is missing or ambiguous.", status: status)
         }
         if verifyTerminal {
             guard let tty = context.inputTTY,
                 try await selected.format("#{pane_tty}", for: pane, through: link) == tty
-            else { throw CLIError(code, "TMUX_PANE does not identify this terminal.") }
+            else {
+                throw CLIError(code, "TMUX_PANE does not identify this terminal.", status: status)
+            }
         }
         let windowPaneIDs = Set(
             snapshot.panes.lazy.filter { $0.windowID == pane.windowID }.map(\.id))

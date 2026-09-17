@@ -363,7 +363,8 @@ struct WorkspaceCLITests {
         arguments: [[], ["--json"], ["--ndjson"]])
     func loadModePreflight(_ mode: [String]) async throws {
         try await withFiles { root in
-            let result = await invoke(["load", "missing"] + mode, in: root)
+            // Outside tmux, explicitly, whatever the runner inherits.
+            let result = await invoke(["load", "missing"] + mode, in: root, extra: ["TMUX": ""])
             #expect(result.code == 2)
             #expect(result.output.isEmpty)
             #expect(
@@ -1652,8 +1653,10 @@ struct WorkspaceCLITests {
             let stale = environment.merging(["TMUX": "\(socket),1,0"]) { _, new in new }
             let rejected = await invoke(
                 ["load", file.path, "--append", "--json"], in: root, extra: stale)
-            #expect(rejected.code == 1)
-            #expect(rejected.error.joined().contains("append_context"))
+            // A context refusal — how the command was invoked, not what tmux
+            // did — is a usage error, exit 2.
+            #expect(rejected.code == 2)
+            #expect(rejected.error.joined().contains("\"code\":\"usage\""), "\(rejected.error)")
             #expect(try await server.snapshot().windows.count == count)
             try await withTmuxServer { other in
                 guard case let .socketPath(otherSocket) = other.endpoint else { return }
@@ -1661,15 +1664,16 @@ struct WorkspaceCLITests {
                 let foreign = await invoke(
                     ["load", file.path, "--append", "-S", otherSocket, "--json"], in: root,
                     extra: environment)
-                #expect(foreign.code == 1)
-                #expect(foreign.error.joined().contains("append_context"))
+                #expect(foreign.code == 2)
+                #expect(foreign.error.joined().contains("\"code\":\"usage\""), "\(foreign.error)")
                 #expect(try await other.snapshot().windows.count == before)
             }
             let coldSocket = root.appendingPathComponent("unstarted").path
             let cold = await invoke(
                 ["load", file.path, "--append", "-S", coldSocket, "--json"], in: root,
                 extra: environment)
-            #expect(cold.code == 1)
+            #expect(cold.code == 2)
+            #expect(cold.error.joined().contains("\"code\":\"usage\""), "\(cold.error)")
             #expect(!FileManager.default.fileExists(atPath: coldSocket))
             _ = try await server.run(TmuxCommand("kill-server"))
             try #require(await waitForSocketClosure(socket))
@@ -1679,8 +1683,8 @@ struct WorkspaceCLITests {
             let restarted = await invoke(
                 ["load", file.path, "--append", "-S", socket, "--json"], in: root,
                 extra: environment)
-            #expect(restarted.code == 1)
-            #expect(restarted.error.joined().contains("append_context"))
+            #expect(restarted.code == 2)
+            #expect(restarted.error.joined().contains("\"code\":\"usage\""), "\(restarted.error)")
             #expect(try await server.snapshot().windows.count == 1)
             let old = try #require(snapshot.sessions.first)
             await #expect(throws: TmuxError.serverRestarted) {
