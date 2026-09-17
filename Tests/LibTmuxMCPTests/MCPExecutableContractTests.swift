@@ -12,6 +12,53 @@ import TmuxFixture
 
 @Suite("MCP executable contract", .hangLimit)
 struct MCPExecutableContractTests {
+    @Test("--help and --version answer without serving a socket; unknown argv is refused")
+    func argvIsNotIgnored() throws {
+        let binary = executableURL
+        try #require(FileManager.default.isExecutableFile(atPath: binary.path))
+        // No LIBTMUX_* environment at all: if any of these paths reached
+        // configuration and tried to serve, it would need a socket this test
+        // never named.
+        var environment = ProcessInfo.processInfo.environment
+        for key in environment.keys where key.hasPrefix("LIBTMUX_") {
+            environment.removeValue(forKey: key)
+        }
+
+        let help = try run(binary, arguments: ["--help"], environment: environment)
+        #expect(help.status == 0)
+        #expect(help.stdout.contains("Usage: libtmux-mcp"))
+
+        let version = try run(binary, arguments: ["--version"], environment: environment)
+        #expect(version.status == 0)
+        #expect(version.stdout.contains("libtmux-mcp"))
+
+        let unknown = try run(binary, arguments: ["--not-a-real-flag"], environment: environment)
+        #expect(unknown.status != 0)
+        #expect(unknown.stderr.contains("--not-a-real-flag"))
+    }
+
+    private func run(
+        _ binary: URL,
+        arguments: [String],
+        environment: [String: String]
+    ) throws -> (status: Int32, stdout: String, stderr: String) {
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = arguments
+        process.environment = environment
+        let output = Pipe()
+        let error = Pipe()
+        process.standardOutput = output
+        process.standardError = error
+        try process.run()
+        process.waitUntilExit()
+        let stdout = String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let stderr = String(
+            decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return (process.terminationStatus, stdout, stderr)
+    }
+
     @Test("the executable refuses partial caller context before pane input")
     func executableRefusesPartialCallerContext() async throws {
         try await withTmuxServer { server in
