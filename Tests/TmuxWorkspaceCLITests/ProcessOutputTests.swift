@@ -80,7 +80,9 @@ struct ProcessOutputTests {
     @Test(
         "captured shell output releases the running Python bridge",
         .enabled(if: ProcessInfo.processInfo.environment["TMUX_WORKSPACE_TEST_PYTHON"] != nil),
-        arguments: [[], ["--json"], ["--ndjson"]])
+        // Not ["--json"]: plain --json is one buffered object at exit, like
+        // go, with nothing live to release this test's gate on.
+        arguments: [[], ["--ndjson"]])
     func liveShell(_ mode: [String]) async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }
@@ -98,7 +100,7 @@ struct ProcessOutputTests {
                     if mode.isEmpty {
                         try await captured.append(text, stream: "stdout")
                     } else {
-                        await captured.record(text)
+                        try await captured.recordScriptOutput(text)
                     }
                 },
                 error: { text in
@@ -137,10 +139,12 @@ struct ProcessOutputTests {
                         + (mode.isEmpty ? "\\u001b" : "\u{1b}") + "[31mred\n"))
             #expect(await captured.stderr == "diagnostic\tline\n")
             if !mode.isEmpty {
-                let records = await captured.records
-                let value = try #require(
-                    try JSONSerialization.jsonObject(with: Data(records.joined().utf8))
-                        as? [String: Any])
+                // --ndjson streams script-output as the records arrive, then
+                // a single terminal completed record with the full text.
+                let records = try await captured.records.map {
+                    try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+                }
+                let value = try #require(records.first { $0["event"] as? String == "completed" })
                 #expect(value["stdout"] as? String == (await captured.stdout))
                 #expect(value["stderr"] as? String == (await captured.stderr))
             }
@@ -398,23 +402,20 @@ struct ProcessOutputTests {
             #expect(status == 0)
             if level == "error" {
                 #expect(await captured.diagnostics.isEmpty)
-            } else {
-                let stdout = await captured.stdout
-                if shell {
-                    #expect(stdout.hasSuffix("visible result\n"))
-                } else {
-                    #expect(stdout == "visible result")
-                }
-                #expect(await captured.stderr == "quiet diagnostic" + (shell ? "\n" : ""))
+            } else if !shell {
+                // load's before_script still echoes live via a stderr
+                // warning regardless of --json/--ndjson; shell's plain
+                // --json has nothing to capture live (see below) — it
+                // streams only in --ndjson, covered by liveShell.
+                #expect(await captured.stdout == "visible result")
+                #expect(await captured.stderr == "quiet diagnostic")
             }
             let records = await captured.records
             #expect(records.count == 1)
             let result = try #require(
                 try JSONSerialization.jsonObject(with: Data(records.joined().utf8))
                     as? [String: Any])
-            // `shell -c` keeps its own "success"/"error" status word; `load`
-            // now uses the six-port envelope's "ok".
-            #expect(result["status"] as? String == (shell ? "success" : "ok"))
+            #expect(result["status"] as? String == "ok")
             if shell {
                 #expect((result["stdout"] as? String)?.hasSuffix("visible result\n") == true)
                 #expect(result["stderr"] as? String == "quiet diagnostic\n")
@@ -505,6 +506,19 @@ private actor ProcessOutput {
     init(gate: URL) { self.gate = gate }
 
     func record(_ text: String) { records.append(text) }
+
+    /// Machine-mode shell has no stderr warning echo to capture live from
+    /// (unlike load's before_script): a caller that needs the release/accumulate
+    /// side effect there reads it out of a script-output event itself.
+    func recordScriptOutput(_ text: String) throws {
+        records.append(text)
+        guard
+            let value = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+            value["event"] as? String == "script-output",
+            let stream = value["stream"] as? String, let chunk = value["text"] as? String
+        else { return }
+        try append(chunk, stream: stream)
+    }
 
     func diagnostic(_ text: String) throws {
         diagnostics.append(text)
