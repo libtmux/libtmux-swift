@@ -15,7 +15,7 @@ import TmuxFixture
 ///
 /// Only tools whose whole effect is a value that can be read straight back
 /// belong here. Anything needing a fixture to observe it is a behaviour test.
-@Suite("tool effects", .timeLimit(.minutes(2)))
+@Suite("tool effects", .hangLimit)
 struct ToolEffectTests {
     @Test("option-setting tools change the option they name")
     func optionSettingToolsChangeTheOptionTheyName() async throws {

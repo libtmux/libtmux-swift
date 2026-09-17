@@ -19,7 +19,7 @@ private actor RecordedProtocolLines {
     }
 }
 
-@Suite("retained MCP behavior", .timeLimit(.minutes(2)))
+@Suite("retained MCP behavior", .hangLimit)
 struct RetainedMCPBehaviorTests {
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(

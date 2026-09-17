@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("watching a pane without polling", .timeLimit(.minutes(1)))
+@Suite("watching a pane without polling", .hangLimit)
 struct WatchTests {
     /// The bootstrap session's only pane.
     private func bootstrapPane(_ server: Server) async throws -> Pane {

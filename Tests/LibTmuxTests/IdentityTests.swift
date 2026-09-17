@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("server identity", .timeLimit(.minutes(1)))
+@Suite("server identity", .hangLimit)
 struct IdentityTests {
     @Test("session dates preserve integer wire timestamps and daemon identity")
     func sessionDatesPreserveWireTimestamps() throws {

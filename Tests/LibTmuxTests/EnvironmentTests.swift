@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("environment", .timeLimit(.minutes(1)))
+@Suite("environment", .hangLimit)
 struct EnvironmentTests {
     @Test("tmux clients inherit the caller's environment unchanged")
     func processEnvironmentIsInherited() {

@@ -31,7 +31,7 @@ func pinWindowNames(_ server: Server) async throws {
     #expect(reply.isSuccess, "could not pin window names: \(reply.errorText)")
 }
 
-@Suite("filter lowering", .timeLimit(.minutes(2)))
+@Suite("filter lowering", .hangLimit)
 struct FilterLoweringTests {
     /// Names chosen to break a naive compiler: tmux ends a format at an
     /// unescaped `}` and splits a comparison on unescaped commas, and `m`

@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("mutations", .timeLimit(.minutes(1)))
+@Suite("mutations", .hangLimit)
 struct MutationTests {
     @Test("typed and custom layouts preserve tmux's layout strings")
     func typedLayoutsReachTmux() async throws {

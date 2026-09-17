@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("ad-hoc formats", .timeLimit(.minutes(1)))
+@Suite("ad-hoc formats", .hangLimit)
 struct FormatTests {
     @Test("a format reads a field the models do not carry")
     func formatReadsAnUnmodelledField() async throws {

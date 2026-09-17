@@ -9,7 +9,7 @@ import TmuxFixture
 /// It reaches tmux by a different route — a narrowed listing rather than a
 /// whole one — so the tests compare the two routes rather than asserting a
 /// hand-written expectation, the same way the filter lowering is tested.
-@Suite("lookup", .timeLimit(.minutes(2)))
+@Suite("lookup", .hangLimit)
 struct LookupTests {
     @Test("looking one object up matches searching the whole listing")
     func lookupAgreesWithListing() async throws {

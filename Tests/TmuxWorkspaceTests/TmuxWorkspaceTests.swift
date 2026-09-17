@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import TmuxWorkspace
 
-@Suite("workspace decoding", .timeLimit(.minutes(1)))
+@Suite("workspace decoding", .hangLimit)
 struct WorkspaceDecodingTests {
     @Test("typed workspace layouts preserve tmuxp JSON")
     func typedWorkspaceLayoutsPreserveJSON() throws {
@@ -87,7 +87,7 @@ struct WorkspaceDecodingTests {
     }
 }
 
-@Suite("workspace building", .timeLimit(.minutes(1)))
+@Suite("workspace building", .hangLimit)
 struct WorkspaceBuildingTests {
     @Test("a workspace becomes the session, windows, and panes it describes")
     func workspaceBecomesWhatItDescribes() async throws {

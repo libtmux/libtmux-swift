@@ -11,7 +11,7 @@ import TmuxFixture
     import Glibc
 #endif
 
-@Suite("run shell staging", .timeLimit(.minutes(1)))
+@Suite("run shell staging", .hangLimit)
 struct RunShellStagingTests {
     @Test(
         "local staging failures preserve foreign files and release input", arguments: [false, true])

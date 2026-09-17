@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("capability behavior", .timeLimit(.minutes(1)))
+@Suite("capability behavior", .hangLimit)
 struct CapabilityBehaviorTests {
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(

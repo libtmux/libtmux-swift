@@ -10,7 +10,7 @@ import TmuxFixture
     import Glibc
 #endif
 
-@Suite("MCP executable contract", .timeLimit(.minutes(1)))
+@Suite("MCP executable contract", .hangLimit)
 struct MCPExecutableContractTests {
     @Test("the executable refuses partial caller context before pane input")
     func executableRefusesPartialCallerContext() async throws {

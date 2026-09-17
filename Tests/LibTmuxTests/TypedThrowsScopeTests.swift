@@ -12,7 +12,7 @@ import TmuxFixture
 /// suite is the compiler proving it: each helper below declares
 /// `throws(TmuxError)` around a scope, so if `withTmuxError` stopped working
 /// this file would not build.
-@Suite("typed throws scopes", .timeLimit(.minutes(1)))
+@Suite("typed throws scopes", .hangLimit)
 struct TypedThrowsScopeTests {
     struct Unrelated: Error {}
 

@@ -2,7 +2,7 @@ import Testing
 
 @testable import LibTmuxMCP
 
-@Suite("bounded line handoff", .timeLimit(.minutes(1)))
+@Suite("bounded line handoff", .hangLimit)
 struct BoundedLineHandoffTests {
     @Test("an eighth unacknowledged line holds the next submission")
     func acknowledgementReleasesNextSubmission() async throws {
