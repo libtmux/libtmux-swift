@@ -80,6 +80,30 @@ private func layoutOpensAsJSON(_ layout: String) -> Bool {
     layout.first(where: { !$0.isWhitespace }) == "{"
 }
 
+/// tmux's own layout preset names, the only names `layout_set_lookup` knows.
+/// A name it does not know reaches `layout_parse`, which is the path that
+/// kills a 3.3 or 3.3a daemon.
+private let layoutPresetNames: Set<String> = [
+    "even-horizontal", "even-vertical", "main-horizontal", "main-vertical", "tiled",
+]
+
+/// The mirrored presets, which `layout_set_lookup` gained in tmux 3.5.
+private let mirroredLayoutPresetNames: Set<String> = [
+    "main-horizontal-mirrored", "main-vertical-mirrored",
+]
+
+/// Whether a layout string is tmux's classic form: a four-digit hex checksum
+/// and a comma, which is what `layout_parse` reads before anything else.
+private func layoutOpensAsClassic(_ layout: String) -> Bool {
+    let bytes = Array(layout.utf8)
+    guard bytes.count > 5, bytes[4] == UInt8(ascii: ",") else { return false }
+    return bytes[..<4].allSatisfy { byte in
+        (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+            || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+            || (UInt8(ascii: "A")...UInt8(ascii: "F")).contains(byte)
+    }
+}
+
 /// Whether a `{`-shaped layout is at least syntactically valid JSON.
 ///
 /// Answers nothing about whether tmux's own reader would accept the
@@ -130,6 +154,28 @@ extension Server {
         _ window: Window,
         _ layout: String
     ) async throws(TmuxError) {
+        if !layoutPresetNames.contains(layout), !layoutOpensAsClassic(layout) {
+            if mirroredLayoutPresetNames.contains(layout) {
+                // Unknown names take the same fatal path on 3.3 and 3.3a as
+                // any other unparseable layout, so a mirrored preset is
+                // refused below the release that knows it rather than sent.
+                let running = try await version()
+                guard running >= TmuxVersion(major: 3, minor: 5) else {
+                    throw .invocationFailed(
+                        reason:
+                            "layout \(layout.debugDescription) needs tmux 3.5 or later; "
+                            + "this server reports \(running)"
+                    )
+                }
+            } else if !layoutOpensAsJSON(layout) {
+                throw .invocationFailed(
+                    reason:
+                        "layout \(layout.debugDescription) is neither one of tmux's own "
+                        + "layout names nor a layout string tmux reported; sending it to "
+                        + "tmux 3.3 or 3.3a kills the daemon rather than being rejected"
+                )
+            }
+        }
         if layoutOpensAsJSON(layout) {
             guard isSyntacticallyValidJSON(layout) else {
                 throw .invocationFailed(

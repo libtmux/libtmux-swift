@@ -38,23 +38,9 @@ struct MutationTests {
         }
     }
 
-    @Test("a custom layout value is never parsed as one of tmux's own flags")
-    func customLayoutValueIsNeverParsedAsAFlag() async throws {
+    @Test("a value that is not a layout is refused before dispatch")
+    func unparseableLayoutValueIsRefusedClientSide() async throws {
         try await withTmuxServer { server in
-            let version = try await server.version()
-            guard version.major != 3 || version.minor != 3 else {
-                // 3.3 and 3.3a free an uninitialized `cause` in
-                // cmd_select_layout_exec when layout_parse's checksum-prefix
-                // scan rejects a string -- true of any invalid layout,
-                // dash-prefixed or not, since a real layout dump always
-                // starts with four hex digits. Fixed in 3.4 ("CHANGES FROM
-                // 3.3a to 3.4"): the same branch there sets `cause` before
-                // returning. Proving the `--` guard below has to send an
-                // invalid layout past it, which crashes these two releases'
-                // daemon rather than rejecting the string, so it is skipped
-                // on exactly them.
-                return
-            }
             let window = try #require(try await server.windows().first)
             let link = try #require(try await server.windowLinks().first)
             for _ in 0..<3 { _ = try await server.splitWindow(window) }
@@ -62,14 +48,39 @@ struct MutationTests {
             try await server.selectLayout(window, .evenHorizontal)
             let beforeAttempt = try #require(
                 try await server.format("#{window_layout}", for: link))
-            // "-o" is select-layout's own "apply the last set layout" flag.
-            // Without a `--` terminator it reaches tmux as a flag, not a
-            // value, and select-layout succeeds by reapplying tiled instead
-            // of rejecting the string.
-            await #expect(throws: TmuxError.self) {
-                try await server.selectLayout(window, WindowLayout.custom("-o"))
+            // "-o" is select-layout's own "apply the last set layout" flag,
+            // and "--" is what turns it into a layout string instead. Every
+            // value here is one tmux cannot parse, which on 3.3 and 3.3a
+            // frees an uninitialized `cause` and kills the daemon rather than
+            // being rejected -- so none of them is sent at all.
+            for value in ["-o", "garbage", "no-such-preset", "zzzz,80x24,0,0,0"] {
+                await #expect(throws: TmuxError.self) {
+                    try await server.selectLayout(window, WindowLayout.custom(value))
+                }
             }
+            // The unchanged layout is the proof select-layout never ran; the
+            // server still answering is the proof it survived, which is what
+            // fails on 3.3a without the refusal.
             #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
+        }
+    }
+
+    @Test("a mirrored preset is refused below the release that knows it")
+    func mirroredPresetIsRefusedBelowThreeFive() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            _ = try await server.splitWindow(window)
+            let mirrored = WindowLayout.custom("main-vertical-mirrored")
+            if try await server.version() >= TmuxVersion(major: 3, minor: 5) {
+                try await server.selectLayout(window, mirrored)
+            } else {
+                // An unknown name on 3.3a takes the same fatal path as any
+                // other unparseable layout.
+                await #expect(throws: TmuxError.self) {
+                    try await server.selectLayout(window, mirrored)
+                }
+            }
+            #expect(try await server.windows().first != nil)
         }
     }
 
