@@ -236,8 +236,9 @@ endpoint's live identity, and never starts a different server. Socket aliases
 and commas in socket paths are supported. A moved pane determines its current
 session; an ambiguous linked window requires a matching inherited session.
 Failures preserve the borrowed session and report newly created window IDs and
-potentially changed settings. Append ignores configured indexes and uses new
-slots. `-d` takes precedence over `--append`.
+potentially changed settings. Append honours an explicit `window_index`; a
+collision with a window already in the session fails the load and creates
+nothing. `-d` takes precedence over `--append`.
 
 `freeze [SESSION]` captures current pane commands and directories, window names,
 indexes, focus, layouts, local session/window options and session environment

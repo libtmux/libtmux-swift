@@ -109,7 +109,7 @@ public enum WorkspaceBuilder {
                         in: session,
                         named: window.windowName,
                         startDirectory: directory,
-                        at: borrowed == nil ? window.windowIndex : nil,
+                        at: window.windowIndex,
                         environment: windowEnvironment,
                         shell: windowShell
                     ).window

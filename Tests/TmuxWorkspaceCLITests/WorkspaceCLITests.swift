@@ -1696,6 +1696,48 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("append honours window_index and fails cleanly on a collision")
+    func appendHonoursWindowIndex() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let initial = try await server.snapshot()
+            let pane = try #require(initial.panes.first)
+            let session = try #require(initial.sessions.first)
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable,
+                "TMUX": "\(socket),\(initial.serverProcessID),999",
+                "TMUX_PANE": pane.id.rawValue,
+            ]
+            let indexed = root.appendingPathComponent("indexed.json")
+            try Data(
+                #"{"session_name":"unused","windows":[{"window_name":"w1","window_index":5,"panes":[null]}]}"#
+                    .utf8
+            ).write(to: indexed)
+            let loaded = await invoke(
+                ["load", indexed.path, "--append"], in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            #expect(loaded.output.joined().contains("Appended \(session.name)"), "\(loaded.output)")
+            let afterIndexed = try await server.snapshot()
+            let addedLink = try #require(
+                afterIndexed.windowLinks(of: session).first { $0.index == 5 })
+            #expect(afterIndexed.windows.first { $0.id == addedLink.windowID }?.name == "w1")
+            let windowCount = afterIndexed.windows.count
+
+            let collide = root.appendingPathComponent("collide.json")
+            try Data(
+                #"{"session_name":"unused","windows":[{"window_name":"w2","window_index":5,"panes":[null]}]}"#
+                    .utf8
+            ).write(to: collide)
+            let refused = await invoke(
+                ["load", collide.path, "--append", "--json"], in: root, extra: environment)
+            #expect(refused.code == 1)
+            #expect(refused.error.joined().contains("\"code\":\"tmux_failed\""), "\(refused.error)")
+            #expect(refused.error.joined().contains("index 5"), "\(refused.error)")
+            #expect(try await server.snapshot().windows.count == windowCount)
+        }
+    }
+
     @Test("native load and capture use an explicit socket")
     func loadAndCapture() async throws {
         try await withTmuxServer { server in
