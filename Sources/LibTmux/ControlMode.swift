@@ -198,6 +198,17 @@ extension Server {
             error: .discarded
         ) { execution in
             let control = ControlSession(writer: execution.standardInputWriter)
+            // This process *is* the tmux client tmux will report attached to
+            // `session` -- exec'd directly, not run through a wrapper -- so
+            // its pid is exactly what a later `Client.processID` compares
+            // against. Registered for the whole scope so a caller reading
+            // attachment elsewhere (the MCP's `list_sessions`, for one) can
+            // tell this connection apart from a person's.
+            let ownPID = Int(execution.processIdentifier.value)
+            await OwnedControlClients.shared.register(ownPID)
+            defer {
+                Task { await OwnedControlClients.shared.unregister(ownPID) }
+            }
             return try await withThrowingTaskGroup(
                 of: ControlOutcome<Result>.self
             ) { group in

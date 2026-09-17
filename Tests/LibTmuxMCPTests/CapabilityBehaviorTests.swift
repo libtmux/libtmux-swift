@@ -872,6 +872,114 @@ struct CapabilityBehaviorTests {
         }
     }
 
+    @Test("list_sessions and get_session_info exclude this process's own observation client")
+    func sessionResultsExcludeOwnObservationClient() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
+            let surface = tools(server)
+
+            // A wait that never matches keeps an internal control connection
+            // attached to `session` for as long as it runs.
+            let waiter = Task {
+                _ = try? await surface.call(
+                    ToolCall(
+                        name: "wait_for_text",
+                        arguments: .object([
+                            "paneId": .string(pane.id.rawValue),
+                            "patterns": .array([
+                                .string("never-appears-\(UUID().uuidString.prefix(8))")
+                            ]),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
+                )
+            }
+            defer { waiter.cancel() }
+
+            // Proves there is something to be mistaken for a person before
+            // trusting either result below.
+            let attached = try await waitUntil {
+                try await server.clients().contains { $0.sessionID == session.id }
+            }
+            #expect(attached)
+
+            let sessions = try await surface.call(
+                ToolCall(name: "list_sessions", arguments: .object([:]))
+            )
+            let listed = sessions.structured["sessions"]?.arrayValue?
+                .first { $0.objectValue?["id"]?.stringValue == session.id.rawValue }
+            #expect(listed?.objectValue?["isAttached"]?.boolValue == false)
+
+            let info = try await surface.call(
+                ToolCall(
+                    name: "get_session_info",
+                    arguments: .object(["session": .string(session.id.rawValue)])
+                )
+            )
+            #expect(info.structured["session"]?.objectValue?["isAttached"]?.boolValue == false)
+        }
+    }
+
+    @Test("send_keys and send_keys_batch press Enter rather than typing it when literal")
+    func literalSendKeysStillPressesEnter() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let surface = tools(server)
+
+            let singleMarker = "swift2-1-single-\(UUID().uuidString.prefix(8))"
+            let single = try await surface.call(
+                ToolCall(
+                    name: "send_keys",
+                    arguments: .object([
+                        "enter": .bool(true),
+                        "keys": .array([.string("echo \(singleMarker)")]),
+                        "literal": .bool(true),
+                        "paneId": .string(pane.id.rawValue),
+                    ])
+                )
+            )
+            // `echo` prints the marker alone on its own line only if the
+            // command actually ran. A literal dispatch that typed the word
+            // "Enter" instead of pressing it leaves the command sitting
+            // unsubmitted on the input line -- which also contains the
+            // marker as a substring, so the check has to require the exact
+            // output line, not merely that the marker appears somewhere.
+            #expect(
+                try await waitUntil {
+                    try await server.capture(pane).contains { $0 == singleMarker }
+                }
+            )
+            #expect(single.structured["keys"]?.arrayValue?.last?.stringValue == "Enter")
+
+            let batchMarker = "swift2-1-batch-\(UUID().uuidString.prefix(8))"
+            let batch = try await surface.call(
+                ToolCall(
+                    name: "send_keys_batch",
+                    arguments: .object([
+                        "operations": .array([
+                            .object([
+                                "enter": .bool(true),
+                                "keys": .array([.string("echo \(batchMarker)")]),
+                                "literal": .bool(true),
+                                "paneId": .string(pane.id.rawValue),
+                            ])
+                        ])
+                    ])
+                )
+            )
+            // `completed: 1` must mean the command actually ran, not merely
+            // that the handler returned without throwing.
+            #expect(batch.structured["completed"]?.intValue == 1)
+            #expect(batch.structured["failures"]?.arrayValue?.isEmpty == true)
+            #expect(
+                try await waitUntil {
+                    try await server.capture(pane).contains { $0 == batchMarker }
+                }
+            )
+        }
+    }
+
     @Test("validated dispatch precedes mutation and synchronized sends disclose all targets")
     func validatedDispatchAndSynchronizedTargets() async throws {
         try await withTmuxServer { server in

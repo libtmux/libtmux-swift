@@ -13,12 +13,20 @@ struct SessionResult: Sendable, Hashable, Codable {
     let isAttached: Bool
     let createdAt: Int
 
-    init(_ session: Session, references: WireReferenceCodec = .processLocal) {
+    /// `isAttached` overrides `session.isAttached` when given: tmux's own
+    /// flag counts every attached client, including one this process opened
+    /// for its own internal use (see `Server.sessionIDsAttachedByOthers()`),
+    /// which a caller asking whether a person is watching does not want.
+    init(
+        _ session: Session,
+        references: WireReferenceCodec = .processLocal,
+        isAttached: Bool? = nil
+    ) {
         self.ref = references.reference(to: session)
         self.id = session.id.rawValue
         self.name = session.name
         self.windowCount = session.windowCount
-        self.isAttached = session.isAttached
+        self.isAttached = isAttached ?? session.isAttached
         self.createdAt = session.createdAt
     }
 }

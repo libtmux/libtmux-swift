@@ -218,11 +218,14 @@ extension TmuxTools {
     }
 
     func capabilityListSessions() async throws -> ToolOutcome {
-        .listing(
+        let sessions = try await server.sessions()
+        let attachedByOthers = try await server.sessionIDsAttachedByOthers()
+        return .listing(
             "sessions",
             .array(
-                try await server.sessions().map {
-                    JSONValue.encoding(SessionResult($0))
+                sessions.map {
+                    JSONValue.encoding(
+                        SessionResult($0, isAttached: attachedByOthers.contains($0.id)))
                 }))
     }
 
@@ -267,7 +270,12 @@ extension TmuxTools {
 
     func getSessionInfo(_ arguments: Arguments) async throws -> ToolOutcome {
         let session = try await capabilitySession(try arguments.string("session"))
-        return .init(structured: .object(["session": JSONValue.encoding(SessionResult(session))]))
+        let attachedByOthers = try await server.sessionIDsAttachedByOthers()
+        return .init(
+            structured: .object([
+                "session": JSONValue.encoding(
+                    SessionResult(session, isAttached: attachedByOthers.contains(session.id)))
+            ]))
     }
 
     func getWindowInfo(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -676,9 +684,16 @@ extension TmuxTools {
         let requested = try arguments.string("paneId")
         var keys = try arguments.strings("keys")
         guard !keys.isEmpty else { throw ToolError.missingArgument("keys") }
-        if try arguments.bool("enter", or: false) { keys.append("Enter") }
+        let sendsEnter = try arguments.bool("enter", or: false)
         let force = try arguments.bool("force", or: false)
         let literal = try arguments.bool("literal", or: false)
+        // `-l` (literal) applies to every argument in one dispatch, so an
+        // "Enter" appended to a literal call would be typed as the four
+        // letters E-n-t-e-r rather than pressed. Non-literal already presses
+        // it correctly as part of the same call, so only the literal path
+        // needs a second, non-literal dispatch just for the key.
+        let pressEnterSeparately = sendsEnter && literal
+        if sendsEnter, !literal { keys.append("Enter") }
         let initial = try await preflightPaneInput(
             requested,
             scope: .configuredCohort,
@@ -697,6 +712,9 @@ extension TmuxTools {
                 operation: "send_keys"
             )
             try await server.sendKeys(keys, to: final.source, literally: literal)
+            if pressEnterSeparately {
+                try await server.sendKeys(["Enter"], to: final.source, literally: false)
+            }
         } catch {
             await Self.paneRuns.release(reservation)
             throw error
@@ -706,7 +724,7 @@ extension TmuxTools {
             SentKeys(
                 paneRef: WireReferenceCodec.processLocal.reference(to: final.source),
                 pane: final.source.id.rawValue,
-                keys: keys,
+                keys: pressEnterSeparately ? keys + ["Enter"] : keys,
                 resolvedPaneIds: final.configuredPaneIDs.map(\.rawValue)
             ))
     }
