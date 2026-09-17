@@ -98,8 +98,13 @@ struct OutputWaitSession: Sendable {
         // screen" and "never happened" look identical afterwards, and only one
         // of them is fixed by waiting longer.
         if let entryHit, !requireFresh {
+            // A match already on screen is reported as its own outcome: a
+            // caller that treats `matched` as "it happened" would otherwise
+            // read the echo of a command it just sent as the command's own
+            // output. A stop condition keeps its outcome, since a stop is a
+            // reason to give up either way.
             return ending(
-                entryHit.outcome,
+                entryHit.outcome == .matched ? .alreadyOnScreen : entryHit.outcome,
                 matched: entryHit.matched,
                 matchedIndex: entryHit.matchedIndex,
                 tail: entryRows,

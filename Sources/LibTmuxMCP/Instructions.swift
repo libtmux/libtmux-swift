@@ -116,9 +116,10 @@ enum Instructions {
         if available.contains("wait_for_text") {
             lines.append(
                 "- wait_for_text: output you did not author; bound the wait. Right after your "
-                    + "own send_keys, an unanchored pattern can match the typed command line "
-                    + "itself -- pass the cursor from a capture_since taken right after send_keys, "
-                    + "or use run_shell_command instead."
+                    + "own send_keys, a pattern can already be on screen as the typed command "
+                    + "line; that answers outcome alreadyOnScreen, not matched, and waiting "
+                    + "longer will not change it -- pass the cursor from a capture_since taken "
+                    + "right after send_keys, or use run_shell_command instead."
             )
         }
         if available.contains("wait_for_channel") {

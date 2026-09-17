@@ -5,6 +5,16 @@ public struct OutputWait: Sendable, Hashable, Codable {
     public enum Outcome: String, Sendable, Hashable, Codable {
         /// One of `patterns` appeared in output that arrived during the wait.
         case matched
+        /// One of `patterns` was already on screen when the wait began, so it
+        /// is not evidence of anything that happened during the wait.
+        ///
+        /// Distinct from ``matched`` because the common way to reach it is
+        /// waiting for a marker a command you just sent contains: a shell
+        /// echoes the line it was given, and the marker is on screen before
+        /// the command runs. Waiting longer does not change it; pass
+        /// `requireFresh` with the cursor from before the send, or match
+        /// something the command only prints once it has run.
+        case alreadyOnScreen
         /// One of `stops` appeared first. `matchedIndex` says which.
         case stopped
         /// Nothing matched before the deadline, in reads that finished.

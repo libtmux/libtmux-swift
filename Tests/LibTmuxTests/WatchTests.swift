@@ -176,7 +176,7 @@ struct WatchTests {
                 timeout: .seconds(2)
             )
 
-            #expect(result.outcome == .matched)
+            #expect(result.outcome == .alreadyOnScreen)
             #expect(result.matchedAtEntry)
             #expect(!result.sawNewOutput)
             let requests = await transport.captureRequests
@@ -549,7 +549,7 @@ struct WatchTests {
                 timeout: .seconds(5)
             )
 
-            #expect(result.outcome == .matched)
+            #expect(result.outcome == .alreadyOnScreen)
             #expect(result.matchedAtEntry)
         }
     }
@@ -641,7 +641,10 @@ struct WatchTests {
             #expect(!painted.sawNewOutput)
 
             // Leaving restores the grid that accumulates history, so the wait
-            // that follows matches again: the suppression never latches.
+            // that follows sees the marker again: the suppression never
+            // latches. It was printed before the wait began, so the answer is
+            // `alreadyOnScreen` rather than `matched` -- either way it is no
+            // longer suppressed, which is what this asserts.
             try await server.run(#"printf '\033[?1049l'"#, in: pane)
             try await server.run("printf 'printed-marker\\n'", in: pane)
             let printed = try await server.waitForOutput(
@@ -649,7 +652,7 @@ struct WatchTests {
                 matching: [try RegexPattern("printed-marker")],
                 timeout: .seconds(5)
             )
-            #expect(printed.outcome == .matched)
+            #expect(printed.outcome == .alreadyOnScreen)
         }
     }
 
@@ -714,7 +717,7 @@ struct WatchTests {
                 matching: [try RegexPattern("stale-marker")],
                 timeout: .seconds(30)
             )
-            #expect(answered.outcome == .matched)
+            #expect(answered.outcome == .alreadyOnScreen)
             #expect(answered.matchedAtEntry)
             #expect(!answered.sawNewOutput)
             // Well inside the thirty-second timeout: `matchedAtEntry` already

@@ -245,9 +245,10 @@ struct CapabilityBehaviorTests {
                     ])
                 )
             )
-            // Matched at once, before the command could have run: the typed
-            // command line, not its output.
-            #expect(withoutCursor.structured["outcome"]?.stringValue == "matched")
+            // Answered at once, before the command could have run: the typed
+            // command line, not its output, and said so rather than claiming
+            // a match.
+            #expect(withoutCursor.structured["outcome"]?.stringValue == "alreadyOnScreen")
             #expect(withoutCursor.structured["matchedAtEntry"]?.boolValue == true)
             #expect(withoutCursor.structured["sawNewOutput"]?.boolValue == false)
 

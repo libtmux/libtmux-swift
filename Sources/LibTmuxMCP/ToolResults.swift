@@ -188,9 +188,10 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
     /// With `outcome: "expiredWhileReading"` it means nothing: the reads that
     /// would have seen output never finished.
     let sawNewOutput: Bool
-    /// The pattern was on screen before the wait started. Not a match — but it
-    /// means the thing happened and you asked afterwards, which is the opposite
-    /// problem from it never happening, and waiting longer fixes neither.
+    /// The pattern was on screen before the wait started, which answers
+    /// `outcome: "alreadyOnScreen"` rather than `"matched"`. It means the
+    /// thing happened and you asked afterwards — or that the pattern is in
+    /// the command line you just typed — and waiting longer fixes neither.
     let matchedAtEntry: Bool
     let tail: [String]
     let cursor: String?
