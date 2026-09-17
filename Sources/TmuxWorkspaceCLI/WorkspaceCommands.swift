@@ -308,11 +308,16 @@ enum WorkspaceCommands {
                 try await output.result(result)
             } else if !command.output.machine {
                 for result in results {
-                    try await output.row(
-                        .object([
-                            "name": result["session_name"] ?? .null,
-                            "path": result["action"] ?? .null,
-                        ]))
+                    if borrowed != nil {
+                        try await context.output(
+                            "Appended \(Presenter.sanitize(result["session_name"]?.string ?? ""))")
+                    } else {
+                        try await output.row(
+                            .object([
+                                "name": result["session_name"] ?? .null,
+                                "path": result["action"] ?? .null,
+                            ]))
+                    }
                 }
             }
         } catch {
