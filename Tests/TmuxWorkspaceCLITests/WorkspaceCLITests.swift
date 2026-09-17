@@ -369,6 +369,10 @@ struct WorkspaceCLITests {
             #expect(
                 result.error.joined().contains(
                     mode.isEmpty ? "foreground terminal" : "-d or --append"))
+            guard !mode.isEmpty else { return }
+            // A machine load with no way to attach is a usage error, the
+            // same code the other six ports report for it.
+            #expect(result.error.joined().contains("\"code\":\"usage\""), "\(result.error)")
         }
     }
 
@@ -1818,8 +1822,8 @@ struct WorkspaceCLITests {
             guard case let .socketPath(socket) = server.endpoint else { return }
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
             let file = root.appendingPathComponent("options-after.json")
-            // java and rs freeze window options under this key; swift's
-            // loader refused it outright before M13's fix.
+            // java and rs freeze window options under this key; the loader
+            // now accepts it instead of refusing the window outright.
             try Data(
                 #"""
                 {"session_name":"options-after","windows":[{"window_name":"one","options_after":{"automatic-rename":"off"},"panes":["true","true","true"]}]}
@@ -1855,8 +1859,9 @@ struct WorkspaceCLITests {
             // through capture; a quoted or escaped one takes the second read.
             try await server.setOption("@freeze-plain", to: "plain/value", scope: .session(session))
             try await server.setOption("@freeze-window", to: windowValue, scope: .window(window))
-            // The block is gone outright, not merely filtered to the
-            // ambient SSH/display values M11 was filed against.
+            // freeze omits the top-level environment block entirely now,
+            // rather than only filtering ambient SSH/display values out of
+            // it.
             try await server.setEnvironment(
                 "FREEZE_VALUE", to: "should not be captured", in: .session(session.id.rawValue))
             // Mismatched on purpose: the omission below must not depend on
