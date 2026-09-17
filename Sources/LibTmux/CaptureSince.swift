@@ -67,13 +67,24 @@ extension Server {
     /// Visits unseen rows oldest-first without retaining completed chunks.
     /// At most `maximumChunks` are read; `hasMore` tells the caller to resume.
     /// Returning `true` from `visit` stops before the remaining rows are read.
+    ///
+    /// `visit`'s second argument says whether `rows.last`, if any, is still
+    /// the pane's live cursor row: `true` only when this read reaches it and
+    /// that row is not empty. An empty one is already the "nothing typed
+    /// yet" case this function strips before handing rows over, so `false`
+    /// here can mean either more remains to read or the last row handed over
+    /// is already-committed content. A caller matching row content needs the
+    /// distinction: `true` means that last row could be the pane's pending,
+    /// unsubmitted input line rather than something it produced -- whether or
+    /// not a new row was created, since typing into an already-anchored row
+    /// without a newline changes that row without advancing past it.
     package func scanForward(
         _ pane: Pane,
         since cursor: CaptureCursor,
         sourceLinesPerChunk: Int,
         maximumChunks: Int,
         perStreamOutputLimit: Int,
-        _ visit: ([String]) -> Bool
+        _ visit: ([String], _ endsOnLiveCursorRow: Bool) -> Bool
     ) async throws(TmuxError) -> ForwardCaptureResult {
         guard sourceLinesPerChunk > 1 else {
             throw .invocationFailed(reason: "a forward capture chunk needs at least two lines")
@@ -186,6 +197,16 @@ extension Server {
                     advanced && aligned.tail == nil && rows.first?.isEmpty == true
                 if rows.first == (aligned.tail ?? "") { rows.removeFirst() }
                 if completedBlankAnchor { rows.insert("", at: 0) }
+                // Whether `rows.last` is still the pane's live cursor row:
+                // only when this read reaches it and that row is not empty.
+                // An empty one is the "nothing typed yet" case the strip
+                // below removes outright, so what remains after it is
+                // already-committed content, not the pending line -- true
+                // whether or not a *new* row was created, since typing into
+                // an already-anchored row without a newline never advances
+                // past it but still changes what that row holds.
+                let endsOnLiveCursorRow =
+                    end == state.absoluteCursorRow && rows.last?.isEmpty == false
                 if advanced, rows.last?.isEmpty == true {
                     rows.removeLast()
                 }
@@ -199,8 +220,8 @@ extension Server {
                 previousCursor = nextCursor
                 remainingAttempts = Self.incrementalCaptureAttempts
                 completedChunks += 1
-                let stopped = visit(rows)
                 let hasMore = end != state.absoluteCursorRow
+                let stopped = visit(rows, endsOnLiveCursorRow)
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
                     linesMissed: false,

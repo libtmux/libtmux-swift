@@ -551,7 +551,7 @@ struct OutputWaitSession: Sendable {
                 sourceLinesPerChunk: Self.waitCaptureLines,
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
-            ) { rows in
+            ) { rows, endsOnLiveCursorRow in
                 guard ContinuousClock.now < deadline else {
                     deadlineReached = true
                     return true
@@ -559,8 +559,13 @@ struct OutputWaitSession: Sendable {
                 let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
+                // The last row may be the pane's pending, unsubmitted input
+                // line rather than a row it produced -- see `waitForOutput`'s
+                // doc. Still counted above for `tail`/`sawNewOutput`; just not
+                // eligible on its own to satisfy a pattern or stop condition.
+                let matchable = endsOnLiveCursorRow ? Array(arrived.dropLast()) : arrived
                 do {
-                    output = try answer(arrived, tail, false)
+                    output = try answer(matchable, tail, false)
                     if output != nil {
                         let selectedAt = ContinuousClock.now
                         if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -625,6 +630,11 @@ struct OutputWaitSession: Sendable {
             guard ContinuousClock.now < deadline else { return timedOut() }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
+            // Unlike the forward-scan chunk above, `arrived` here already had
+            // every blank row filtered out (`waitLookbackRows`), so its last
+            // element is not reliably the pane's live cursor row -- it can be
+            // real, already-committed output with a blank cursor row after it
+            // that the filter already removed. Not excluded from matching.
             do {
                 output = try answer(arrived, tail, false)
                 if output != nil {

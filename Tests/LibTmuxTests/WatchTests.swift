@@ -750,6 +750,31 @@ struct WatchTests {
         }
     }
 
+    @Test("a pending, unsubmitted input line is never reported as a match")
+    func pendingInputLineIsNeverAMatch() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let started = try await server.capture(pane, since: nil)
+            let marker = "pending-\(UUID().uuidString.prefix(8))"
+
+            // Typed but never submitted: sits on the input line, not run.
+            try await server.sendKeys([marker], to: pane, literally: true)
+
+            let result = try await server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern(marker)],
+                requiringFreshOutput: true,
+                startingAt: started.cursor,
+                timeout: .milliseconds(600)
+            )
+            // The marker is genuinely new since the cursor -- it was just
+            // typed -- but it is the pending input line this server itself
+            // sent, not output the pane produced, so it must not match.
+            #expect(result.outcome == .timedOut)
+            #expect(try await server.capture(pane).contains { $0.contains(marker) })
+        }
+    }
+
     @Test("a repeated line on a multiply linked pane is fresh output")
     func repeatedIdenticalLineIsFresh() async throws {
         try await withTmuxServer { server in
