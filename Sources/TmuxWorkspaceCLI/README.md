@@ -74,6 +74,28 @@ the timed subprocess, and retains every sample plus median and spread. Its
 three blank panes exercise creation; they do not establish command execution,
 interactive behavior or full capture fidelity.
 
+## Example
+
+A complete workspace, and the command that loads it:
+
+```yaml
+session_name: example
+windows:
+  - window_name: editor
+    layout: even-horizontal
+    panes:
+      - vim
+      - npm run watch
+  - window_name: logs
+    panes:
+      - start_directory: /var/log
+        shell_command: tail -f syslog
+```
+
+```console
+$ tmux-workspace load example.yaml
+```
+
 ## Commands
 
 `ls` discovers global workspaces and local `.tmuxp.yaml`, `.tmuxp.yml` and
