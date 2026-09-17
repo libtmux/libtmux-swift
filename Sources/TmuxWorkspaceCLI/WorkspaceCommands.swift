@@ -111,6 +111,7 @@ enum WorkspaceCommands {
                     data: .object([
                         "session_name": .string(borrowed?.name ?? plan.workspace.sessionName),
                         "input": .string(plan.source),
+                        "input_index": .integer(Int64(inputIndex)),
                         "window_total": .integer(Int64(plan.workspace.windows.count)),
                         "session_pane_total": .integer(
                             Int64(plan.workspace.windows.reduce(0) { $0 + $1.panes.count })),
@@ -238,8 +239,10 @@ enum WorkspaceCommands {
                         })
                 }
                 let result = Value.object([
+                    "input": .string(plan.source), "input_index": .integer(Int64(inputIndex)),
                     "session_name": .string(session.name),
                     "session_id": .string(session.id.rawValue), "created": .bool(existing == nil),
+                    "reused": .bool(existing != nil),
                     "action": .string(
                         borrowed != nil ? "appended" : existing == nil ? "created" : "reused"),
                 ])
