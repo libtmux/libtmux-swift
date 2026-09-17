@@ -546,6 +546,15 @@ struct WorkspaceCLITests {
             #expect(records.allSatisfy { $0["data"] == nil }, "\(records)")
             let snapshot = try await server.snapshot()
             let session = try #require(snapshot.sessions.first { $0.name == "ndjson-events" })
+            let workspaceStarted = try #require(
+                records.first { $0["event"] == .string("workspace-started") })
+            #expect(workspaceStarted["input"] == .string(file.path))
+            #expect(workspaceStarted["input_index"] == .integer(0))
+            let sessionCreated = try #require(
+                records.first { $0["event"] == .string("session-created") })
+            #expect(sessionCreated["input_index"] == .integer(0))
+            #expect(sessionCreated["session_id"] == .string(session.id.rawValue))
+            #expect(sessionCreated["session_name"] == .string("ndjson-events"))
             let windowCreated = try #require(
                 records.first { $0["event"] == .string("window-created") })
             #expect(windowCreated["input_index"] == .integer(0))
@@ -1333,6 +1342,49 @@ struct WorkspaceCLITests {
             #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
             #expect(after.windows.map(\.id) == before.windows.map(\.id))
             #expect(after.panes.map(\.id) == before.panes.map(\.id))
+        }
+    }
+
+    @Test("every load result names its input, index and whether the session was reused")
+    func loadResultsCarryInputAndReuse() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let first = root.appendingPathComponent("one.json")
+            let second = root.appendingPathComponent("two.json")
+            try Data(#"{"session_name":"first","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: first)
+            try Data(#"{"session_name":"second","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: second)
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            let created = await invoke(
+                ["load", first.path, second.path, "-d", "-S", socket, "--json"], in: root,
+                extra: environment)
+            #expect(created.code == 0, "\(created.error)")
+            let results = try #require(try created.json()["results"] as? [[String: Any]])
+            #expect(results.count == 2)
+            for (index, expected) in [(first, "first"), (second, "second")].enumerated() {
+                let row = results[index]
+                #expect(row["input"] as? String == expected.0.path)
+                #expect(row["input_index"] as? Int == index)
+                #expect(row["session_name"] as? String == expected.1)
+                #expect((row["session_id"] as? String)?.isEmpty == false)
+                #expect(row["reused"] as? Bool == false)
+            }
+            // Loading the same workspace again reuses its session.
+            let reloaded = await invoke(
+                ["load", first.path, "-d", "-S", socket, "--ndjson"], in: root, extra: environment)
+            #expect(reloaded.code == 0, "\(reloaded.error)")
+            let events = try reloaded.output.map {
+                try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+            }
+            let completedResults = try #require(
+                (events.first { $0["event"] as? String == "completed" })?["results"]
+                    as? [[String: Any]])
+            #expect(completedResults.count == 1)
+            #expect(completedResults[0]["input"] as? String == first.path)
+            #expect(completedResults[0]["input_index"] as? Int == 0)
+            #expect(completedResults[0]["reused"] as? Bool == true)
         }
     }
 
