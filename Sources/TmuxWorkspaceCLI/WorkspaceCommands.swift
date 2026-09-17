@@ -65,7 +65,7 @@ enum WorkspaceCommands {
                 status: 2)
         }
         guard !command.output.machine || command.detached || command.append else {
-            throw CLIError("load_mode", "Machine load requires -d or --append.", status: 2)
+            throw CLIError("usage", "Machine load requires -d or --append.", status: 2)
         }
         guard command.detached || command.append || (context.terminal && context.inputTTY != nil)
         else {
