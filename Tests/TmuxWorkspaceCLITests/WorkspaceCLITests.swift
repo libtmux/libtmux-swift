@@ -901,11 +901,55 @@ struct WorkspaceCLITests {
                 ])
             #expect(result.code == 0, "\(result.error)")
             guard result.code == 0 else { return }
-            let childOutput = try result.json()["stdout"] as? String
+            // --ndjson streams script-output as the child writes, then a
+            // single terminal completed record — never one buffered blob.
+            let records = try result.output.map {
+                try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+            }
+            #expect(records.first?["event"] as? String == "started")
+            #expect(
+                records.contains {
+                    $0["event"] as? String == "script-output" && $0["stream"] as? String == "stdout"
+                })
+            let completed = try #require(records.first { $0["event"] as? String == "completed" })
+            #expect(completed["status"] as? String == "ok")
+            #expect(completed["child_status"] as? Int == 0)
+            let childOutput = completed["stdout"] as? String
             #expect(
                 childOutput?.hasSuffix(
                     "CLI_RESULT=" + session.name + "\nCLI_TMUX=" + server.tmuxExecutable + "\n")
                     == true)
+        }
+    }
+
+    @Test(
+        "shell -c --json reports the shared machine envelope, not exit_code and status success",
+        .enabled(if: ProcessInfo.processInfo.environment["TMUX_WORKSPACE_TEST_PYTHON"] != nil))
+    func shellMachineEnvelopeMatchesSharedShape() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let session = try await server.sessions()[0]
+            let result = await invoke(
+                [
+                    "shell", session.name, "-S", socket, "--code", "--no-startup",
+                    "-c", "print('hi')", "--json",
+                ], in: root,
+                extra: [
+                    "LIBTMUX_TMUX_BIN": server.tmuxExecutable,
+                    "TMUX_WORKSPACE_PYTHON": ProcessInfo.processInfo.environment[
+                        "TMUX_WORKSPACE_TEST_PYTHON"] ?? "python3",
+                    "HOME": ProcessInfo.processInfo.environment["HOME"] ?? root.path,
+                ])
+            #expect(result.code == 0, "\(result.error)")
+            guard result.code == 0 else { return }
+            let envelope = try result.json()
+            #expect(envelope["status"] as? String == "ok")
+            #expect(envelope["child_status"] as? Int == 0)
+            #expect(envelope["encoding"] as? String == "utf-8-replacement")
+            #expect(envelope["truncated"] as? Bool == false)
+            #expect(envelope["exit_code"] == nil)
+            #expect((envelope["stdout"] as? String)?.contains("hi") == true)
         }
     }
 

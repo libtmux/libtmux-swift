@@ -66,25 +66,40 @@ enum ProcessCommands {
         if let window = command.windowName { arguments.append(window) }
         var childContext = context
         childContext.environment["TMUX_WORKSPACE_TMUX"] = server.tmuxExecutable
+        if command.output.ndjson {
+            try await output.event("started", command: "shell", data: .object([:]))
+        }
         let result = try await run(arguments, context: childContext, terminal: interactive) {
             text, stream in
-            if command.output.machine {
-                try await output.warning(text, code: "shell_" + stream)
-            } else {
+            if command.output.ndjson {
+                try await output.event(
+                    "script-output", command: "shell",
+                    data: .object([
+                        "stream": .string(stream), "text": .string(text),
+                        "encoding": .string("utf-8-replacement"),
+                    ]))
+            } else if !command.output.machine {
                 let sink =
                     stream == "stdout"
                     ? context.rawOutput ?? context.output : context.rawError ?? context.error
                 try await sink(Presenter.sanitizeChildOutput(text))
             }
         }
-        if command.output.machine {
-            try await output.result(
-                .object([
-                    "schema_version": .integer(1), "command": .string("shell"),
-                    "status": .string(result.code == 0 ? "success" : "error"),
-                    "exit_code": .integer(Int64(result.code)), "stdout": .string(result.output),
-                    "stderr": .string(result.error), "bridge": .string("tmuxp 1.74.0"),
-                ]))
+        // The envelope five other ports already share: schema_version,
+        // command, status ("ok"/"error"), child_status, stdout, stderr,
+        // encoding, truncated. bridge is this port's own addition.
+        let value = Value.object([
+            "schema_version": .integer(1), "command": .string("shell"),
+            "status": .string(result.code == 0 ? "ok" : "error"),
+            "child_status": .integer(Int64(result.code)), "stdout": .string(result.output),
+            "stderr": .string(result.error), "encoding": .string("utf-8-replacement"),
+            "truncated": .bool(false), "bridge": .string("tmuxp 1.74.0"),
+        ])
+        if command.output.ndjson {
+            try await output.event(
+                result.code == 0 ? "completed" : "failed", command: "shell", data: value)
+        } else if command.output.machine {
+            try await output.result(value)
         }
         return result.code
     }
