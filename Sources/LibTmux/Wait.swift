@@ -24,6 +24,19 @@ extension Server {
     /// this would hold back every call beside it, ``Server/signal(_:)``
     /// included, and nothing would ever release it.
     ///
+    /// This has no `-L` (lock) counterpart on purpose. `wait-for -L` blocks
+    /// every later locker of the same channel until it is unlocked, and tmux
+    /// hands a released lock to whichever locker has been queued longest --
+    /// including one whose client is long gone. Bounding a wait with Task
+    /// cancellation, the only bound this method or ``Server/run(_:)-(TmuxCommand)`` offers,
+    /// stops the caller from waiting forever; it does not and cannot remove
+    /// that caller's place in tmux's own queue, so a timed-out lock wait can
+    /// wedge the channel for every locker after it, permanently, for the life
+    /// of the server. A caller that needs `-L` anyway reaches it through the
+    /// raw escape hatch (``Server/run(_:)-(TmuxCommand)`` or ``ControlSession/send(_:)``
+    /// with `TmuxCommand("wait-for", ["-L", channel])`) and accepts that risk
+    /// explicitly, with no bound this library can add back.
+    ///
     /// - Throws: ``TmuxError/serverRestarted`` if the server went away while
     ///   this was waiting. tmux releases its waiters when it shuts down, with
     ///   the same silent success a real signal produces, so the server's
@@ -51,6 +64,10 @@ extension Server {
     /// signal puts the channel back rather than storing a second release, so
     /// an unpaired signal is worth avoiding — what a later wait does depends
     /// on how many went unmatched, not how many were sent.
+    ///
+    /// Signalling never wedges a channel the way a lock (`-L`) can; see
+    /// ``wait(for:)`` for that hazard, which is specific to the raw `-L`
+    /// escape hatch and does not apply here.
     public func signal(_ channel: String) async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("wait-for", ["-S", "--", channel]))
     }

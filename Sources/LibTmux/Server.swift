@@ -111,6 +111,12 @@ public struct Server: Sendable, Hashable {
     /// A nonzero status is a reply, not an error: `has-session` answers a
     /// question with its exit code, and a rejected command carries its reason
     /// on standard error. Each output stream is capped at 1 MiB.
+    ///
+    /// This is also the escape hatch to `wait-for -L`, which has no typed
+    /// wrapper -- see ``wait(for:)`` for why, and for the hazard reaching for
+    /// it here carries: a timed-out locker is never removed from tmux's own
+    /// queue, so a caller who bounds this call can wedge the channel for
+    /// every later locker on the server, permanently.
     public func run(_ command: TmuxCommand) async throws(TmuxError) -> TmuxReply {
         try await run(rawArguments: command.argumentVector)
     }

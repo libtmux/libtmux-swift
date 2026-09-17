@@ -69,6 +69,35 @@ struct WaitTests {
         }
     }
 
+    @Test("a cancelled lock wait through the raw -L escape hatch wedges the channel")
+    func cancelledRawLockWaitWedgesTheChannel() async throws {
+        try await withTmuxServer { server in
+            // The only route to `-L`: no typed wrapper exists (see
+            // `Server/wait(for:)`'s doc). The first locker acquires at once.
+            _ = try await server.run(TmuxCommand("wait-for", ["-L", "gate"]))
+
+            // A second locker queues behind it and is bounded the only way
+            // this raw call can be: by cancelling the Task awaiting it.
+            let secondLockerBlocked = await blocks(beyond: 500) {
+                _ = try await server.run(TmuxCommand("wait-for", ["-L", "gate"]))
+            }
+            #expect(secondLockerBlocked)
+
+            // Unlocking once hands the lock to the queued-but-now-cancelled
+            // second locker rather than freeing it -- tmux's own
+            // `cmd_wait_for_unlock` only clears the locked flag when no
+            // locker is queued. Nothing will ever unlock on its behalf.
+            _ = try await server.run(TmuxCommand("wait-for", ["-U", "gate"]))
+
+            // The documented hazard: a third locker is wedged behind a
+            // caller that gave up, on a channel nobody holds anymore.
+            let thirdLockerBlocked = await blocks(beyond: 500) {
+                _ = try await server.run(TmuxCommand("wait-for", ["-L", "gate"]))
+            }
+            #expect(thirdLockerBlocked)
+        }
+    }
+
     @Test("a wait whose server goes away is not reported as released")
     func waitOnADepartedServerIsNotSuccess() async throws {
         try await withTmuxServer { server in

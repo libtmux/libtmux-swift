@@ -165,6 +165,12 @@ public actor ControlSession {
     /// commands, so replies are matched to waiters in that order — which holds
     /// because writes are chained, not merely because they are usually fast.
     /// A reply exceeding 1 MiB fails with ``TmuxError/outputLimitExceeded(perStreamBytes:)``.
+    ///
+    /// This carries `wait-for -L` the same way ``Server/run(_:)-(TmuxCommand)`` does over a
+    /// process, with the same hazard: cancelling this call never removes the
+    /// locker from tmux's own queue, so a bounded wait for a lock can wedge
+    /// the channel permanently for whoever waits on it next. See
+    /// ``Server/wait(for:)`` for why there is no typed lock wrapper.
     public func send(_ command: TmuxCommand) async throws(TmuxError) -> ControlReply {
         try requireSingleLine(command.argumentVector)
         return try await send(
