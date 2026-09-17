@@ -175,7 +175,7 @@ def check(choice):
                 )
                 if choice == "outside-malformed":
                     owner.until(lambda: owner.status is not None)
-                    assert owner.status == 1 and sessions() == ["keeper"]
+                    assert owner.status == 2 and sessions() == ["keeper"]
                     assert clients() == []
                     return
                 owner.until(lambda: any(row[2] == "final" for row in clients()))
