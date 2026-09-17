@@ -144,16 +144,15 @@ public enum WorkspaceBuilder {
 
         for (plan, pane) in zip(window.panes, panes) {
             for command in plan.shellCommands {
+                // A tmuxp `shell_command` is user-authored config -- exactly
+                // what `sendKeys`'s own doc says to send literally -- so both
+                // paths type it as text rather than reading it for key names.
+                // A name that collides with one (a command called "Tab", say)
+                // stays text either way; only a separate, non-literal dispatch
+                // presses Enter.
+                try await server.sendKeys([command.command], to: pane, literally: true)
                 if command.enter {
-                    try await server.run(command.command, in: pane)
-                } else {
-                    // Typed and left sitting there. Literal, so the text lands
-                    // as text rather than being read as key names.
-                    try await server.sendKeys(
-                        [command.command],
-                        to: pane,
-                        literally: true
-                    )
+                    try await server.sendKeys(["Enter"], to: pane, literally: false)
                 }
             }
         }

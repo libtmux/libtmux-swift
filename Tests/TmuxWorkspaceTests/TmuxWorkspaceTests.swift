@@ -298,6 +298,32 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("a shell_command matching a tmux key name is typed, not pressed, when enter runs")
+    func shellCommandNamedLikeAKeyIsTypedNotPressed() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "key-name-command",
+                windows: [
+                    WindowPlan(panes: [
+                        PanePlan(shellCommands: [TmuxShellCommand("Tab", enter: true)])
+                    ])
+                ]
+            )
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let pane = try #require(try await server.snapshot().panes(of: session).first)
+
+            // Typed as text and submitted, "Tab" reaches the shell as an
+            // unknown command and appears on screen either way -- as the
+            // typed line or the shell's own error. Read as the Tab key
+            // instead, pressed on an empty prompt, it leaves nothing on
+            // screen at all.
+            let typedAsText = try await waitUntil {
+                try await server.capture(pane).contains { $0.contains("Tab") }
+            }
+            #expect(typedAsText)
+        }
+    }
+
     @Test("a shell command reaches the pane it was written for")
     func shellCommandReachesItsPane() async throws {
         try await withTmuxServer { server in
