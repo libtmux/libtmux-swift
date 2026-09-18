@@ -441,8 +441,21 @@ enum WorkspaceCommands {
             if ["n", "no"].contains(answer) { return .detached }
         }
         guard insideTmux else { return .attached(nil) }
-        guard let rawPane = context.environment["TMUX_PANE"], PaneID(rawValue: rawPane) != nil
-        else { return .switched }
+        let rawPane = context.environment["TMUX_PANE"] ?? ""
+        guard !rawPane.isEmpty else {
+            // No pane to identify a client by, so the one thing left to
+            // settle before building is that tmux has a client to switch.
+            guard try await server.clients().contains(where: { !$0.isControlMode }) else {
+                throw CLIError(
+                    "usage", "No attached client can be switched to the workspace. Use -d.",
+                    status: 2)
+            }
+            return .switched
+        }
+        guard PaneID(rawValue: rawPane) != nil else {
+            throw CLIError(
+                "usage", "TMUX_PANE does not name a pane of this tmux server.", status: 2)
+        }
         let current = try await currentTarget(server, context: context, verifyTerminal: true)
         if !command.yes, canPrompt, existingSession == nil {
             while true {

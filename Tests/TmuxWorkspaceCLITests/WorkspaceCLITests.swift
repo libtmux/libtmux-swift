@@ -1934,6 +1934,28 @@ struct WorkspaceCLITests {
                 == expected, "\(command) / \(defaultShell ?? "nil")")
     }
 
+    @Test("an unusable invoking pane is refused before anything is built")
+    func unusableInvokingPane() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("probe.json")
+            try Data(#"{"session_name":"probe","windows":[{"panes":[null]}]}"#.utf8).write(to: file)
+            let processID = try await server.incarnation().processID
+            for pane in ["notapane", ""] {
+                let result = await invoke(
+                    ["load", file.path, "-S", socket], in: root,
+                    extra: [
+                        "LIBTMUX_TMUX_BIN": server.tmuxExecutable,
+                        "TMUX": "\(socket),\(processID),0", "TMUX_PANE": pane,
+                    ])
+                #expect(result.code == 2, "\(result.error)")
+                #expect(!result.error.joined().contains("no current client"))
+                #expect(try await !server.sessions().contains { $0.name == "probe" })
+            }
+        }
+    }
+
     @Test("freeze selects explicit, pane-context and sole sessions without guessing")
     func freezeSessionSelection() async throws {
         try await withTmuxServer { server in
