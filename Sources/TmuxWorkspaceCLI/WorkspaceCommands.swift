@@ -994,10 +994,22 @@ enum WorkspaceCommands {
                     sleepBefore: try optionalDouble(pane["sleep_before"], at: "sleep_before"),
                     sleepAfter: try optionalDouble(pane["sleep_after"], at: "sleep_after"))
             }
+            let layout = try optionalString(window["layout"], at: "layout")
+            // A layout no tmux release accepts is a defect in the document,
+            // reported as one before any tmux call rather than as a failure
+            // of the load.
+            if let layout, !layout.isEmpty,
+                !acceptsLayoutSyntax(layout, panes: max(1, panes.count))
+            {
+                throw CLIError(
+                    "invalid_workspace",
+                    "layout is not a tmux layout name or a saved layout for \(panes.count) panes: \(layout)"
+                )
+            }
             return WindowPlan(
                 windowName: try optionalString(window["window_name"], at: "window_name"),
                 startDirectory: windowDirectory,
-                layout: try optionalString(window["layout"], at: "layout"), panes: panes,
+                layout: layout, panes: panes,
                 windowIndex: try windowIndex(window["window_index"]),
                 focus: try boolean(window["focus"], fallback: false, at: "window.focus"),
                 environment: windowEnvironment, windowShell: windowShell)

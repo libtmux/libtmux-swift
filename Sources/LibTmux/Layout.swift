@@ -87,6 +87,18 @@ extension Server {
     }
 }
 
+/// Whether any supported tmux release would accept `layout` for `panes`
+/// panes.
+///
+/// Pure syntax, so a caller can tell a defect in its own document from a
+/// release difference without a round trip: a string every release refuses is
+/// wrong wherever it is loaded, while one only some releases accept still has
+/// to be put to the running daemon.
+package func acceptsLayoutSyntax(_ layout: String, panes: Int) -> Bool {
+    LayoutSyntax.accepts(layout, version: TmuxVersion(major: 3, minor: 4), panes: panes)
+        || LayoutSyntax.accepts(layout, version: TmuxVersion(major: 3, minor: 5), panes: panes)
+}
+
 // Native saved-layout syntax; tmux retains geometry correction and pruning.
 enum LayoutSyntax {
     static func accepts(_ layout: String, version: TmuxVersion, panes: Int) -> Bool {
