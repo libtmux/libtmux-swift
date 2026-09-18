@@ -204,9 +204,7 @@ Version-dependent names follow the running daemon, or the selected executable
 when no daemon exists. tmux still resolves geometry and removes extra layout
 cells.
 
-`-2` forces 256-color handling in native tmux clients. Legacy `-8` remains in
-the grammar but fails before document lookup because supported tmux versions
-do not implement 88-color mode. Both flags together are a usage error.
+`-2` forces 256-color handling in native tmux clients.
 It supports session/window/pane directories, layouts, pane command shorthand,
 inherited commands, history suppression and sequential `enter` settings.
 `window_index` selects an explicit slot; window and pane `focus` choose the

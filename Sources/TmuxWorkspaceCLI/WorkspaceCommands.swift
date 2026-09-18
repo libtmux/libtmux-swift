@@ -58,12 +58,6 @@ enum WorkspaceCommands {
     }
 
     static func load(_ command: Load, context: CLIContext, output: Presenter) async throws {
-        guard !command.colors88 else {
-            throw CLIError(
-                "unsupported_color_mode",
-                "tmux 3.2a and newer do not support 88-color mode (-8); use -2 or automatic detection.",
-                status: 2)
-        }
         guard !command.output.machine || command.detached || command.append else {
             throw CLIError("usage", "Machine load requires -d or --append.", status: 2)
         }

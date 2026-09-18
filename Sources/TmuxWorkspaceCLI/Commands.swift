@@ -73,8 +73,6 @@ struct Load: WorkspaceAction {
         String?
     @Flag(name: .customShort("2"), help: "Force tmux clients to use 256-color mode.")
     var colors256 = false
-    @Flag(name: .customShort("8"), help: "Legacy 88-color mode; unsupported by current tmux.")
-    var colors88 = false
     @Option(name: .customShort("s"), help: "Override the final workspace's session name.")
     var sessionName: String?
     @Flag(name: .customShort("d"), help: "Leave loaded sessions detached.") var detached = false
@@ -96,9 +94,6 @@ struct Load: WorkspaceAction {
 
     mutating func validate() throws {
         guard !files.isEmpty else { throw ValidationError("Provide at least one workspace.") }
-        guard !(colors256 && colors88) else {
-            throw ValidationError("Choose one of -2 and -8.")
-        }
         if let progressLines, progressLines < -1 {
             throw ValidationError("Progress lines must be an integer at least -1.")
         }

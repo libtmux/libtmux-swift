@@ -329,19 +329,15 @@ struct WorkspaceCLITests {
     }
 
     @Test(
-        "legacy color mode fails before document or backend access",
+        "a color mode no supported tmux implements is an ordinary unknown flag",
         arguments: ["--json", "--ndjson"])
     func legacyColor(_ mode: String) async throws {
         try await withFiles { root in
-            let result = await invoke(["load", "missing", "-d", "-8", mode], in: root)
-            #expect(result.code == 2)
-            #expect(result.output.isEmpty)
-            #expect(result.error.joined().contains("unsupported_color_mode"))
-            for flags in [["-2", "-8"], ["-8", "-2"]] {
-                let conflict = await invoke(["load", "missing", "-d", mode] + flags, in: root)
-                #expect(conflict.code == 2)
-                #expect(conflict.output.isEmpty)
-                #expect(conflict.error.joined().contains("Choose one of -2 and -8"))
+            for flags in [["-8"], ["-2", "-8"], ["-8", "-2"]] {
+                let result = await invoke(["load", "missing", "-d", mode] + flags, in: root)
+                #expect(result.code == 2)
+                #expect(result.output.isEmpty)
+                #expect(result.error.joined().contains("\"usage\""), "\(result.error)")
             }
         }
     }
