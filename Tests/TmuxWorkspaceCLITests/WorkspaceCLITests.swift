@@ -2006,6 +2006,24 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("freeze names the missing session on a socket with no server")
+    func freezeOnAColdSocketNamesTheSession() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let cold = root.appendingPathComponent("cold.sock").path
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
+            ]
+            let result = await invoke(
+                ["freeze", "nosuch", "-S", cold, "--json"], in: root, extra: environment)
+            #expect(result.code == 1)
+            let diagnostic = result.error.joined()
+            #expect(diagnostic.contains("session_not_found"), "\(result.error)")
+            #expect(!diagnostic.contains("error connecting to"), "\(result.error)")
+        }
+    }
+
     @Test("load fits five or more panes in a window with no explicit layout")
     func manyPanesFitWithoutExplicitLayout() async throws {
         try await withTmuxServer { server in
