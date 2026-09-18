@@ -601,7 +601,18 @@ enum WorkspaceCommands {
                 status: 2)
         }
         let server = try server(command.socket, context: context)
-        let snapshot = try await emptyTolerantSnapshot(server)
+        let snapshot: Snapshot
+        do {
+            snapshot = try await emptyTolerantSnapshot(server)
+        } catch {
+            // A socket with no server behind it holds no session either, so
+            // this is the answer a name that is not running gets.
+            guard isColdEndpoint(error) else { throw error }
+            throw CLIError(
+                "session_not_found",
+                command.sessionName.map { "Session not found: \($0)" }
+                    ?? "No live sessions to capture.")
+        }
         let session = try await freezeSession(
             command, snapshot: snapshot, server: server, context: context)
         // Fallback for a shell not on the common-name list below.
@@ -750,6 +761,15 @@ enum WorkspaceCommands {
                 incarnation: try await server.incarnation(), sessions: [], windows: [],
                 windowLinks: [], panes: [], clients: [])
         }
+    }
+
+    private static func isColdEndpoint(_ error: any Error) -> Bool {
+        guard case let .commandFailed(_, exitCode, reason) = error as? TmuxError, exitCode == 1
+        else { return false }
+        return reason.hasPrefix("no server running on ")
+            || (reason.hasPrefix("error connecting to ")
+                && (reason.hasSuffix(" (No such file or directory)")
+                    || reason.hasSuffix(" (Connection refused)")))
     }
 
     private static func freezeSession(
