@@ -268,7 +268,7 @@ which fields carry which type — is in [`Filtering.md`][filtering].
 ## One switch changes how work reaches tmux
 
 …and never what you get back. `TmuxMode` is the dial, and it has two settings:
-(One caveat, in [typed errors](#typed-errors-across-a-scope): a scope takes a
+(One caveat, in [typed errors](#typed-errors-and-which-type): a scope takes a
 closure, so it widens the thrown type.)
 
 | Mode | How work travels | Where it wins |
@@ -372,12 +372,31 @@ let firstLine: String? = try await server.connected(attachingTo: "work") { serve
 }
 ```
 
-### Typed errors across a scope
+### Typed errors, and which type
 
-Every call throws `TmuxError` and says so, so a program can be
-`throws(TmuxError)` from top to bottom. The scoped forms are the exception:
-they take a closure, and Swift 6.2 cannot carry a closure's thrown type out of
-one. Wrap the scope to narrow it back:
+Talking to tmux throws `TmuxError` and says so, on nearly two hundred
+declarations, so a program that only talks to tmux can be `throws(TmuxError)`
+from top to bottom. A call that does something *besides* talk to tmux names
+that second failure rather than folding it into the first, because a caller
+who can retry a refused command cannot retry an exhausted match budget:
+
+| Thrown type | What it adds to a tmux failure |
+| --- | --- |
+| `TmuxError` | nothing — the tmux command itself |
+| `OutputWaitError` | `RegexMatchError`, from matching the pane |
+| `FilteredListingError` | `RegexMatchError`, from narrowing the rows |
+| `FilterSelectionError` | `RegexMatchError` and `CardinalityError` |
+| `RegexCompileError` | compiling a pattern, which reaches no server |
+| `FilterLookupError`, `QueryConstructionError`, `FilterValidationError` | building a filter, which reaches no server |
+| `WorkspaceBuilderError` | `TmuxWorkspace`'s own rollback reporting |
+
+`OutputWaitError` and `FilteredListingError` hold the same two cases and stay
+distinct types on purpose: `catch` at the call site should not accept a wait's
+failure where a listing's was meant.
+
+The scoped forms are the one place the type is wider than the work: they take
+a closure, and Swift 6.2 cannot carry a closure's thrown type out of one. Wrap
+the scope to narrow it back:
 
 ```swift
 func names(_ server: Server) async throws(TmuxError) -> [String] {
