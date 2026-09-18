@@ -516,6 +516,64 @@ struct MutationTests {
         }
     }
 
+    @Test("a command line that is a key name is typed, not pressed")
+    func keyNamedCommandLineIsTyped() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "keyname")
+            let window = try await server.newWindow(in: session).window
+            let pane = try #require(
+                try await server.snapshot().panes(of: window).first
+            )
+            // `cat` echoes the line it is given, so what the pane received is
+            // readable without depending on a shell's diagnostics.
+            try await server.respawn(pane, running: ["cat"])
+
+            try await server.run("Tab", in: pane)
+
+            let echoed = try await waitUntil {
+                try await server.capture(pane).contains { $0.contains("Tab") }
+            }
+            #expect(echoed)
+        }
+    }
+
+    @Test("mixed pane input groups into one send-keys per run of a kind")
+    func mixedPaneInputGroupsByKind() async throws {
+        let pane = Pane(
+            id: "%0",
+            index: 0,
+            width: 80,
+            height: 24,
+            isActive: true,
+            isDead: false,
+            isInputOff: false,
+            modeCount: 0,
+            isSynchronized: false,
+            currentCommand: "cat",
+            currentPath: "/",
+            isAtTop: true,
+            isAtBottom: true,
+            isAtLeft: true,
+            isAtRight: true,
+            windowID: "@0",
+            incarnation: ServerIncarnation(
+                endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/x/s"),
+                socketPath: "/tmp/libtmux-swift-test/x/s",
+                processID: 1,
+                startedAt: 1
+            )
+        )
+        let commands = Server.sendKeysCommands(
+            for: [.text("a"), .text("b"), .key("Enter"), .key("C-c"), .text("c")],
+            to: pane
+        )
+        #expect(commands.count == 3)
+        #expect(commands[0].arguments == ["-t", "%0", "-l", "--", "a", "b"])
+        #expect(commands[1].arguments == ["-t", "%0", "--", "Enter", "C-c"])
+        #expect(commands[2].arguments == ["-t", "%0", "-l", "--", "c"])
+        #expect(Server.sendKeysCommands(for: [], to: pane).isEmpty)
+    }
+
     @Test("a rejected mutation reports what tmux objected to")
     func rejectedMutationReportsItsReason() async throws {
         try await withTmuxServer { server in

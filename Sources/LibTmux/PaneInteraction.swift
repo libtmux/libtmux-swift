@@ -13,6 +13,24 @@ public struct PaneCapture: Sendable, Hashable {
     }
 }
 
+/// One piece of what a pane is sent.
+///
+/// tmux decides between typing and pressing per `send-keys` call, not per
+/// argument: `-l` applies to every argument the call carries. So a sequence
+/// that mixes the two cannot be one `send-keys`, and asking a caller for a
+/// single `literally` flag makes "type this text, then press Enter" —
+/// the commonest thing anyone sends a pane — inexpressible. Saying which each
+/// piece is lets ``Server/send(_:to:)`` group them into as few calls as tmux
+/// needs while keeping them one atomic dispatch.
+public enum PaneInput: Sendable, Hashable {
+    /// Characters, sent as themselves. A piece of text that happens to spell
+    /// a key name — `Tab`, `Space`, `Up` — stays text.
+    case text(String)
+    /// A key by the name tmux knows it under: `Enter`, `C-c`, `Escape`.
+    /// Unknown names are tmux's to reject.
+    case key(String)
+}
+
 struct PaneCaptureBounds: Sendable, Hashable {
     let historySize: Int
     let historyBytes: Int
@@ -46,12 +64,70 @@ extension Server {
         )
     }
 
-    /// Runs a shell command line in a pane, as if typed.
+    /// Sends a mixture of text and keys to a pane, in order.
+    ///
+    /// Consecutive pieces of the same kind travel as one `send-keys`, and the
+    /// whole sequence is one guarded dispatch: either every piece reaches the
+    /// pane that was asked for, on the daemon that was asked for, or none
+    /// does. Sending the text and the keys as separate calls would leave a
+    /// pane holding half a command line when the second call found it gone.
+    ///
+    /// ```swift
+    /// try await server.send([.text("make -j4"), .key("Enter")], to: pane)
+    /// ```
+    public func send(
+        _ input: [PaneInput],
+        to pane: Pane
+    ) async throws(TmuxError) {
+        let commands = Self.sendKeysCommands(for: input, to: pane)
+        guard !commands.isEmpty else { return }
+        let reply = try await runGuarded(commands, by: [.pane(pane)])
+        guard reply.isSuccess else {
+            throw .invocationFailed(reason: reply.errorText)
+        }
+    }
+
+    /// Groups a run of same-kind pieces into one `send-keys` each.
+    static func sendKeysCommands(
+        for input: [PaneInput],
+        to pane: Pane
+    ) -> [TmuxCommand] {
+        var commands: [TmuxCommand] = []
+        var pending: [String] = []
+        var pendingIsText = false
+
+        func flush() {
+            guard !pending.isEmpty else { return }
+            var arguments = ["-t", pane.id.rawValue]
+            if pendingIsText { arguments.append("-l") }
+            commands.append(TmuxCommand("send-keys", arguments + ["--"] + pending))
+            pending = []
+        }
+
+        for piece in input {
+            let (value, isText): (String, Bool) =
+                switch piece {
+                case let .text(text): (text, true)
+                case let .key(name): (name, false)
+                }
+            if !pending.isEmpty, isText != pendingIsText { flush() }
+            pendingIsText = isText
+            pending.append(value)
+        }
+        flush()
+        return commands
+    }
+
+    /// Types a shell command line into a pane and presses Enter.
+    ///
+    /// The line is sent as text, so a command whose name collides with a tmux
+    /// key name — `Tab`, or a script called `Up` — is typed rather than
+    /// pressed. Enter is a key, and travels in the same guarded dispatch.
     public func run(
         _ commandLine: String,
         in pane: Pane
     ) async throws(TmuxError) {
-        try await sendKeys([commandLine, "Enter"], to: pane)
+        try await send([.text(commandLine), .key("Enter")], to: pane)
     }
 
     /// How a command running *inside* a pane spells a tmux that reaches this
