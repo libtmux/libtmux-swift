@@ -1313,6 +1313,24 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("a layout no tmux release accepts is a defect in the document")
+    func unacceptableLayout() async throws {
+        try await withFiles { root in
+            let file = root.appendingPathComponent("layout.json")
+            for layout in ["definitely-not-a-layout", "0000,80x24,0,0,0"] {
+                try Data(
+                    #"{"session_name":"lay","windows":[{"layout":"\#(layout)","panes":[null]}]}"#
+                        .utf8
+                ).write(to: file)
+                let result = await invoke(["load", file.path, "-d", "--json"], in: root)
+                #expect(result.code == 1, "\(result.error)")
+                #expect(
+                    result.error.joined().contains("\"code\":\"invalid_workspace\""),
+                    "\(result.error)")
+            }
+        }
+    }
+
     @Test("expanded session names are validated before endpoint lookup")
     func expandedSessionName() async throws {
         try await withFiles { root in
@@ -1845,7 +1863,7 @@ struct WorkspaceCLITests {
                 !layoutResult.error.joined().contains("invocationFailed(reason"),
                 "\(layoutResult.error)")
             #expect(
-                layoutResult.error.joined().contains("Invalid window layout"),
+                layoutResult.error.joined().contains("not a tmux layout name"),
                 "\(layoutResult.error)")
 
             let plain = root.appendingPathComponent("plain.json")
