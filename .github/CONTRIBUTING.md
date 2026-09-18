@@ -219,6 +219,27 @@ operators, model roots and identifier types must fail type checking:
 $ python3 Scripts/check_filter_types.py
 ```
 
+Every API break since the last release is declared. The alpha breaks its
+surface deliberately, so "did anything break" is the wrong question and "is
+every break written down" is the useful one. The script runs
+`swift package diagnose-api-breaking-changes` against the last tag, fetches
+that tag when a shallow clone lacks it, and fails three ways: a break absent
+from `.github/api-breakage-allowlist.txt`, an allowlist entry that no longer
+describes a real break, and a break to a `public` declaration that
+`CHANGELOG.md` does not carry under `## [Unreleased]`. A `package` declaration
+is exempt from that last one — no consumer can see it change:
+
+```console
+$ python3 Scripts/check_api_breakage.py
+```
+
+The allowlist keeps the format the toolchain documents, one exact message per
+line and nothing else, so it can also be passed to
+`--breakage-allowlist-path` directly. That format tolerates no comments: one
+non-message line anywhere in the file silently voids **every** entry in it,
+which is why a justification goes in `CHANGELOG.md` rather than beside the
+entry it explains.
+
 Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 

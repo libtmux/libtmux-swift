@@ -1,0 +1,4 @@
+API breakage: func Server.scanForward(_:since:sourceLinesPerChunk:maximumChunks:perStreamOutputLimit:_:) has parameter 5 type change from ([Swift.String]) -> Swift.Bool to ([Swift.String], Swift.Bool) -> Swift.Bool
+API breakage: enumelement TmuxError.foreignPaneValue has been added as a new enum case
+API breakage: enumelement TmuxError.rejectedLocally has been added as a new enum case
+API breakage: enumelement OutputWait.Outcome.alreadyOnScreen has been added as a new enum case

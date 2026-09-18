@@ -257,6 +257,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_filter_types.py --skip-build
 
+      # The alpha breaks its API deliberately, so "did anything break" is not
+      # the question -- "is every break written down" is. The script fetches
+      # its own baseline tag, which this shallow checkout does not carry.
+      - name: Check every API break is declared
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_api_breakage.py
+
       - name: Test
         run: |
           # Every test resolves its tmux through this, so the whole suite runs
