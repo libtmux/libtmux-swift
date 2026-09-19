@@ -2136,6 +2136,28 @@ struct WorkspaceCLITests {
             #expect(result.code == 0, "\(result.error)")
             #expect(result.error.joined().contains("not_a_real_option"), "\(result.error)")
             #expect(try await server.sessions().contains { $0.name == "builder" })
+            // An unknown key warns and still loads; a bad value for a key
+            // this port does implement is a defect in the document, not a
+            // setting to shrug off.
+            let badValue = root.appendingPathComponent("bad-readiness.yaml")
+            try Data(
+                """
+                session_name: bad-readiness
+                workspace_builder_options:
+                  pane_readiness: sideways
+                windows:
+                  - window_name: w
+                    panes:
+                      - ~
+                """.utf8
+            ).write(to: badValue)
+            let rejected = await invoke(
+                ["load", badValue.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(rejected.code == 1, "\(rejected.error)")
+            #expect(
+                rejected.error.joined().contains("\"code\":\"invalid_workspace\""),
+                "\(rejected.error)")
+            #expect(try await !server.sessions().contains { $0.name == "bad-readiness" })
         }
     }
 
