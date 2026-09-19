@@ -211,8 +211,8 @@ struct CapabilityBehaviorTests {
         }
     }
 
-    @Test("wait_for_text without a cursor can match send_keys's own echo; a cursor avoids it")
-    func waitForTextEchoTrapAndItsRemedy() async throws {
+    @Test("wait_for_text discounts submitted echo with or without a cursor")
+    func waitForTextDiscountsSubmittedEcho() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
             let surface = tools(server)
@@ -248,12 +248,12 @@ struct CapabilityBehaviorTests {
                     ])
                 )
             )
-            // Answered at once, before the command could have run: the typed
-            // command line, not its output, and said so rather than claiming
-            // a match.
-            #expect(withoutCursor.structured["outcome"]?.stringValue == "alreadyOnScreen")
-            #expect(withoutCursor.structured["matchedAtEntry"]?.boolValue == true)
-            #expect(withoutCursor.structured["sawNewOutput"]?.boolValue == false)
+            #expect(withoutCursor.structured["outcome"]?.stringValue == "matched")
+            #expect(withoutCursor.structured["matchedAtEntry"]?.boolValue == false)
+            #expect(withoutCursor.structured["sawNewOutput"]?.boolValue == true)
+            #expect(
+                withoutCursor.structured["matchedLine"]?.stringValue?.trimmingCharacters(
+                    in: .whitespaces) == marker)
 
             let withCursor = try await surface.call(
                 ToolCall(

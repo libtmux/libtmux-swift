@@ -42,6 +42,8 @@ extension TmuxTools {
             cursor = nil
         }
         let server = server
+        let echoKey = PaneEchoes.Key(incarnation: pane.incarnation, pane: pane.id)
+        let echoWait = PaneEchoes.Wait(key: echoKey, source: Self.paneEchoes)
         let result: OutputWait
         do {
             result = try await progress.whileRunning(
@@ -55,7 +57,8 @@ extension TmuxTools {
                     requiringFreshOutput: cursor != nil,
                     startingAt: cursor,
                     timeout: timeout,
-                    tailLimit: maxLines
+                    tailLimit: maxLines,
+                    discounting: { await echoWait.discount() }
                 )
             }
         } catch let error as OutputWaitError {

@@ -84,7 +84,7 @@ extension Server {
         sourceLinesPerChunk: Int,
         maximumChunks: Int,
         perStreamOutputLimit: Int,
-        _ visit: ([String], _ endsOnLiveCursorRow: Bool) -> Bool
+        _ visit: ([String], _ endsOnLiveCursorRow: Bool) async -> Bool
     ) async throws(TmuxError) -> ForwardCaptureResult {
         guard sourceLinesPerChunk > 1 else {
             throw .rejectedLocally(reason: "a forward capture chunk needs at least two lines")
@@ -221,7 +221,7 @@ extension Server {
                 remainingAttempts = Self.incrementalCaptureAttempts
                 completedChunks += 1
                 let hasMore = end != state.absoluteCursorRow
-                let stopped = visit(rows, endsOnLiveCursorRow)
+                let stopped = await visit(rows, endsOnLiveCursorRow)
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
                     linesMissed: false,

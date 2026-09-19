@@ -697,6 +697,11 @@ extension TmuxTools {
             operation: "send_keys"
         )
         let reservation = try await Self.reservePaneInput(initial, operation: "send_keys")
+        let echoTargets = Self.echoKeys(for: initial)
+        let echoDispatch: PaneEchoes.Dispatch =
+            literal ? .literal(keys, enter: pressEnterSeparately) : .keys(keys)
+        // Publish the discount before tmux can emit the corresponding echo.
+        let echoUpdate = await Self.paneEchoes.apply(echoDispatch, to: echoTargets)
         let final: PaneInputResolution
         do {
             final = try await preflightPaneInput(
@@ -714,9 +719,11 @@ extension TmuxTools {
             if pressEnterSeparately { input.append(.key("Enter")) }
             try await server.send(input, to: final.source)
         } catch {
+            await Self.paneEchoes.abandon(echoUpdate)
             await Self.paneRuns.release(reservation)
             throw error
         }
+        await Self.paneEchoes.commit(echoUpdate)
         await Self.paneRuns.release(reservation)
         return .init(
             SentKeys(

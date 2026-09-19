@@ -412,7 +412,11 @@ extension TmuxTools {
                 handler: { try await $0.snapshotPane($1) }
             ),
             capability(
-                .waitForText, "Wait for text", "Wait within one deadline for pane text.",
+                .waitForText, "Wait for text",
+                "Wait for pane text, discounting this MCP server's recent input. "
+                    + "Wait for a new shell's prompt before typing. Wrapped echoes can still match, "
+                    + "and output identical to input can be discounted; prefer output-only markers. "
+                    + "The returned tail contains raw captured rows, including input.",
                 toolset: .inspect, reach: .none, effects: [.observe], outputs: terminal,
                 arguments: [
                     argument("cursor", maximumLength: 16_384),
@@ -616,7 +620,8 @@ extension TmuxTools {
                 ], handler: { try await $0.createWindow($1) }),
             capability(
                 .pasteText, "Paste text",
-                "Paste literal text and an optional newline target-only after two state checks.",
+                "Paste literal text and an optional newline target-only after two state checks; "
+                    + "wait_for_text discounts this input.",
                 toolset: .execute, reach: .paneInput, effects: [.observe, .change],
                 outputs: inspectMeta,
                 arguments: [
@@ -643,7 +648,8 @@ extension TmuxTools {
                 handler: { try await $0.capabilityRespawnPane($1) }),
             capability(
                 .runShellCommand, "Run shell command",
-                "Run one command in a singular trusted POSIX shell and return bounded output.",
+                "Run one command in a singular trusted POSIX shell and return bounded output; "
+                    + "wait_for_text discounts the dispatch line.",
                 toolset: .execute, reach: .paneCommand, effects: [.observe, .change],
                 outputs: terminal,
                 arguments: [
@@ -662,7 +668,8 @@ extension TmuxTools {
                 handler: { try await $0.runShellCommand($1, $2) }),
             capability(
                 .sendKeys, "Send keys",
-                "Send keys after checking the effective synchronized-pane cohort.",
+                "Send keys after checking the effective synchronized-pane cohort; "
+                    + "wait_for_text discounts this input.",
                 toolset: .execute, reach: .paneInput, effects: [.observe, .change],
                 outputs: inspectMeta,
                 arguments: [

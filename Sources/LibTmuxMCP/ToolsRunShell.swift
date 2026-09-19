@@ -84,23 +84,35 @@ extension TmuxTools {
                 )
             }
             lifetime = .submitting(cleanup)
-            try await server.using(.direct) { server in
-                let target = cleanup.pane.id.rawValue
-                // `action` is a tmux command line if-shell will re-parse, not
-                // an argument handed to a POSIX shell, so it is quoted for
-                // tmux's own parser.
-                let action =
-                    "set-option -p -t \(target) \(cleanup.statusOption) pending ; "
-                    + ["send-keys", "-t", target, "--", dispatch, "Enter"]
-                    .map(tmuxQuoted).joined(separator: " ")
-                let command = TmuxCommand("if-shell", ["-F", "1", action])
-                let reply = try await server.runIsolated(
-                    command, expecting: cleanup.pane.incarnation, perStreamOutputLimit: 4_096)
-                guard reply.isSuccess else {
-                    throw TmuxError.commandFailed(
-                        command: "send-keys", exitCode: reply.exitCode, reason: reply.errorText)
+            let echoTargets = [
+                PaneEchoes.Key(incarnation: cleanup.pane.incarnation, pane: cleanup.pane.id)
+            ]
+            // The sourced dispatch line echoes; the script body does not.
+            let echoUpdate = await Self.paneEchoes.apply(
+                .keys([dispatch, "Enter"]), to: echoTargets)
+            do {
+                try await server.using(.direct) { server in
+                    let target = cleanup.pane.id.rawValue
+                    // `action` is a tmux command line if-shell will re-parse, not
+                    // an argument handed to a POSIX shell, so it is quoted for
+                    // tmux's own parser.
+                    let action =
+                        "set-option -p -t \(target) \(cleanup.statusOption) pending ; "
+                        + ["send-keys", "-t", target, "--", dispatch, "Enter"]
+                        .map(tmuxQuoted).joined(separator: " ")
+                    let command = TmuxCommand("if-shell", ["-F", "1", action])
+                    let reply = try await server.runIsolated(
+                        command, expecting: cleanup.pane.incarnation, perStreamOutputLimit: 4_096)
+                    guard reply.isSuccess else {
+                        throw TmuxError.commandFailed(
+                            command: "send-keys", exitCode: reply.exitCode, reason: reply.errorText)
+                    }
                 }
+            } catch {
+                await Self.paneEchoes.abandon(echoUpdate)
+                throw error
             }
+            await Self.paneEchoes.commit(echoUpdate)
             lifetime = .started(cleanup)
             let finished = try await waitForRunShell(
                 cleanup,

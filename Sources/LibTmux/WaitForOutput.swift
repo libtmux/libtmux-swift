@@ -12,7 +12,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
         /// waiting for a marker a command you just sent contains: a shell
         /// echoes the line it was given, and the marker is on screen before
         /// the command runs. Waiting longer does not change it; pass
-        /// `requireFresh` with the cursor from before the send, or match
+        /// `requireFresh` with a cursor taken after the send, or match
         /// something the command only prints once it has run.
         case alreadyOnScreen
         /// One of `stops` appeared first. `matchedIndex` says which.
@@ -122,6 +122,20 @@ public enum OutputWaitError: Error, Sendable, Hashable {
     case matching(RegexMatchError)
 }
 
+/// Matching policy supplied by the MCP module for its own pane input.
+package struct OutputWaitDiscount: Sendable {
+    /// Changes only matching text; returned rows retain their captured content.
+    package let transform: @Sendable (String) -> String
+    package let cursorRowUnsettled: Bool
+
+    package init(transform: @escaping @Sendable (String) -> String, cursorRowUnsettled: Bool) {
+        self.transform = transform
+        self.cursorRowUnsettled = cursorRowUnsettled
+    }
+
+    package static let none = OutputWaitDiscount(transform: { $0 }, cursorRowUnsettled: true)
+}
+
 extension Server {
     /// Waits until a pane prints something, driven by tmux output events.
     ///
@@ -170,6 +184,23 @@ extension Server {
         timeout: Duration = .seconds(30),
         tailLimit: Int = 20
     ) async throws(OutputWaitError) -> OutputWait {
+        try await waitForOutput(
+            in: pane, matching: patterns, stoppingAt: stops,
+            requiringFreshOutput: requireFresh, startingAt: cursor,
+            timeout: timeout, tailLimit: tailLimit, discounting: nil
+        )
+    }
+
+    package func waitForOutput(
+        in pane: Pane,
+        matching patterns: [RegexPattern] = [],
+        stoppingAt stops: [RegexPattern] = [],
+        requiringFreshOutput requireFresh: Bool = false,
+        startingAt cursor: CaptureCursor? = nil,
+        timeout: Duration = .seconds(30),
+        tailLimit: Int = 20,
+        discounting: (@Sendable () async -> OutputWaitDiscount)?
+    ) async throws(OutputWaitError) -> OutputWait {
         do {
             _ = try expectedIncarnation([pane.incarnation])
         } catch {
@@ -193,7 +224,8 @@ extension Server {
             startingCursor: cursor,
             started: started,
             deadline: started.advanced(by: timeout),
-            tailLimit: max(0, tailLimit)
+            tailLimit: max(0, tailLimit),
+            discounting: discounting
         ).run()
     }
 }

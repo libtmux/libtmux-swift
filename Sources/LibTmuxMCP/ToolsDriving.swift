@@ -5,6 +5,7 @@ extension TmuxTools {
     func pasteText(_ arguments: Arguments) async throws -> ToolOutcome {
         let requested = try arguments.string("paneId")
         let text = try arguments.string("text")
+        let sendsEnter = try arguments.bool("enter", or: false)
         let force = try arguments.bool("force", or: false)
         let initial = try await preflightPaneInput(
             requested,
@@ -12,7 +13,7 @@ extension TmuxTools {
             force: force,
             operation: "paste_text"
         )
-        let staged = text + (try arguments.bool("enter", or: false) ? "\n" : "")
+        let staged = text + (sendsEnter ? "\n" : "")
         if staged.isEmpty {
             return .init(
                 Pasted(
@@ -23,10 +24,15 @@ extension TmuxTools {
             )
         }
         let reservation = try await Self.reservePaneInput(initial, operation: "paste_text")
+        let echoTargets = Self.echoKeys(for: initial)
+        let echoUpdate = await Self.paneEchoes.apply(
+            .literal([text], enter: sendsEnter), to: echoTargets
+        )
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         do {
             try await server.setBuffer(staged, named: buffer)
         } catch let primaryError {
+            await Self.paneEchoes.abandon(echoUpdate)
             do {
                 try await deletePasteBuffer(named: buffer)
             } catch {
@@ -49,6 +55,11 @@ extension TmuxTools {
             try await server.paste(buffer: buffer, into: final.source)
         } catch {
             primaryError = error
+        }
+        if primaryError == nil {
+            await Self.paneEchoes.commit(echoUpdate)
+        } else {
+            await Self.paneEchoes.abandon(echoUpdate)
         }
         await Self.paneRuns.release(reservation)
         do {

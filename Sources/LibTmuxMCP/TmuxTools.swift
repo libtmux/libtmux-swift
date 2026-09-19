@@ -11,6 +11,8 @@ public struct TmuxTools: Sendable {
     /// The process-wide pane-input reservation registry. See ``PaneRunCoordinator``
     /// for why it is not per-instance.
     static let paneRuns = PaneRunCoordinator()
+    /// Shared across tool instances addressing the same daemon and pane.
+    static let paneEchoes = PaneEchoes()
 
     let server: Server
     /// The authority shared by tool listing and invocation.

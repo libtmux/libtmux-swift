@@ -10,6 +10,11 @@ struct OutputWaitSession: Sendable {
     let started: ContinuousClock.Instant
     let deadline: ContinuousClock.Instant
     let tailLimit: Int
+    let discounting: (@Sendable () async -> OutputWaitDiscount)?
+
+    private func currentDiscount() async -> OutputWaitDiscount {
+        await discounting?() ?? .none
+    }
 
     func run() async throws(OutputWaitError) -> OutputWait {
         let keptTail = tailLimit
@@ -54,14 +59,24 @@ struct OutputWaitSession: Sendable {
             sawNewOutput: false,
             alternateScreen: entryRead.alternateScreen
         )
+        let entryDiscount = await currentDiscount()
+        let entryRowsForMatching: [String] =
+            if discounting != nil, entryDiscount.cursorRowUnsettled,
+                entryRows.last?.isEmpty == false
+            {
+                Array(entryRows.dropLast())
+            } else {
+                entryRows
+            }
         let entryHit =
             entryRead.alternateScreen
             ? nil
             : try firstOutputWaitHit(
-                in: entryRows,
+                in: entryRowsForMatching,
                 patterns: patterns,
                 stops: stops,
-                countingAnyRow: false
+                countingAnyRow: false,
+                discount: entryDiscount
             )
         let wasAlreadyShowing = entryHit != nil
 
@@ -115,12 +130,13 @@ struct OutputWaitSession: Sendable {
             )
         }
 
-        let answer: OutputWaitAnswer = { arrived, tail, outputEvent in
+        let answer: OutputWaitAnswer = { arrived, tail, outputEvent, discount in
             var hit = try firstOutputWaitHit(
                 in: arrived,
                 patterns: patterns,
                 stops: stops,
-                countingAnyRow: true
+                countingAnyRow: true,
+                discount: discount
             )
             // An event with no rows still counts when nothing was asked for:
             // the pane moved, which is all an unpatterned wait was told to see.
@@ -556,6 +572,7 @@ struct OutputWaitSession: Sendable {
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
             ) { rows, endsOnLiveCursorRow in
+                let discount = await currentDiscount()
                 guard ContinuousClock.now < deadline else {
                     deadlineReached = true
                     return true
@@ -563,13 +580,12 @@ struct OutputWaitSession: Sendable {
                 let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
-                // The last row may be the pane's pending, unsubmitted input
-                // line rather than a row it produced -- see `waitForOutput`'s
-                // doc. Still counted above for `tail`/`sawNewOutput`; just not
-                // eligible on its own to satisfy a pattern or stop condition.
-                let matchable = endsOnLiveCursorRow ? Array(arrived.dropLast()) : arrived
+                // Pending input can still occupy the live cursor row.
+                let matchable =
+                    (endsOnLiveCursorRow && discount.cursorRowUnsettled)
+                    ? Array(arrived.dropLast()) : arrived
                 do {
-                    output = try answer(matchable, tail, false)
+                    output = try answer(matchable, tail, false, discount)
                     if output != nil {
                         let selectedAt = ContinuousClock.now
                         if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -625,22 +641,22 @@ struct OutputWaitSession: Sendable {
         case .pending: break
         }
         if offersArrivedRows(scan.reanchor), !scan.alternateScreen {
-            let arrived: [String]
+            let captured: [String]
             do {
-                arrived = try await waitLookbackRows(using: server, in: pane).filter { !$0.isEmpty }
+                captured = try await waitLookbackRows(using: server, in: pane)
             } catch {
                 throw .tmux(error)
             }
             guard ContinuousClock.now < deadline else { return timedOut() }
+            let discount = await currentDiscount()
+            let arrived = captured.filter { !$0.isEmpty }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
-            // Unlike the forward-scan chunk above, `arrived` here already had
-            // every blank row filtered out (`waitLookbackRows`), so its last
-            // element is not reliably the pane's live cursor row -- it can be
-            // real, already-committed output with a blank cursor row after it
-            // that the filter already removed. Not excluded from matching.
+            let matchable =
+                discounting != nil && discount.cursorRowUnsettled && captured.last?.isEmpty == false
+                ? Array(captured.dropLast()).filter { !$0.isEmpty } : arrived
             do {
-                output = try answer(arrived, tail, false)
+                output = try answer(matchable, tail, false, discount)
                 if output != nil {
                     let selectedAt = ContinuousClock.now
                     if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -659,7 +675,7 @@ struct OutputWaitSession: Sendable {
             sawOutput = true
             if output == nil {
                 do {
-                    output = try answer([], tail, true)
+                    output = try answer([], tail, true, .none)
                     if output != nil {
                         let selectedAt = ContinuousClock.now
                         if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -885,7 +901,7 @@ func waitScanTerminal(
 }
 
 private typealias OutputWaitAnswer =
-    @Sendable ([String], [String], Bool) throws(OutputWaitError) -> OutputWait?
+    @Sendable ([String], [String], Bool, OutputWaitDiscount) throws(OutputWaitError) -> OutputWait?
 
 private func waitTmuxError(_ error: OutputWaitError) -> TmuxError {
     switch error {
@@ -919,11 +935,13 @@ private func firstOutputWaitHit(
     patterns: [RegexPattern],
     stops: [RegexPattern],
     countingAnyRow: Bool,
+    discount: OutputWaitDiscount,
     maximumWork: Int = RegexPattern.defaultMaximumWork
 ) throws(OutputWaitError) -> OutputWaitHit? {
     for row in rows {
+        let matchable = discount.transform(row)
         if let index = try firstOutputPatternMatch(
-            in: row, patterns: stops, maximumWork: maximumWork)
+            in: matchable, patterns: stops, maximumWork: maximumWork)
         {
             return OutputWaitHit(
                 outcome: .stopped,
@@ -937,7 +955,7 @@ private func firstOutputWaitHit(
             continue
         }
         if let index = try firstOutputPatternMatch(
-            in: row, patterns: patterns, maximumWork: maximumWork)
+            in: matchable, patterns: patterns, maximumWork: maximumWork)
         {
             return OutputWaitHit(
                 outcome: .matched,
