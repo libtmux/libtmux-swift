@@ -30,7 +30,7 @@ public struct Server: Sendable, Hashable {
     /// nothing is inherited by a task, so this is the whole of the answer for
     /// the server in hand and a program can read it rather than trust it.
     ///
-    /// ``wait(for:)`` is deliberately outside it — waiting for a channel is
+    /// ``wait(for:timeout:)`` is deliberately outside it — waiting for a channel is
     /// meant to take as long as the thing being waited on, so a server-wide
     /// bound would turn every such wait into a failure. That call takes its
     /// own `timeout` instead.
@@ -170,7 +170,7 @@ public struct Server: Sendable, Hashable {
     /// on standard error. Each output stream is capped at 1 MiB.
     ///
     /// This is also the escape hatch to `wait-for -L`, which has no typed
-    /// wrapper -- see ``wait(for:)`` for why, and for the hazard reaching for
+    /// wrapper -- see ``wait(for:timeout:)`` for why, and for the hazard reaching for
     /// it here carries: a timed-out locker is never removed from tmux's own
     /// queue, so a caller who bounds this call can wedge the channel for
     /// every later locker on the server, permanently.

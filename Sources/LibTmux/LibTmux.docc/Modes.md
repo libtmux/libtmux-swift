@@ -103,7 +103,7 @@ the same tmux and compare equal.
 The two calls behind rule 3 are these, and each takes its own process precisely
 so that what comes back does not depend on the mode you picked.
 
-``Server/wait(for:)`` blocks, and tmux runs a control client's commands one at a
+``Server/wait(for:timeout:)`` blocks, and tmux runs a control client's commands one at a
 time — so carried over the connection it would hold back every command behind
 it, ``Server/signal(_:)`` included, and nothing would be left to release it. In
 a process of its own it returns the same nothing, at the same moment, in either

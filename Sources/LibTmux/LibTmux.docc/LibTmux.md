@@ -109,7 +109,7 @@ command explains itself on standard error — so
 - ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
 - ``OutputWait``
 - ``OutputWaitError``
-- ``Server/wait(for:)``
+- ``Server/wait(for:timeout:)``
 - ``Server/signal(_:)``
 
 ### Reading a field nothing models

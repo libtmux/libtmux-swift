@@ -210,5 +210,5 @@ trip per second.
 
 ### Channels
 
-- ``Server/wait(for:)``
+- ``Server/wait(for:timeout:)``
 - ``Server/signal(_:)``

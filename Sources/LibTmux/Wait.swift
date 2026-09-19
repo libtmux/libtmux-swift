@@ -2,7 +2,7 @@
 ///
 /// A pane runs a shell, and a shell says nothing about when it is finished.
 /// Watching the pane for a prompt guesses; a channel does not. The command you
-/// start signals when it is done, and ``Server/wait(for:)`` returns at that
+/// start signals when it is done, and ``Server/wait(for:timeout:)`` returns at that
 /// point rather than on a timer.
 ///
 /// ```swift
@@ -79,7 +79,7 @@ extension Server {
     /// on how many went unmatched, not how many were sent.
     ///
     /// Signalling never wedges a channel the way a lock (`-L`) can; see
-    /// ``wait(for:)`` for that hazard, which is specific to the raw `-L`
+    /// ``wait(for:timeout:)`` for that hazard, which is specific to the raw `-L`
     /// escape hatch and does not apply here.
     public func signal(_ channel: String) async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("wait-for", ["-S", "--", channel]))

@@ -170,7 +170,7 @@ public actor ControlSession {
     /// process, with the same hazard: cancelling this call never removes the
     /// locker from tmux's own queue, so a bounded wait for a lock can wedge
     /// the channel permanently for whoever waits on it next. See
-    /// ``Server/wait(for:)`` for why there is no typed lock wrapper.
+    /// ``Server/wait(for:timeout:)`` for why there is no typed lock wrapper.
     public func send(_ command: TmuxCommand) async throws(TmuxError) -> ControlReply {
         try requireSingleLine(command.argumentVector)
         return try await send(

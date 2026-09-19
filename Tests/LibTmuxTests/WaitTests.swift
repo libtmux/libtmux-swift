@@ -73,7 +73,7 @@ struct WaitTests {
     func cancelledRawLockWaitWedgesTheChannel() async throws {
         try await withTmuxServer { server in
             // The only route to `-L`: no typed wrapper exists (see
-            // `Server/wait(for:)`'s doc). The first locker acquires at once.
+            // `Server/wait(for:timeout:)`'s doc). The first locker acquires at once.
             _ = try await server.run(TmuxCommand("wait-for", ["-L", "gate"]))
 
             // A second locker queues behind it and is bounded the only way
