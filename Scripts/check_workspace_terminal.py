@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import pty
-import select
 import signal
 import subprocess
 import sys
@@ -14,6 +12,8 @@ import termios
 import time
 from contextlib import suppress
 from pathlib import Path
+
+from owned_terminal import Terminal
 
 binary = str(Path(sys.argv[1]).resolve())
 base = Path("/tmp/libtmux-swift-dev")
@@ -36,45 +36,30 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
         )
         editor.chmod(0o700)
         child_marker = root / "terminal-child"
-        pid, fd = pty.fork()
-        if pid == 0:
-            os.execve(
-                binary,
-                [binary, "edit", str(workspace)],
-                dict(env, CHILD_MARKER=str(child_marker)),
-            )
-        attributes = termios.tcgetattr(fd)
-        os.write(fd, b"\n")
-        content = bytearray()
-        status = None
+        terminal = Terminal(
+            [binary, "edit", str(workspace)],
+            dict(env, CHILD_MARKER=str(child_marker)),
+        )
+        attributes = termios.tcgetattr(terminal.fd)
+        terminal.send(b"\n")
         child = None
-        sent = False
         try:
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                if select.select([fd], [], [], 0.05)[0]:
-                    with suppress(OSError):
-                        content += os.read(fd, 65536)
-                if b"READY" in content and not sent:
-                    child = int(child_marker.read_text())
-                    assert termios.tcgetattr(fd) != attributes, (
-                        "editor did not enter raw mode"
-                    )
-                    if number is None:
-                        os.write(fd, b"edited\n")
-                    else:
-                        os.kill(pid, number)
-                    sent = True
-                ended, state = os.waitpid(pid, os.WNOHANG)
-                if ended:
-                    status = os.waitstatus_to_exitcode(state)
-                    break
-            assert status == (0 if number is None else 130), (
-                number,
-                status,
-                bytes(content),
+            terminal.until(lambda terminal=terminal: b"READY" in terminal.content)
+            child = int(child_marker.read_text())
+            assert termios.tcgetattr(terminal.fd) != attributes, (
+                "editor did not enter raw mode"
             )
-            assert termios.tcgetattr(fd) == attributes, (
+            if number is None:
+                terminal.send(b"edited\n")
+            else:
+                os.kill(terminal.pid, number)
+            terminal.until(lambda terminal=terminal: terminal.status is not None)
+            assert terminal.status == (0 if number is None else 130), (
+                number,
+                terminal.status,
+                bytes(terminal.content),
+            )
+            assert termios.tcgetattr(terminal.fd) == attributes, (
                 "terminal settings were not restored"
             )
             if number is None:
@@ -88,14 +73,11 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
                     message = "terminal editor survived exit"
                     raise AssertionError(message)
         finally:
-            termios.tcsetattr(fd, termios.TCSANOW, attributes)
-            if status is None:
-                os.kill(pid, signal.SIGKILL)
-                os.waitpid(pid, 0)
+            termios.tcsetattr(terminal.fd, termios.TCSANOW, attributes)
+            terminal.close()
             if child is not None:
                 with suppress(ProcessLookupError):
                     os.kill(child, signal.SIGKILL)
-            os.close(fd)
     machine = subprocess.run(
         [binary, "edit", str(workspace), "--ndjson"],
         env=dict(env, EDITOR="/bin/sh -c 'printf \"\\033[31mchild\\n\"'"),
