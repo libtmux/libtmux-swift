@@ -375,6 +375,28 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("an interruption reports what it retained instead of rolling it back")
+    func interruptedBuildKeepsItsSession() async throws {
+        try await withTmuxServer { server in
+            let before = try await server.snapshot()
+            let workspace = Workspace(
+                sessionName: "interrupted",
+                windows: [WindowPlan(panes: [PanePlan(), PanePlan()])]
+            )
+            // Unlike an ordinary failure, an interruption is not rolled
+            // back: the same signal that stopped the build could just as
+            // well stop the cleanup that would follow it.
+            await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(
+                    workspace, on: server, environment: [:], configureSession: { _ in },
+                    configureWindow: { _, _ in throw CancellationError() })
+            }
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.contains { $0.name == "interrupted" })
+        }
+    }
+
     @Test(
         "invalid workspace layouts preserve existing sessions",
         arguments: ["not-a-layout", "32d2,80x24,0,0{}"])

@@ -468,9 +468,11 @@ let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
 Building refuses rather than adopting a session that already has the name: two
-callers building the same workspace should not silently share one. A later
-failure removes the exact session this build created; a rollback failure
-reports both errors.
+callers building the same workspace should not silently share one. A later,
+ordinary failure removes the exact session this build created; a rollback
+failure reports both errors. An interruption removes nothing: the same signal
+that stopped the build could just as well stop the cleanup that would follow
+it.
 
 The builder validates every layout before creating the session. The same
 native guard protects `Server.selectLayout(_:_:)` and MCP `select_layout`.
