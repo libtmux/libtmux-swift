@@ -2087,7 +2087,11 @@ struct WorkspaceCLITests {
             let session = try #require(snapshot.sessions.first { $0.name == "emptydir" })
             let window = try #require(snapshot.windows(of: session).first)
             let pane = try #require(snapshot.panes(of: window).first)
-            #expect(pane.currentPath == root.path)
+            // Darwin makes `/tmp` a symlink to `/private/tmp`, and tmux reports
+            // where the pane actually is, so both sides resolve before comparing.
+            #expect(
+                URL(fileURLWithPath: pane.currentPath).resolvingSymlinksInPath().path
+                    == root.resolvingSymlinksInPath().path)
 
             let missing = root.appendingPathComponent("missing.yaml")
             try Data(
