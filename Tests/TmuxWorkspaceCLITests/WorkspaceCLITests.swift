@@ -2026,6 +2026,38 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("freeze never writes a session name load would refuse")
+    func freezeRefusesUnaddressableName() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
+            ]
+            let created = try await server.newSession(named: "my.proj")
+            let destination = root.appendingPathComponent("dotted.json")
+            let result = await invoke(
+                ["freeze", created.name, "-S", socket, "--save-to", destination.path, "--json"],
+                in: root, extra: environment)
+            // Releases before 3.7 rewrite the separator at creation, so only
+            // one that keeps it reaches the refusal; either way the file
+            // freeze leaves behind is one load accepts.
+            if created.name.contains(".") {
+                #expect(result.code == 1)
+                #expect(
+                    result.error.joined().contains("\"code\":\"invalid_workspace\""),
+                    "\(result.error)")
+                #expect(!FileManager.default.fileExists(atPath: destination.path))
+            } else {
+                #expect(result.code == 0, "\(result.error)")
+                let reloaded = await invoke(
+                    ["load", destination.path, "-d", "-S", socket, "--json"], in: root,
+                    extra: environment)
+                #expect(reloaded.code == 0, "\(reloaded.error)")
+            }
+        }
+    }
+
     @Test("freeze without a destination or a machine format is a usage error")
     func freezeNeedsADestination() async throws {
         try await withTmuxServer { server in
