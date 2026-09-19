@@ -316,9 +316,12 @@ arguments — is `usage`, exit 2.
 A run a signal stopped is `interrupted`, exit 130, whichever kind of failure
 it interrupted; every port uses this one spelling, not a private synonym.
 Declining a prompt — answering `n` to "already running, attach?", or `q` to
-cancel — is not an interruption and not a failure: nothing was built or
-changed, so it is a plain exit 0. A prompt this command cannot ask at all,
-for want of a terminal, is `usage`, exit 2.
+cancel — is not an interruption and not a failure, so it is a plain exit 0.
+Declining "already running, attach?" leaves that one session exactly as it
+was found — the prompt only ever asks about a load's last input, so an
+earlier input still builds normally, and its result still counts toward the
+envelope. A prompt this command cannot ask at all, for want of a terminal,
+is `usage`, exit 2.
 
 A failure of this tool's own plumbing rather than of the workspace carries a
 code of its own, because it describes this implementation: `document_read`,
