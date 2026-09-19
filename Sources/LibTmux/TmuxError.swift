@@ -1,8 +1,8 @@
 /// Everything a tmux operation can fail with.
 ///
 /// ``Server/run(_:)-(TmuxCommand)`` hands every tmux status back as a
-/// ``TmuxReply``. Higher-level operations that promise a decoded value throw
-/// ``commandFailed(command:exitCode:reason:)`` when tmux rejects that read.
+/// ``TmuxReply`` instead of throwing on a nonzero exit. A higher-level
+/// operation built on it documents which case its own refusal throws.
 public enum TmuxError: Error, Sendable, Hashable {
     /// The tmux client process was never started, so the requested command
     /// cannot have reached a daemon.
@@ -12,14 +12,13 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// cannot duplicate the requested action because tmux never received it.
     case requestNotSubmitted
 
-    /// The command was submitted and no usable reply came back — tmux
-    /// answered with something this library cannot read, or the reply never
-    /// arrived. Unless a narrower error says otherwise, the action may have
-    /// reached tmux.
+    /// No usable reply came back — tmux answered with something this
+    /// library cannot read, the reply never arrived, or a caller that
+    /// decodes tmux's own reply found a refusal in it. Unless a narrower
+    /// error says otherwise, the action may have reached tmux.
     ///
-    /// A command tmux itself refused is
-    /// ``commandFailed(command:exitCode:reason:)``, and one refused before
-    /// tmux saw it is ``rejectedLocally(reason:)``.
+    /// A refusal made before tmux ever saw the command is
+    /// ``rejectedLocally(reason:)`` instead.
     case invocationFailed(reason: String)
 
     /// A direct tmux client cannot encode the command, so it was not submitted.
@@ -29,8 +28,8 @@ public enum TmuxError: Error, Sendable, Hashable {
     ///
     /// Usually tmux rejecting the command, and also what a client that could
     /// not reach the server reports, since tmux answers both the same way.
-    /// Every mutation and every read that promises a decoded value reports a
-    /// refusal this way, so a caller matching one case catches them all.
+    /// What a call reports when it dispatches one named command and checks
+    /// only that command's own exit status and standard error.
     ///
     /// Only the command name is retained; arguments may contain pane text,
     /// environment values, or other caller data that does not belong in an error.
@@ -76,8 +75,6 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// Raised by a guard that rejects the argument outright -- a layout
     /// spelling tmux's own preset lookup does not resolve, for instance --
     /// so ``description`` never claims tmux was invoked.
-    /// A rejection tmux itself made after receiving the command throws
-    /// ``invocationFailed(reason:)`` with tmux's own text instead.
     case rejectedLocally(reason: String)
 
     /// A session-local target no longer names the object the value described.
