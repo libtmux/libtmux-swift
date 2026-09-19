@@ -250,13 +250,36 @@ struct RealTmuxTests {
         }
     }
 
-    @Test("asking whether a session exists answers without listing them all")
+    @Test("asking whether a session exists answers by name or id")
     func hasSessionAnswersByName() async throws {
         try await withTmuxServer { server in
             let bootstrap = try await server.hasSession("bootstrap")
             let absent = try await server.hasSession("never-created")
             #expect(bootstrap)
             #expect(!absent)
+        }
+    }
+
+    @Test("an unambiguous abbreviation is not a session that holds it")
+    func hasSessionRejectsAPrefixMatch() async throws {
+        try await withTmuxServer { server in
+            _ = try await server.newSession(named: "alphabet")
+            // `has-session -t alpha` alone would answer yes here, reading
+            // "alpha" as an unambiguous abbreviation of "alphabet" rather
+            // than a name neither session holds.
+            #expect(try await !server.hasSession("alpha"))
+            #expect(try await server.hasSession("alphabet"))
+        }
+    }
+
+    @Test("a session name tmux would otherwise split still answers exists")
+    func hasSessionAnswersASeparatorBearingName() async throws {
+        try await withTmuxServer { server in
+            let created = try await server.newSession(named: "my.proj")
+            // Whatever this release did with the request -- kept it, or
+            // rewrote the separator away -- hasSession must recognize the
+            // session it actually produced.
+            #expect(try await server.hasSession(created.name))
         }
     }
 
