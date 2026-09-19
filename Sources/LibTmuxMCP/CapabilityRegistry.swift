@@ -667,7 +667,12 @@ extension TmuxTools {
                 outputs: inspectMeta,
                 arguments: [
                     boolean("enter"), boolean("force"),
-                    argument("keys", kind: .stringArray, required: true), boolean("literal"),
+                    argument("keys", kind: .stringArray, required: true),
+                    argument(
+                        "literal", kind: .boolean,
+                        summary: "Type every string in keys as literal characters (tmux's -l) "
+                            + "instead of reading it as a key name. Applies to the whole call, "
+                            + "not per item. enter still presses Enter afterward as its own key."),
                     paneID(),
                 ],
                 specialSinks: [
