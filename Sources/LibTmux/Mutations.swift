@@ -31,7 +31,7 @@ public enum ResizeDirection: Sendable, Hashable, Codable {
 ///
 /// Restoring a saved layout onto the window it came from puts every pane back
 /// in its cell only from a JSON string (tmux 3.8 and later, read by a client
-/// that has negotiated it -- see ``Server/connected(attachingTo:_:)``): the
+/// that has negotiated it -- see ``Server/connected(attachingTo:_:)-(String,_)``): the
 /// classic string carries cell positions but no pane identity, so a pane can
 /// land in a different cell of the same shape (verified against tmux 3.7c).
 /// Applying a saved layout to a window with a different pane count is not

@@ -65,7 +65,7 @@ extension Server {
     ///
     /// ``setBuffer(_:named:)`` carries the text as an argument, which caps it at
     /// whatever the platform allows in an argument vector and — over
-    /// ``connected(attachingTo:_:)`` — forbids a newline outright, because a
+    /// ``connected(attachingTo:_:)-(String,_)`` — forbids a newline outright, because a
     /// connection sends a command *line*. A path has neither problem: it is
     /// short, and tmux opens the file itself. This is the way to put many lines
     /// into a buffer from a connected server.

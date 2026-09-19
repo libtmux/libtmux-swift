@@ -4,7 +4,7 @@ Being told, rather than asking.
 
 ## Overview
 
-``Server/connected(attachingTo:_:)`` hands back the connection alongside the
+``Server/connected(attachingTo:_:)-(String,_)`` hands back the connection alongside the
 server, because reporting what changed without being asked is the one thing a
 connection can do and a process cannot:
 
@@ -62,6 +62,20 @@ The connection is scoped to the closure: a live process handed out as a value
 would be a value that lies. When the closure returns, the connection closes and
 the child is reaped before the call does. A command still waiting at that point
 fails with ``TmuxError/connectionClosed`` rather than hanging.
+
+A program that wants one connection for as long as it runs puts the rest of
+itself inside the closure, the way structured concurrency puts long-lived work
+inside a task group. The closure is not a ceremony to escape; it is what makes
+"the connection is gone" a place in the code rather than a state some other
+code has to notice.
+
+There is no reconnect, on purpose. When a connection ends, the daemon behind it
+has either ended the client — its session is gone, or the server is shutting
+down — or been replaced, which ``Server/connected(attachingTo:_:)-(Session,_)``
+reports as ``TmuxError/serverRestarted``. Neither is something to paper over
+by attaching again: the first means there is nothing left to attach to, and the
+second means every value read so far describes a daemon that no longer exists.
+Catch the error, read the server again, and open a new scope.
 
 ``Server/withControlMode(attachingTo:_:)`` is the layer beneath, for speaking
 the control protocol directly.

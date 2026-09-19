@@ -19,7 +19,7 @@ public struct Session: Sendable, Hashable, Codable, Identifiable {
     public let windowCount: Int
     /// Whether any client is looking at this session. Opening a connection
     /// attaches one, so this reads differently from inside
-    /// ``Server/connected(attachingTo:_:)`` — see <doc:Modes>.
+    /// ``Server/connected(attachingTo:_:)-(String,_)`` — see <doc:Modes>.
     public let isAttached: Bool
     /// When tmux created the session, in seconds since the epoch. tmux's clock,
     /// not this process's.

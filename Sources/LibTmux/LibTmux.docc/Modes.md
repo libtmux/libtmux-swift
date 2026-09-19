@@ -76,7 +76,7 @@ let sessions = try await server.using(mode) { server in
 }
 ```
 
-``Server/connected(attachingTo:_:)`` is ``Server/using(_:_:)`` with the
+``Server/connected(attachingTo:_:)-(String,_)`` is ``Server/using(_:_:)`` with the
 connection handed over as well, for the one thing a process cannot do — see
 <doc:Streaming>.
 
@@ -86,7 +86,7 @@ A mode belongs to the server value, not to the process and not to the task, so
 the rule is lexical and it is this whole list:
 
 1. **The value you were handed.** ``Server/using(_:_:)`` and
-   ``Server/connected(attachingTo:_:)`` give you a server in that mode, and
+   ``Server/connected(attachingTo:_:)-(String,_)`` give you a server in that mode, and
    nesting them takes the innermost — `using(.direct)` inside a connected scope
    is the supported way to keep one call off the connection.
 2. **Anything else is ``TmuxMode/direct``**, including a server captured from
@@ -237,7 +237,7 @@ than sending part of it. Nothing else in this library changes shape by mode.
 
 A control connection is a client, and tmux has no client attached to nothing — a
 control client with no target runs tmux's default command and *creates* a
-session. So ``Server/connected(attachingTo:_:)`` attaches to a session you name,
+session. So ``Server/connected(attachingTo:_:)-(String,_)`` attaches to a session you name,
 and that is visible in what the server reports about itself: that session reads
 as attached, and it appears in ``Server/clients()``. Every other answer is
 identical, including ids, ordering, and non-ASCII names.

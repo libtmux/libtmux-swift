@@ -180,7 +180,7 @@ command explains itself on standard error — so
 - ``TmuxMode``
 - ``Server/using(_:_:)``
 - ``Server/mode``
-- ``Server/connected(attachingTo:_:)``
+- ``Server/connected(attachingTo:_:)-(String,_)``
 - ``Server/withControlMode(attachingTo:_:)``
 
 ### The control protocol

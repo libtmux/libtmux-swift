@@ -20,7 +20,7 @@ public struct ControlNotificationStream: AsyncSequence, Sendable {
 
     /// Iterates notifications with `TmuxError` as the failure type.
     ///
-    /// Drive this with `for try await`, as ``Server/connected(attachingTo:_:)``'s
+    /// Drive this with `for try await`, as ``Server/connected(attachingTo:_:)-(String,_)``'s
     /// example does. Calling ``next()`` by hand inside `try?` or a `do`/`catch`
     /// crashes the Swift 6.2.4 compiler (SILGen, on `emitExistentialErasure`)
     /// for both this iterator and ``SubscriptionChangeStream``'s -- a

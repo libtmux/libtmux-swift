@@ -57,6 +57,38 @@ extension Server {
         }
     }
 
+    /// Runs `body` over a connection attached to `session`, refusing a session
+    /// value from a daemon that has since been replaced.
+    ///
+    /// The same scope as ``connected(attachingTo:_:)-(String,_)``, addressed the
+    /// way every other call in this library is: by a value carrying the id tmux
+    /// minted and the daemon it came from. A name can be renamed, reused, or
+    /// resolve to a different session on a daemon restarted under the same
+    /// socket; a `Session` cannot, so a stale one throws
+    /// ``TmuxError/serverRestarted`` or ``TmuxError/staleServerValue`` instead of
+    /// attaching to something else.
+    ///
+    /// ```swift
+    /// guard let work = try await server.session(named: "work") else { return }
+    /// try await server.connected(attachingTo: work) { server, events in
+    ///     // ...
+    /// }
+    /// ```
+    ///
+    /// The closure is the connection's whole lifetime — see
+    /// <doc:Streaming#Lifetime> for why, and for how a long-running program
+    /// holds one open.
+    public func connected<Result: Sendable>(
+        attachingTo session: Session,
+        _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result
+    ) async throws -> Result {
+        try await connectedGuardingIncarnation(
+            attachingTo: session.id,
+            expecting: session.incarnation,
+            body
+        )
+    }
+
     /// Runs `body` with every command carried by one live connection instead
     /// of a new tmux process each time.
     ///
@@ -123,7 +155,7 @@ extension Server {
     /// ```
     ///
     /// Scoped even for ``TmuxMode/direct``, where nothing needs closing, so that
-    /// the two read identically at the call site. ``connected(attachingTo:_:)``
+    /// the two read identically at the call site. ``connected(attachingTo:_:)-(String,_)``
     /// is the same thing with the connection handed over as well, for the one
     /// capability a process does not have.
     ///
@@ -149,7 +181,7 @@ extension Server {
     /// Opens a control-mode connection for the duration of `body`, handing
     /// over the connection itself.
     ///
-    /// ``connected(attachingTo:_:)`` is the one to reach for: it gives the same
+    /// ``connected(attachingTo:_:)-(String,_)`` is the one to reach for: it gives the same
     /// connection *and* a server that speaks over it. This is the layer beneath,
     /// for talking the control protocol directly.
     ///

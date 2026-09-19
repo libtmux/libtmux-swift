@@ -4,7 +4,7 @@
 /// tmux counts every attached client toward `session_attached`, this
 /// process's own observation connections included -- so a caller reading a
 /// session's attachment while ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
-/// or another internal user of ``Server/connected(attachingTo:_:)`` has one
+/// or another internal user of ``Server/connected(attachingTo:_:)-(String,_)`` has one
 /// open sees that connection and mistakes it for a person. `Client.processID`
 /// matches a registered pid exactly: ``Server/withControlMode(attachingTo:_:)``
 /// execs tmux directly, so the connection's process *is* the tmux client tmux
