@@ -146,7 +146,7 @@ extension Server {
         let listed = try await options(scope)
         guard listed.contains(where: { $0.name == name }) else { return nil }
 
-        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", name])
+        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", "--", name])
         let reply = try await runOptionCommand(command, in: scope)
         // Presence came from the listing, so `nil` is already spent on "not
         // set" and a failure here is a failure.
@@ -167,7 +167,7 @@ extension Server {
         scope: OptionScope
     ) async throws(TmuxError) -> String? {
         let command = TmuxCommand(
-            "show-options", ["-A"] + scope.selectorArguments + ["-v", name])
+            "show-options", ["-A"] + scope.selectorArguments + ["-v", "--", name])
         let reply = try await runOptionCommand(command, in: scope)
         guard reply.isSuccess else { throw reply.failure(for: command) }
         var value = reply.text
@@ -196,7 +196,7 @@ extension Server {
         try await expectOptionSuccess(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments + [name, value]
+                scope.selectorArguments + ["--", name, value]
             ),
             in: scope
         )
@@ -260,7 +260,7 @@ extension Server {
         }
         guard !indices.isEmpty else { return listed ? [:] : nil }
 
-        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", key.name])
+        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", "--", key.name])
         let reply = try await runOptionCommand(command, in: scope)
         guard reply.isSuccess else { throw reply.failure(for: command) }
         var text = reply.text
@@ -362,7 +362,7 @@ extension Server {
         try await expectOptionSuccess(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments + ["-u", name]
+                scope.selectorArguments + ["-u", "--", name]
             ),
             in: scope
         )
@@ -413,7 +413,7 @@ extension Server {
     ) async throws(TmuxError) -> TmuxReply {
         let slot = index.map { "\(name)[\($0)]" } ?? name
         return try await run(
-            TmuxCommand("set-hook", scope.arguments + [slot, command])
+            TmuxCommand("set-hook", scope.arguments + ["--", slot, command])
         )
     }
 
@@ -428,7 +428,7 @@ extension Server {
         _ name: String,
         in scope: HookScope = .global
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(TmuxCommand("set-hook", scope.arguments + ["-u", name]))
+        try await run(TmuxCommand("set-hook", scope.arguments + ["-u", "--", name]))
     }
 
     /// Runs a hook's commands now, without waiting for what would trigger it.
@@ -439,7 +439,7 @@ extension Server {
         _ name: String,
         in scope: HookScope = .global
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(TmuxCommand("set-hook", scope.arguments + ["-R", name]))
+        try await run(TmuxCommand("set-hook", scope.arguments + ["-R", "--", name]))
     }
 
     private func runOptionCommand(

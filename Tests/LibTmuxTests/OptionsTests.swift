@@ -5,6 +5,40 @@ import TmuxFixture
 
 @Suite("options and hooks")
 struct OptionsTests {
+    @Test("option names cannot become mutation or listing flags")
+    func leadingDashOptionNamesRemainPositional() async throws {
+        try await withTmuxServer { server in
+            try await server.setOption("@held", to: "yes", scope: .server)
+            await #expect(throws: TmuxError.self) {
+                try await server.setOption("-u", to: "@held", scope: .server)
+            }
+            #expect(try await server.option("@held", scope: .server) == "yes")
+            await #expect(throws: TmuxError.self) {
+                _ = try await server.resolvedOption("-v", scope: .server)
+            }
+            do {
+                try await server.unsetOption("-q", scope: .server)
+                Issue.record("a flag-shaped option name was accepted")
+            } catch let TmuxError.commandFailed(_, _, reason) {
+                #expect(reason.contains("option: -q"), Comment(rawValue: reason))
+            }
+        }
+    }
+
+    @Test("hook names cannot become mutation flags")
+    func leadingDashHookNamesRemainPositional() async throws {
+        try await withTmuxServer { server in
+            _ = try await server.setHook("alert-bell", to: "display-message held")
+            let set = try await server.setHook("-u", to: "alert-bell")
+            #expect(!set.isSuccess)
+            #expect(try await server.hooks().contains { $0.name == "alert-bell" })
+            let unset = try await server.unsetHook("-q")
+            #expect(unset.errorText.contains("option: -q"), Comment(rawValue: unset.errorText))
+            let run = try await server.runHook("-u")
+            #expect(run.isSuccess, Comment(rawValue: run.errorText))
+        }
+    }
+
     @Test("a user option round-trips through the server table")
     func userOptionRoundTrips() async throws {
         try await withTmuxServer { server in

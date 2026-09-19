@@ -5,6 +5,17 @@ import TmuxFixture
 
 @Suite("ad-hoc formats", .hangLimit)
 struct FormatTests {
+    @Test("a server format beginning with a dash is text in either mode")
+    func leadingDashServerFormatIsText() async throws {
+        try await withTmuxServer { server in
+            #expect(try await server.format("-a") == "-a")
+            let connected = try await server.connected(attachingTo: "bootstrap") { server, _ in
+                try await server.format("-a")
+            }
+            #expect(connected == "-a")
+        }
+    }
+
     @Test("a format reads a field the models do not carry")
     func formatReadsAnUnmodelledField() async throws {
         try await withTmuxServer { server in

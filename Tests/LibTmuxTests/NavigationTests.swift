@@ -6,6 +6,61 @@ import TmuxFixture
 
 @Suite("navigation and buffers", .hangLimit)
 struct NavigationTests {
+    @Test("respawn preserves a flag-shaped program", arguments: [false, true])
+    func leadingDashRespawnCommandIsLiteral(windowTarget: Bool) async throws {
+        try await withTmuxServer { server in
+            try await server.setPanesOutliveTheirCommand(true)
+            let pane = try #require(try await server.panes().first)
+            if windowTarget {
+                let window = try #require(try await server.windows().first)
+                try await server.respawn(window, running: ["-k"])
+            } else {
+                try await server.respawn(pane, running: ["-k"])
+            }
+            #expect(
+                try await server.format("#{pane_start_command}", addressing: pane.id.rawValue)
+                    == "-k")
+        }
+    }
+
+    @Test("a pipe command cannot redirect the pane target")
+    func leadingDashPipeCommandCannotRetarget() async throws {
+        try await withTmuxServer { server in
+            let victim = try #require(try await server.panes().first)
+            let window = try #require(try await server.windows().first)
+            let other = try await server.splitWindow(window)
+            try await server.pipe(victim, to: "cat >/dev/null")
+            #expect(try await server.format("#{pane_pipe}", addressing: victim.id.rawValue) == "1")
+
+            try await server.pipe(other, to: "-t" + victim.id.rawValue)
+
+            #expect(try await server.format("#{pane_pipe}", addressing: victim.id.rawValue) == "1")
+        }
+    }
+
+    @Test("file operations preserve a leading dash", arguments: ["source", "load", "save"])
+    func leadingDashFilePathIsLiteral(operation: String) async throws {
+        try await withTmuxServer { server in
+            let name = "-libtmux-swift-\(UUID().uuidString)"
+            let file = URL(fileURLWithPath: name)
+            defer { try? FileManager.default.removeItem(at: file) }
+            switch operation {
+            case "source":
+                try Data("set-option -s @source-literal loaded\n".utf8).write(to: file)
+                try await server.sourceFile(name)
+                #expect(try await server.option("@source-literal", scope: .server) == "loaded")
+            case "load":
+                try Data("literal file contents".utf8).write(to: file)
+                try await server.loadBuffer(from: name, named: "literal")
+                #expect(try await server.buffer(named: "literal") == "literal file contents")
+            default:
+                try await server.setBuffer("literal file contents", named: "literal")
+                try await server.saveBuffer(named: "literal", to: name)
+                #expect(try String(contentsOf: file, encoding: .utf8) == "literal file contents")
+            }
+        }
+    }
+
     @Test("selecting changes which object is active")
     func selectingChangesWhatIsActive() async throws {
         try await withTmuxServer { server in

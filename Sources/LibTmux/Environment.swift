@@ -77,7 +77,7 @@ extension Server {
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> TmuxReply {
         try await run(
-            TmuxCommand("set-environment", scope.arguments + [name, value])
+            TmuxCommand("set-environment", scope.arguments + ["--", name, value])
         )
     }
 
@@ -92,7 +92,7 @@ extension Server {
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> TmuxReply {
         try await run(
-            TmuxCommand("set-environment", scope.arguments + ["-u", name])
+            TmuxCommand("set-environment", scope.arguments + ["-u", "--", name])
         )
     }
 
@@ -104,7 +104,7 @@ extension Server {
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> TmuxReply {
         try await run(
-            TmuxCommand("set-environment", scope.arguments + ["-r", name])
+            TmuxCommand("set-environment", scope.arguments + ["-r", "--", name])
         )
     }
 }
@@ -112,16 +112,15 @@ extension Server {
 extension TmuxEnvironmentVariable {
     /// Reads one line of `show-environment`.
     init?(line: String) {
-        if line.hasPrefix("-") {
-            let name = String(line.dropFirst())
+        if let separator = line.firstIndex(of: "=") {
+            let name = String(line[..<separator])
             guard !name.isEmpty else { return nil }
-            self.init(name: name, value: nil)
+            self.init(name: name, value: String(line[line.index(after: separator)...]))
             return
         }
-        // Split on the first `=` only: a value is allowed to contain more.
-        guard let separator = line.firstIndex(of: "=") else { return nil }
-        let name = String(line[line.startIndex..<separator])
+        guard line.hasPrefix("-") else { return nil }
+        let name = String(line.dropFirst())
         guard !name.isEmpty else { return nil }
-        self.init(name: name, value: String(line[line.index(after: separator)...]))
+        self.init(name: name, value: nil)
     }
 }

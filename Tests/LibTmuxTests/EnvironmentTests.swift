@@ -102,6 +102,26 @@ struct EnvironmentTests {
         }
     }
 
+    @Test("a leading-dash environment name survives set, remove and unset")
+    func leadingDashEnvironmentNameRoundTrips() async throws {
+        try await withTmuxServer { server in
+            let set = try await server.setEnvironment("-r", to: "a=b")
+            #expect(set.isSuccess, Comment(rawValue: set.errorText))
+            #expect(try await server.environmentValue("-r") == "a=b")
+
+            let remove = try await server.removeEnvironment("-r")
+            #expect(remove.isSuccess, Comment(rawValue: remove.errorText))
+            #expect(
+                try await server.environment().contains {
+                    $0.name == "-r" && $0.isRemoved
+                })
+
+            let unset = try await server.unsetEnvironment("-r")
+            #expect(unset.isSuccess, Comment(rawValue: unset.errorText))
+            #expect(try await !server.environment().contains { $0.name == "-r" })
+        }
+    }
+
     @Test("an unknown variable is absent, not an error")
     func unknownVariableIsAbsent() async throws {
         try await withTmuxServer { server in
@@ -116,7 +136,9 @@ struct EnvironmentTests {
             ("FOO=bar", "FOO", String?.some("bar")),
             ("EMPTY=", "EMPTY", String?.some("")),
             ("PAIRS=a=b", "PAIRS", String?.some("a=b")),
+            ("-r=a=b", "-r", String?.some("a=b")),
             ("-GONE", "GONE", String?.none),
+            ("--GONE", "-GONE", String?.none),
         ]
     )
     func linesParse(_ line: String, _ name: String, _ value: String?) throws {

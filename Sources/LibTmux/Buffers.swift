@@ -80,7 +80,8 @@ extension Server {
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("load-buffer", arguments + [tmuxLiteralArgument(path)]))
+        try await expectSuccess(
+            TmuxCommand("load-buffer", arguments + ["--", tmuxLiteralArgument(path)]))
     }
 
     /// Writes a buffer to a file, letting tmux do the writing.
@@ -94,7 +95,8 @@ extension Server {
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("save-buffer", arguments + [tmuxLiteralArgument(path)]))
+        try await expectSuccess(
+            TmuxCommand("save-buffer", arguments + ["--", tmuxLiteralArgument(path)]))
     }
 
     /// Pastes a buffer into a pane.

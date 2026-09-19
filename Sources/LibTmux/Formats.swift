@@ -394,7 +394,7 @@ extension Server {
     ///   legitimately empty.
     public func format(_ template: String) async throws(TmuxError) -> String? {
         let reply = try await run(
-            rawArguments: TmuxCommand("display-message", ["-p", template])
+            rawArguments: TmuxCommand("display-message", ["-p", "--", template])
                 .argumentVector
         )
         guard reply.isSuccess else { return nil }
