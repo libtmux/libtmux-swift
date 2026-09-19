@@ -79,6 +79,10 @@ extension Server {
     /// The closure is the connection's whole lifetime — see
     /// <doc:Streaming#Lifetime> for why, and for how a long-running program
     /// holds one open.
+    ///
+    /// > Important: a process that has not ignored `SIGPIPE` can be killed by
+    /// a write to a tmux that went away first. This library cannot set that
+    /// disposition for its host — see <doc:PlatformSupport>.
     public func connected<Result: Sendable>(
         attachingTo session: Session,
         _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result

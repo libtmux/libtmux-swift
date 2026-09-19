@@ -142,6 +142,10 @@ extension Server {
     /// already on screen returns at once, with ``OutputWait/matchedAtEntry``
     /// set. Pass `requiringFreshOutput` when only a new occurrence counts.
     ///
+    /// > Important: this opens a control connection of its own, so it carries
+    /// the `SIGPIPE` hazard a connection carries even though the caller never
+    /// asked for one — see <doc:PlatformSupport>.
+    ///
     /// - Parameters:
     ///   - pane: the pane to watch.
     ///   - patterns: bounded regular expressions, any of which ends the wait. Empty
