@@ -1533,7 +1533,7 @@ struct WorkspaceCLITests {
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
             let script = root.appendingPathComponent("slow.sh")
             try Data(
-                "#!/bin/sh\nprintf 'early\\n'\nsleep 2\nprintf 'late\\n'\n".utf8
+                "#!/bin/sh\nprintf 'early\\n'\nsleep 0.25\nprintf 'late\\n'\n".utf8
             ).write(to: script)
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o755], ofItemAtPath: script.path)
@@ -1567,9 +1567,6 @@ struct WorkspaceCLITests {
                     $0.value["event"] == .string("script-output")
                         && $0.value["text"]?.string?.contains("early") == true
                 })
-            // The reference proof: this line must arrive well before the
-            // script's own 2-second sleep ends, not only once it exits.
-            #expect(early.elapsed < .seconds(1.5), "\(early.elapsed)")
             #expect(early.value["input_index"] == .integer(0))
             #expect(early.value["stream"] == .string("stdout"))
             let late = try #require(
@@ -1577,7 +1574,10 @@ struct WorkspaceCLITests {
                     $0.value["event"] == .string("script-output")
                         && $0.value["text"]?.string?.contains("late") == true
                 })
-            #expect(late.elapsed > early.elapsed + .seconds(1))
+            // The reference proof: a gap this wide is the script's sleep, not
+            // serialization overhead, so the lines streamed as they were
+            // printed rather than arriving together once the script exited.
+            #expect(late.elapsed > early.elapsed + .milliseconds(150))
             let completed = try #require(
                 records.first { $0.value["event"] == .string("script-completed") })
             #expect(completed.value["input_index"] == .integer(0))
