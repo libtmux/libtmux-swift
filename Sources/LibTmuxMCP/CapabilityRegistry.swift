@@ -514,9 +514,10 @@ extension TmuxTools {
                         "layout", required: true,
                         summary: "even-horizontal, even-vertical, main-horizontal, "
                             + "main-vertical, tiled, or a window_layout string this window "
-                            + "produced earlier, to restore it verbatim. tmux validates the "
-                            + "value and refuses an unrecognized one rather than this tool "
-                            + "checking its shape."),
+                            + "produced earlier, to restore it verbatim. This tool checks the "
+                            + "value and refuses one it does not recognize before tmux ever "
+                            + "sees it, because tmux 3.3 and 3.3a crash the daemon on an "
+                            + "unparseable layout string instead of rejecting it."),
                     windowID(),
                 ],
                 specialSinks: ["layout": state, "windowId": lookup],
