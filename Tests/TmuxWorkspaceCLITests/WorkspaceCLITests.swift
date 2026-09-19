@@ -2020,6 +2020,35 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("builder options load, and one that is not implemented warns")
+    func builderOptions() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
+            ]
+            let file = root.appendingPathComponent("builder.yaml")
+            try Data(
+                """
+                session_name: builder
+                workspace_builder_options:
+                  pane_readiness: always
+                  not_a_real_option: 1
+                windows:
+                  - window_name: w
+                    panes:
+                      - ~
+                """.utf8
+            ).write(to: file)
+            let result = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(result.code == 0, "\(result.error)")
+            #expect(result.error.joined().contains("not_a_real_option"), "\(result.error)")
+            #expect(try await server.sessions().contains { $0.name == "builder" })
+        }
+    }
+
     @Test("freeze selects explicit, pane-context and sole sessions without guessing")
     func freezeSessionSelection() async throws {
         try await withTmuxServer { server in

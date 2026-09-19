@@ -9,6 +9,19 @@ package enum WorkspaceBuildEvent: Sendable {
     case windowCompleted(index: Int, window: Window, session: Session)
 }
 
+/// Whether a pane's first command waits for that pane's shell to draw a
+/// prompt before it is sent.
+///
+/// Waiting is what keeps a command from being echoed by the terminal and then
+/// redrawn by the shell, showing twice. It does not depend on which shell the
+/// pane runs, so `automatic` and `always` mean the same thing here; `never` is
+/// for a caller that has its own reason to send immediately.
+package enum PaneReadiness: Sendable {
+    case automatic
+    case always
+    case never
+}
+
 /// Builds a workspace on a tmux server.
 ///
 /// This is a consumer of `LibTmux`, not part of it: everything here goes
@@ -41,6 +54,7 @@ public enum WorkspaceBuilder {
         configureSession: @Sendable (Session) async throws -> Void,
         configureWindow: @Sendable (Window, Int) async throws -> Void,
         configureWindowAfter: @Sendable (Window, Int) async throws -> Void = { _, _ in },
+        readiness: PaneReadiness = .automatic,
         borrowing borrowed: Session? = nil,
         onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void = { _ in }
     ) async throws(WorkspaceBuilderError) -> Session {
@@ -122,7 +136,7 @@ public enum WorkspaceBuilder {
                     .windowStarted(index: index, window: created, session: activeSession))
                 try await build(
                     window, at: index, in: created, of: workspace, on: server,
-                    session: activeSession, onEvent: onEvent)
+                    session: activeSession, readiness: readiness, onEvent: onEvent)
                 // `automatic-rename off` only holds once applied after the
                 // panes that could have renamed the window already exist.
                 try await configureWindowAfter(created, index)
@@ -205,6 +219,7 @@ public enum WorkspaceBuilder {
         of workspace: Workspace,
         on server: Server,
         session: Session,
+        readiness: PaneReadiness,
         onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void
     ) async throws {
         // The window arrives with one pane; only the rest are split in.
@@ -238,7 +253,9 @@ public enum WorkspaceBuilder {
                 .paneStarted(
                     windowIndex: windowIndex, index: index, pane: pane, window: created,
                     session: session))
-            if !plan.shellCommands.isEmpty, nonEmpty(plan.shell) ?? window.windowShell == nil {
+            if !plan.shellCommands.isEmpty, readiness != .never,
+                nonEmpty(plan.shell) ?? window.windowShell == nil
+            {
                 try await waitForPrompt(pane, on: server)
             }
             for command in plan.shellCommands {

@@ -223,6 +223,11 @@ around every command sent to that pane. Session `options` and inherited
 overriding inherited values. `before_script` runs direct argv after session
 creation, using the expanded session directory or invocation directory when
 omitted. It runs before options; its failure removes the created session.
+`workspace_builder_options` carries settings a builder reads rather than tmux:
+`pane_readiness` (`auto`, `always`, `never`) chooses whether a pane's first
+command waits for that pane's shell, which it does by default for any shell.
+A key inside it this port does not implement is a warning, never a refusal, so
+a document shared with the other ports still loads.
 An unsupported execution key fails before creation; prefix a key with `x-`
 to have it ignored instead, at any level. Existing exact session names are
 reused. A failed build removes only the session that build created and
