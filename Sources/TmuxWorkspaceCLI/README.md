@@ -307,18 +307,25 @@ Every machine failure carries a `code`. A failure about the workspace
 operation itself uses one of the ten the sibling ports share:
 `workspace_not_found`, `invalid_workspace`, `unsupported_key`,
 `session_not_found`, `session_mismatch`, `tmux_unavailable`, `tmux_failed`,
-`script_failed`, `destination_exists` and `usage`. Anything about how the
-command was invoked — its context, its flags, its arguments — is `usage`,
-exit 2.
+`script_failed`, `destination_exists` and `usage`. A document handed to
+`import` that cannot be read — an untranslated field, unexpanded ERB — is
+`invalid_workspace` too: the defect is in the document, not in this tool.
+Anything about how the command was invoked — its context, its flags, its
+arguments — is `usage`, exit 2.
+
+A run a signal stopped is `interrupted`, exit 130, whichever kind of failure
+it interrupted; every port uses this one spelling, not a private synonym.
+Declining a prompt — answering `n` to "already running, attach?", or `q` to
+cancel — is not an interruption and not a failure: nothing was built or
+changed, so it is a plain exit 0. A prompt this command cannot ask at all,
+for want of a terminal, is `usage`, exit 2.
 
 A failure of this tool's own plumbing rather than of the workspace carries a
 code of its own, because it describes this implementation: `document_read`,
 `document_write`, `document_size`, `document_type`, `log_open`, `log_write`,
 `output`, `closed_output`, `terminal`, `terminal_input`, `editor`,
 `command_argv`, `environment`, `process_output_limit`, `yaml_unavailable`,
-`version`, `import_document`, `import_unsupported`, `unsupported_template`,
-`unsupported_runtime`, and `cancelled`/`interrupted` for a run stopped by a
-signal.
+`version` and `unsupported_runtime`.
 
 `--log-level debug|info|warning|error|critical` selects the minimum advisory
 diagnostic severity, defaulting to `warning`. Capture/bootstrap/shell

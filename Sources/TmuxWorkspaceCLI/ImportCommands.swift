@@ -19,7 +19,7 @@ enum ImportCommands {
         // templates, so the same markup there is ordinary text.
         if kind == "tmuxinator", try source.encoded().contains("<%") {
             throw CLIError(
-                "unsupported_template",
+                "invalid_workspace",
                 "tmuxinator ERB templates are unsupported; expand them before import.")
         }
         var document =
@@ -81,14 +81,14 @@ enum ImportCommands {
         ]
         result["shell_command_before"] = try group(source["pre_window"], separator: "; ")
         guard let windows = try alias(source, "tabs", "windows")?.array else {
-            throw CLIError("import_document", "tmuxinator windows must be a list.")
+            throw CLIError("invalid_workspace", "tmuxinator windows must be a list.")
         }
         result["windows"] = .array(
             try windows.map { item in
                 let mapping = try object(item, at: "window")
                 guard mapping.count == 1, let (name, value) = mapping.first else {
                     throw CLIError(
-                        "import_document", "Each tmuxinator window must contain one named entry.")
+                        "invalid_workspace", "Each tmuxinator window must contain one named entry.")
                 }
                 var window: [String: Value] = ["window_name": .string(name)]
                 if let details = value.object {
@@ -99,12 +99,12 @@ enum ImportCommands {
                         details["panes"] == nil || details["panes"] == .null
                             || details["panes"]?.array != nil
                     else {
-                        throw CLIError("import_document", "\(name).panes must be a list.")
+                        throw CLIError("invalid_workspace", "\(name).panes must be a list.")
                     }
                     let panes = details["panes"]?.array ?? [.null]
                     let before = try group(details["pre"], separator: " && ")
                     if before != nil && details["panes"]?.array?.isEmpty != false {
-                        throw CLIError("import_unsupported", "\(name).pre requires explicit panes.")
+                        throw CLIError("invalid_workspace", "\(name).pre requires explicit panes.")
                     }
                     window["panes"] = .array(
                         try panes.map { pane in
@@ -139,7 +139,7 @@ enum ImportCommands {
             "start_directory": .string(root.path),
         ]
         guard let windows = source["windows"]?.array else {
-            throw CLIError("import_document", "teamocil windows must be a list.")
+            throw CLIError("invalid_workspace", "teamocil windows must be a list.")
         }
         result["windows"] = .array(
             try windows.map { value in
@@ -157,7 +157,7 @@ enum ImportCommands {
                 window["layout"] = defined(sourceWindow["layout"])
                 window["focus"] = defined(sourceWindow["focus"])
                 guard let panes = try alias(sourceWindow, "splits", "panes")?.array else {
-                    throw CLIError("import_document", "teamocil panes must be a list.")
+                    throw CLIError("invalid_workspace", "teamocil panes must be a list.")
                 }
                 window["panes"] = .array(
                     try panes.map { pane in
@@ -182,7 +182,7 @@ enum ImportCommands {
 
     private static func object(_ value: Value, at location: String) throws -> [String: Value] {
         guard let object = value.object else {
-            throw CLIError("import_document", "\(location) must be a mapping.")
+            throw CLIError("invalid_workspace", "\(location) must be a mapping.")
         }
         return object
     }
@@ -193,7 +193,7 @@ enum ImportCommands {
             var mapping = try object(value, at: "focus")
             if let focus = mapping["focus"] {
                 guard case .bool = focus else {
-                    throw CLIError("import_document", "focus must be a boolean.")
+                    throw CLIError("invalid_workspace", "focus must be a boolean.")
                 }
             }
             mapping["focus"] = .bool(index == selected)
@@ -207,7 +207,7 @@ enum ImportCommands {
             if entry == .null { return nil }
             guard entry.string != nil else {
                 throw CLIError(
-                    "import_document",
+                    "invalid_workspace",
                     "Commands must be strings or lists of strings; named panes are unsupported.")
             }
             return .object(["cmd": entry])
@@ -234,7 +234,7 @@ enum ImportCommands {
         let left = defined(mapping[first])
         let right = defined(mapping[second])
         if let left, let right, left != right {
-            throw CLIError("import_document", "Conflicting \(first) and \(second) values.")
+            throw CLIError("invalid_workspace", "Conflicting \(first) and \(second) values.")
         }
         return left ?? right
     }
@@ -244,12 +244,12 @@ enum ImportCommands {
     ) throws -> URL {
         guard let value, value != .null else { return fallback ?? parent }
         guard let text = value.string else {
-            throw CLIError("import_document", "Imported directories must be strings.")
+            throw CLIError("invalid_workspace", "Imported directories must be strings.")
         }
         guard !text.contains("$"), !text.hasPrefix("~") || text == "~" || text.hasPrefix("~/")
         else {
             throw CLIError(
-                "import_unsupported",
+                "invalid_workspace",
                 "Imported directories do not support dollar expansion or named-user homes.")
         }
         return store.path(text, relativeTo: parent).standardizedFileURL
@@ -260,7 +260,7 @@ enum ImportCommands {
     ) throws {
         if let key = mapping.keys.sorted().first(where: { !known.contains($0) }) {
             throw CLIError(
-                "import_unsupported", "\(location).\(key) is not translated; no output was saved.")
+                "invalid_workspace", "\(location).\(key) is not translated; no output was saved.")
         }
     }
 }

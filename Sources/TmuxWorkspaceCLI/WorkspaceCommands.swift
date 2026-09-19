@@ -94,13 +94,20 @@ enum WorkspaceCommands {
             context: context)
         // Context is resolved — and a cross-server load refused — before
         // anything touches the selected server, including layout validation.
-        let target = try await loadTarget(
-            command, plans: plans, server: server, context: context, output: output)
+        let target: LoadTarget
+        do {
+            target = try await loadTarget(
+                command, plans: plans, server: server, context: context, output: output)
+        } catch is PromptDeclined {
+            try await context.output("Not loaded.")
+            return
+        }
         try await WorkspaceLayout.validate(plans.map(\.workspace), on: server)
         let borrowed: Session?
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }
         let retained = AppendState()
         let scriptFailure = ScriptFailure()
+        let createdSession = CreatedSession()
         var results: [Value] = []
         var completedCount = 0
         var lastSession: Session?
@@ -242,6 +249,11 @@ enum WorkspaceCommands {
                             switch event {
                             case let .sessionCreated(session):
                                 name = "session-created"
+                                // An owned session that is later interrupted
+                                // is not rolled back, so this is the one
+                                // place its identity is captured for the
+                                // failure record to still name it.
+                                if borrowed == nil { await createdSession.record(session) }
                                 fields.merge([
                                     "session_id": .string(session.id.rawValue),
                                     "session_name": .string(session.name),
@@ -348,9 +360,29 @@ enum WorkspaceCommands {
                         "reused": .bool(false),
                     ]))
             }
+            // The same predicate that keeps `WorkspaceBuilder` from rolling
+            // an interruption back: the CLI cannot disagree with the library
+            // about whether the session it names here still exists.
+            var interrupted: Session?
+            if borrowed == nil, let builderError = error as? WorkspaceBuilderError,
+                case .tmux(.cancelled) = builderError
+            {
+                interrupted = await createdSession.session
+            }
+            if let interrupted {
+                results.append(
+                    .object([
+                        "input": .string(plans[currentInputIndex].source),
+                        "input_index": .integer(Int64(currentInputIndex)),
+                        "session_id": .string(interrupted.id.rawValue),
+                        "session_name": .string(interrupted.name),
+                        "reused": .bool(false),
+                    ]))
+            }
             var fields: [String: Value] = [
                 "schema_version": .integer(1), "command": .string("load"),
-                "status": .string(completedCount == 0 && !changed ? "error" : "partial"),
+                "status": .string(
+                    completedCount == 0 && !changed && interrupted == nil ? "error" : "partial"),
                 "results": .array(results),
                 "errors": .array([
                     .object([
@@ -366,6 +398,12 @@ enum WorkspaceCommands {
                     "session_name": .string(borrowed.name),
                     "window_ids": .array(await retained.windows.map(Value.string)),
                     "settings_may_have_changed": .bool(true),
+                ])
+            } else if let interrupted {
+                fields["retained_state"] = .object([
+                    "ownership": .string("created"),
+                    "session_id": .string(interrupted.id.rawValue),
+                    "session_name": .string(interrupted.name),
                 ])
             }
             let result = Value.object(fields)
@@ -559,16 +597,27 @@ enum WorkspaceCommands {
         else { throw mismatch }
     }
 
+    /// Thrown when a prompt this command asked is answered "no" outright.
+    /// Every prompt here runs before anything is built or written, so
+    /// declining is a normal outcome, not a failure: the caller reports it
+    /// as a plain exit 0, never `interrupted` or any error code.
+    struct PromptDeclined: Error {}
+
     private static func prompt(_ message: String, context: CLIContext)
         async throws -> String
     {
         try await context.output(message)
+        // A closed input stream answers nothing, which is not the same as
+        // an explicit no: there is no terminal left to ask, so this is a
+        // usage refusal, not a decline.
         guard let input = context.input, let line = try await input() else {
-            throw CLIError("cancelled", "Load cancelled.", status: 130)
+            throw CLIError(
+                "usage", "Prompt requires an answer; input ended before one was given.",
+                status: 2)
         }
         let answer = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !["q", "quit", "cancel"].contains(answer) else {
-            throw CLIError("cancelled", "Load cancelled.", status: 130)
+            throw PromptDeclined()
         }
         return answer
     }
@@ -655,8 +704,14 @@ enum WorkspaceCommands {
                 command.sessionName.map { "Session not found: \($0)" }
                     ?? "No live sessions to capture.")
         }
-        let session = try await freezeSession(
-            command, snapshot: snapshot, server: server, context: context)
+        let session: Session
+        do {
+            session = try await freezeSession(
+                command, snapshot: snapshot, server: server, context: context)
+        } catch is PromptDeclined {
+            try await context.output("Not captured.")
+            return
+        }
         // Capture never writes a document load would refuse.
         guard isAddressableSessionName(session.name) else {
             throw CLIError(
@@ -857,12 +912,18 @@ enum WorkspaceCommands {
         }
         while true {
             try await context.error("Choose a session (1-\(sessions.count), q to cancel):")
+            // A closed input stream answers nothing, which is not the same
+            // as an explicit no: there is no terminal left to ask.
             guard let line = try await input() else {
-                throw CLIError("cancelled", "Capture cancelled.", status: 130)
+                throw CLIError(
+                    "usage", "Prompt requires an answer; input ended before one was given.",
+                    status: 2)
             }
             let answer = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if ["q", "quit", "cancel"].contains(answer.lowercased()) {
-                throw CLIError("cancelled", "Capture cancelled.", status: 130)
+                // Nothing has been captured yet, so declining is a normal
+                // outcome, not a failure: the caller reports exit 0.
+                throw PromptDeclined()
             }
             if let index = Int(answer), index > 0, index <= sessions.count {
                 return sessions[index - 1]
@@ -1284,6 +1345,16 @@ private actor ScriptFailure {
     private(set) var session: (id: String, name: String)?
     func record(_ session: Session) {
         if self.session == nil { self.session = (session.id.rawValue, session.name) }
+    }
+}
+
+/// The session an owned (non-append) build has created, so an interruption —
+/// which is not rolled back, unlike an ordinary failure — can still be named
+/// in the failure record instead of the CLI losing track of it entirely.
+private actor CreatedSession {
+    private(set) var session: Session?
+    func record(_ session: Session) {
+        if self.session == nil { self.session = session }
     }
 }
 
