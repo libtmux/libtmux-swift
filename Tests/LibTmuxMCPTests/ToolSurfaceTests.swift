@@ -80,7 +80,7 @@ struct ToolSurfaceTests {
         case .integer, .number:
             // Anything that waits must not wait long: this drives 45 tools.
             let bounded = min(max(argument.minimum ?? 1, 1), argument.maximum ?? 1)
-            return .number(name.contains("econds") || name.contains("imeout") ? 1 : bounded)
+            return .number(bounded)
         case .boolean:
             return .bool(false)
         case .stringArray, .commandArray:
@@ -96,7 +96,9 @@ struct ToolSurfaceTests {
 
     private static func arguments(for definition: ToolDefinition, target: Target) -> JSONValue {
         var object: [String: JSONValue] = [:]
-        for argument in definition.arguments where argument.isRequired {
+        let waitsForExternalInput = ["wait_for_text", "wait_for_channel"].contains(definition.name)
+        for argument in definition.arguments
+        where argument.isRequired || (waitsForExternalInput && argument.name == "timeoutMs") {
             object[argument.name] = value(for: argument, target: target)
         }
         for (key, override) in semanticOverrides(definition.name, target) {
