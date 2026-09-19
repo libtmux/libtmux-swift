@@ -497,6 +497,15 @@ try Workspace.decode(yaml: text)
 The fixtures the suite tests against are tmuxp's own examples, decoded both ways
 and compared — a stronger claim than either parsing alone.
 
+`Workspace` is a narrower language than the `tmux-workspace` executable reads,
+and the two are separate readers of one file format. Handed the same tmuxp
+file, `Workspace.decode` drops `shell_command_before`, `suppress_history`,
+`options`, `global_options`, `window_options`, `options_after`,
+`before_script` and `workspace_builder_options`, and leaves `$VAR` unexpanded,
+where the executable reads all of them. What both do share is the builder: the
+executable creates every session through `WorkspaceBuilder`, so a layout built
+from Swift is the layout the command builds.
+
 ## tmux as MCP tools
 
 `libtmux-mcp` is a [Model Context Protocol][MCP] server. It speaks JSON-RPC 2.0
