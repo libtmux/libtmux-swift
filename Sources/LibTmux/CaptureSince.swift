@@ -78,7 +78,7 @@ extension Server {
     /// unsubmitted input line rather than something it produced -- whether or
     /// not a new row was created, since typing into an already-anchored row
     /// without a newline changes that row without advancing past it.
-    package func scanForward(
+    func scanForward(
         _ pane: Pane,
         since cursor: CaptureCursor,
         sourceLinesPerChunk: Int,

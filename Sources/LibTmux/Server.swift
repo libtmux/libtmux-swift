@@ -281,7 +281,7 @@ public struct Server: Sendable, Hashable {
         return try request.validate(reply)
     }
 
-    package func runTerminatingIsolated(
+    func runTerminatingIsolated(
         _ command: TmuxCommand,
         expecting incarnation: ServerIncarnation,
         perStreamOutputLimit: Int

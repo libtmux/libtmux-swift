@@ -1,4 +1,3 @@
-API breakage: func Server.scanForward(_:since:sourceLinesPerChunk:maximumChunks:perStreamOutputLimit:_:) has parameter 5 type change from ([Swift.String]) -> Swift.Bool to ([Swift.String], Swift.Bool) -> Swift.Bool
 API breakage: enumelement TmuxError.foreignPaneValue has been added as a new enum case
 API breakage: enumelement TmuxError.rejectedLocally has been added as a new enum case
 API breakage: enumelement OutputWait.Outcome.alreadyOnScreen has been added as a new enum case
@@ -24,3 +23,10 @@ API breakage: func Server.unsetOption(_:scope:) has generic signature change fro
 API breakage: func Server.unsetOption(_:scope:) has return type change from LibTmux.TmuxReply to ()
 API breakage: func Server.unsetOption(_:scope:) has parameter 0 type change from Swift.String to LibTmux.TmuxOptionKey<Value>
 API breakage: func Server.unsetOption(_:scope:) has parameter 1 type change from LibTmux.OptionScope to LibTmux.OptionScope?
+API breakage: var TmuxServers.maximumCandidates has been removed
+API breakage: func tmuxFormatRequestsShellJob(_:) has been removed
+API breakage: enum CursorReanchor has been removed
+API breakage: struct ForwardCaptureResult has been removed
+API breakage: func Server.runTerminatingIsolated(_:expecting:perStreamOutputLimit:) has been removed
+API breakage: func Server.scanForward(_:since:sourceLinesPerChunk:maximumChunks:perStreamOutputLimit:_:) has been removed
+API breakage: func Server.captureLookbackThroughCursor(_:historyLines:perStreamOutputLimit:) has been removed

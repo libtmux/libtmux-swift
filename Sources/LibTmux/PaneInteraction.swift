@@ -242,7 +242,7 @@ extension Server {
         )
     }
 
-    package func captureLookbackThroughCursor(
+    func captureLookbackThroughCursor(
         _ pane: Pane,
         historyLines: Int,
         perStreamOutputLimit: Int

@@ -148,7 +148,7 @@ public struct IncrementalCapture: Sendable, Hashable, Codable {
 
 /// Why a forward scan established its cursor with no usable predecessor, which
 /// decides what the rows already on screen mean.
-package enum CursorReanchor: Sendable, Hashable {
+enum CursorReanchor: Sendable, Hashable {
     /// The cursor carried on from where the last scan left it.
     case none
     /// The pane was respawned, so everything on screen is the new process's and
@@ -159,13 +159,13 @@ package enum CursorReanchor: Sendable, Hashable {
     case gridHandback
 }
 
-package struct ForwardCaptureResult: Sendable, Hashable {
-    package let cursor: CaptureCursor
-    package let linesMissed: Bool
-    package let reanchor: CursorReanchor
-    package let droppedLines: Int
-    package let hasMore: Bool
+struct ForwardCaptureResult: Sendable, Hashable {
+    let cursor: CaptureCursor
+    let linesMissed: Bool
+    let reanchor: CursorReanchor
+    let droppedLines: Int
+    let hasMore: Bool
     /// The rows came from the grid a full-screen program paints, which tmux
     /// keeps out of history, so they were not printed by the pane.
-    package let alternateScreen: Bool
+    let alternateScreen: Bool
 }

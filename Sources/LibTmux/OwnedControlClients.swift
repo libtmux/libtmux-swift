@@ -13,20 +13,20 @@
 /// Scoped process-wide rather than per ``Server`` because a pid is unique to
 /// the OS at any instant regardless of which endpoint opened it, and this
 /// process only ever opens connections it owns.
-package actor OwnedControlClients {
-    package static let shared = OwnedControlClients()
+actor OwnedControlClients {
+    static let shared = OwnedControlClients()
 
     private var pids: Set<Int> = []
 
-    package func register(_ pid: Int) {
+    func register(_ pid: Int) {
         pids.insert(pid)
     }
 
-    package func unregister(_ pid: Int) {
+    func unregister(_ pid: Int) {
         pids.remove(pid)
     }
 
-    package func contains(_ pid: Int) -> Bool {
+    func contains(_ pid: Int) -> Bool {
         pids.contains(pid)
     }
 }
