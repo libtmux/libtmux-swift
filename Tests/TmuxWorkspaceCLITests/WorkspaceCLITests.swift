@@ -1970,6 +1970,56 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("an empty start_directory reads as none, and one that is not there warns")
+    func startDirectorySemantics() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
+            ]
+            let empty = root.appendingPathComponent("empty.yaml")
+            try Data(
+                """
+                session_name: emptydir
+                start_directory: ~
+                windows:
+                  - window_name: w
+                    start_directory: ~
+                    panes:
+                      - start_directory: ~
+                """.utf8
+            ).write(to: empty)
+            let loaded = await invoke(
+                ["load", empty.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "emptydir" })
+            let window = try #require(snapshot.windows(of: session).first)
+            let pane = try #require(snapshot.panes(of: window).first)
+            #expect(pane.currentPath == root.path)
+
+            let missing = root.appendingPathComponent("missing.yaml")
+            try Data(
+                """
+                session_name: missingdir
+                start_directory: /nonexistent/definitely/not/here
+                windows:
+                  - panes:
+                      - ~
+                """.utf8
+            ).write(to: missing)
+            let warned = await invoke(
+                ["load", missing.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(warned.code == 0, "\(warned.error)")
+            #expect(
+                warned.error.joined().contains("tmux will fall back to $HOME"),
+                "\(warned.error)")
+            #expect(warned.error.joined().contains("definitely"), "\(warned.error)")
+            #expect(!loaded.error.joined().contains("start_directory"), "\(loaded.error)")
+        }
+    }
+
     @Test("freeze selects explicit, pane-context and sole sessions without guessing")
     func freezeSessionSelection() async throws {
         try await withTmuxServer { server in
