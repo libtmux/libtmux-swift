@@ -275,10 +275,19 @@ struct RealTmuxTests {
     @Test("a session name tmux would otherwise split still answers exists")
     func hasSessionAnswersASeparatorBearingName() async throws {
         try await withTmuxServer { server in
-            let created = try await server.newSession(named: "my.proj")
             // Whatever this release did with the request -- kept it, or
             // rewrote the separator away -- hasSession must recognize the
             // session it actually produced.
+            let created: Session
+            do {
+                created = try await server.newSession(named: "my.proj")
+            } catch TmuxError.invocationFailed(let reason)
+                where reason.contains("invalid session name")
+            {
+                // 3.7 alone refuses the name outright at creation, so there is
+                // no session to look up; any other failure still fails here.
+                return
+            }
             #expect(try await server.hasSession(created.name))
         }
     }
