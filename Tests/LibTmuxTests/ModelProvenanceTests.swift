@@ -142,7 +142,7 @@ struct ModelOperation: Sendable, CustomStringConvertible {
         mutation("killWindow") { s, v in try await s.kill(v.window) },
         mutation("killPane") { s, v in try await s.kill(v.pane) },
         mutation("sendKeys") { s, v in
-            try await s.sendKeys(["x"], to: v.pane, literally: true)
+            try await s.send([.text("x")], to: v.pane)
         },
         mutation("runInPane") { s, v in try await s.run("true", in: v.pane) },
         mutation("selectWindow") { s, v in try await s.select(v.windowLink) },

@@ -669,8 +669,8 @@ struct WatchTests {
                 timeout: .seconds(3)
             )
             try await Task.sleep(for: .milliseconds(500))
-            try await server.sendKeys(
-                [#"printf '\033[?1049h'; printf 'paint\n'"#, "Enter"], to: pane)
+            try await server.send(
+                [.key(#"printf '\033[?1049h'; printf 'paint\n'"#), .key("Enter")], to: pane)
             #expect(try await entering.outcome == .alternateScreen)
 
             // Leaving mid-wait resumes on the grid the cursor came from.
@@ -680,8 +680,8 @@ struct WatchTests {
                 timeout: .seconds(8)
             )
             try await Task.sleep(for: .milliseconds(500))
-            try await server.sendKeys(
-                [#"printf '\033[?1049l'; printf 'back-again\n'"#, "Enter"], to: pane)
+            try await server.send(
+                [.key(#"printf '\033[?1049l'; printf 'back-again\n'"#), .key("Enter")], to: pane)
             #expect(try await leaving.outcome == .matched)
 
             // Begun under the program, so the grid it hands back is what was
@@ -696,8 +696,7 @@ struct WatchTests {
                 timeout: .seconds(2)
             )
             try await Task.sleep(for: .milliseconds(500))
-            try await server.sendKeys(
-                [#"printf '\033[?1049l'"#, "Enter"], to: pane)
+            try await server.send([.key(#"printf '\033[?1049l'"#), .key("Enter")], to: pane)
             #expect(try await fresh.outcome != .matched)
         }
     }
@@ -758,7 +757,7 @@ struct WatchTests {
             let marker = "pending-\(UUID().uuidString.prefix(8))"
 
             // Typed but never submitted: sits on the input line, not run.
-            try await server.sendKeys([marker], to: pane, literally: true)
+            try await server.send([.text(marker)], to: pane)
 
             let result = try await server.waitForOutput(
                 in: pane,

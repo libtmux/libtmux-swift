@@ -12,3 +12,5 @@ API breakage: func Server.newWindow(in:named:startDirectory:) has been renamed t
 API breakage: func Server.newWindow(_:_:named:startDirectory:) has been renamed to func newWindow(_:_:named:startDirectory:running:environment:)
 API breakage: func Server.splitWindow(_:direction:size:startDirectory:) has been renamed to func splitWindow(_:direction:size:startDirectory:running:environment:)
 API breakage: func Server.split(_:direction:size:startDirectory:) has been renamed to func split(_:direction:size:startDirectory:running:environment:)
+API breakage: func Server.sendKeys(_:to:literally:) has parameter 0 type change from [Swift.String] to [LibTmux.PaneInput]
+API breakage: func Server.sendKeys(_:to:literally:) has been renamed to func send(_:to:)

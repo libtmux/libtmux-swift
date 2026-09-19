@@ -369,7 +369,7 @@ struct IdentityTests {
             try await server.kill(second)
 
             await #expect(throws: TmuxError.staleServerValue) {
-                try await server.sendKeys(["x"], to: second, literally: true)
+                try await server.send([.text("x")], to: second)
             }
             await #expect(throws: TmuxError.staleServerValue) {
                 _ = try await server.capture(second)

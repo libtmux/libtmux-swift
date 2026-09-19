@@ -99,8 +99,8 @@ struct RunShellStagingTests {
                     return command == "bash" || command == "sh" || command == "dash"
                 }
             )
-            try await fixture.sendKeys(
-                ["printf '%s\\n' \"$$\" > \(shellQuoted(processFile.path))", "Enter"],
+            try await fixture.send(
+                [.key("printf '%s\\n' \"$$\" > \(shellQuoted(processFile.path))"), .key("Enter")],
                 to: pane
             )
             try #require(

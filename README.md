@@ -489,9 +489,15 @@ return try await server.sessions().map(\.name)
 ```
 
 A **decorator** wraps the shipped `SubprocessTransport` to log, time, trace or
-count every command. The library takes no logging dependency and installs no
-global hook, because a library that picks the logger picks it for its host —
-`ProcessTransport`'s own documentation carries a worked example.
+count the commands that reach it. The library takes no logging dependency and
+installs no global hook, because a library that picks the logger picks it for
+its host — `ProcessTransport`'s own documentation carries a worked example.
+
+A connected server is the exception, and worth knowing before you rely on one
+for tracing: a control connection is a single long-lived process this library
+owns, so commands travel down its pipe rather than through a transport. Inside
+`connected`/`using`, a decorator sees only the calls that take their own
+process — `wait(for:)` and `buffer(named:)`. Directly, it sees everything.
 
 Driving a real tmux in tests is a different job, and `TmuxFixture` does it:
 one private socket per case, reaped even when a run is killed outright.

@@ -505,8 +505,8 @@ struct MutationTests {
             )
 
             // Without -l tmux would read this as the Enter key.
-            try await server.sendKeys(["echo Enter-as-text"], to: pane, literally: true)
-            try await server.sendKeys(["Enter"], to: pane)
+            try await server.send([.text("echo Enter-as-text")], to: pane)
+            try await server.send([.key("Enter")], to: pane)
 
             let typed = try await waitUntil {
                 try await server.capture(pane)

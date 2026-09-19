@@ -483,6 +483,13 @@ public struct Server: Sendable, Hashable {
     /// different servers, so they are not part of this — which is what lets
     /// `server.withTimeout(_:)` and a connected scope's server still compare
     /// equal to the one they came from.
+    ///
+    /// A substituted ``ProcessTransport`` is deliberately not part of it
+    /// either, which has one consequence worth stating: a server wired to a
+    /// test double compares equal to one that reaches the real daemon. That
+    /// is the intended reading — a double stands in for *that* server — but it
+    /// means equality answers "which tmux is this addressing", never "will
+    /// these two behave alike".
     public static func == (lhs: Server, rhs: Server) -> Bool {
         lhs.endpoint == rhs.endpoint
             && lhs.tmuxExecutablePath == rhs.tmuxExecutablePath

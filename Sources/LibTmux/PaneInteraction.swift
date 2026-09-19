@@ -22,7 +22,7 @@ public struct PaneCapture: Sendable, Hashable {
 /// the commonest thing anyone sends a pane — inexpressible. Saying which each
 /// piece is lets ``Server/send(_:to:)`` group them into as few calls as tmux
 /// needs while keeping them one atomic dispatch.
-public enum PaneInput: Sendable, Hashable {
+public enum PaneInput: Sendable, Hashable, Codable {
     /// Characters, sent as themselves. A piece of text that happens to spell
     /// a key name — `Tab`, `Space`, `Up` — stays text.
     case text(String)
@@ -42,27 +42,6 @@ extension Server {
     static let captureOutputByteLimit = defaultTmuxReplyByteLimit
 
     // MARK: Talking to a pane
-
-    /// Sends keys to a pane.
-    ///
-    /// - Parameters:
-    ///   - keys: what to send, one argument per key or literal string.
-    ///   - pane: the pane to send them to.
-    ///   - literally: sends the text as characters rather than letting tmux
-    ///     read names like `Enter` or `C-c` out of it. Use it for anything
-    ///     that came from a user.
-    public func sendKeys(
-        _ keys: [String],
-        to pane: Pane,
-        literally: Bool = false
-    ) async throws(TmuxError) {
-        var arguments = ["-t", pane.id.rawValue]
-        if literally { arguments.append("-l") }
-        try await expectSuccess(
-            TmuxCommand("send-keys", arguments + ["--"] + keys),
-            guardedBy: [.pane(pane)]
-        )
-    }
 
     /// Sends a mixture of text and keys to a pane, in order.
     ///

@@ -904,7 +904,7 @@ struct RetainedMCPBehaviorTests {
             let configure =
                 "kill() { :; }; " + (ignoreHUP ? "trap '' HUP; " : "")
                 + "printf ready > \(shellQuoted(ready.path))"
-            try await fixture.sendKeys([configure, "Enter"], to: pane)
+            try await fixture.send([.key(configure), .key("Enter")], to: pane)
             try #require(
                 try await waitUntil {
                     FileManager.default.fileExists(atPath: ready.path)
@@ -1008,8 +1008,9 @@ struct RetainedMCPBehaviorTests {
                 current.text.trimmingCharacters(in: .whitespacesAndNewlines) != pane.id.rawValue)
             let ready = URL(fileURLWithPath: pane.incarnation.socketPath)
                 .deletingLastPathComponent().appendingPathComponent("target-ready")
-            try await fixture.sendKeys(
-                ["unset TMUX TMUX_PANE; : > \(shellQuoted(ready.path))", "Enter"], to: pane)
+            try await fixture.send(
+                [.key("unset TMUX TMUX_PANE; : > \(shellQuoted(ready.path))"), .key("Enter")],
+                to: pane)
             try #require(
                 try await waitUntil { FileManager.default.fileExists(atPath: ready.path) })
             let result = try await tools(fixture).call(

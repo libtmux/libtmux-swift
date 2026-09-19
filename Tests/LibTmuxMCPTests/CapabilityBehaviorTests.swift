@@ -396,7 +396,7 @@ struct CapabilityBehaviorTests {
                     + "printf(){ :; }; alias printf=:; trap ':' 0; "
                     + (shell == "bash" ? "trap ':' DEBUG; trap ':' ERR; " : "")
                     + "set -e; set -x; \(server.shellInvocation) wait-for -S \(ready)"
-                try await server.sendKeys([setup, "Enter"], to: original)
+                try await server.send([.key(setup), .key("Enter")], to: original)
                 try await server.wait(for: ready)
 
                 let surface = tools(server)
@@ -454,13 +454,11 @@ struct CapabilityBehaviorTests {
                 #expect(parent.structured["exitStatus"]?.intValue == 0, Comment(rawValue: shell))
 
                 let unaliased = "libtmux-swift-frame-unalias-\(UUID().uuidString)"
-                try await server.sendKeys(
+                try await server.send(
                     [
-                        "unalias printf; \(server.shellInvocation) wait-for -S \(unaliased)",
-                        "Enter",
-                    ],
-                    to: original
-                )
+                        .key("unalias printf; \(server.shellInvocation) wait-for -S \(unaliased)"),
+                        .key("Enter"),
+                    ], to: original)
                 try await server.wait(for: unaliased)
                 let function = try await surface.call(
                     ToolCall(
@@ -538,7 +536,7 @@ struct CapabilityBehaviorTests {
                     + (canonicalInput ? "\\set -T; " : "")
                     + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(ready)
-                try await server.sendKeys([setup, "Enter"], to: pane)
+                try await server.send([.key(setup), .key("Enter")], to: pane)
                 try await server.wait(for: ready)
                 let shellProcessText = try #require(
                     try await server.format("#{pane_pid}", addressing: pane.id.rawValue)
@@ -640,7 +638,7 @@ struct CapabilityBehaviorTests {
                     + "\\unset __libtmux_test_trap; "
                     + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(oversizedReady)
-                try await server.sendKeys([oversizedSetup, "Enter"], to: pane)
+                try await server.send([.key(oversizedSetup), .key("Enter")], to: pane)
                 try await server.wait(for: oversizedReady)
 
                 let refusedMarker = "trap-refused-\(shell)"
@@ -659,15 +657,13 @@ struct CapabilityBehaviorTests {
                 )
 
                 let restored = "libtmux-swift-restored-trap-\(UUID().uuidString)"
-                try await server.sendKeys(
+                try await server.send(
                     [
-                        "\\trap \(shellQuoted(errorAction)) ERR; "
-                            + "\(server.shellInvocation) wait-for -S -- "
-                            + shellQuoted(restored),
-                        "Enter",
-                    ],
-                    to: pane
-                )
+                        .key(
+                            "\\trap \(shellQuoted(errorAction)) ERR; "
+                                + "\(server.shellInvocation) wait-for -S -- "
+                                + shellQuoted(restored)), .key("Enter"),
+                    ], to: pane)
                 try await server.wait(for: restored)
                 let recoveredMarker = "trap-recovered-\(shell)"
                 let recovered = try await run(
@@ -766,9 +762,7 @@ struct CapabilityBehaviorTests {
 
             switch operand {
             case .sendKeys:
-                try await server.sendKeys(
-                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
-                )
+                try await server.send([.text("/usr/bin/printf '%s\\n' ")], to: pane)
                 _ = try await surface.call(
                     ToolCall(
                         name: "send_keys",
@@ -779,13 +773,11 @@ struct CapabilityBehaviorTests {
                         ])
                     )
                 )
-                try await server.sendKeys(["Enter"], to: pane)
+                try await server.send([.key("Enter")], to: pane)
                 #expect(try await waitUntil { try await server.capture(pane).contains(marker) })
 
             case .sendKeysBatch:
-                try await server.sendKeys(
-                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
-                )
+                try await server.send([.text("/usr/bin/printf '%s\\n' ")], to: pane)
                 let result = try await surface.call(
                     ToolCall(
                         name: "send_keys_batch",
@@ -801,13 +793,11 @@ struct CapabilityBehaviorTests {
                     )
                 )
                 #expect(result.structured["completed"]?.intValue == 1)
-                try await server.sendKeys(["Enter"], to: pane)
+                try await server.send([.key("Enter")], to: pane)
                 #expect(try await waitUntil { try await server.capture(pane).contains(marker) })
 
             case .pasteText:
-                try await server.sendKeys(
-                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
-                )
+                try await server.send([.text("/usr/bin/printf '%s\\n' ")], to: pane)
                 _ = try await surface.call(
                     ToolCall(
                         name: "paste_text",
@@ -1105,11 +1095,7 @@ struct CapabilityBehaviorTests {
             let source = try #require(try await server.panes().first)
             let peer = try await server.split(source, direction: .right)
             let peerMarker = "peer-enter-must-not-run"
-            try await server.sendKeys(
-                ["/usr/bin/printf '\(peerMarker)\\n'"],
-                to: peer,
-                literally: true
-            )
+            try await server.send([.text("/usr/bin/printf '\(peerMarker)\\n'")], to: peer)
             for pane in [source, peer] {
                 _ = try await server.run(
                     TmuxCommand(
