@@ -168,11 +168,26 @@ def check(choice):
                     "new-window", "-d", "-t", "=keeper:", "-P", "-F", "#{window_index}"
                 )
                 other = terminal(
-                    [tmux, "-S", socket, "attach-session", "-t", f"=keeper:{other_window_index}"]
+                    [
+                        tmux,
+                        "-S",
+                        socket,
+                        "attach-session",
+                        "-t",
+                        f"=keeper:{other_window_index}",
+                    ]
                 )
                 other.until(lambda: len(clients()) == 1)
                 marker = root / "exit-code"
-                arguments = [binary, "load", files[1], "-S", socket, "--no-progress", "-y"]
+                arguments = [
+                    binary,
+                    "load",
+                    files[1],
+                    "-S",
+                    socket,
+                    "--no-progress",
+                    "-y",
+                ]
                 line = (
                     shlex.join(arguments)
                     + "; printf '%s\\n' \"$?\" > "
