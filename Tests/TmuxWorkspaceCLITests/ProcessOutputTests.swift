@@ -67,13 +67,24 @@ struct ProcessOutputTests {
             // Event fields sit at the top level of the record, not nested
             // under a `data` key.
             let data = try #require(failed.first)
-            #expect(data["status"] as? String == (append ? "partial" : "error"))
+            // Both branches retain something: append leaves the borrowed
+            // session as it found it plus whatever settings landed, and a
+            // fresh build is not rolled back on interruption — the same
+            // signal that stopped it could stop the cleanup that would
+            // follow. Either way this is `partial`, never `error`.
+            #expect(data["status"] as? String == "partial")
+            let retainedState = try #require(data["retained_state"] as? [String: Any])
             if append {
-                #expect(
-                    (data["retained_state"] as? [String: Any])?["session_id"] as? String
-                        == session.id.rawValue)
+                #expect(retainedState["ownership"] as? String == "borrowed")
+                #expect(retainedState["session_id"] as? String == session.id.rawValue)
+                #expect(try await server.sessions().map(\.id) == snapshot.sessions.map(\.id))
+            } else {
+                #expect(retainedState["ownership"] as? String == "created")
+                let createdID = try #require(retainedState["session_id"] as? String)
+                #expect(createdID != session.id.rawValue)
+                let after = try await server.sessions()
+                #expect(after.contains { $0.id.rawValue == createdID && $0.name == "cancelled" })
             }
-            #expect(try await server.sessions().map(\.id) == snapshot.sessions.map(\.id))
         }
     }
 

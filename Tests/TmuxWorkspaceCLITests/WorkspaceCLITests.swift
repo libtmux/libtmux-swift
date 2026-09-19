@@ -96,6 +96,43 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("import failures use the shared invalid_workspace code, not a private one")
+    func importFailuresUseSharedCode() async throws {
+        try await withFiles { root in
+            // A document defect handed to us by an importer is the same
+            // shape as any other invalid workspace, not this tool's own
+            // plumbing: no import_document, import_unsupported or
+            // unsupported_template code survives.
+            for (kind, source) in [
+                (
+                    "tmuxinator",
+                    #"{"name":"test","tmux_options":"-f foreign.conf","windows":[{"work":":"}]}"#
+                ),
+                (
+                    "tmuxinator",
+                    #"{"name":"test","root":"<%= dynamic_root %>","windows":[{"work":":"}]}"#
+                ),
+                (
+                    "teamocil",
+                    #"{"name":"test","windows":[{"name":"work","clear":true,"panes":[null]}]}"#
+                ),
+            ] {
+                let file = root.appendingPathComponent("\(kind)-\(UUID().uuidString).json")
+                try Data(source.utf8).write(to: file)
+                let result = await invoke(["import", kind, file.path, "--json"], in: root)
+                #expect(result.code == 1, "\(kind): \(result.error)")
+                #expect(result.output.isEmpty, "\(kind): \(result.output)")
+                // A machine failure prints its diagnostic to stderr, not
+                // stdout, which is where a successful import's document goes.
+                let diagnostic =
+                    try JSONSerialization.jsonObject(with: Data(result.error.joined().utf8))
+                    as? [String: Any] ?? [:]
+                #expect(
+                    diagnostic["code"] as? String == "invalid_workspace", "\(kind): \(diagnostic)")
+            }
+        }
+    }
+
     @Test("imported focus and before-command groups survive loading")
     func importedFocusAndBeforeCommands() async throws {
         try await withTmuxServer { server in
@@ -1608,7 +1645,8 @@ struct WorkspaceCLITests {
             #expect(result["status"] as? String == "error")
             let errors = try #require(result["errors"] as? [[String: Any]])
             #expect(errors.first?["code"] as? String == "session_mismatch", "\(errors)")
-            #expect((errors.first?["message"] as? String ?? "").contains("two"), "\(errors)")
+            let message = errors.first?["message"] as? String ?? ""
+            #expect(message.contains("two"), "\(errors)")
             // Comparing is the rule; a mismatch is reported, never rebuilt.
             let after = try await server.snapshot()
             #expect(after.windows(of: session).map(\.name) == ["one"])
@@ -2133,12 +2171,15 @@ struct WorkspaceCLITests {
                 try JSONSerialization.jsonObject(with: Data(contentsOf: selectedDestination))
                 as! [String: Any]
             #expect(savedSelected["session_name"] as? String == "other")
+            // Declining the chooser is a normal outcome, not a failure:
+            // nothing has been captured yet, so this is exit 0, the same as
+            // answering no to load's own prompts, never `interrupted`.
             let cancelledDestination = root.appendingPathComponent("cancelled.json")
             let cancelled = await invoke(
                 ["freeze", "-S", socket, "--save-to", cancelledDestination.path], in: root,
                 extra: environment, responses: ["q"])
-            #expect(cancelled.code == 130)
-            #expect(cancelled.output.isEmpty)
+            #expect(cancelled.code == 0, "\(cancelled.error)")
+            #expect(cancelled.output.contains { $0.contains("Not captured") })
             #expect(!FileManager.default.fileExists(atPath: cancelledDestination.path))
             environment["TMUX"] = "\(socket),\(snapshot.serverProcessID),999"
             environment["TMUX_PANE"] = pane.id.rawValue
@@ -2154,6 +2195,39 @@ struct WorkspaceCLITests {
                 ["freeze", "bootstrap", "-S", socket, "--json"], in: root, extra: environment)
             #expect(explicit.code == 0)
             #expect(try explicit.json()["session_name"] as? String == "bootstrap")
+        }
+    }
+
+    @Test("declining load's attach prompt is exit 0, and a closed prompt is usage")
+    func loadPromptDeclineAndClosedInput() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            _ = try await server.newSession(named: "existing")
+            let file = root.appendingPathComponent("existing.json")
+            try Data(
+                #"{"session_name":"existing","windows":[{"panes":[null]}]}"#.utf8
+            ).write(to: file)
+            // Declining the "already running. Attach?" prompt happens before
+            // anything is touched, so it is a normal exit 0 — never
+            // `interrupted`, and never the 130 a signal reports.
+            let beforeDecline = try await server.snapshot()
+            let declined = await invoke(
+                ["load", file.path, "-S", socket], in: root, extra: environment,
+                responses: ["q"])
+            #expect(declined.code == 0, "\(declined.error)")
+            #expect(declined.output.contains { $0.contains("Not loaded") })
+            let afterDecline = try await server.snapshot()
+            #expect(afterDecline.sessions.map(\.id) == beforeDecline.sessions.map(\.id))
+            #expect(afterDecline.windows.map(\.id) == beforeDecline.windows.map(\.id))
+            // A closed input stream answers nothing. That is not a decline —
+            // there is no terminal left to ask — so it is usage, exit 2.
+            let closed = await invoke(
+                ["load", file.path, "-S", socket], in: root, extra: environment,
+                responses: [])
+            #expect(closed.code == 2, "\(closed.error)")
+            #expect(closed.error.joined().contains("input ended"), "\(closed.error)")
         }
     }
 
@@ -2695,6 +2769,7 @@ struct WorkspaceCLITests {
         if let responses {
             let input = Responses(responses)
             context.terminal = true
+            context.inputTTY = "/dev/test-tty"
             context.input = { await input.next() }
         }
         let code = await WorkspaceCLI.run(args, context: context)
