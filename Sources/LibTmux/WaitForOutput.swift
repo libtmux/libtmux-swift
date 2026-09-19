@@ -199,7 +199,8 @@ extension Server {
         startingAt cursor: CaptureCursor? = nil,
         timeout: Duration = .seconds(30),
         tailLimit: Int = 20,
-        discounting: (@Sendable () async -> OutputWaitDiscount)?
+        discounting: (@Sendable () async -> OutputWaitDiscount)?,
+        startedAt: ContinuousClock.Instant? = nil
     ) async throws(OutputWaitError) -> OutputWait {
         do {
             _ = try expectedIncarnation([pane.incarnation])
@@ -214,7 +215,7 @@ extension Server {
                 throw .tmux(.serverRestarted)
             }
         }
-        let started = ContinuousClock.now
+        let started = startedAt ?? ContinuousClock.now
         return try await OutputWaitSession(
             server: self,
             pane: pane,

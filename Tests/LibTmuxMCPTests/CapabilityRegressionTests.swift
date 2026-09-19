@@ -15,6 +15,32 @@ struct CapabilityRegressionTests {
         )
     }
 
+    @Test("the output wait deadline bounds pane lookup")
+    func outputWaitBoundsPaneLookup() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/wait-lookup/socket",
+            transport: StalledPaneLookupTransport()
+        )
+        let surface = tools(server)
+        let call = ToolCall(
+            name: "wait_for_text",
+            arguments: .object([
+                "paneId": .string("%0"), "patterns": .array([.string("ready")]),
+                "timeoutMs": .integer(100),
+            ])
+        )
+        let reported: ToolError?
+        do {
+            reported = try await withCommandDeadline(.milliseconds(500)) { () async -> ToolError? in
+                do {
+                    _ = try await surface.call(call)
+                    return nil as ToolError?
+                } catch { return error as? ToolError }
+            }
+        } catch let error as TmuxError { reported = .tmux(error) }
+        #expect(reported == .tmux(.timedOut(after: .milliseconds(100))))
+    }
+
     @Test("effective aggregate disclosures are the exact nested union")
     func effectiveAggregateDisclosuresAreExact() throws {
         let source = try #require(TmuxTools.byName["call_read_tools_batch"])
@@ -234,5 +260,19 @@ struct CapabilityRegressionTests {
             #expect(returnedCursor != nil)
             #expect(returnedCursor?.isEmpty == false)
         }
+    }
+}
+
+private struct StalledPaneLookupTransport: ProcessTransport {
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let (events, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        for await _ in events {}
+        throw .cancelled
     }
 }

@@ -209,17 +209,28 @@ struct WatchTests {
         }
     }
 
-    @Test("a zero timeout reads nothing and does not call the pane quiet")
-    func zeroTimeoutReportsThatItNeverLooked() async throws {
+    @Test(
+        "an expired wait budget reads nothing and does not call the pane quiet",
+        arguments: [false, true])
+    func zeroTimeoutReportsThatItNeverLooked(consumedDuringSetup: Bool) async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
-            let result = try await fixture.waitForOutput(
+            let transport = CaptureRecordingTransport()
+            let server = Server(
+                endpoint: fixture.endpoint,
+                tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport
+            )
+            let result = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("^never-printed$")],
-                timeout: .zero
+                timeout: consumedDuringSetup ? .milliseconds(100) : .zero,
+                discounting: nil,
+                startedAt: consumedDuringSetup ? .now.advanced(by: .seconds(-1)) : nil
             )
 
             #expect(result.outcome == .expiredWhileReading)
+            #expect(await transport.captureRequests.isEmpty)
         }
     }
 

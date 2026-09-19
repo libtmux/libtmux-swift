@@ -20,7 +20,7 @@ import Foundation
 /// behind ends almost at once. A transport that ignores cancellation leaves
 /// one running for as long as its own work takes — its defect, bounded by its
 /// own work rather than by anything this library can reach.
-func withCommandDeadline<Value: Sendable>(
+package func withCommandDeadline<Value: Sendable>(
     _ timeout: Duration?,
     _ operation: @escaping @Sendable () async throws -> Value
 ) async throws(TmuxError) -> Value {

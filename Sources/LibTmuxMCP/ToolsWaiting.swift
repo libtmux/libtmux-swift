@@ -10,7 +10,7 @@ extension TmuxTools {
         _ arguments: Arguments,
         _ progress: ProgressReporter
     ) async throws -> ToolOutcome {
-        let pane = try await capabilityPane(try arguments.string("paneId"))
+        let requestedPane = try arguments.string("paneId")
         let timeoutMs = try arguments.integer("timeoutMs", or: 30_000)
         let (timeout, enforced) = bounded(Double(timeoutMs) / 1_000)
         let isRegex = try arguments.bool("regex", or: false)
@@ -41,13 +41,21 @@ extension TmuxTools {
         } else {
             cursor = nil
         }
+        let started = ContinuousClock.now
+        let resolved = try await withCommandDeadline(timeout) {
+            () async -> Result<Pane, any Error> in
+            do { return .success(try await capabilityPane(requestedPane)) } catch {
+                return .failure(error)
+            }
+        }
+        let pane = try resolved.get()
         let server = server
         let echoKey = PaneEchoes.Key(incarnation: pane.incarnation, pane: pane.id)
         let echoWait = PaneEchoes.Wait(key: echoKey, source: Self.paneEchoes)
         let result: OutputWait
         do {
             result = try await progress.whileRunning(
-                upTo: timeout,
+                upTo: max(.zero, ContinuousClock.now.duration(to: started.advanced(by: timeout))),
                 describing: "waiting on \(pane.id.rawValue)"
             ) {
                 try await server.waitForOutput(
@@ -58,7 +66,8 @@ extension TmuxTools {
                     startingAt: cursor,
                     timeout: timeout,
                     tailLimit: maxLines,
-                    discounting: { await echoWait.discount() }
+                    discounting: { await echoWait.discount() },
+                    startedAt: started
                 )
             }
         } catch let error as OutputWaitError {
