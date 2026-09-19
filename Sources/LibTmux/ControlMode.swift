@@ -211,7 +211,7 @@ extension Server {
         let configurationArguments = configurationFilePath.map { ["-f", $0] } ?? []
         let arguments =
             ["-u", "-C"] + configurationArguments + endpoint.addressArguments
-            + ["attach-session", "-E", "-t", session]
+            + ["attach-session", "-E", "-t", tmuxExactTarget(session)]
 
         let outcome = try await Subprocess.run(
             Subprocess.Configuration(

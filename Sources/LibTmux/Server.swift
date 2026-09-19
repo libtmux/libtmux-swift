@@ -455,11 +455,16 @@ public struct Server: Sendable, Hashable {
     ///
     /// Asks the question tmux has a command for rather than listing every
     /// session and searching one: `has-session` answers with its exit status,
-    /// so this decodes nothing and stays correct for a name a listing would
-    /// have to be parsed to find.
+    /// so this decodes nothing.
+    ///
+    /// The name is matched exactly, the way ``session(named:)`` matches it.
+    /// tmux's own `-t` would also accept a unique prefix of it and a glob, so
+    /// `hasSession("wor")` answered `true` for a server whose only session is
+    /// `work` while `session(named: "wor")` answered `nil`.
     public func hasSession(_ name: String) async throws(TmuxError) -> Bool {
         try await run(
-            rawArguments: TmuxCommand("has-session", ["-t", name]).argumentVector
+            rawArguments: TmuxCommand("has-session", ["-t", tmuxExactTarget(name)])
+                .argumentVector
         ).isSuccess
     }
 

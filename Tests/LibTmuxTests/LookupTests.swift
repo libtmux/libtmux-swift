@@ -117,3 +117,60 @@ struct LookupTests {
         }
     }
 }
+
+@Suite("addressing a session by name", .hangLimit)
+struct ExactSessionTargetTests {
+    /// tmux resolves `-t` by exact match, then unique prefix, then `fnmatch`,
+    /// so every call that takes a name has to say which it means.
+    @Test("a name reaches only the session of that name")
+    func aNameIsNotAPrefixOrAGlob() async throws {
+        try await withTmuxServer { server in
+            let work = try await server.newSession(named: "work")
+
+            #expect(try await server.hasSession("work"))
+            #expect(try await server.session(named: "wor") == nil)
+            #expect(!(try await server.hasSession("wor")))
+            #expect(!(try await server.hasSession("w*")))
+            // An id still resolves: tmux strips the exact-match prefix before
+            // it looks for one.
+            #expect(try await server.hasSession(work.id.rawValue))
+        }
+    }
+
+    @Test("a scope addressed by name reaches only that session")
+    func scopesAreNotPrefixMatched() async throws {
+        try await withTmuxServer { server in
+            let work = try await server.newSession(named: "work")
+
+            // Writing through a prefix used to reach `work`, so the value read
+            // back through the full name was one nobody asked to set.
+            _ = try await server.setEnvironment("PROBE", to: "1", in: .session("wor"))
+            #expect(try await server.environmentValue("PROBE", in: .session("work")) == nil)
+            _ = try await server.setHook(
+                "after-new-window", to: "display-message probe", in: .session("wor"))
+            #expect(try await server.hooks(.session("work")).isEmpty)
+
+            // The exact name still reaches it.
+            _ = try await server.setEnvironment("PROBE", to: "1", in: .session("work"))
+            #expect(try await server.environmentValue("PROBE", in: .session("work")) == "1")
+            _ = try await server.setEnvironment(
+                "PROBE", to: "2", in: .session(work.id.rawValue))
+            #expect(try await server.environmentValue("PROBE", in: .session("work")) == "2")
+        }
+    }
+
+    @Test("a connection attaches only to the session named")
+    func connectingIsNotPrefixMatched() async throws {
+        try await withTmuxServer { server in
+            _ = try await server.newSession(named: "work")
+
+            await #expect(throws: (any Error).self) {
+                try await server.connected(attachingTo: "wor") { _, _ in }
+            }
+            let attached = try await server.connected(attachingTo: "work") { connected, _ in
+                connected.mode
+            }
+            #expect(attached == .connected(to: "work"))
+        }
+    }
+}

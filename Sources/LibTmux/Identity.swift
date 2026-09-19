@@ -41,6 +41,19 @@ extension ServerIncarnation {
     }
 }
 
+/// Addresses a name as tmux's exact-match target.
+///
+/// tmux resolves `-t` by exact match, then by unique prefix, then through
+/// `fnmatch`, so `work` reaches a session named `workspace` when no `work`
+/// exists and `w*` reaches whichever one matches. A leading `=` asks for the
+/// name as written. tmux strips it before looking for a `$`-prefixed id and
+/// before its own target table, so an id and `{last}` still resolve through
+/// it -- measured on tmux 3.2a, 3.4 and 3.7b.
+///
+/// A name that itself begins with `=` reaches the session of that name,
+/// because the one tmux strips is this one.
+func tmuxExactTarget(_ name: String) -> String { "=" + name }
+
 /// A tmux session id such as `$1`.
 public struct SessionID:
     Sendable, Hashable, Codable, RawRepresentable, ExpressibleByStringLiteral,
