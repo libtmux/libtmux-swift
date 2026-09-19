@@ -10,6 +10,14 @@ import LibTmux
 /// The modelled keys use tmuxp's spelling, so files limited to this structural
 /// subset need no translation. tmuxp's plugins, hooks, and environment runtime
 /// are ignored.
+///
+/// This is a narrower language than the `tmux-workspace` executable reads, and
+/// the two are separate readers of one file format. A tmuxp file handed to
+/// ``decode(json:)`` or ``decode(yaml:)`` loses `shell_command_before`,
+/// `suppress_history`, `options`, `global_options`, `window_options`,
+/// `options_after`, `before_script` and `workspace_builder_options`, and
+/// leaves `$VAR` unexpanded; the executable reads all of them. Diff the two
+/// before assuming a file means the same thing to both.
 public struct Workspace: Sendable, Hashable, Codable {
     /// What the session is called once built.
     public let sessionName: String
