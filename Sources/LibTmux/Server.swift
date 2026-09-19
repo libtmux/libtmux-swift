@@ -189,9 +189,11 @@ public struct Server: Sendable, Hashable {
         }
     }
 
-    /// Runs a command with no bound, whatever bound this server carries.
+    /// Runs a command in its own process with no bound at all.
     ///
     /// For the one command whose whole purpose is to take as long as it takes.
+    /// ``runInOwnProcess(rawArguments:)`` is the bounded counterpart, for a
+    /// command that needs its own process for some *other* reason.
     func runUnbounded(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
         try await runtime.run(rawArguments: rawArguments)
     }
@@ -208,13 +210,20 @@ public struct Server: Sendable, Hashable {
 
     /// Runs a command in a process of its own, whatever mode this server is in.
     ///
-    /// For the one command that does not return promptly. tmux runs a control
+    /// For a command a connection cannot carry faithfully. tmux runs a control
     /// client's commands one at a time, so a command that blocks holds every
     /// command behind it — including whichever one would release it. Sending
     /// such a command over the connection would deadlock the scope; giving it
     /// its own process keeps the answer identical and the connection free.
+    ///
+    /// Still bounded by ``commandTimeout``: needing its own process is not a
+    /// reason to wait forever. ``runUnbounded(rawArguments:)`` is for the one
+    /// command that is *meant* to.
     func runInOwnProcess(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
-        try await runtime.run(rawArguments: rawArguments)
+        let runtime = self.runtime
+        return try await withCommandDeadline(commandTimeout) {
+            try await runtime.run(rawArguments: rawArguments)
+        }
     }
 
     package func runIsolated(

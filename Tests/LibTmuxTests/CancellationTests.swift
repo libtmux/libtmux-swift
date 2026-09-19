@@ -31,6 +31,24 @@ struct CancellationTests {
         }
     }
 
+    @Test("a command that takes its own process is still bounded")
+    func ownProcessCommandIsStillBounded() async throws {
+        try await withTmuxServer { server in
+            // A buffer read takes its own process because a connection cannot
+            // report its bytes unambiguously -- which is not a reason to let
+            // it outlast the bound. Proven through the transport rather than
+            // against tmux, since a real buffer read returns promptly.
+            let stalled = Server(
+                endpoint: server.endpoint,
+                transport: NeverAnsweringTransport()
+            ).withTimeout(.milliseconds(250))
+
+            await #expect(throws: TmuxError.timedOut(after: .milliseconds(250))) {
+                _ = try await stalled.buffer(named: "anything")
+            }
+        }
+    }
+
     @Test("a bound is a property of the value, not of the server")
     func boundBelongsToTheValue() async throws {
         try await withTmuxServer { server in
@@ -164,5 +182,39 @@ struct CancellationTests {
             let running = try await server.isRunning()
             #expect(running)
         }
+    }
+}
+
+/// Accepts a command and never answers, so a bound is the only thing that can
+/// end the call.
+///
+/// `NSLock` rather than `Mutex`: `Synchronization` is macOS 15 and this package
+/// declares macOS 13, which a Linux compiler has no availability to check —
+/// the macOS lane would be the only thing that failed, after a push.
+private final class NeverAnsweringTransport: ProcessTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var parked: [CheckedContinuation<Void, Never>] = []
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        // Suspends until cancelled, which is what the deadline race does to
+        // it. Sleeping for a fixed span would race the bound instead.
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.withLock { parked.append(continuation) }
+            }
+        } onCancel: {
+            let waiting = lock.withLock {
+                let waiters = parked
+                parked.removeAll()
+                return waiters
+            }
+            for waiter in waiting { waiter.resume() }
+        }
+        throw .cancelled
     }
 }
