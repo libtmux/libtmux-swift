@@ -36,9 +36,11 @@ public enum WorkspaceBuilder {
     ///
     /// Fails rather than adopting an existing session of the same name: two
     /// callers building the same workspace should not silently share one.
-    /// A failure after creation removes that exact session. If cleanup also
-    /// fails, ``WorkspaceBuilderError/rollbackFailed(original:cleanup:)``
-    /// reports both errors.
+    /// An ordinary failure after creation removes that exact session. If
+    /// cleanup also fails, ``WorkspaceBuilderError/rollbackFailed(original:cleanup:)``
+    /// reports both errors. An interruption is the exception: it removes
+    /// nothing, because the same signal that stopped the build could just as
+    /// well stop the cleanup that would follow it.
     public static func build(
         _ workspace: Workspace,
         on server: Server
@@ -166,8 +168,16 @@ public enum WorkspaceBuilder {
         } catch {
             let original = Self.builderError(error)
             guard borrowed == nil, let session else { throw original }
-            if let cleanup = await rollback(session, on: server) {
-                throw .rollbackFailed(original: original, cleanup: cleanup)
+            // A signal that interrupted the build can just as well interrupt
+            // the cleanup that would follow it, so an interruption reports
+            // what it retained rather than attempting a rollback that might
+            // itself never finish. Rollback fires on an ordinary failure
+            // only.
+            guard case .tmux(.cancelled) = original else {
+                if let cleanup = await rollback(session, on: server) {
+                    throw .rollbackFailed(original: original, cleanup: cleanup)
+                }
+                throw original
             }
             throw original
         }
