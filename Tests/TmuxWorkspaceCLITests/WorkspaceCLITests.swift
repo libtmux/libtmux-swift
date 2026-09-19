@@ -2382,27 +2382,51 @@ struct WorkspaceCLITests {
             let environment = [
                 "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
             ]
-            let created = try await server.newSession(named: "my.proj")
+            // freeze refuses a dotted name on the name alone, before it ever
+            // asks tmux whether such a session exists - the same order load
+            // already uses for session_name, and the only answer that holds
+            // across every tmux era (silent rewrite, outright refusal at
+            // creation, or verbatim storage), so this needs no version gate.
             let destination = root.appendingPathComponent("dotted.json")
-            let result = await invoke(
-                ["freeze", created.name, "-S", socket, "--save-to", destination.path, "--json"],
+            let namedResult = await invoke(
+                ["freeze", "my.proj", "-S", socket, "--save-to", destination.path, "--json"],
                 in: root, extra: environment)
-            // Releases before 3.7 rewrite the separator at creation, so only
-            // one that keeps it reaches the refusal; either way the file
-            // freeze leaves behind is one load accepts.
-            if created.name.contains(".") {
-                #expect(result.code == 1)
-                #expect(
-                    result.error.joined().contains("\"code\":\"invalid_workspace\""),
-                    "\(result.error)")
-                #expect(!FileManager.default.fileExists(atPath: destination.path))
-            } else {
-                #expect(result.code == 0, "\(result.error)")
-                let reloaded = await invoke(
-                    ["load", destination.path, "-d", "-S", socket, "--json"], in: root,
-                    extra: environment)
-                #expect(reloaded.code == 0, "\(reloaded.error)")
+            #expect(namedResult.code == 1)
+            #expect(
+                namedResult.error.joined().contains("\"code\":\"invalid_workspace\""),
+                "\(namedResult.error)")
+            #expect(!FileManager.default.fileExists(atPath: destination.path))
+
+            // Where a session can actually come to exist under the requested
+            // name, confirm what freeze accepts from a real one round-trips.
+            let created: Session
+            do {
+                created = try await server.newSession(named: "my.proj")
+            } catch TmuxError.invocationFailed(let reason)
+                where reason.contains("invalid session name")
+            {
+                // 3.7 alone refuses the name outright at creation, so there is
+                // no live session to round-trip; the refusal above already
+                // covers what freeze does with this name.
+                return
             }
+            guard !created.name.contains(".") else {
+                // 3.7a+ keeps the dot verbatim, so the resolved session is
+                // still named "my.proj" - the same case the refusal above
+                // already exercised.
+                return
+            }
+            let bareDestination = root.appendingPathComponent("bare.json")
+            let bareResult = await invoke(
+                [
+                    "freeze", created.name, "-S", socket, "--save-to", bareDestination.path,
+                    "--json",
+                ], in: root, extra: environment)
+            #expect(bareResult.code == 0, "\(bareResult.error)")
+            let reloaded = await invoke(
+                ["load", bareDestination.path, "-d", "-S", socket, "--json"], in: root,
+                extra: environment)
+            #expect(reloaded.code == 0, "\(reloaded.error)")
         }
     }
 
