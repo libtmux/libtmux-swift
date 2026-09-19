@@ -243,54 +243,63 @@ extension Server {
             // tell this connection apart from a person's.
             let ownPID = Int(execution.processIdentifier.value)
             await OwnedControlClients.shared.register(ownPID)
-            defer {
-                Task { await OwnedControlClients.shared.unregister(ownPID) }
-            }
-            return try await withThrowingTaskGroup(
-                of: ControlOutcome<Result>.self
-            ) { group in
-                defer {
-                    group.cancelAll()
-                    try? execution.send(signal: .terminate, toProcessGroup: true)
-                }
-                group.addTask {
-                    var input = ControlLineInput()
-                    for try await chunk in execution.standardOutput {
-                        let data = chunk.withUnsafeBytes { Data($0) }
-                        for event in input.append(data) {
+            // Awaited, not left to a `defer`-spawned `Task`: that would return
+            // control to this scope's caller before the registry forgot the
+            // pid, a window a reused pid could fall into and be misread as
+            // this process's own connection.
+            do {
+                let value = try await withThrowingTaskGroup(
+                    of: ControlOutcome<Result>.self
+                ) { group in
+                    defer {
+                        group.cancelAll()
+                        try? execution.send(signal: .terminate, toProcessGroup: true)
+                    }
+                    group.addTask {
+                        var input = ControlLineInput()
+                        for try await chunk in execution.standardOutput {
+                            let data = chunk.withUnsafeBytes { Data($0) }
+                            for event in input.append(data) {
+                                try await consumeControlInput(event, with: control)
+                            }
+                        }
+                        for event in input.finish() {
                             try await consumeControlInput(event, with: control)
                         }
+                        await control.finish()
+                        return .streamEnded
                     }
-                    for event in input.finish() {
-                        try await consumeControlInput(event, with: control)
+                    try await control.waitUntilAttached()
+                    // tmux 3.8+ sends `window_layout` as JSON only to a control
+                    // client that asked; unrequested, this connection's reads and
+                    // %layout-change events stay classic while a direct read gets
+                    // JSON. Harmless on 3.7 and earlier (verified against 3.2a).
+                    _ = try await control.send(
+                        TmuxCommand("refresh-client", ["-f", "new-layouts"]))
+                    group.addTask {
+                        defer { Task { await control.finish() } }
+                        return .body(try await body(control))
                     }
-                    await control.finish()
-                    return .streamEnded
-                }
-                try await control.waitUntilAttached()
-                // tmux 3.8+ sends `window_layout` as JSON only to a control
-                // client that asked; unrequested, this connection's reads and
-                // %layout-change events stay classic while a direct read gets
-                // JSON. Harmless on 3.7 and earlier (verified against 3.2a).
-                _ = try await control.send(TmuxCommand("refresh-client", ["-f", "new-layouts"]))
-                group.addTask {
-                    defer { Task { await control.finish() } }
-                    return .body(try await body(control))
-                }
 
-                while let outcome = try await group.next() {
-                    switch outcome {
-                    case let .body(value):
-                        return value
-                    case .streamEnded:
-                        group.cancelAll()
-                        do {
-                            while try await group.next() != nil {}
-                        } catch {}
-                        throw TmuxError.connectionClosed
+                    while let outcome = try await group.next() {
+                        switch outcome {
+                        case let .body(value):
+                            return value
+                        case .streamEnded:
+                            group.cancelAll()
+                            do {
+                                while try await group.next() != nil {}
+                            } catch {}
+                            throw TmuxError.connectionClosed
+                        }
                     }
+                    throw TmuxError.connectionClosed
                 }
-                throw TmuxError.connectionClosed
+                await OwnedControlClients.shared.unregister(ownPID)
+                return value
+            } catch {
+                await OwnedControlClients.shared.unregister(ownPID)
+                throw error
             }
         }
         return outcome.closureResult
