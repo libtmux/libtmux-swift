@@ -1612,6 +1612,21 @@ struct WorkspaceCLITests {
             // Comparing is the rule; a mismatch is reported, never rebuilt.
             let after = try await server.snapshot()
             #expect(after.windows(of: session).map(\.name) == ["one"])
+
+            // The envelope follows what each input retained, not what any
+            // error said: an input that built a session keeps this partial.
+            let other = root.appendingPathComponent("other.json")
+            try Data(
+                #"{"session_name":"other","windows":[{"window_name":"one","panes":[null]}]}"#.utf8
+            ).write(to: other)
+            let mixed = await invoke(
+                ["load", other.path, file.path, "-d", "-S", socket, "--json"], in: root,
+                extra: environment)
+            #expect(mixed.code == 1)
+            let mixedResult = try mixed.json()
+            #expect(mixedResult["status"] as? String == "partial", "\(mixed.output)")
+            #expect((mixedResult["results"] as? [Any])?.count == 1)
+            #expect(try await server.sessions().contains { $0.name == "other" })
         }
     }
 

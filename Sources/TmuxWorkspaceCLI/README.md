@@ -303,6 +303,23 @@ NDJSON conversion, capture and import results include a
 versioned envelope and nested `workspace` document. Diagnostics use stderr.
 Machine output bypasses color.
 
+Every machine failure carries a `code`. A failure about the workspace
+operation itself uses one of the ten the sibling ports share:
+`workspace_not_found`, `invalid_workspace`, `unsupported_key`,
+`session_not_found`, `session_mismatch`, `tmux_unavailable`, `tmux_failed`,
+`script_failed`, `destination_exists` and `usage`. Anything about how the
+command was invoked — its context, its flags, its arguments — is `usage`,
+exit 2.
+
+A failure of this tool's own plumbing rather than of the workspace carries a
+code of its own, because it describes this implementation: `document_read`,
+`document_write`, `document_size`, `document_type`, `log_open`, `log_write`,
+`output`, `closed_output`, `terminal`, `terminal_input`, `editor`,
+`command_argv`, `environment`, `process_output_limit`, `yaml_unavailable`,
+`version`, `import_document`, `import_unsupported`, `unsupported_template`,
+`unsupported_runtime`, and `cancelled`/`interrupted` for a run stopped by a
+signal.
+
 `--log-level debug|info|warning|error|critical` selects the minimum advisory
 diagnostic severity, defaulting to `warning`. Capture/bootstrap/shell
 warnings are hidden at `error` or `critical`. Result data and fatal errors remain
