@@ -24,15 +24,10 @@ extension TmuxTools {
             )
         }
         let reservation = try await Self.reservePaneInput(initial, operation: "paste_text")
-        let echoTargets = Self.echoKeys(for: initial)
-        let echoUpdate = await Self.paneEchoes.apply(
-            .literal([text], enter: sendsEnter), to: echoTargets
-        )
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         do {
             try await server.setBuffer(staged, named: buffer)
         } catch let primaryError {
-            await Self.paneEchoes.abandon(echoUpdate)
             do {
                 try await deletePasteBuffer(named: buffer)
             } catch {
@@ -43,6 +38,7 @@ extension TmuxTools {
             throw primaryError
         }
         var primaryError: (any Error)?
+        var echoUpdate: PaneEchoes.Update?
         do {
             let final = try await preflightPaneInput(
                 requested,
@@ -52,14 +48,19 @@ extension TmuxTools {
                 reservation: reservation,
                 operation: "paste_text"
             )
+            echoUpdate = await Self.paneEchoes.apply(
+                .literal([text], enter: sendsEnter), to: Self.echoKeys(for: final)
+            )
             try await server.paste(buffer: buffer, into: final.source)
         } catch {
             primaryError = error
         }
-        if primaryError == nil {
-            await Self.paneEchoes.commit(echoUpdate)
-        } else {
-            await Self.paneEchoes.abandon(echoUpdate)
+        if let echoUpdate {
+            if let primaryError, Self.definitelyDidNotDispatch(primaryError) {
+                await Self.paneEchoes.abandon(echoUpdate)
+            } else {
+                await Self.paneEchoes.commit(echoUpdate)
+            }
         }
         await Self.paneRuns.release(reservation)
         do {

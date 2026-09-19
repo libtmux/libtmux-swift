@@ -76,6 +76,58 @@ struct PaneEchoContractTests {
         }
     }
 
+    @Test(
+        "failed input retains only possibly delivered echo", arguments: [false, true],
+        [false, true])
+    func failedDelivery(paste: Bool, delivered: Bool) async throws {
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let transport = EchoDeliveryTransport(delivered: delivered)
+            let surface = tools(
+                Server(
+                    endpoint: fixture.endpoint,
+                    tmuxExecutable: fixture.tmuxExecutable,
+                    transport: transport
+                )
+            )
+            var arguments: [String: JSONValue] = ["paneId": .string(pane.id.rawValue)]
+            if paste {
+                arguments["text"] = .string("ECHO_LOST")
+            } else {
+                arguments["keys"] = .array([.string("ECHO_LOST")])
+                arguments["literal"] = .bool(true)
+            }
+            let failure: TmuxError =
+                delivered ? .invocationFailed(reason: "input reply lost") : .requestNotSubmitted
+            await #expect(throws: ToolError.tmux(failure)) {
+                try await surface.call(
+                    ToolCall(
+                        name: paste ? "paste_text" : "send_keys", arguments: .object(arguments))
+                )
+            }
+            let tty = try #require(
+                try await fixture.format("#{pane_tty}", addressing: pane.id.rawValue)
+            )
+            let output = (delivered ? "" : "ECHO_LOST") + "\\r\\nOUTPUT_READY\\r\\n"
+            _ = try await fixture.run(
+                TmuxCommand("run-shell", ["printf '\(output)' > '\(tty)'"])
+            )
+            let result = try await surface.call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string("ECHO_LOST"), .string("OUTPUT_READY")]),
+                        "timeoutMs": .integer(1_000),
+                    ])
+                )
+            )
+            #expect(
+                result.structured["matched"]?.stringValue
+                    == (delivered ? "OUTPUT_READY" : "ECHO_LOST"))
+        }
+    }
+
     @Test("editing across calls does not turn echo into output")
     func editedEcho() async throws {
         try await withTmuxServer { server in
@@ -240,6 +292,33 @@ struct PaneEchoContractTests {
                 result.tail.contains { $0.trimmingCharacters(in: .whitespaces) == "ECHO_TARGET" })
             try await fixture.signal("echo-release")
         }
+    }
+}
+
+private actor EchoDeliveryTransport: ProcessTransport {
+    private let underlying = SubprocessTransport()
+    private let delivered: Bool
+
+    init(delivered: Bool) {
+        self.delivered = delivered
+    }
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let input = arguments.contains { $0.contains("send-keys") || $0.contains("paste-buffer") }
+        if input, !delivered { throw .requestNotSubmitted }
+        let reply = try await underlying.run(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        if input, reply.isSuccess { throw .invocationFailed(reason: "input reply lost") }
+        return reply
     }
 }
 

@@ -700,8 +700,6 @@ extension TmuxTools {
         let echoTargets = Self.echoKeys(for: initial)
         let echoDispatch: PaneEchoes.Dispatch =
             literal ? .literal(keys, enter: pressEnterSeparately) : .keys(keys)
-        // Publish the discount before tmux can emit the corresponding echo.
-        let echoUpdate = await Self.paneEchoes.apply(echoDispatch, to: echoTargets)
         let final: PaneInputResolution
         do {
             final = try await preflightPaneInput(
@@ -712,6 +710,13 @@ extension TmuxTools {
                 reservation: reservation,
                 operation: "send_keys"
             )
+        } catch {
+            await Self.paneRuns.release(reservation)
+            throw error
+        }
+        // Publish the discount before tmux can emit the corresponding echo.
+        let echoUpdate = await Self.paneEchoes.apply(echoDispatch, to: echoTargets)
+        do {
             // One dispatch: `-l` applies per `send-keys` call, so the keys
             // and a literal run's Enter used to need two, and a pane could be
             // left holding an unsubmitted line if the second never landed.
@@ -719,7 +724,11 @@ extension TmuxTools {
             if pressEnterSeparately { input.append(.key("Enter")) }
             try await server.send(input, to: final.source)
         } catch {
-            await Self.paneEchoes.abandon(echoUpdate)
+            if Self.definitelyDidNotDispatch(error) {
+                await Self.paneEchoes.abandon(echoUpdate)
+            } else {
+                await Self.paneEchoes.commit(echoUpdate)
+            }
             await Self.paneRuns.release(reservation)
             throw error
         }

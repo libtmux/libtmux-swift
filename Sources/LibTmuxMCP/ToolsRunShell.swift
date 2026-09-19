@@ -109,7 +109,11 @@ extension TmuxTools {
                     }
                 }
             } catch {
-                await Self.paneEchoes.abandon(echoUpdate)
+                if Self.definitelyDidNotDispatch(error) {
+                    await Self.paneEchoes.abandon(echoUpdate)
+                } else {
+                    await Self.paneEchoes.commit(echoUpdate)
+                }
                 throw error
             }
             await Self.paneEchoes.commit(echoUpdate)
@@ -445,11 +449,11 @@ extension TmuxTools {
         schedulePaneRunCleanup(cleanup, reservation: reservation)
     }
 
-    private static func definitelyDidNotDispatch(_ error: any Error) -> Bool {
+    static func definitelyDidNotDispatch(_ error: any Error) -> Bool {
         guard let tmuxError = error as? TmuxError else { return false }
         return switch tmuxError {
         case .commandTooLarge, .foreignServerValue, .processLaunchFailed,
-            .requestNotSubmitted, .serverRestarted, .staleServerValue:
+            .rejectedLocally, .requestNotSubmitted, .serverRestarted, .staleServerValue:
             true
         default:
             false
