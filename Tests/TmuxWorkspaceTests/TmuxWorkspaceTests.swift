@@ -254,23 +254,52 @@ struct WorkspaceBuildingTests {
             )
             _ = try await WorkspaceBuilder.build(workspace, on: server)
 
-            await #expect(throws: WorkspaceBuilderError.sessionExists("once")) {
+            let thrown = await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(workspace, on: server)
             }
+            guard case let .sessionExists(name) = try #require(thrown) else {
+                Issue.record("expected sessionExists, got \(String(describing: thrown))")
+                return
+            }
+            #expect(name == "once")
         }
     }
 
     @Test("a workspace with no windows is refused before anything is created")
     func emptyWorkspaceIsRefused() async throws {
         try await withTmuxServer { server in
-            await #expect(throws: WorkspaceBuilderError.noWindows) {
+            let thrown = await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(
                     Workspace(sessionName: "empty", windows: []),
                     on: server
                 )
             }
+            guard case .noWindows = try #require(thrown) else {
+                Issue.record("expected noWindows, got \(String(describing: thrown))")
+                return
+            }
             let sessions = try await server.sessions()
             #expect(!sessions.contains { $0.name == "empty" })
+        }
+    }
+
+    @Test("a failed callback is carried whole, not flattened into a tmux failure")
+    func callbackFailureIsCarried() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "callback", windows: [WindowPlan(panes: [PanePlan()])])
+            let thrown = await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(
+                    workspace, on: server, environment: [:],
+                    configureSession: { _ in throw CallbackMarker(id: 7) },
+                    configureWindow: { _, _ in })
+            }
+            guard case let .callback(inner) = try #require(thrown) else {
+                Issue.record("expected a callback failure, got \(String(describing: thrown))")
+                return
+            }
+            #expect(inner as? CallbackMarker == CallbackMarker(id: 7))
+            #expect(try await !server.sessions().contains { $0.name == "callback" })
         }
     }
 
@@ -459,4 +488,8 @@ private actor StuckRollbackTransport: ProcessTransport {
         if finished { return }
         await withCheckedContinuation { finishWaiter = $0 }
     }
+}
+
+private struct CallbackMarker: Error, Equatable {
+    let id: Int
 }
