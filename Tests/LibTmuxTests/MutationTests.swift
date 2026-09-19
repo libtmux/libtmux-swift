@@ -639,6 +639,40 @@ struct MutationTests {
         #expect(Server.sendKeysCommands(for: [], to: pane).isEmpty)
     }
 
+    @Test("a trailing semicolon is escaped so tmux does not read it as the end of the command")
+    func trailingSemicolonIsEscaped() throws {
+        let pane = Pane(
+            id: "%0",
+            index: 0,
+            width: 80,
+            height: 24,
+            isActive: true,
+            isDead: false,
+            isInputOff: false,
+            modeCount: 0,
+            isSynchronized: false,
+            currentCommand: "cat",
+            currentPath: "/",
+            isAtTop: true,
+            isAtBottom: true,
+            isAtLeft: true,
+            isAtRight: true,
+            windowID: "@0",
+            incarnation: ServerIncarnation(
+                endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/x/s"),
+                socketPath: "/tmp/libtmux-swift-test/x/s",
+                processID: 1,
+                startedAt: 1
+            )
+        )
+        let commands = Server.sendKeysCommands(
+            for: [.text("echo hi;"), .key(";")],
+            to: pane
+        )
+        #expect(commands[0].arguments == ["-t", "%0", "-l", "--", "echo hi\\;"])
+        #expect(commands[1].arguments == ["-t", "%0", "--", "\\;"])
+    }
+
     @Test("a rejected mutation reports what tmux objected to")
     func rejectedMutationReportsItsReason() async throws {
         try await withTmuxServer { server in
