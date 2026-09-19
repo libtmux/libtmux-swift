@@ -3,12 +3,13 @@
 import LibTmux
 
 public func beingToldRatherThanAsking(_ server: Server) async throws -> String? {
-    let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-        for try await notification in events.notifications
-        where notification.name == "output" {
-            return notification.arguments
+    let firstOutput: String? = try await server.connected(attachingTo: "work") { server, events in
+        for try await notification in events.notifications {
+            if case let .output(_, bytes) = notification.event {
+                return String(decoding: bytes, as: UTF8.self)
+            }
         }
         return nil
     }
-    return firstLine
+    return firstOutput
 }

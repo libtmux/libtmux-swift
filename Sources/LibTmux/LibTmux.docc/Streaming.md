@@ -9,10 +9,11 @@ server, because reporting what changed without being asked is the one thing a
 connection can do and a process cannot:
 
 ```swift
-let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-    for try await notification in events.notifications
-    where notification.name == "output" {
-        return notification.arguments
+let firstOutput: String? = try await server.connected(attachingTo: "work") { server, events in
+    for try await notification in events.notifications {
+        if case let .output(_, bytes) = notification.event {
+            return String(decoding: bytes, as: UTF8.self)
+        }
     }
     return nil
 }
