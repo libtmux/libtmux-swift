@@ -107,6 +107,21 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("with no pane asking for focus the last one created is left active")
+    func defaultActivePaneIsTheLast() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "active",
+                windows: [WindowPlan(panes: [PanePlan(), PanePlan(), PanePlan()])])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let window = try #require(snapshot.windows(of: session).first)
+            let panes = snapshot.panes(of: window)
+            #expect(panes.count == 3)
+            #expect(panes.last?.isActive == true)
+        }
+    }
+
     @Test("focus follows its own plan when a hook adds panes to the window")
     func focusFollowsItsPlanPastInheritedPanes() async throws {
         try await withTmuxServer { server in

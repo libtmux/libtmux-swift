@@ -208,7 +208,8 @@ cells.
 It supports session/window/pane directories, layouts, pane command shorthand,
 inherited commands, history suppression and sequential `enter` settings.
 `window_index` selects an explicit slot; window and pane `focus` choose the
-active window and pane after creation. Duplicate explicit indexes and multiple
+active window and pane after creation. A window whose panes ask for no focus
+is left on the last pane built, matching tmuxp. Duplicate explicit indexes and multiple
 focus selections fail during configuration validation.
 A window naming no `layout` is tiled rather than stacked into tmuxp's
 halving splits, and the first pane is focused by default rather than the

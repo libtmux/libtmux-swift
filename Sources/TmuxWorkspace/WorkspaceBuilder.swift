@@ -295,8 +295,12 @@ public enum WorkspaceBuilder {
         // Pairing forward keeps this on the same pane the commands above
         // reached; a window that arrived with panes of its own makes the two
         // ends of the zip disagree.
-        var focused: Pane?
-        for (plan, pane) in zip(window.panes, panes) where plan.focus == true { focused = pane }
+        //
+        // With no pane asking for focus the last one built is left active,
+        // which is where tmuxp leaves it; splitting detached would otherwise
+        // leave the first.
+        let planned = Array(zip(window.panes, panes))
+        let focused = planned.last { $0.0.focus == true }?.1 ?? planned.last?.1
         if let focused { try await server.select(focused) }
     }
 
