@@ -358,12 +358,18 @@ public struct Server: Sendable, Hashable {
     /// Sessions attached by at least one client this process did not open for
     /// its own internal use.
     ///
-    /// `Session.isAttached` answers tmux's own question -- is anything
-    /// attached -- which counts a connection this process opened for itself
-    /// the same as a person's. A caller reporting attachment to someone else
-    /// (an MCP tool answering "is a person watching this session", say) wants
-    /// this instead. See ``OwnedControlClients``.
-    package func sessionIDsAttachedByOthers() async throws(TmuxError) -> Set<SessionID> {
+    /// ``Session/isAttached`` answers tmux's own question — is anything
+    /// attached — which counts a connection this process opened for itself
+    /// the same as a person's. So a session reads as attached from inside
+    /// ``connected(attachingTo:_:)-(String,_)``, and while a
+    /// ``waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
+    /// is running, even when nobody is watching it.
+    ///
+    /// Ask this instead when the question is whether a *person* is there —
+    /// before writing into a pane someone may be using, or before tearing a
+    /// session down. A client is matched by process id, which this library
+    /// records for every connection it opens.
+    public func sessionIDsAttachedByOthers() async throws(TmuxError) -> Set<SessionID> {
         var attached: Set<SessionID> = []
         for client in try await clients() {
             guard await !OwnedControlClients.shared.contains(client.processID) else { continue }
