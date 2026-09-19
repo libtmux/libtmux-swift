@@ -21,8 +21,9 @@ try await withTmuxServer { server in
 
 Each call starts one tmux server under `/tmp/libtmux-swift-test/`, creates a
 bootstrap session, and limits concurrent fixtures so the suite cannot exhaust
-processes or pseudo-terminals. The reaper refuses paths outside this port's
-test and development roots.
+processes or pseudo-terminals. Servers load an empty configuration, so the
+machine's tmux options and hooks cannot change the fixture. The reaper refuses
+paths outside this port's test and development roots.
 
 This product drives tmux rather than mocking it. The selected executable comes
 from `LIBTMUX_TMUX_BIN`, then the usual installed locations. A suite using

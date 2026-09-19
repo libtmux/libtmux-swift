@@ -4,6 +4,14 @@ import TmuxFixture
 
 @Suite("fixture root")
 struct FixtureRootTests {
+    @Test("a fixture server loads only an empty configuration")
+    func fixtureConfigurationIsIsolated() async throws {
+        try await withTmuxServer { server in
+            let loaded = try await server.format("#{config_files}")
+            #expect(loaded == "/dev/null")
+        }
+    }
+
     @Test("a root a sweep must never be pointed at is refused")
     func dangerousRootsAreRefused() {
         // The reaper's last act is `rm -rf`, so each of these is a path that

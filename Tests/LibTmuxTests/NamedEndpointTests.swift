@@ -52,6 +52,7 @@ struct NamedEndpointTests {
             #expect(sessions.count == 1)
             #expect(sessions.first?.name == "bootstrap")
             #expect(server.mode == .direct)
+            #expect(try await server.format("#{config_files}") == "/dev/null")
         }
     }
 

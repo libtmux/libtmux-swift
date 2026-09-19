@@ -117,7 +117,8 @@ public func withTmuxServer<Result>(
 
         let server = try Server(
             socketPath: root.appendingPathComponent(socketFileName).path,
-            tmuxExecutable: tmuxExecutablePath()
+            tmuxExecutable: tmuxExecutablePath(),
+            configurationFile: "/dev/null"
         )
         _ = try await server.run([
             // Before the first session, so even the bootstrap pane gets it.
@@ -275,7 +276,8 @@ public func withNamedTmuxServer<Result>(
 
         let server = try Server(
             socketName: name,
-            tmuxExecutable: tmuxExecutablePath()
+            tmuxExecutable: tmuxExecutablePath(),
+            configurationFile: "/dev/null"
         )
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
