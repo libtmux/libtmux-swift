@@ -2281,6 +2281,49 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("an attached load with no attached client is usage, not a private code")
+    func loadWithNoAttachedClientIsUsage() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let snapshot = try await server.snapshot()
+            let pane = try #require(snapshot.panes.first)
+            let tty = try #require(
+                try await server.format("#{pane_tty}", addressing: pane.id.rawValue))
+            let file = root.appendingPathComponent("noattach.json")
+            try Data(#"{"session_name":"noattach","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: file)
+            let log = root.appendingPathComponent("noattach.ndjson")
+            // No real client is attached to this server at all, so the load
+            // has nothing to switch to once it finishes building. That is a
+            // question about how the command was invoked, decided before
+            // anything is built, so it reads the same as any other context
+            // refusal: usage, exit 2 — not a private code, which --json could
+            // never surface here since an attached load refuses --json.
+            var environment = ProcessInfo.processInfo.environment
+            environment["HOME"] = root.path
+            environment["TMUXP_CONFIGDIR"] = root.path
+            environment["LIBTMUX_TMUX_BIN"] = server.tmuxExecutable
+            environment["TMUX"] = "\(socket),\(snapshot.serverProcessID),999"
+            environment["TMUX_PANE"] = pane.id.rawValue
+            let output = Lines()
+            let error = Lines()
+            var context = CLIContext(
+                directory: root, environment: environment, output: { await output.append($0) },
+                error: { await error.append($0) })
+            context.terminal = true
+            context.inputTTY = tty
+            let code = await WorkspaceCLI.run(
+                ["load", file.path, "-S", socket, "-y", "--log-file", log.path], context: context)
+            #expect(code == 2)
+            let records = try String(contentsOf: log, encoding: .utf8)
+                .split(separator: "\n")
+                .map { try JSONDecoder().decode(Value.self, from: Data($0.utf8)) }
+            #expect(records.contains { $0["code"] == .string("usage") }, "\(records)")
+            #expect(try await !server.sessions().contains { $0.name == "noattach" })
+        }
+    }
+
     @Test("declining the last input's attach prompt still builds an earlier input")
     func declinedAttachStillBuildsEarlierInputs() async throws {
         try await withTmuxServer { server in

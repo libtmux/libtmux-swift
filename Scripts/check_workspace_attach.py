@@ -251,6 +251,9 @@ def check(choice):
                 arguments = [binary, "load", files[1], "-S", endpoint, "--no-progress"]
                 if mode in ["yes", "ambiguous-yes"]:
                     arguments.append("-y")
+                log_file = root / "ambiguous-yes.ndjson"
+                if choice == "ambiguous-yes":
+                    arguments += ["--log-file", str(log_file)]
                 if choice == "spoofed-pane":
                     other_pane = command(
                         "new-window", "-d", "-t", "=keeper:", "-P", "-F", "#{pane_id}"
@@ -323,6 +326,17 @@ def check(choice):
                     assert status != 0
                     assert sessions() == ["keeper"]
                     assert all(row[2] == "keeper" for row in clients())
+                    if choice == "ambiguous-yes":
+                        # Several clients viewing one pane with -y is a usage
+                        # error - the invocation, not tmux, is what is wrong -
+                        # so the shared code table names it, not a private one.
+                        records = [
+                            json.loads(entry)
+                            for entry in log_file.read_text().splitlines()
+                            if entry.strip()
+                        ]
+                        codes = [entry["code"] for entry in records if "code" in entry]
+                        assert codes == ["usage"], codes
                     if choice == "foreign":
                         assert (
                             command(

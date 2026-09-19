@@ -536,18 +536,19 @@ enum WorkspaceCommands {
         }
         guard !current.hasIndependentPaneClient else {
             throw CLIError(
-                "load_context",
-                "A client on this window uses active-pane; its current pane cannot be identified. Use -d or --append."
-            )
+                "usage",
+                "A client on this window uses active-pane; its current pane cannot be identified. Use -d or --append.",
+                status: 2)
         }
         guard !current.clients.isEmpty else {
             throw CLIError(
-                "load_context", "No attached client views the current pane. Use -d or --append.")
+                "usage", "No attached client views the current pane. Use -d or --append.",
+                status: 2)
         }
         if current.clients.count == 1 { return .attached(current.clients[0]) }
         guard !command.yes else {
             throw CLIError(
-                "confirmation_required",
+                "usage",
                 "Several clients view this pane. Omit -y to choose a client, or use -d or --append.",
                 status: 2)
         }
