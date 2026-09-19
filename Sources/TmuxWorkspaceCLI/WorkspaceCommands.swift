@@ -86,6 +86,9 @@ enum WorkspaceCommands {
                 override: index == command.files.count - 1 ? command.sessionName : nil, store: store
             )
         }
+        for warning in plans.flatMap(\.warnings) {
+            try await output.warning(warning, code: "start_directory")
+        }
         let server = try server(
             command.socket, configuration: command.configurationFile, colors256: command.colors256,
             context: context)
@@ -846,6 +849,9 @@ enum WorkspaceCommands {
         let windowOptions: [[String: String]]
         let windowOptionsAfter: [[String: String]]
         let beforeScript: [String]?
+        /// Read while the document was, said before the build starts: none of
+        /// these stop a load, and all of them are about what the user wrote.
+        let warnings: [String]
     }
 
     private static func requireSuccess(_ reply: TmuxReply) throws {
@@ -1033,7 +1039,10 @@ enum WorkspaceCommands {
                 sessionName: name, startDirectory: rootDirectory, windows: windows),
             environment: environment, options: options, globalOptions: globalOptions,
             windowOptions: windowOptions, windowOptionsAfter: windowOptionsAfter,
-            beforeScript: beforeScript)
+            beforeScript: beforeScript,
+            warnings: missingDirectories(rootDirectory, windows: windows).map {
+                "start_directory is not a directory, tmux will fall back to $HOME: \($0)"
+            })
     }
 
     /// Whether tmux can address a session by this name: target syntax reads
@@ -1041,6 +1050,24 @@ enum WorkspaceCommands {
     /// name holding either cannot be named again once it exists.
     static func isAddressableSessionName(_ name: String) -> Bool {
         !name.isEmpty && !name.contains(":") && !name.contains(".") && !name.contains("\n")
+    }
+
+    /// The start directories the document names that are not directories.
+    /// tmux starts the pane in `$HOME` instead, which silently discards a
+    /// typo, so each one is worth saying out loud.
+    private static func missingDirectories(_ root: String, windows: [WindowPlan]) -> [String] {
+        var paths = [root]
+        for window in windows {
+            if let directory = window.startDirectory { paths.append(directory) }
+            paths += window.panes.compactMap(\.startDirectory)
+        }
+        var seen: Set<String> = []
+        return paths.filter { path in
+            guard seen.insert(path).inserted else { return false }
+            var isDirectory: ObjCBool = false
+            let found = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            return !found || !isDirectory.boolValue
+        }
     }
 
     private static func containsNUL(_ value: Value) -> Bool {
@@ -1150,6 +1177,9 @@ enum WorkspaceCommands {
     private static func directory(_ value: Value?, parent: URL, store: DocumentStore) throws
         -> String?
     {
+        // YAML reads a bare `~` as null; the key is then written but says
+        // nothing, which is what a missing key says.
+        guard let value, value != .null else { return nil }
         guard let text = try optionalString(value, at: "start_directory") else { return nil }
         return store.path(expand(text, environment: store.context.environment), relativeTo: parent)
             .path
