@@ -390,6 +390,13 @@ is missing:
 - Rename `## [Unreleased]` in `CHANGELOG.md` to `## [<version>] - <date>` and
   open a fresh `## [Unreleased]` above it. Those lines become the release
   notes, so an empty section fails the release rather than publishing one.
+- Move the API-breakage baseline forward: set `--baseline` in
+  `Scripts/check_api_breakage.py` to the version being tagged, and empty
+  `.github/api-breakage-allowlist.txt`. Every line in it describes a break
+  against the *previous* release, and the notes just written are where those
+  breaks are now recorded. Nothing fails if this is skipped — the gate keeps
+  measuring against the older tag and answering a question nobody asked, which
+  is why it is listed here rather than left to be noticed.
 
 Rehearse before tagging. This runs every check and stops before publishing, so
 the release path is not being executed for the first time on the release:
