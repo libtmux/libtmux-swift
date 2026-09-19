@@ -4,70 +4,19 @@ from __future__ import annotations
 
 import json
 import os
-import pty
-import select
 import shlex
 import signal
 import subprocess
 import sys
 import tempfile
-import time
-from contextlib import suppress
 from pathlib import Path
+
+from owned_terminal import Terminal
 
 binary = str(Path(sys.argv[1]).resolve())
 tmux = str(Path(sys.argv[2]).resolve())
 base = Path("/tmp/libtmux-swift-dev")
 base.mkdir(exist_ok=True)
-
-
-class Terminal:
-    """Own and reap one process with a controlling terminal."""
-
-    def __init__(self, arguments, environment):
-        self.pid, self.fd = pty.fork()
-        if self.pid == 0:
-            os.execve(arguments[0], arguments, environment)
-        self.status = None
-        self.content = bytearray()
-
-    def pump(self):
-        """Read available output and observe process exit."""
-        if select.select([self.fd], [], [], 0.01)[0]:
-            with suppress(OSError):
-                self.content += os.read(self.fd, 65536)
-                self.content = self.content[-65536:]
-        if self.status is None:
-            ended, status = os.waitpid(self.pid, os.WNOHANG)
-            if ended:
-                self.status = os.waitstatus_to_exitcode(status)
-
-    def until(self, predicate):
-        """Wait for a fixture condition with bounded terminal output."""
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            self.pump()
-            if predicate():
-                return
-            assert self.status is None, (self.status, bytes(self.content))
-        raise AssertionError(bytes(self.content))
-
-    def send(self, value):
-        """Write terminal input."""
-        os.write(self.fd, value)
-
-    def close(self):
-        """Terminate and reap the owned child before closing its terminal."""
-        if self.status is None:
-            with suppress(ProcessLookupError):
-                os.kill(self.pid, signal.SIGTERM)
-            deadline = time.monotonic() + 1
-            while self.status is None and time.monotonic() < deadline:
-                self.pump()
-            if self.status is None:
-                os.kill(self.pid, signal.SIGKILL)
-                os.waitpid(self.pid, 0)
-        os.close(self.fd)
 
 
 def check(choice):
