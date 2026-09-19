@@ -14,3 +14,5 @@ API breakage: func Server.splitWindow(_:direction:size:startDirectory:) has been
 API breakage: func Server.split(_:direction:size:startDirectory:) has been renamed to func split(_:direction:size:startDirectory:running:environment:)
 API breakage: func Server.sendKeys(_:to:literally:) has parameter 0 type change from [Swift.String] to [LibTmux.PaneInput]
 API breakage: func Server.sendKeys(_:to:literally:) has been renamed to func send(_:to:)
+API breakage: func Server.capture(_:includingHistory:maximumLines:) has been renamed to func capture(_:includingHistory:maximumLines:includingAttributes:maximumBytes:)
+API breakage: func Server.captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:) has been renamed to func captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:includingAttributes:maximumBytes:)

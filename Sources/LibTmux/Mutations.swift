@@ -115,7 +115,7 @@ private func layoutOpensAsClassic(_ layout: String) -> Bool {
 /// tmux itself does below 3.5 — a real client refuses `main-v` there when raw
 /// tmux accepts it.
 private func presetNames(runningOn runningVersion: TmuxVersion) -> Set<String> {
-    runningVersion >= TmuxVersion(major: 3, minor: 5)
+    TmuxCapabilities(version: runningVersion).mirroredLayoutPresets
         ? layoutPresetNames.union(mirroredLayoutPresetNames)
         : layoutPresetNames
 }
@@ -212,7 +212,7 @@ extension Server {
                 // any other unparseable layout, so a mirrored preset is
                 // refused below the release that knows it rather than sent.
                 let running = try await version()
-                guard running >= TmuxVersion(major: 3, minor: 5) else {
+                guard TmuxCapabilities(version: running).mirroredLayoutPresets else {
                     throw .rejectedLocally(
                         reason:
                             "layout \(layout.debugDescription) needs tmux 3.5 or later; "
@@ -243,7 +243,7 @@ extension Server {
             // built from, and so whether this reader is even in it yet, is
             // exactly what a preview build does not promise.
             let running = try await version()
-            guard running >= TmuxVersion(major: 3, minor: 8) else {
+            guard TmuxCapabilities(version: running).jsonWindowLayout else {
                 throw .rejectedLocally(
                     reason:
                         "a JSON layout needs tmux 3.8 or later; this server reports "

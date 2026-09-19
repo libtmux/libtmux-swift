@@ -39,7 +39,8 @@ struct PaneCaptureBounds: Sendable, Hashable {
 }
 
 extension Server {
-    static let captureOutputByteLimit = defaultTmuxReplyByteLimit
+    /// The per-stream ceiling a pane read uses unless a caller lowers it.
+    public static let captureOutputByteLimit = defaultTmuxReplyByteLimit
 
     // MARK: Talking to a pane
 
@@ -150,16 +151,36 @@ extension Server {
     }
 
     /// Reads the newest rows without collecting older rows that will be discarded.
+    ///
+    /// - Parameters:
+    ///   - pane: the pane to read.
+    ///   - includingHistory: reads the scrollback too, from its start.
+    ///   - maximumLines: how many trailing rows to keep.
+    ///   - includingAttributes: keeps the escape sequences that colour and
+    ///     style the text, as `capture-pane -e` does. Off, tmux hands back the
+    ///     characters alone, which is what a comparison or a regular
+    ///     expression wants; on, what a terminal would draw.
+    ///   - maximumBytes: the per-stream ceiling for tmux's answer. The default
+    ///     is the same 1 MiB every other read uses. Lower it when a pane's
+    ///     scrollback is larger than the caller is willing to hold; the read
+    ///     fails with ``TmuxError/outputLimitExceeded(perStreamBytes:)``
+    ///     rather than returning a truncated screen.
     public func capture(
         _ pane: Pane,
         includingHistory: Bool = false,
-        maximumLines: Int
+        maximumLines: Int,
+        includingAttributes: Bool = false,
+        maximumBytes: Int = Server.captureOutputByteLimit
     ) async throws(TmuxError) -> PaneCapture {
-        try await captureTail(
+        let bounds = try await captureBounds(for: pane)
+        return try await captureTail(
             pane,
-            includingHistory: includingHistory,
+            startingAt: includingHistory ? .start : nil,
+            endingAt: nil,
+            bounds: bounds,
             maximumLines: maximumLines,
-            perStreamOutputLimit: Self.captureOutputByteLimit
+            perStreamOutputLimit: maximumBytes,
+            includingAttributes: includingAttributes
         )
     }
 
@@ -169,7 +190,9 @@ extension Server {
         startingAt start: Int? = nil,
         endingAt end: Int? = nil,
         joiningWrappedLines: Bool = false,
-        maximumLines: Int
+        maximumLines: Int,
+        includingAttributes: Bool = false,
+        maximumBytes: Int = Server.captureOutputByteLimit
     ) async throws(TmuxError) -> PaneCapture {
         let bounds = try await captureBounds(for: pane)
         return try await captureTail(
@@ -178,7 +201,8 @@ extension Server {
             endingAt: end,
             bounds: bounds,
             maximumLines: maximumLines,
-            perStreamOutputLimit: Self.captureOutputByteLimit,
+            perStreamOutputLimit: maximumBytes,
+            includingAttributes: includingAttributes,
             joiningWrappedLines: joiningWrappedLines
         )
     }
@@ -309,6 +333,7 @@ extension Server {
         bounds: PaneCaptureBounds,
         maximumLines: Int,
         perStreamOutputLimit: Int,
+        includingAttributes: Bool = false,
         joiningWrappedLines: Bool = false
     ) async throws(TmuxError) -> PaneCapture {
         guard maximumLines > 0 else {
@@ -347,6 +372,7 @@ extension Server {
             requestedEnd.map(String.init) ?? "-",
         ]
         if joiningWrappedLines { arguments.append("-J") }
+        if includingAttributes { arguments.append("-e") }
         let reply = try await runIsolated(
             TmuxCommand("capture-pane", arguments),
             guarding: pane,

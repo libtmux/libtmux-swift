@@ -10,6 +10,13 @@ public struct ServerIncarnation: Sendable, Hashable, Codable {
     public let processID: Int
     public let startedAt: Int
 
+    /// When this daemon started, as a Foundation date.
+    ///
+    /// ``startedAt`` keeps tmux's exact integer seconds, which is what
+    /// identity compares and what an encoded value carries; this is the same
+    /// instant for a reader. No I/O.
+    public var startDate: Date { Date(timeIntervalSince1970: TimeInterval(startedAt)) }
+
     public init(endpoint: Endpoint, socketPath: String, processID: Int, startedAt: Int) {
         self.endpoint = endpoint
         self.socketPath = socketPath
