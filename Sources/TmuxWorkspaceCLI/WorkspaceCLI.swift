@@ -178,8 +178,7 @@ enum WorkspaceCLI {
             let failure =
                 error as? CLIError
                 ?? CLIError(
-                    canonicalCode(for: error), message(for: error),
-                    status: Task.isCancelled ? 130 : 1)
+                    canonicalCode(for: error), message(for: error), status: status(for: error))
             await output.failure(failure)
             return failure.status
         }
@@ -207,12 +206,26 @@ enum WorkspaceCLI {
         return "operation"
     }
 
+    /// The exit status a failure asks for, which a callback's own `CLIError`
+    /// keeps through the builder that carried it.
+    static func status(for error: any Error) -> Int32 {
+        if Task.isCancelled || error is CancellationError { return 130 }
+        if let error = error as? CLIError { return error.status }
+        guard let error = error as? WorkspaceBuilderError else { return 1 }
+        switch error {
+        case let .callback(inner): return status(for: inner)
+        case let .rollbackFailed(original, _): return status(for: original)
+        default: return 1
+        }
+    }
+
     private static func canonicalCode(for error: WorkspaceBuilderError) -> String {
         switch error {
         case .noWindows: return "invalid_workspace"
         case .sessionExists: return "session_exists"
         case .sessionVanished: return "tmux_failed"
         case let .tmux(inner): return canonicalCode(for: inner)
+        case let .callback(inner): return canonicalCode(for: inner)
         case let .rollbackFailed(original, _): return canonicalCode(for: original)
         }
     }
@@ -231,6 +244,7 @@ enum WorkspaceCLI {
     static func message(for error: any Error) -> String {
         if let error = error as? WorkspaceBuilderError { return message(for: error) }
         if let error = error as? TmuxError { return message(for: error) }
+        if let error = error as? CLIError { return error.message }
         return String(describing: error)
     }
 
@@ -243,6 +257,8 @@ enum WorkspaceCLI {
         case let .sessionVanished(name):
             return "Session \(name) disappeared while the workspace was being built."
         case let .tmux(inner):
+            return message(for: inner)
+        case let .callback(inner):
             return message(for: inner)
         case let .rollbackFailed(original, cleanup):
             return

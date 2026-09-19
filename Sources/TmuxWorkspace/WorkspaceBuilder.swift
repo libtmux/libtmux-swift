@@ -209,7 +209,7 @@ public enum WorkspaceBuilder {
         if let error = error as? WorkspaceBuilderError { return error }
         if let error = error as? TmuxError { return .tmux(error) }
         if error is CancellationError || Task.isCancelled { return .tmux(.cancelled) }
-        return .tmux(.invocationFailed(reason: String(describing: error)))
+        return .callback(error)
     }
 
     private static func build(
@@ -344,10 +344,13 @@ private func nonEmpty(_ value: String?) -> String? {
 /// something to clean up. ``rollbackFailed`` is the case where that cleanup
 /// also failed: it carries both errors, because the original says what to fix
 /// and the second says what was left behind.
-public indirect enum WorkspaceBuilderError: Error, Sendable, Hashable {
+public indirect enum WorkspaceBuilderError: Error {
     case noWindows
     case sessionExists(String)
     case sessionVanished(String)
     case tmux(TmuxError)
+    /// Whatever a configuration or event callback raised, carried whole: the
+    /// caller that supplied the callback is the only one that can read it.
+    case callback(any Error)
     case rollbackFailed(original: WorkspaceBuilderError, cleanup: TmuxError)
 }

@@ -100,7 +100,7 @@ enum WorkspaceCommands {
         let borrowed: Session?
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }
         let retained = AppendState()
-        let failureCode = FailureCode()
+        let scriptFailure = ScriptFailure()
         var results: [Value] = []
         var completedCount = 0
         var lastSession: Session?
@@ -173,8 +173,7 @@ enum WorkspaceCommands {
                                             "input_index": .integer(Int64(inputIndex)),
                                             "child_status": .integer(0), "truncated": .bool(false),
                                         ]))
-                                    await failureCode.set("script_failed")
-                                    await failureCode.record(session)
+                                    await scriptFailure.record(session)
                                     throw CLIError(
                                         "script_failed", WorkspaceCLI.message(for: error))
                                 }
@@ -186,8 +185,7 @@ enum WorkspaceCommands {
                                         "truncated": .bool(false),
                                     ]))
                                 guard result.code == 0 else {
-                                    await failureCode.set("script_failed")
-                                    await failureCode.record(session)
+                                    await scriptFailure.record(session)
                                     throw CLIError(
                                         "script_failed",
                                         "before_script exited with status \(result.code).")
@@ -319,17 +317,12 @@ enum WorkspaceCommands {
             }
         } catch {
             let changed = await retained.started
-            // WorkspaceBuilder.build's typed throws re-wraps whatever
-            // configureSession/configureWindow raised as a generic tmux
-            // failure, losing a CLIError's own code; failureCode carries the
-            // precise one back for the known cases that set it.
-            let overrideCode = await failureCode.value
-            let code = overrideCode ?? WorkspaceCLI.canonicalCode(for: error)
+            let code = WorkspaceCLI.canonicalCode(for: error)
             let message = WorkspaceCLI.message(for: error)
             // before_script failed after creating (and then rolling back) an
             // owned session: still name it, the way a later input's success
             // would, rather than leaving this input out of results[].
-            if borrowed == nil, let failedSession = await failureCode.session {
+            if borrowed == nil, let failedSession = await scriptFailure.session {
                 results.append(
                     .object([
                         "input": .string(plans[currentInputIndex].source),
@@ -361,10 +354,6 @@ enum WorkspaceCommands {
             }
             let result = Value.object(fields)
             await output.failedLoad(result)
-            // Re-throw with the restored code so the stderr diagnostic
-            // matches errors[0].code instead of the generic one the wrapped
-            // error would otherwise report.
-            if let overrideCode { throw CLIError(overrideCode, message) }
             throw error
         }
         if case .switched = target, let session = lastSession {
@@ -1244,16 +1233,10 @@ enum WorkspaceCommands {
     }
 }
 
-/// Carries the specific code for a failure raised inside a callback
-/// `WorkspaceBuilder.build` re-throws as a generic `WorkspaceBuilderError`,
-/// losing the original `CLIError.code` in the process. Read back in `load`'s
-/// catch block instead of trusting the generic mapping there.
-private actor FailureCode {
-    private(set) var value: String?
+/// The session a `before_script` failure was raised against, so the input it
+/// belongs to still names its session in `results[]` after the rollback.
+private actor ScriptFailure {
     private(set) var session: (id: String, name: String)?
-    func set(_ code: String) {
-        if value == nil { value = code }
-    }
     func record(_ session: Session) {
         if self.session == nil { self.session = (session.id.rawValue, session.name) }
     }
