@@ -228,9 +228,8 @@ struct MutationTests {
         try await withTmuxServer { server in
             let version = try await server.version()
             guard version >= TmuxVersion(major: 3, minor: 8) else {
-                // The whole CI matrix predates 3.8; verified locally against
-                // /home/d/.local/share/libtmux-tmux-matrix/master-e880cf63,
-                // which reports next-3.9.
+                // The whole CI matrix predates 3.8, so this is checked
+                // against a build of tmux master, which reports next-3.9.
                 return
             }
             let window = try #require(try await server.windows().first)
@@ -250,8 +249,7 @@ struct MutationTests {
             let version = try await server.version()
             guard version >= TmuxVersion(major: 3, minor: 8) else {
                 // The classic form has no pane count of its own to read back
-                // against a mismatched window; verified locally against
-                // /home/d/.local/share/libtmux-tmux-matrix/master-e880cf63.
+                // against a mismatched window. Checked against tmux master.
                 return
             }
             let session = try #require(try await server.sessions().first)

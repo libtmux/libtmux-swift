@@ -541,7 +541,7 @@ struct ServerRuntime: Sendable {
         within bound: Duration?
     ) async throws(TmuxError) -> TmuxReply {
         guard perStreamOutputLimit >= 0 else {
-            throw .invocationFailed(reason: "output limit cannot be negative")
+            throw .rejectedLocally(reason: "output limit cannot be negative")
         }
         try requireTmuxCommandFits(rawArguments)
         let transport = self.transport

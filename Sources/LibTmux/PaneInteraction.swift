@@ -248,7 +248,7 @@ extension Server {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> PaneCapture {
         guard historyLines >= 0 else {
-            throw .invocationFailed(reason: "pane capture lookback cannot be negative")
+            throw .rejectedLocally(reason: "pane capture lookback cannot be negative")
         }
         let bounds = try await captureBounds(for: pane)
         let start = max(-historyLines, -bounds.historySize)
@@ -337,10 +337,10 @@ extension Server {
         joiningWrappedLines: Bool = false
     ) async throws(TmuxError) -> PaneCapture {
         guard maximumLines > 0 else {
-            throw .invocationFailed(reason: "a bounded capture needs at least one line")
+            throw .rejectedLocally(reason: "a bounded capture needs at least one line")
         }
         guard perStreamOutputLimit > 0 else {
-            throw .invocationFailed(reason: "a bounded capture needs a positive output limit")
+            throw .rejectedLocally(reason: "a bounded capture needs a positive output limit")
         }
         let oldestAvailable = -bounds.historySize
         let earliest =
@@ -351,7 +351,7 @@ extension Server {
             }
         let end = requestedEnd ?? bounds.paneHeight - 1
         guard end >= earliest, end < bounds.paneHeight else {
-            throw .invocationFailed(reason: "pane capture end is outside its contents")
+            throw .rejectedLocally(reason: "pane capture end is outside its contents")
         }
         let (boundedStart, startOverflowed) = end.subtractingReportingOverflow(
             maximumLines - 1
@@ -364,7 +364,7 @@ extension Server {
         guard acceptedRows.contains(start),
             requestedEnd.map(acceptedRows.contains) ?? true
         else {
-            throw .invocationFailed(reason: "pane capture bounds exceed tmux's row range")
+            throw .rejectedLocally(reason: "pane capture bounds exceed tmux's row range")
         }
 
         var arguments = [

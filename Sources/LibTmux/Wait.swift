@@ -27,8 +27,8 @@ extension Server {
     /// This has no `-L` (lock) counterpart on purpose. `wait-for -L` blocks
     /// every later locker of the same channel until it is unlocked, and tmux
     /// hands a released lock to whichever locker has been queued longest --
-    /// including one whose client is long gone. Bounding a wait with Task
-    /// cancellation, the only bound this method or ``Server/run(_:)-(TmuxCommand)`` offers,
+    /// including one whose client is long gone. Bounding a wait -- with
+    /// `timeout`, or with task cancellation --
     /// stops the caller from waiting forever; it does not and cannot remove
     /// that caller's place in tmux's own queue, so a timed-out lock wait can
     /// wedge the channel for every locker after it, permanently, for the life

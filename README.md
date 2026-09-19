@@ -62,7 +62,7 @@ unless you ask.
 | --- | --- | --- | --- |
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
-| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
 | **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
 
@@ -493,8 +493,11 @@ reasons retain tmux's diagnostic text.
 
 ### Standing in for tmux, or watching it
 
-Every command goes through one `ProcessTransport`, and a `Server` takes yours.
-That is the seam for the two things the library will not do for you. A **stub**
+Every command that takes a process goes through one `ProcessTransport`, and a
+`Server` takes yours. That is the seam for the two things the library will not
+do for you. A connected server carries most of its commands over the
+connection and reaches the transport only for the ones that need a process of
+their own. A **stub**
 answers without a tmux on the machine, so a consumer's own suite can cover its
 decoding and error paths in milliseconds:
 

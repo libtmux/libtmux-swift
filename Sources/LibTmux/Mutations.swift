@@ -231,8 +231,8 @@ extension Server {
                         "layout is not valid JSON: \(layout.debugDescription)"
                 )
             }
-            // tmux 3.8 (commit bf43fdc0, tag 3.8-rc, verified against
-            // ~/study/c/tmux) is the first release with a JSON layout
+            // tmux 3.8 (commit bf43fdc0, tag 3.8-rc) is the first release
+            // with a JSON layout
             // reader. Every earlier release runs the same string past its
             // checksum-prefixed grammar instead, which a JSON string never
             // matches; on 3.4 and later that fails cleanly, but 3.3 and

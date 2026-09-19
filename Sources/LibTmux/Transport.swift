@@ -14,8 +14,11 @@ func tmuxOutputLimitError(_ limit: Int) -> TmuxError {
 
 /// The process boundary: what turns an argument vector into tmux's answer.
 ///
-/// Every command this library sends goes through one of these, which makes it
-/// the seam for the two things a consumer cannot otherwise do.
+/// Every command that takes a process goes through one of these, which makes
+/// it the seam for the two things a consumer cannot otherwise do. A server in
+/// ``TmuxMode/connected(to:)`` carries most of its commands over the
+/// connection instead, and reaches here only for the ones that take their own
+/// process -- see the note at the end.
 ///
 /// A **test double** stands in for tmux, so a suite can exercise decoding,
 /// provenance guards and error paths without a tmux on the machine. This

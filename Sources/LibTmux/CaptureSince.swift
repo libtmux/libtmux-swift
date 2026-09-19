@@ -54,7 +54,7 @@ extension Server {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> IncrementalCapture {
         guard maximumLines > 0 else {
-            throw .invocationFailed(reason: "a bounded capture needs at least one line")
+            throw .rejectedLocally(reason: "a bounded capture needs at least one line")
         }
         return try await captureIncremental(
             pane,
@@ -87,13 +87,13 @@ extension Server {
         _ visit: ([String], _ endsOnLiveCursorRow: Bool) -> Bool
     ) async throws(TmuxError) -> ForwardCaptureResult {
         guard sourceLinesPerChunk > 1 else {
-            throw .invocationFailed(reason: "a forward capture chunk needs at least two lines")
+            throw .rejectedLocally(reason: "a forward capture chunk needs at least two lines")
         }
         guard maximumChunks > 0 else {
-            throw .invocationFailed(reason: "a forward capture needs at least one chunk")
+            throw .rejectedLocally(reason: "a forward capture needs at least one chunk")
         }
         guard perStreamOutputLimit > 0 else {
-            throw .invocationFailed(reason: "a forward capture needs a positive output limit")
+            throw .rejectedLocally(reason: "a forward capture needs a positive output limit")
         }
         var previousCursor = cursor
         var remainingAttempts = Self.incrementalCaptureAttempts
@@ -277,7 +277,7 @@ extension Server {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> IncrementalCapture {
         guard limit >= 0 else {
-            throw .invocationFailed(reason: "an incremental capture limit cannot be negative")
+            throw .rejectedLocally(reason: "an incremental capture limit cannot be negative")
         }
         let state = try await incrementalPaneState(for: pane)
         let bounds = state.bounds
@@ -436,7 +436,7 @@ extension Server {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> EntryCapture {
         guard historyLines >= 0 else {
-            throw .invocationFailed(reason: "pane capture lookback cannot be negative")
+            throw .rejectedLocally(reason: "pane capture lookback cannot be negative")
         }
         let state = try await incrementalPaneState(for: pane)
         let bounds = state.bounds
