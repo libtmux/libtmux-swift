@@ -202,10 +202,8 @@ struct MutationTests {
                 try await server.selectLayout(window, WindowLayout.custom(json))
             }
             // Unchanged layout is the observable proof select-layout never
-            // ran. On 3.3/3.3a specifically, this is the crash the guard
-            // exists for: unrefused, the same string kills the daemon
-            // (verified directly against a real 3.3a binary; see the
-            // remediation commit).
+            // ran -- on 3.3/3.3a, an unrefused layout string like this
+            // crashes the daemon instead of being rejected.
             #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
         }
     }
@@ -228,8 +226,7 @@ struct MutationTests {
         try await withTmuxServer { server in
             let version = try await server.version()
             guard version >= TmuxVersion(major: 3, minor: 8) else {
-                // The whole CI matrix predates 3.8, so this is checked
-                // against a build of tmux master, which reports next-3.9.
+                // Covered the other way by jsonShapedLayoutIsRefusedClientSideBelowThreeEight.
                 return
             }
             let window = try #require(try await server.windows().first)
@@ -249,7 +246,7 @@ struct MutationTests {
             let version = try await server.version()
             guard version >= TmuxVersion(major: 3, minor: 8) else {
                 // The classic form has no pane count of its own to read back
-                // against a mismatched window. Checked against tmux master.
+                // against a mismatched window.
                 return
             }
             let session = try #require(try await server.sessions().first)
