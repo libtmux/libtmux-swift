@@ -386,6 +386,12 @@ and pending. Record a divergence in the table it belongs to rather than leaving
 it to read as an omission, and keep the module-wide rules off format fields —
 counting those as covered restates a curated subset as parity.
 
+`Scripts/benchmark_workspace_cli.py` compares an installed release
+`tmux-workspace` against tmuxp on startup, discovery, cold-server load and
+YAML capture. Like the mode matrix's own numbers, a live timing run is not
+part of the CI gate; the full invocation is in
+[`Sources/TmuxWorkspaceCLI/README.md`](../Sources/TmuxWorkspaceCLI/README.md).
+
 ## Pull requests
 
 One subject per pull request. Unrelated cleanup found along the way belongs in
