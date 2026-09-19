@@ -1065,7 +1065,7 @@ enum WorkspaceCommands {
             {
                 throw CLIError(
                     "invalid_workspace",
-                    "layout is not a tmux layout name or a saved layout for \(panes.count) panes: \(layout)"
+                    "layout is not a tmux layout name, and not a saved layout with room for this window's panes: \(layout)"
                 )
             }
             return WindowPlan(
