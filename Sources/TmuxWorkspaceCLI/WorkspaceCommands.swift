@@ -228,7 +228,7 @@ enum WorkspaceCommands {
                                 try requireSuccess(
                                     await server.setOption(name, to: value, scope: .window(window)))
                             }
-                        }, borrowing: borrowed,
+                        }, readiness: plan.readiness, borrowing: borrowed,
                         onEvent: { event in
                             let name: String
                             var fields: [String: Value] = [
@@ -849,6 +849,7 @@ enum WorkspaceCommands {
         let windowOptions: [[String: String]]
         let windowOptionsAfter: [[String: String]]
         let beforeScript: [String]?
+        let readiness: PaneReadiness
         /// Read while the document was, said before the build starts: none of
         /// these stop a load, and all of them are about what the user wrote.
         let warnings: [String]
@@ -873,7 +874,7 @@ enum WorkspaceCommands {
             allowed: [
                 "session_name", "start_directory", "windows", "shell_command_before",
                 "suppress_history", "environment", "options", "global_options", "window_options",
-                "before_script",
+                "before_script", "workspace_builder_options",
             ], at: "workspace")
         let expandedName = (override ?? root["session_name"]?.string).map {
             expand($0, environment: store.context.environment)
@@ -899,6 +900,24 @@ enum WorkspaceCommands {
             root["global_options"], at: "global_options", store: store)
         let inheritedOptions = try scalarMapping(
             root["window_options"], at: "window_options", store: store)
+        var warnings: [String] = []
+        var readiness = PaneReadiness.automatic
+        if let value = root["workspace_builder_options"], value != .null {
+            guard let builderOptions = value.object else {
+                throw CLIError(
+                    "invalid_workspace", "workspace_builder_options must be a mapping.")
+            }
+            // A setting this port does not implement is still a workspace
+            // other ports load, so it is said out loud and carried on from.
+            for key in builderOptions.keys.sorted()
+            where key != "pane_readiness" && !key.hasPrefix("x-") {
+                warnings.append(
+                    "workspace_builder_options.\(key) is not implemented and was ignored.")
+            }
+            if let value = builderOptions["pane_readiness"], value != .null {
+                readiness = try paneReadiness(value)
+            }
+        }
         let beforeScript = try optionalString(root["before_script"], at: "before_script").map {
             try ProcessCommands.splitArguments(expand($0, environment: store.context.environment))
         }
@@ -1039,10 +1058,11 @@ enum WorkspaceCommands {
                 sessionName: name, startDirectory: rootDirectory, windows: windows),
             environment: environment, options: options, globalOptions: globalOptions,
             windowOptions: windowOptions, windowOptionsAfter: windowOptionsAfter,
-            beforeScript: beforeScript,
-            warnings: missingDirectories(rootDirectory, windows: windows).map {
-                "start_directory is not a directory, tmux will fall back to $HOME: \($0)"
-            })
+            beforeScript: beforeScript, readiness: readiness,
+            warnings: warnings
+                + missingDirectories(rootDirectory, windows: windows).map {
+                    "start_directory is not a directory, tmux will fall back to $HOME: \($0)"
+                })
     }
 
     /// Whether tmux can address a session by this name: target syntax reads
@@ -1050,6 +1070,26 @@ enum WorkspaceCommands {
     /// name holding either cannot be named again once it exists.
     static func isAddressableSessionName(_ name: String) -> Bool {
         !name.isEmpty && !name.contains(":") && !name.contains(".") && !name.contains("\n")
+    }
+
+    /// tmuxp's spellings for a readiness setting, plus the boolean forms the
+    /// other ports accept.
+    private static func paneReadiness(_ value: Value) throws -> PaneReadiness {
+        let text: String
+        switch value {
+        case let .string(raw): text = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        case let .bool(flag): text = flag ? "always" : "never"
+        case let .integer(number): text = String(number)
+        default:
+            throw CLIError("invalid_workspace", "pane_readiness must be auto, always or never.")
+        }
+        switch text {
+        case "auto", "automatic": return .automatic
+        case "always", "true", "on", "yes", "1": return .always
+        case "never", "false", "off", "no", "0": return .never
+        default:
+            throw CLIError("invalid_workspace", "pane_readiness must be auto, always or never.")
+        }
     }
 
     /// The start directories the document names that are not directories.
