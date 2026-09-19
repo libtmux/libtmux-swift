@@ -303,6 +303,32 @@ struct WorkspaceBuildingTests {
         }
     }
 
+    @Test("a pane whose shell never draws a prompt gives up and says it did")
+    func paneReadinessTimeoutIsReported() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            // A shell that draws nothing has the shape of one that has not
+            // started yet, which is the case the probe cannot answer.
+            let shell = URL(fileURLWithPath: socket).deletingLastPathComponent()
+                .appendingPathComponent("silent-shell")
+            try Data("#!/bin/sh\nexec sleep 30\n".utf8).write(to: shell)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: shell.path)
+            let option = try await server.setOption(
+                "default-shell", to: shell.path, scope: .globalSession)
+            try #require(option.isSuccess)
+            let workspace = Workspace(
+                sessionName: "readiness",
+                windows: [WindowPlan(panes: [PanePlan(shellCommands: ["true"])])])
+            let events = ReadinessEvents()
+            _ = try await WorkspaceBuilder.build(
+                workspace, on: server, environment: [:], configureSession: { _ in },
+                configureWindow: { _, _ in }, readinessTimeout: .milliseconds(150),
+                onEvent: { event in await events.record(event) })
+            #expect(await events.timedOut)
+        }
+    }
+
     @Test("a failed build removes the exact session it created")
     func failedBuildRollsBackItsSession() async throws {
         try await withTmuxServer { server in
@@ -492,4 +518,11 @@ private actor StuckRollbackTransport: ProcessTransport {
 
 private struct CallbackMarker: Error, Equatable {
     let id: Int
+}
+
+private actor ReadinessEvents {
+    private(set) var timedOut = false
+    func record(_ event: WorkspaceBuildEvent) {
+        if case .paneNotReady = event { timedOut = true }
+    }
 }

@@ -265,6 +265,15 @@ enum WorkspaceCommands {
                                     "window_index": .integer(Int64(windowIndex + 1)),
                                     "pane_index": .integer(Int64(index + 1)),
                                 ]) { _, new in new }
+                            case let .paneNotReady(windowIndex, index, _, _, _):
+                                // The load carries on, so this is said as a
+                                // warning rather than a record of its own:
+                                // what the user needs is why it was slow.
+                                try await output.warning(
+                                    "Pane \(index + 1) of window \(windowIndex + 1) drew no prompt "
+                                        + "before the wait ran out; its first command was sent anyway.",
+                                    code: "pane_readiness")
+                                return
                             case let .paneCompleted(windowIndex, index, pane, window, session):
                                 name = "pane-completed"
                                 fields.merge([

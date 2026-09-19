@@ -6,6 +6,9 @@ package enum WorkspaceBuildEvent: Sendable {
     case windowStarted(index: Int, window: Window, session: Session)
     case paneStarted(windowIndex: Int, index: Int, pane: Pane, window: Window, session: Session)
     case paneCompleted(windowIndex: Int, index: Int, pane: Pane, window: Window, session: Session)
+    /// The pane's shell drew nothing the readiness probe could see before the
+    /// timeout, so its first command was sent anyway.
+    case paneNotReady(windowIndex: Int, index: Int, pane: Pane, window: Window, session: Session)
     case windowCompleted(index: Int, window: Window, session: Session)
 }
 
@@ -55,6 +58,7 @@ public enum WorkspaceBuilder {
         configureWindow: @Sendable (Window, Int) async throws -> Void,
         configureWindowAfter: @Sendable (Window, Int) async throws -> Void = { _, _ in },
         readiness: PaneReadiness = .automatic,
+        readinessTimeout: Duration = .seconds(2),
         borrowing borrowed: Session? = nil,
         onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void = { _ in }
     ) async throws(WorkspaceBuilderError) -> Session {
@@ -136,7 +140,8 @@ public enum WorkspaceBuilder {
                     .windowStarted(index: index, window: created, session: activeSession))
                 try await build(
                     window, at: index, in: created, of: workspace, on: server,
-                    session: activeSession, readiness: readiness, onEvent: onEvent)
+                    session: activeSession, readiness: readiness,
+                    readinessTimeout: readinessTimeout, onEvent: onEvent)
                 // `automatic-rename off` only holds once applied after the
                 // panes that could have renamed the window already exist.
                 try await configureWindowAfter(created, index)
@@ -220,6 +225,7 @@ public enum WorkspaceBuilder {
         on server: Server,
         session: Session,
         readiness: PaneReadiness,
+        readinessTimeout: Duration,
         onEvent: @Sendable (WorkspaceBuildEvent) async throws -> Void
     ) async throws {
         // The window arrives with one pane; only the rest are split in.
@@ -254,9 +260,13 @@ public enum WorkspaceBuilder {
                     windowIndex: windowIndex, index: index, pane: pane, window: created,
                     session: session))
             if !plan.shellCommands.isEmpty, readiness != .never,
-                nonEmpty(plan.shell) ?? window.windowShell == nil
+                nonEmpty(plan.shell) ?? window.windowShell == nil,
+                !(await waitForPrompt(pane, on: server, timeout: readinessTimeout))
             {
-                try await waitForPrompt(pane, on: server)
+                try await onEvent(
+                    .paneNotReady(
+                        windowIndex: windowIndex, index: index, pane: pane, window: created,
+                        session: session))
             }
             for command in plan.shellCommands {
                 if let seconds = plan.sleepBefore, seconds > 0 {
@@ -293,18 +303,25 @@ public enum WorkspaceBuilder {
     /// Waits up to `timeout` for `pane`'s shell to draw its prompt — moving
     /// the cursor away from the pane's top-left corner — so the first
     /// command sent to a freshly created pane is not echoed ahead of the
-    /// prompt and then redrawn after it, showing twice. An unreadable pane
-    /// gives up and proceeds immediately rather than failing the load.
+    /// prompt and then redrawn after it, showing twice.
+    ///
+    /// Reports whether the prompt was seen. A pane that cannot be read is
+    /// counted as ready: there is nothing to wait for and nothing to say. A
+    /// prompt that leaves the cursor where it started — `PS1=` — is
+    /// indistinguishable from a shell that has not started, so the wait runs
+    /// out, and the caller is told rather than the pane silently costing the
+    /// whole timeout.
     private static func waitForPrompt(
-        _ pane: Pane, on server: Server, timeout: Duration = .seconds(2)
-    ) async throws {
+        _ pane: Pane, on server: Server, timeout: Duration
+    ) async -> Bool {
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
             guard let cursor = try? await server.formatGlobal("#{cursor_x},#{cursor_y}", for: pane)
-            else { return }
-            if cursor != "0,0" { return }
-            try await Task.sleep(for: .milliseconds(50))
+            else { return true }
+            if cursor != "0,0" { return true }
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { return true }
         }
+        return false
     }
 
 }
