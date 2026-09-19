@@ -333,7 +333,18 @@ def check(choice):
                             )
                             == "foreign-keeper"
                         )
-                elif choice in ["eof", "quit", "interrupt"]:
+                elif choice == "eof":
+                    # A closed input stream answers nothing: there is no
+                    # terminal left to ask, so this is usage, not a decline
+                    # and not an interruption.
+                    assert status == 2 and sessions() == ["keeper"]
+                    assert clients()[0][2] == "keeper"
+                elif choice == "quit":
+                    # Declining is a normal outcome, not a failure: nothing
+                    # was built or changed, so this is a plain exit 0.
+                    assert status == 0 and sessions() == ["keeper"]
+                    assert clients()[0][2] == "keeper"
+                elif choice == "interrupt":
                     assert status == 130 and sessions() == ["keeper"]
                     assert clients()[0][2] == "keeper"
                 elif choice == "gained-independent":

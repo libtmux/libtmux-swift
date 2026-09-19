@@ -2231,6 +2231,34 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("declining attach on a session that mismatches never reaches the comparison")
+    func declinedAttachSkipsMismatchComparison() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            // "mismatched" holds none of the named windows this document
+            // asks for, so reusing it would be a `session_mismatch` — but
+            // reuse is exactly what declining the prompt below never does.
+            _ = try await server.newSession(named: "mismatched")
+            let file = root.appendingPathComponent("mismatched.json")
+            try Data(
+                #"""
+                {"session_name":"mismatched","windows":[{"window_name":"w1","panes":[null]},{"window_name":"w2","panes":[null]}]}
+                """#.utf8
+            ).write(to: file)
+            let before = try await server.snapshot()
+            let declined = await invoke(
+                ["load", file.path, "-S", socket], in: root, extra: environment,
+                responses: ["n"])
+            #expect(declined.code == 0, "\(declined.error)")
+            #expect(!declined.error.joined().contains("session_mismatch"), "\(declined.error)")
+            let after = try await server.snapshot()
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+        }
+    }
+
     @Test("freeze never writes a session name load would refuse")
     func freezeRefusesUnaddressableName() async throws {
         try await withTmuxServer { server in
