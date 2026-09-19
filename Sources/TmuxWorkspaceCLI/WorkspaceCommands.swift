@@ -478,7 +478,11 @@ enum WorkspaceCommands {
         if !command.yes, canPrompt, let existingSession {
             let answer = try await prompt(
                 "\(existingSession.name) is already running. Attach? [Y/n]", context: context)
-            if ["n", "no"].contains(answer) { return .detached }
+            // Declining here means no reuse happened at all: the document
+            // comparison below answers "I went to reuse this and it does not
+            // satisfy you," and after a decline nobody went to reuse
+            // anything. Stop before that comparison ever runs.
+            if ["n", "no"].contains(answer) { throw PromptDeclined() }
         }
         guard insideTmux else { return .attached(nil) }
         let rawPane = context.environment["TMUX_PANE"] ?? ""

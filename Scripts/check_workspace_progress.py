@@ -226,7 +226,10 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
         sessions = subprocess.check_output(
             [tmux, "-S", socket, "list-sessions", "-F", "#{session_name}"]
         ).splitlines()
-        assert b"keeper" in sessions and b"cancelled" not in sessions
+        # An interruption is not rolled back: the same signal that stopped
+        # the build could just as well stop the cleanup that would follow
+        # it, so the session it created stays in place.
+        assert b"keeper" in sessions and b"cancelled" in sessions
         child = int(child_marker.read_text())
         try:
             os.kill(child, 0)
