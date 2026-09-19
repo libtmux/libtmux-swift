@@ -177,8 +177,9 @@ extension Server {
 
     /// Sets an option.
     ///
-    /// A value tmux refuses throws ``TmuxError/invocationFailed(reason:)``
-    /// with tmux's reason, as every other mutation does.
+    /// A value tmux refuses throws ``TmuxError/commandFailed(command:exitCode:reason:)``
+    /// with tmux's reason: `set-option` is dispatched as one command, and
+    /// only its own exit status and standard error are reported.
     ///
     /// A scope in the wrong table is not a value tmux refuses. For one of its
     /// own options tmux takes the table from the name, so `.server` with a
@@ -353,7 +354,7 @@ extension Server {
     ///
     /// Unsetting a user option nothing was set to succeeds and changes
     /// nothing. A name tmux does not know throws
-    /// ``TmuxError/invocationFailed(reason:)``.
+    /// ``TmuxError/commandFailed(command:exitCode:reason:)``.
     public func unsetOption(
         _ name: String,
         scope: OptionScope

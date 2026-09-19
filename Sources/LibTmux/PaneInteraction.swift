@@ -63,7 +63,7 @@ extension Server {
         guard !commands.isEmpty else { return }
         let reply = try await runGuarded(commands, by: [.pane(pane)])
         guard reply.isSuccess else {
-            throw .invocationFailed(reason: reply.errorText)
+            throw reply.failure(for: commands[0])
         }
     }
 
