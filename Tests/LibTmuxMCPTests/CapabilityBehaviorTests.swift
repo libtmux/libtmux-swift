@@ -203,6 +203,9 @@ struct CapabilityBehaviorTests {
                 )
             )
             #expect(waited.structured["matched"]?.stringValue == marker)
+            // The row it fired on, so an agent reads the value from the answer
+            // instead of re-scanning the tail for it.
+            #expect(waited.structured["matchedLine"]?.stringValue?.contains(marker) == true)
             #expect(waited.structured["matchedAtEntry"]?.boolValue == true)
             #expect(waited.structured["effectiveTimeout"]?.doubleValue == 1)
         }

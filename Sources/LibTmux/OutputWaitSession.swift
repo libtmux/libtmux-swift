@@ -78,6 +78,7 @@ struct OutputWaitSession: Sendable {
             _ outcome: OutputWait.Outcome,
             matched: String? = nil,
             matchedIndex: Int? = nil,
+            line: String? = nil,
             sawNewOutput: Bool = false,
             tail: [String] = [],
             cursor: CaptureCursor? = nil
@@ -86,6 +87,7 @@ struct OutputWaitSession: Sendable {
                 outcome: outcome,
                 matched: matched,
                 matchedIndex: matchedIndex,
+                matchedLine: line,
                 sawNewOutput: sawNewOutput,
                 matchedAtEntry: wasAlreadyShowing,
                 tail: Array(tail.suffix(keptTail)),
@@ -107,6 +109,7 @@ struct OutputWaitSession: Sendable {
                 entryHit.outcome == .matched ? .alreadyOnScreen : entryHit.outcome,
                 matched: entryHit.matched,
                 matchedIndex: entryHit.matchedIndex,
+                line: entryHit.line,
                 tail: entryRows,
                 cursor: entryRead.cursor
             )
@@ -129,6 +132,7 @@ struct OutputWaitSession: Sendable {
                 hit.outcome,
                 matched: hit.matched,
                 matchedIndex: hit.matchedIndex,
+                line: hit.line,
                 sawNewOutput: true,
                 tail: tail
             )
@@ -924,7 +928,8 @@ private func firstOutputWaitHit(
             return OutputWaitHit(
                 outcome: .stopped,
                 matched: stops[index].source,
-                matchedIndex: index
+                matchedIndex: index,
+                line: row
             )
         }
         guard !patterns.isEmpty else {
@@ -937,7 +942,8 @@ private func firstOutputWaitHit(
             return OutputWaitHit(
                 outcome: .matched,
                 matched: patterns[index].source,
-                matchedIndex: index
+                matchedIndex: index,
+                line: row
             )
         }
     }
@@ -948,6 +954,7 @@ private struct OutputWaitHit {
     let outcome: OutputWait.Outcome
     var matched: String? = nil
     var matchedIndex: Int? = nil
+    var line: String? = nil
 }
 
 private func withOutputWaitErrorMapping<Result>(

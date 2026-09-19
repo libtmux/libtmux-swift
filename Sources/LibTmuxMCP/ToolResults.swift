@@ -191,6 +191,10 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
     let outcome: String
     let matched: String?
     let matchedIndex: Int?
+    /// The row the pattern fired on. `matched` names the pattern, which the
+    /// caller sent; this is the text it found, which is usually what the wait
+    /// was for — read the port or URL from here rather than re-scanning `tail`.
+    let matchedLine: String?
     /// `false` with `outcome: "timedOut"` means the pane really was quiet —
     /// suspect the command never ran, because no change of pattern fixes it.
     /// With `outcome: "expiredWhileReading"` it means nothing: the reads that
@@ -208,7 +212,8 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
     let effectiveTimeout: Double
 
     /// Swift's synthesised encoding drops a nil optional, but this tool's
-    /// published schema declares `matched`, `matchedIndex` and `cursor` present
+    /// published schema declares `matched`, `matchedIndex`, `matchedLine` and
+    /// `cursor` present
     /// and nullable. MCP requires `structuredContent` to conform to that
     /// schema, so a wait that matched nothing has to answer null rather than
     /// leave the key out.
@@ -218,6 +223,7 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
         try container.encode(outcome, forKey: .outcome)
         try container.encode(matched, forKey: .matched)
         try container.encode(matchedIndex, forKey: .matchedIndex)
+        try container.encode(matchedLine, forKey: .matchedLine)
         try container.encode(sawNewOutput, forKey: .sawNewOutput)
         try container.encode(matchedAtEntry, forKey: .matchedAtEntry)
         try container.encode(tail, forKey: .tail)
@@ -231,6 +237,7 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
         self.outcome = wait.outcome.rawValue
         self.matched = wait.matched
         self.matchedIndex = wait.matchedIndex
+        self.matchedLine = wait.matchedLine
         self.sawNewOutput = wait.sawNewOutput
         self.matchedAtEntry = wait.matchedAtEntry
         self.tail = wait.tail

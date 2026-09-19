@@ -47,6 +47,19 @@ public struct OutputWait: Sendable, Hashable, Codable {
     public let matched: String?
     /// Its position in whichever list it came from.
     public let matchedIndex: Int?
+    /// The row the pattern fired on, as the pane rendered it.
+    ///
+    /// ``matched`` names the pattern, which a caller already had; this is the
+    /// text it found, which is usually what the wait was for — a port, a URL,
+    /// a version. Pull the value out of this row rather than scanning ``tail``
+    /// for it again. `nil` when nothing matched, and for a wait with no
+    /// patterns, which ends on any output at all.
+    ///
+    /// The row rather than the matched span, because the bounded engine behind
+    /// ``RegexPattern`` answers whether a row matches and not where: it runs a
+    /// set of states forward without remembering which input position each one
+    /// started from, which is what keeps its work predictable.
+    public let matchedLine: String?
     /// Whether anything at all arrived. `false` with
     /// ``Outcome/timedOut`` means the pane was quiet — usually the command
     /// never ran, which no change of pattern will fix. Under
@@ -70,6 +83,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
         outcome: Outcome,
         matched: String? = nil,
         matchedIndex: Int? = nil,
+        matchedLine: String? = nil,
         sawNewOutput: Bool,
         matchedAtEntry: Bool = false,
         tail: [String],
@@ -79,6 +93,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
         self.outcome = outcome
         self.matched = matched
         self.matchedIndex = matchedIndex
+        self.matchedLine = matchedLine
         self.sawNewOutput = sawNewOutput
         self.matchedAtEntry = matchedAtEntry
         self.tail = tail
@@ -91,6 +106,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
             outcome: outcome,
             matched: matched,
             matchedIndex: matchedIndex,
+            matchedLine: matchedLine,
             sawNewOutput: sawNewOutput,
             matchedAtEntry: matchedAtEntry,
             tail: tail,

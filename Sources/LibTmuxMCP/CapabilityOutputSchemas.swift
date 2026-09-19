@@ -102,7 +102,8 @@ enum CapabilityOutputSchemas {
         case .waitForText:
             object([
                 "paneRef": string, "outcome": string, "matched": nullableString,
-                "matchedIndex": nullableInteger, "sawNewOutput": boolean,
+                "matchedIndex": nullableInteger, "matchedLine": nullableString,
+                "sawNewOutput": boolean,
                 "matchedAtEntry": boolean, "tail": array(string), "seconds": number,
                 "cursor": nullableString, "effectiveTimeout": number,
             ])

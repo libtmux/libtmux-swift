@@ -18,3 +18,4 @@ API breakage: func Server.capture(_:includingHistory:maximumLines:) has been ren
 API breakage: func Server.captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:) has been renamed to func captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:includingAttributes:maximumBytes:)
 API breakage: func reaperCommand(root:) has been renamed to func reaperCommand(root:within:)
 API breakage: func Workspace.decode(json:) has been renamed to func decode(json:strict:)
+API breakage: constructor OutputWait.init(outcome:matched:matchedIndex:sawNewOutput:matchedAtEntry:tail:cursor:seconds:) has been removed

@@ -106,6 +106,31 @@ struct WatchTests {
         }
     }
 
+    @Test("a wait reports the row it matched, not only the pattern")
+    func waitReportsTheMatchedRow() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let result = try await printing(
+                "listening on port 41234",
+                into: pane,
+                on: server
+            ) {
+                try await server.waitForOutput(
+                    in: pane,
+                    matching: [try RegexPattern("listening on port [0-9]+")],
+                    requiringFreshOutput: true,
+                    timeout: .seconds(20)
+                )
+            }
+
+            #expect(result.outcome == .matched)
+            // The pattern a caller already had, and the text it was for.
+            #expect(result.matched == "listening on port [0-9]+")
+            let line = try #require(result.matchedLine)
+            #expect(line.contains("listening on port 41234"))
+        }
+    }
+
     @Test("a matcher refusal remains distinct from a timeout")
     func matcherRefusalPropagates() throws {
         let pattern = try RegexPattern("z$")
