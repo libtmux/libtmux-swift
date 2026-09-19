@@ -257,7 +257,9 @@ struct IdentityTests {
 
             try await server.connected(attachingTo: session.id.rawValue) { connected, _ in
                 await #expect(
-                    throws: TmuxError.invocationFailed(
+                    throws: TmuxError.commandFailed(
+                        command: "unlink-window",
+                        exitCode: 1,
                         reason: "window only linked to one session"
                     )
                 ) {

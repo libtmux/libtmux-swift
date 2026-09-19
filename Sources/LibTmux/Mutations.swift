@@ -330,9 +330,7 @@ extension Server {
 
     func expectSuccess(_ command: TmuxCommand) async throws(TmuxError) {
         let reply = try await run(command)
-        guard reply.isSuccess else {
-            throw .invocationFailed(reason: reply.errorText)
-        }
+        guard reply.isSuccess else { throw reply.failure(for: command) }
     }
 
     func expectSuccess(
@@ -340,8 +338,6 @@ extension Server {
         guardedBy values: [GuardedValue]
     ) async throws(TmuxError) {
         let reply = try await runGuarded(command, by: values)
-        guard reply.isSuccess else {
-            throw .invocationFailed(reason: reply.errorText)
-        }
+        guard reply.isSuccess else { throw reply.failure(for: command) }
     }
 }

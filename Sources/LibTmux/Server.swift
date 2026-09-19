@@ -463,7 +463,7 @@ public struct Server: Sendable, Hashable {
     /// `work` while `session(named: "wor")` answered `nil`.
     public func hasSession(_ name: String) async throws(TmuxError) -> Bool {
         try await run(
-            rawArguments: TmuxCommand("has-session", ["-t", tmuxExactTarget(name)])
+            rawArguments: TmuxCommand("has-session", ["-t", tmuxExactSession(name)])
                 .argumentVector
         ).isSuccess
     }

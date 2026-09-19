@@ -90,7 +90,10 @@ struct NewSessionTests {
             transport: transport
         )
 
-        await #expect(throws: TmuxError.invocationFailed(reason: "resize rejected")) {
+        await #expect(
+            throws: TmuxError.commandFailed(
+                command: "resize-window", exitCode: 1, reason: "resize rejected")
+        ) {
             _ = try await server.newSession(named: "sized", width: 111, height: 41)
         }
         #expect(await transport.invocationCount == 2)

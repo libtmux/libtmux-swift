@@ -12,14 +12,25 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// cannot duplicate the requested action because tmux never received it.
     case requestNotSubmitted
 
-    /// No usable reply was obtained after submission. Unless a narrower error
-    /// says otherwise, the action may have reached tmux.
+    /// The command was submitted and no usable reply came back — tmux
+    /// answered with something this library cannot read, or the reply never
+    /// arrived. Unless a narrower error says otherwise, the action may have
+    /// reached tmux.
+    ///
+    /// A command tmux itself refused is
+    /// ``commandFailed(command:exitCode:reason:)``, and one refused before
+    /// tmux saw it is ``rejectedLocally(reason:)``.
     case invocationFailed(reason: String)
 
     /// A direct tmux client cannot encode the command, so it was not submitted.
     case commandTooLarge(actualBytes: Int, maximumBytes: Int)
 
-    /// tmux received a typed command but rejected it.
+    /// A tmux client exited nonzero, carrying its reason.
+    ///
+    /// Usually tmux rejecting the command, and also what a client that could
+    /// not reach the server reports, since tmux answers both the same way.
+    /// Every mutation and every read that promises a decoded value reports a
+    /// refusal this way, so a caller matching one case catches them all.
     ///
     /// Only the command name is retained; arguments may contain pane text,
     /// environment values, or other caller data that does not belong in an error.

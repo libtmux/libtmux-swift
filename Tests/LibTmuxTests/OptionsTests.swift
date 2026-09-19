@@ -220,7 +220,8 @@ struct OptionsTests {
             do {
                 try await server.setOption(.historyLimit, to: -1)
                 Issue.record("a negative history-limit was accepted")
-            } catch let TmuxError.invocationFailed(reason) {
+            } catch let TmuxError.commandFailed(command, _, reason) {
+                #expect(command == "set-option", Comment(rawValue: command))
                 #expect(reason.contains("-1"), Comment(rawValue: reason))
             }
             #expect(try await server.option(.historyLimit) != -1)

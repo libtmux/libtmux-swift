@@ -120,20 +120,26 @@ struct LookupTests {
 
 @Suite("addressing a session by name", .hangLimit)
 struct ExactSessionTargetTests {
-    /// tmux resolves `-t` by exact match, then unique prefix, then `fnmatch`,
-    /// so every call that takes a name has to say which it means.
+    /// tmux resolves a target by exact match, then unique prefix, then
+    /// `fnmatch`, so every call that takes a name has to say which it means.
     @Test("a name reaches only the session of that name")
     func aNameIsNotAPrefixOrAGlob() async throws {
         try await withTmuxServer { server in
             let work = try await server.newSession(named: "work")
 
-            #expect(try await server.hasSession("work"))
-            #expect(try await server.session(named: "wor") == nil)
-            #expect(!(try await server.hasSession("wor")))
-            #expect(!(try await server.hasSession("w*")))
+            let exact = try await server.hasSession("work")
+            let prefix = try await server.hasSession("wor")
+            let glob = try await server.hasSession("w*")
+            let byPrefixLookup = try await server.session(named: "wor")
             // An id still resolves: tmux strips the exact-match prefix before
             // it looks for one.
-            #expect(try await server.hasSession(work.id.rawValue))
+            let byID = try await server.hasSession(work.id.rawValue)
+
+            #expect(exact)
+            #expect(!prefix)
+            #expect(!glob)
+            #expect(byPrefixLookup == nil)
+            #expect(byID)
         }
     }
 
@@ -142,20 +148,35 @@ struct ExactSessionTargetTests {
         try await withTmuxServer { server in
             let work = try await server.newSession(named: "work")
 
-            // Writing through a prefix used to reach `work`, so the value read
+            // Writing through a prefix used to reach `work`, so a value read
             // back through the full name was one nobody asked to set.
             _ = try await server.setEnvironment("PROBE", to: "1", in: .session("wor"))
-            #expect(try await server.environmentValue("PROBE", in: .session("work")) == nil)
+            let leaked = try await server.environmentValue("PROBE", in: .session("work"))
+            #expect(leaked == nil)
+
+            // Hooks take a pane target, where the exact-match prefix names
+            // only the session component, so this asks the same question in
+            // tmux's other target spelling.
             _ = try await server.setHook(
                 "after-new-window", to: "display-message probe", in: .session("wor"))
-            #expect(try await server.hooks(.session("work")).isEmpty)
+            let leakedHooks = try await server.hooks(.session("work"))
+            #expect(leakedHooks.isEmpty)
 
-            // The exact name still reaches it.
+            // The exact name, and the id, still reach it.
             _ = try await server.setEnvironment("PROBE", to: "1", in: .session("work"))
-            #expect(try await server.environmentValue("PROBE", in: .session("work")) == "1")
+            let byName = try await server.environmentValue("PROBE", in: .session("work"))
+            #expect(byName == "1")
             _ = try await server.setEnvironment(
                 "PROBE", to: "2", in: .session(work.id.rawValue))
-            #expect(try await server.environmentValue("PROBE", in: .session("work")) == "2")
+            let byID = try await server.environmentValue("PROBE", in: .session("work"))
+            #expect(byID == "2")
+
+            _ = try await server.setHook(
+                "after-new-window", to: "display-message probe", in: .session("work"))
+            let hooksByName = try await server.hooks(.session("work"))
+            let hooksByID = try await server.hooks(.session(work.id.rawValue))
+            #expect(hooksByName.count == 1)
+            #expect(hooksByID.count == 1)
         }
     }
 

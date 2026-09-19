@@ -12,7 +12,7 @@ public enum EnvironmentScope: Sendable, Hashable, Codable {
     var arguments: [String] {
         switch self {
         case .global: ["-g"]
-        case let .session(target): ["-t", tmuxExactTarget(target)]
+        case let .session(target): ["-t", tmuxExactSession(target)]
         }
     }
 }
@@ -48,8 +48,9 @@ extension Server {
     public func environment(
         _ scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> [TmuxEnvironmentVariable] {
-        let reply = try await run(TmuxCommand("show-environment", scope.arguments))
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-environment", scope.arguments)
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text
             .split(separator: "\n", omittingEmptySubsequences: true)
             .compactMap { TmuxEnvironmentVariable(line: String($0)) }

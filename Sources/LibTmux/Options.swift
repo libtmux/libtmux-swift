@@ -83,7 +83,7 @@ public enum HookScope: Sendable, Hashable, Codable {
     var arguments: [String] {
         switch self {
         case .global: ["-g"]
-        case let .session(target): ["-t", tmuxExactTarget(target)]
+        case let .session(target): ["-t", tmuxExactSessionOfPane(target)]
         }
     }
 }
@@ -116,15 +116,15 @@ extension Server {
     /// Every option set in one exact table.
     ///
     /// Reports what tmux has actually been told, not the built-in defaults —
-    /// a fresh server's session table is legitimately empty.
+    /// a fresh server's session table is legitimately empty. An empty result
+    /// is therefore tmux's own answer: a listing tmux could not give throws,
+    /// so no server and no options set cannot be mistaken for each other.
     public func options(
         _ scope: OptionScope
     ) async throws(TmuxError) -> [TmuxOption] {
-        let reply = try await runOptionCommand(
-            TmuxCommand("show-options", scope.selectorArguments),
-            in: scope
-        )
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-options", scope.selectorArguments)
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text.split(separator: "\n").map { line in
             let (name, value) = splitOnFirstSpace(String(line))
             return TmuxOption(name: name, value: value, scope: scope)
@@ -146,32 +146,30 @@ extension Server {
         let listed = try await options(scope)
         guard listed.contains(where: { $0.name == name }) else { return nil }
 
-        let reply = try await runOptionCommand(
-            TmuxCommand(
-                "show-options",
-                scope.selectorArguments + ["-v", name]
-            ),
-            in: scope
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", name])
+        let reply = try await runOptionCommand(command, in: scope)
+        // Presence came from the listing, so `nil` is already spent on "not
+        // set" and a failure here is a failure.
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         var value = reply.text
         if value.hasSuffix("\n") { value.removeLast() }
         return value
     }
 
     /// The effective value after tmux resolves inherited option tables.
+    ///
+    /// - Throws: ``TmuxError/commandFailed(command:exitCode:reason:)`` for a
+    ///   name tmux does not know, which it answers the same way as a server
+    ///   it cannot reach. `nil` is reserved for a value tmux reported as
+    ///   absent.
     public func resolvedOption(
         _ name: String,
         scope: OptionScope
     ) async throws(TmuxError) -> String? {
-        let reply = try await runOptionCommand(
-            TmuxCommand(
-                "show-options",
-                ["-A"] + scope.selectorArguments + ["-v", name]
-            ),
-            in: scope
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand(
+            "show-options", ["-A"] + scope.selectorArguments + ["-v", name])
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         var value = reply.text
         if value.hasSuffix("\n") { value.removeLast() }
         return value
@@ -376,8 +374,9 @@ extension Server {
     public func hooks(
         _ scope: HookScope = .global
     ) async throws(TmuxError) -> [TmuxHook] {
-        let reply = try await run(TmuxCommand("show-hooks", scope.arguments))
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-hooks", scope.arguments)
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text.split(separator: "\n").compactMap { line in
             let (label, command) = splitOnFirstSpace(String(line))
             guard !command.isEmpty else { return nil }
