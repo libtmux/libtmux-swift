@@ -1989,7 +1989,7 @@ struct WorkspaceCLITests {
                 ["freeze", "-S", socket, "--json"], in: root, extra: environment)
             #expect(ambiguous.code == 2)
             #expect(ambiguous.output.isEmpty)
-            #expect(ambiguous.error.joined().contains("session_required"))
+            #expect(ambiguous.error.joined().contains("\"usage\""), "\(ambiguous.error)")
             // A destination keeps these calls out of the "needs a
             // destination" usage error below while still exercising the
             // interactive session chooser, which only runs in human mode.
@@ -2016,9 +2016,9 @@ struct WorkspaceCLITests {
             #expect(try current.json()["session_name"] as? String == "other")
             environment["TMUX"] = "\(socket),1,999"
             let stale = await invoke(["freeze", "--json"], in: root, extra: environment)
-            #expect(stale.code == 1)
+            #expect(stale.code == 2)
             #expect(stale.output.isEmpty)
-            #expect(stale.error.joined().contains("freeze_context"))
+            #expect(stale.error.joined().contains("\"usage\""), "\(stale.error)")
             let explicit = await invoke(
                 ["freeze", "bootstrap", "-S", socket, "--json"], in: root, extra: environment)
             #expect(explicit.code == 0)
