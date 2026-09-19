@@ -156,6 +156,38 @@ def check(choice):
                     document["before_script"] = shlex.join(["/bin/sh", str(script)])
                 file.write_text(json.dumps(document))
                 files.append(str(file))
+            if choice == "session-fallback":
+                # A second client is attached to the same session, on a
+                # different window than the invoking pane's - not
+                # "independent"/active-pane flagged, just an ordinary client
+                # parked elsewhere. Nothing makes this pane that client's
+                # active pane, so the exact-match set is empty and load must
+                # fall back to the only client attached to its session
+                # rather than refusing one that would work.
+                other_window_index = command(
+                    "new-window", "-d", "-t", "=keeper:", "-P", "-F", "#{window_index}"
+                )
+                other = terminal(
+                    [tmux, "-S", socket, "attach-session", "-t", f"=keeper:{other_window_index}"]
+                )
+                other.until(lambda: len(clients()) == 1)
+                marker = root / "exit-code"
+                arguments = [binary, "load", files[1], "-S", socket, "--no-progress", "-y"]
+                line = (
+                    shlex.join(arguments)
+                    + "; printf '%s\\n' \"$?\" > "
+                    + shlex.quote(str(marker))
+                )
+                command("send-keys", "-t", pane, "-l", line)
+                command("send-keys", "-t", pane, "Enter")
+                other.until(
+                    lambda: marker.exists() and marker.read_text().endswith("\n")
+                )
+                status = int(marker.read_text())
+                assert status == 0, (status, sessions(), clients())
+                assert sessions() == ["final", "keeper"]
+                assert clients()[0][2] == "final", clients()
+                return
             if choice.startswith("outside-"):
                 if choice == "outside-detach":
                     environment["TMUX"] = ""
@@ -439,6 +471,7 @@ for choice in sys.argv[3:] or [
     "independent-append",
     "independent-other-window",
     "gained-independent",
+    "session-fallback",
 ]:
     check(choice)
     checks.append(choice)
