@@ -240,6 +240,12 @@ non-message line anywhere in the file silently voids **every** entry in it,
 which is why a justification goes in `CHANGELOG.md` rather than beside the
 entry it explains.
 
+The comparison cannot see a declaration behind a trait. `Workspace.decode(yaml:)`
+exists only with `YAMLWorkspaces`, and the toolchain reports no change to it
+even when run with `--traits YAMLWorkspaces` — measured when it gained a
+parameter and the JSON sibling beside it was reported. A change to trait-gated
+API has to be declared in the changelog by hand.
+
 Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 

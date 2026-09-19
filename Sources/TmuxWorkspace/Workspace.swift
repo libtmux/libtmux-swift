@@ -36,8 +36,67 @@ public struct Workspace: Sendable, Hashable, Codable {
     }
 
     /// Reads a workspace from JSON.
-    public static func decode(json: Data) throws -> Workspace {
-        try JSONDecoder().decode(Workspace.self, from: json)
+    ///
+    /// - Parameters:
+    ///   - json: the workspace document.
+    ///   - strict: refuses a key this type does not model instead of dropping
+    ///     it. tmuxp's format is larger than the structural subset built here
+    ///     — `shell_command_before`, `sleep_before`, `options`, plugins and
+    ///     hooks among them — and a file carrying one decodes cleanly and
+    ///     builds a session that is quietly not what the file described.
+    ///     Pass `true` when the file came from someone else.
+    public static func decode(json: Data, strict: Bool = false) throws -> Workspace {
+        if strict {
+            let raw = try JSONSerialization.jsonObject(with: json)
+            try requireOnlyModelledKeys(in: raw)
+        }
+        return try JSONDecoder().decode(Workspace.self, from: json)
+    }
+
+    /// Every key this type reads, by the level it appears at.
+    ///
+    /// `cmd` and `enter` belong to an entry inside `shell_command`, not to a
+    /// pane. tmuxp does take `enter` on a pane, applying it to every command
+    /// there; this type does not read it, so strict decoding refuses it
+    /// rather than dropping a "leave this line unrun" the file asked for.
+    static let modelledKeys:
+        (root: Set<String>, window: Set<String>, pane: Set<String>, command: Set<String>) = (
+            root: ["session_name", "start_directory", "windows"],
+            window: ["window_name", "start_directory", "layout", "panes"],
+            pane: ["shell_command", "start_directory"],
+            command: ["cmd", "enter"]
+        )
+
+    /// Refuses a document carrying a key no level of this type reads.
+    static func requireOnlyModelledKeys(in raw: Any) throws {
+        var unsupported: [String] = []
+
+        func check(_ value: Any, against known: Set<String>, at level: String) {
+            guard let object = value as? [String: Any] else { return }
+            for key in object.keys.sorted() where !known.contains(key) {
+                unsupported.append("\(level).\(key)")
+            }
+        }
+
+        check(raw, against: modelledKeys.root, at: "workspace")
+        let windows = (raw as? [String: Any])?["windows"] as? [Any] ?? []
+        for window in windows {
+            check(window, against: modelledKeys.window, at: "window")
+            let panes = (window as? [String: Any])?["panes"] as? [Any] ?? []
+            for pane in panes {
+                // A pane may be a bare command string rather than a mapping.
+                check(pane, against: modelledKeys.pane, at: "pane")
+                let commands = (pane as? [String: Any])?["shell_command"]
+                for command in commands as? [Any] ?? [commands as Any] {
+                    // So may a command: only the long form has keys at all.
+                    check(command, against: modelledKeys.command, at: "shell_command")
+                }
+            }
+        }
+
+        guard unsupported.isEmpty else {
+            throw WorkspaceDecodingError.unsupportedKeys(Array(Set(unsupported)).sorted())
+        }
     }
 
     #if YAMLWorkspaces
@@ -54,10 +113,31 @@ public struct Workspace: Sendable, Hashable, Codable {
         ///     traits: ["YAMLWorkspaces"]
         /// )
         /// ```
-        public static func decode(yaml: String) throws -> Workspace {
-            try YAMLDecoder().decode(Workspace.self, from: yaml)
+        public static func decode(yaml: String, strict: Bool = false) throws -> Workspace {
+            if strict, let raw = try Yams.load(yaml: yaml) {
+                try requireOnlyModelledKeys(in: raw)
+            }
+            return try YAMLDecoder().decode(Workspace.self, from: yaml)
         }
     #endif
+}
+
+/// Why a workspace document was refused.
+public enum WorkspaceDecodingError: Error, Sendable, Hashable, CustomStringConvertible {
+    /// Keys no level of ``Workspace`` reads, qualified by where they appeared.
+    ///
+    /// tmuxp's format is larger than the structural subset modelled here, and
+    /// a file carrying one of its other keys would otherwise build a session
+    /// that is quietly not what the file described.
+    case unsupportedKeys([String])
+
+    public var description: String {
+        switch self {
+        case let .unsupportedKeys(keys):
+            "the workspace carries keys this type does not model: "
+                + keys.joined(separator: ", ")
+        }
+    }
 }
 
 /// One window, and the panes in it.

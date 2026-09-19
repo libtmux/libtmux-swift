@@ -16,3 +16,5 @@ API breakage: func Server.sendKeys(_:to:literally:) has parameter 0 type change 
 API breakage: func Server.sendKeys(_:to:literally:) has been renamed to func send(_:to:)
 API breakage: func Server.capture(_:includingHistory:maximumLines:) has been renamed to func capture(_:includingHistory:maximumLines:includingAttributes:maximumBytes:)
 API breakage: func Server.captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:) has been renamed to func captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:includingAttributes:maximumBytes:)
+API breakage: func reaperCommand(root:) has been renamed to func reaperCommand(root:within:)
+API breakage: func Workspace.decode(json:) has been renamed to func decode(json:strict:)
