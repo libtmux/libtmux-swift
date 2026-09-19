@@ -101,7 +101,6 @@ enum WorkspaceCommands {
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }
         let retained = AppendState()
         let scriptFailure = ScriptFailure()
-        var reusedMismatch = false
         var results: [Value] = []
         var completedCount = 0
         var lastSession: Session?
@@ -140,8 +139,7 @@ enum WorkspaceCommands {
                     if let missing = try await missingWindows(
                         plan.workspace, in: existing, on: server)
                     {
-                        reusedMismatch = true
-                        throw CLIError("session_not_found", missing)
+                        throw CLIError("session_mismatch", missing)
                     }
                     session = existing
                 } else {
@@ -352,8 +350,7 @@ enum WorkspaceCommands {
             }
             var fields: [String: Value] = [
                 "schema_version": .integer(1), "command": .string("load"),
-                "status": .string(
-                    completedCount == 0 && !changed && !reusedMismatch ? "error" : "partial"),
+                "status": .string(completedCount == 0 && !changed ? "error" : "partial"),
                 "results": .array(results),
                 "errors": .array([
                     .object([
