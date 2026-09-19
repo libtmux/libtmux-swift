@@ -148,6 +148,15 @@ extension Pane {
     private static let titleField = FormatField("pane_title")
     private static let startCommandField = FormatField("pane_start_command")
 
+    /// Every field `Pane` reads from tmux's row, including the harness fields.
+    ///
+    /// The five added for a harness — exit status, pid, tty, title, start
+    /// command — cost about 102 bytes a row, measured on tmux 3.7b: 37 panes
+    /// went from 6,196 to 9,994 bytes, 61% wider. No extra round trip and no
+    /// measurable time, since one `list-panes` still answers all of them, and
+    /// even a 200-pane server stays far inside the 1 MiB reply cap. Kept whole
+    /// rather than split into a narrow projection and a wide one, which would
+    /// make every caller choose and every `Pane` mean two different things.
     static let projection = FormatProjection(
         [
             idField, indexField, widthField, heightField, activeField, deadField,

@@ -180,6 +180,47 @@ extension Server {
         )
     }
 
+    /// Whether panes in `scope` outlive the command they were created with.
+    ///
+    /// tmux destroys a pane as its command exits, which leaves nothing to ask
+    /// how the command finished — so ``Pane/exitStatus`` is `nil` for a pane
+    /// that is already gone. Setting this keeps the pane, and is what a caller
+    /// waiting on an exit status needs:
+    ///
+    /// ```swift
+    /// try await server.setPanesOutliveTheirCommand(true, scope: .globalWindow)
+    /// let pane = try await server.splitWindow(window, running: ["sh", "-c", "exit 42"])
+    /// ```
+    ///
+    /// Set it before creating the pane, not after: a command that exits
+    /// quickly is gone before a second call could name the pane it created.
+    /// The pane then stays until something kills it, which is the caller's to
+    /// arrange.
+    ///
+    /// This is `remain-on-exit`, typed because it is the one option
+    /// ``Pane/exitStatus`` depends on, and spelling it as a string is how a
+    /// caller discovers that dependency only by not finding it.
+    @discardableResult
+    public func setPanesOutliveTheirCommand(
+        _ outlive: Bool,
+        scope: OptionScope = .globalWindow
+    ) async throws(TmuxError) -> TmuxReply {
+        try await setOption("remain-on-exit", to: outlive ? "on" : "off", scope: scope)
+    }
+
+    /// Whether panes in `scope` outlive the command they were created with.
+    ///
+    /// `nil` when tmux reports no value for the scope asked about. tmux also
+    /// answers `failed`, which keeps a pane only when its command exited
+    /// nonzero; that reads as `true` here, since a pane can then outlive its
+    /// command.
+    public func panesOutliveTheirCommand(
+        scope: OptionScope = .globalWindow
+    ) async throws(TmuxError) -> Bool? {
+        guard let value = try await option("remain-on-exit", scope: scope) else { return nil }
+        return value != "off"
+    }
+
     /// Puts an option back the way it was before anyone set it.
     ///
     /// What that means depends on the option. A user option — `@`-prefixed,

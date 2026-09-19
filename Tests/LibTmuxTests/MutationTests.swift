@@ -521,7 +521,8 @@ struct MutationTests {
         try await withTmuxServer { server in
             // A pane is destroyed as its command ends unless tmux is told to
             // keep it, and a destroyed pane cannot be asked anything.
-            _ = try await server.setOption("remain-on-exit", to: "on", scope: .globalWindow)
+            try await server.setPanesOutliveTheirCommand(true)
+            #expect(try await server.panesOutliveTheirCommand() == true)
             let session = try await server.newSession(named: "exits")
             let window = try await server.newWindow(in: session).window
 
@@ -543,6 +544,21 @@ struct MutationTests {
             #expect(finished.startCommand?.contains("exit 42") == true)
             #expect((finished.processID ?? 0) > 0)
             #expect(finished.tty?.hasPrefix("/dev/") == true)
+        }
+    }
+
+    @Test("panes outliving their command is off until it is asked for")
+    func panesOutliveTheirCommandIsOffByDefault() async throws {
+        try await withTmuxServer { server in
+            // tmux's own default. Asserted because `exitStatus` is only ever
+            // readable when this has been turned on, so a caller who never
+            // calls it should find nothing rather than something misleading.
+            #expect(try await server.panesOutliveTheirCommand() == false)
+
+            try await server.setPanesOutliveTheirCommand(true)
+            #expect(try await server.panesOutliveTheirCommand() == true)
+            try await server.setPanesOutliveTheirCommand(false)
+            #expect(try await server.panesOutliveTheirCommand() == false)
         }
     }
 
