@@ -84,4 +84,14 @@ struct PaneProgramTests {
             #expect(status == 42)
         }
     }
+
+    @Test("a typed option reads back as its type, from its own table")
+    func typedOptionsReadBackTyped() async throws {
+        try await withTmuxServer { server in
+            let scrollback = try await setOptionsWithATypeAndATable(server)
+
+            #expect(scrollback != nil)
+            #expect(try await server.option("mouse", scope: .globalSession) == "on")
+        }
+    }
 }

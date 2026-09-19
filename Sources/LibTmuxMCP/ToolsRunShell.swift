@@ -658,11 +658,7 @@ extension TmuxTools {
         _ cleanup: RunShellCleanup,
         server: Server
     ) async throws {
-        let reply = try await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
-        guard reply.isSuccess else {
-            throw TmuxError.commandFailed(
-                command: "set-option", exitCode: reply.exitCode, reason: reply.errorText)
-        }
+        try await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
     }
 
     private static func releaseRunShellFile(_ file: RunShellFile?) {

@@ -193,11 +193,25 @@ Daemon identity continues to use the original integer `startedAt`.
 
 ```swift
 let session = try await server.newSession(named: "work", windowName: "editor")
-_ = try await server.setOption("@purpose", to: "development", scope: .session(session))
+try await server.setOption("@purpose", to: "development", scope: .session(session))
 let logs = try await server.newWindow(in: session, named: "logs").window
 let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)
 ```
+
+tmux keeps every option as text. A `TmuxOptionKey` names an option, the type
+of its value and the table it lives in, so a read comes back as a `Bool` or an
+`Int`. A typed set cannot land somewhere else by mistake either. tmux picks the
+table for its own options from the name alone, so a set aimed at the wrong
+table exits 0 and changes whichever session tmux considers current:
+
+```swift
+try await server.setOption(.mouse, to: true)
+let scrollback = try await server.option(.historyLimit)
+```
+
+A value tmux refuses, such as `history-limit` below zero, throws as any other
+change does.
 
 ### Running a program, not typing one
 
@@ -219,7 +233,7 @@ does not — so ask tmux to keep the pane, or it is destroyed as its command
 ends and there is nothing left to ask:
 
 ```swift
-_ = try await server.setOption("remain-on-exit", to: "on", scope: .globalWindow)
+try await server.setPanesOutliveTheirCommand(true)
 ```
 
 `Pane` also carries `processID`, `tty`, `title`, and `startCommand` — what the

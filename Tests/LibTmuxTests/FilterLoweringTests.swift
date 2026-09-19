@@ -18,17 +18,13 @@ import TmuxFixture
 /// two listings against that list races it, and reports a disagreement between
 /// tmux and this package that neither had.
 ///
-/// It is a *window* option. Setting it in the server table is refused, and
-/// `setOption` reports that in a reply rather than by throwing, so the result is
-/// checked here — an earlier version of this helper set the wrong table, the
-/// reply went unread, and the cases stayed flaky with the fix apparently in.
+/// It is a *window* option, and naming the server table instead is not
+/// refused: tmux sets it on whichever window it considers current, so one
+/// window is pinned and the cases stay flaky with the fix apparently in. An
+/// earlier version of this helper did exactly that. The typed key knows its
+/// table.
 func pinWindowNames(_ server: Server) async throws {
-    let reply = try await server.setOption(
-        "automatic-rename",
-        to: "off",
-        scope: .globalWindow
-    )
-    #expect(reply.isSuccess, "could not pin window names: \(reply.errorText)")
+    try await server.setOption(.automaticRename, to: false)
 }
 
 @Suite("filter lowering", .hangLimit)

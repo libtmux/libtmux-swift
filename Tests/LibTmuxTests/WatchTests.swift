@@ -391,7 +391,7 @@ struct WatchTests {
     func sustainedOutputCannotMoveTheDeadline() async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
-            _ = try await fixture.setOption(
+            try await fixture.setOption(
                 "history-limit",
                 to: "100000",
                 scope: .globalSession
@@ -583,7 +583,7 @@ struct WatchTests {
     func outputContinuityLossFailsTheWait() async throws {
         try await withTmuxServer { server in
             let historyLimit = 20
-            _ = try await server.setOption(
+            try await server.setOption(
                 "history-limit",
                 to: String(historyLimit),
                 scope: .globalSession

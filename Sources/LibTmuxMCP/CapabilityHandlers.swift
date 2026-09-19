@@ -608,17 +608,13 @@ extension TmuxTools {
 
     func setHistoryLimit(_ arguments: Arguments) async throws -> ToolOutcome {
         let lines = try arguments.integer("lines", or: 0)
-        let reply = try await server.setOption(
-            "history-limit", to: String(lines), scope: .globalSession)
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
+        try await server.setOption(.historyLimit, to: lines)
         return .init(structured: .object(["lines": .integer(Int64(lines))]))
     }
 
     func setMouseEnabled(_ arguments: Arguments) async throws -> ToolOutcome {
         let enabled = try arguments.bool("enabled", or: false)
-        let reply = try await server.setOption(
-            "mouse", to: enabled ? "on" : "off", scope: .globalSession)
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
+        try await server.setOption(.mouse, to: enabled)
         return .init(structured: .object(["enabled": .bool(enabled)]))
     }
 
@@ -795,12 +791,7 @@ extension TmuxTools {
     func setSynchronizePanes(_ arguments: Arguments) async throws -> ToolOutcome {
         let window = try await capabilityWindow(try arguments.string("windowId"))
         let enabled = try arguments.bool("enabled", or: false)
-        let reply = try await server.setOption(
-            "synchronize-panes",
-            to: enabled ? "on" : "off",
-            scope: .window(window)
-        )
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
+        try await server.setOption(.synchronizePanes, to: enabled, scope: .window(window))
         return .init(
             structured: .object([
                 "windowId": .string(window.id.rawValue), "enabled": .bool(enabled),

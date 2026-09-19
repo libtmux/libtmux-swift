@@ -19,3 +19,8 @@ API breakage: func Server.captureRange(_:startingAt:endingAt:joiningWrappedLines
 API breakage: func reaperCommand(root:) has been renamed to func reaperCommand(root:within:)
 API breakage: func Workspace.decode(json:) has been renamed to func decode(json:strict:)
 API breakage: constructor OutputWait.init(outcome:matched:matchedIndex:sawNewOutput:matchedAtEntry:tail:cursor:seconds:) has been removed
+API breakage: func Server.setOption(_:to:scope:) has return type change from LibTmux.TmuxReply to ()
+API breakage: func Server.unsetOption(_:scope:) has generic signature change from  to <Value>
+API breakage: func Server.unsetOption(_:scope:) has return type change from LibTmux.TmuxReply to ()
+API breakage: func Server.unsetOption(_:scope:) has parameter 0 type change from Swift.String to LibTmux.TmuxOptionKey<Value>
+API breakage: func Server.unsetOption(_:scope:) has parameter 1 type change from LibTmux.OptionScope to LibTmux.OptionScope?

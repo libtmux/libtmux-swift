@@ -124,6 +124,9 @@ command explains itself on standard error — so
 - ``EnvironmentScope``
 - ``TmuxEnvironmentVariable``
 - ``TmuxOption``
+- ``TmuxOptionKey``
+- ``TmuxOptionValue``
+- ``TmuxOptionTable``
 - ``TmuxHook``
 - ``OptionScope``
 - ``HookScope``

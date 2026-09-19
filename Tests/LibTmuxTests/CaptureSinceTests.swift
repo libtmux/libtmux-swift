@@ -214,7 +214,7 @@ struct CaptureSinceTests {
     func historyCollectionKeepsTheDelta() async throws {
         try await withTmuxServer { server in
             let historyLimit = 20
-            _ = try await server.setOption(
+            try await server.setOption(
                 "history-limit",
                 to: String(historyLimit),
                 scope: .globalSession
