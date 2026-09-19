@@ -537,14 +537,12 @@ enum WorkspaceCommands {
     }
 
     private static func currentTarget(
-        _ selected: Server, context: CLIContext, verifyTerminal: Bool,
-        code requestedCode: String? = nil
+        _ selected: Server, context: CLIContext, verifyTerminal: Bool
     ) async throws -> (session: Session, clients: [Client], hasIndependentPaneClient: Bool) {
         // A context refusal — about how the command was invoked, not about
-        // what tmux did — is code usage, exit 2, unless a caller (freeze)
-        // asked for its own code, which keeps status 1.
-        let code = requestedCode ?? "usage"
-        let status: Int32 = requestedCode == nil ? 2 : 1
+        // what tmux did — is code usage, exit 2, whichever command reached it.
+        let code = "usage"
+        let status: Int32 = 2
         guard let inherited = TmuxContext.current(environment: context.environment),
             let rawPane = context.environment["TMUX_PANE"], let paneID = PaneID(rawValue: rawPane)
         else { throw CLIError(code, "A valid TMUX and TMUX_PANE are required.", status: status) }
@@ -627,7 +625,7 @@ enum WorkspaceCommands {
         var windows: [Value] = []
         for link in snapshot.windowLinks(of: session).sorted(by: { $0.index < $1.index }) {
             guard let window = snapshot.windows.first(where: { $0.id == link.windowID }) else {
-                throw CLIError("stale_session", "A captured window disappeared.")
+                throw CLIError("tmux_failed", "A captured window disappeared.")
             }
             let panes = snapshot.panes(of: window).map { pane -> Value in
                 var fields: [String: Value] = [
@@ -732,7 +730,7 @@ enum WorkspaceCommands {
                 continue
             }
             guard let value = try await server.optionValue(option.name, scope: scope) else {
-                throw CLIError("stale_session", "An option disappeared during capture.")
+                throw CLIError("tmux_failed", "An option disappeared during capture.")
             }
             values[option.name] = .string(value)
         }
@@ -794,9 +792,9 @@ enum WorkspaceCommands {
         }
         if !(context.environment["TMUX"] ?? "").isEmpty {
             let current = try await currentTarget(
-                server, context: context, verifyTerminal: false, code: "freeze_context")
+                server, context: context, verifyTerminal: false)
             guard let session = snapshot.sessions.first(where: { $0 == current.session }) else {
-                throw CLIError("stale_session", "The current session changed during capture.")
+                throw CLIError("tmux_failed", "The current session changed during capture.")
             }
             return session
         }
@@ -807,7 +805,7 @@ enum WorkspaceCommands {
         }
         guard !command.output.machine, context.terminal, let input = context.input else {
             throw CLIError(
-                "session_required", "Several sessions are available; provide a session name or ID.",
+                "usage", "Several sessions are available; provide a session name or ID.",
                 status: 2)
         }
         for (index, session) in sessions.enumerated() {
