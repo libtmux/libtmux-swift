@@ -620,6 +620,13 @@ enum WorkspaceCommands {
         }
         let session = try await freezeSession(
             command, snapshot: snapshot, server: server, context: context)
+        // Capture never writes a document load would refuse.
+        guard isAddressableSessionName(session.name) else {
+            throw CLIError(
+                "invalid_workspace",
+                "tmux reads '.' and ':' as target separators, so a workspace cannot name session \(session.name); nothing was written."
+            )
+        }
         // Fallback for a shell not on the common-name list below.
         let defaultShell = try await defaultShellBasename(for: session, server: server)
         var windows: [Value] = []
@@ -865,9 +872,7 @@ enum WorkspaceCommands {
         let expandedName = (override ?? root["session_name"]?.string).map {
             expand($0, environment: store.context.environment)
         }
-        guard let name = expandedName, !name.isEmpty,
-            !name.contains(":"), !name.contains("."), !name.contains("\n")
-        else {
+        guard let name = expandedName, isAddressableSessionName(name) else {
             throw CLIError(
                 "invalid_workspace",
                 "session_name must be a nonempty tmux session name without dots or colons.")
@@ -1029,6 +1034,13 @@ enum WorkspaceCommands {
             environment: environment, options: options, globalOptions: globalOptions,
             windowOptions: windowOptions, windowOptionsAfter: windowOptionsAfter,
             beforeScript: beforeScript)
+    }
+
+    /// Whether tmux can address a session by this name: target syntax reads
+    /// `.` as the window separator and `:` as the session separator, so a
+    /// name holding either cannot be named again once it exists.
+    static func isAddressableSessionName(_ name: String) -> Bool {
+        !name.isEmpty && !name.contains(":") && !name.contains(".") && !name.contains("\n")
     }
 
     private static func containsNUL(_ value: Value) -> Bool {
