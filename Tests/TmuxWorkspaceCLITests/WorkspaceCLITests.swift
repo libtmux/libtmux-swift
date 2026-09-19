@@ -1605,9 +1605,9 @@ struct WorkspaceCLITests {
             let mismatched = await invoke(arguments, in: root, extra: environment)
             #expect(mismatched.code == 1)
             let result = try mismatched.json()
-            #expect(result["status"] as? String == "partial")
+            #expect(result["status"] as? String == "error")
             let errors = try #require(result["errors"] as? [[String: Any]])
-            #expect(errors.first?["message"] as? String ?? "" != "")
+            #expect(errors.first?["code"] as? String == "session_mismatch", "\(errors)")
             #expect((errors.first?["message"] as? String ?? "").contains("two"), "\(errors)")
             // Comparing is the rule; a mismatch is reported, never rebuilt.
             let after = try await server.snapshot()
@@ -2264,6 +2264,30 @@ struct WorkspaceCLITests {
             // even-vertical is one column, so every pane is at the left
             // edge; the interim tiled rebalance would not leave it so.
             #expect(panes.allSatisfy { $0.isAtLeft }, "\(panes)")
+        }
+    }
+
+    @Test("a window option under the session's options reaches window scope")
+    func sessionScopedWindowOption() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let file = root.appendingPathComponent("pbi.json")
+            try Data(
+                #"""
+                {"session_name":"pbi","options":{"pane-base-index":"1"},"windows":[{"window_name":"w","panes":[null,null]}]}
+                """#.utf8
+            ).write(to: file)
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            let loaded = await invoke(
+                ["load", file.path, "-d", "-S", socket, "--json"], in: root, extra: environment)
+            #expect(loaded.code == 0, "\(loaded.error)")
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "pbi" })
+            let window = try #require(snapshot.windows(of: session).first)
+            // tmux keeps pane-base-index in the window table, so a document
+            // that sets it beside the session options still has to land there.
+            #expect(snapshot.panes(of: window).map(\.index) == [1, 2])
         }
     }
 
