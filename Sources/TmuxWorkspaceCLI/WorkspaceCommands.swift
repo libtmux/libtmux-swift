@@ -754,7 +754,7 @@ enum WorkspaceCommands {
         guard isAddressableSessionName(session.name) else {
             throw CLIError(
                 "invalid_workspace",
-                "tmux reads '.' and ':' as target separators, so a workspace cannot name session \(session.name); nothing was written."
+                "tmux reads '.' and ':' in a plain -t name as separators, so a workspace naming session \(session.name) that way could not reliably load it again; nothing was written."
             )
         }
         // Fallback for a shell not on the common-name list below.
@@ -918,6 +918,17 @@ enum WorkspaceCommands {
         _ command: Freeze, snapshot: Snapshot, server: Server, context: CLIContext
     ) async throws -> Session {
         if let name = command.sessionName {
+            // tmux reads '.' and ':' in a plain -t name as separators, so a
+            // dotted or colon-bearing argument is refused on the name alone
+            // before any lookup - the same order `load` already uses for
+            // `session_name`, and the one answer that holds regardless of
+            // whether such a session exists or how this tmux stores it.
+            guard isAddressableSessionName(name) else {
+                throw CLIError(
+                    "invalid_workspace",
+                    "tmux reads '.' and ':' in a plain -t name as separators, so a workspace naming session \(name) that way could not reliably load it again; nothing was written."
+                )
+            }
             guard
                 let session = snapshot.sessions.first(where: {
                     $0.name == name || $0.id.rawValue == name
@@ -1198,9 +1209,12 @@ enum WorkspaceCommands {
                 })
     }
 
-    /// Whether tmux can address a session by this name: target syntax reads
-    /// `.` as the window separator and `:` as the session separator, so a
-    /// name holding either cannot be named again once it exists.
+    /// Whether a plain `-t name` target can address a session by this name:
+    /// target syntax reads `.` as the window separator and `:` as the
+    /// session separator, so either one misdirects an ordinary lookup. tmux
+    /// before 3.7a also rewrites the character away at creation, and 3.7
+    /// refuses to create the session at all, so a workspace naming one of
+    /// these could not reliably load it again on any of them.
     static func isAddressableSessionName(_ name: String) -> Bool {
         !name.isEmpty && !name.contains(":") && !name.contains(".") && !name.contains("\n")
     }
