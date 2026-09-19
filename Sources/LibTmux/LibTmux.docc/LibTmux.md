@@ -55,6 +55,11 @@ command explains itself on standard error — so
 - ``TmuxReply``
 - ``TmuxCommandList``
 - ``TmuxVersion``
+- ``TmuxCapabilities``
+- ``Server/capabilities()``
+- ``Server/withTimeout(_:)``
+- ``ProcessTransport``
+- ``SubprocessTransport``
 
 ### Naming one thing
 
@@ -91,6 +96,12 @@ command explains itself on standard error — so
 - ``Pane/isDead``
 - ``Pane/modeCount``
 - ``Pane/isSynchronized``
+
+### Sending to a pane
+
+- ``Server/send(_:to:)``
+- ``PaneInput``
+- ``Server/run(_:in:)``
 
 ### Controlling pane modes
 
