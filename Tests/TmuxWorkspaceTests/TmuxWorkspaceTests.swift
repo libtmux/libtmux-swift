@@ -17,8 +17,10 @@ struct WorkspaceDecodingTests {
               "windows": [
                 {
                   "window_name": "editor",
+                  "window_index": 7,
+                  "focus": true,
                   "layout": "even-horizontal",
-                  "panes": [{"shell_command": ["echo one"]}, "echo two"]
+                  "panes": [{"shell_command": ["echo one"], "focus": true}, "echo two"]
                 }
               ]
             }
@@ -32,6 +34,10 @@ struct WorkspaceDecodingTests {
         let window = try #require(workspace.windows.first)
         #expect(window.windowName == "editor")
         #expect(window.layout == "even-horizontal")
+        #expect(window.windowIndex == 7)
+        #expect(window.focus == true)
+        #expect(window.panes.first?.focus == true)
+        #expect(try Workspace.decode(json: JSONEncoder().encode(workspace)) == workspace)
         // tmuxp lets a pane be a bare string meaning "run this".
         #expect(window.panes.map(\.shellCommands) == [["echo one"], ["echo two"]])
     }
@@ -73,6 +79,118 @@ struct WorkspaceDecodingTests {
 
 @Suite("workspace building", .timeLimit(.minutes(1)))
 struct WorkspaceBuildingTests {
+    @Test("three panes retain source order and focus after detached splits")
+    func threePaneOrderAndFocus() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let directories = (0..<3).map { root.appendingPathComponent("pane-\($0)") }
+            for directory in directories {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: false)
+            }
+            let workspace = Workspace(
+                sessionName: "ordered",
+                windows: [
+                    WindowPlan(
+                        panes: directories.enumerated().map { index, directory in
+                            PanePlan(startDirectory: directory.path, focus: index == 1)
+                        })
+                ])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let panes = snapshot.panes(of: session)
+            #expect(
+                panes.map { URL(fileURLWithPath: $0.currentPath).resolvingSymlinksInPath().path }
+                    == directories.map { $0.resolvingSymlinksInPath().path })
+            #expect(panes.filter(\.isActive).map(\.index) == [1])
+        }
+    }
+
+    @Test("with no pane asking for focus the last one created is left active")
+    func defaultActivePaneIsTheLast() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "active",
+                windows: [WindowPlan(panes: [PanePlan(), PanePlan(), PanePlan()])])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let window = try #require(snapshot.windows(of: session).first)
+            let panes = snapshot.panes(of: window)
+            #expect(panes.count == 3)
+            #expect(panes.last?.isActive == true)
+        }
+    }
+
+    @Test("focus follows its own plan when a hook adds panes to the window")
+    func focusFollowsItsPlanPastInheritedPanes() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let directories = (0..<2).map { root.appendingPathComponent("focus-\($0)") }
+            for directory in directories {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: false)
+            }
+            // A user hook that splits every new window leaves the window
+            // holding more panes than the workspace planned.
+            try await server.setHook("after-new-window", to: "split-window")
+            let workspace = Workspace(
+                sessionName: "hooked",
+                startDirectory: root.path,
+                windows: [
+                    WindowPlan(panes: [PanePlan()]),
+                    WindowPlan(
+                        panes: directories.enumerated().map { index, directory in
+                            PanePlan(startDirectory: directory.path, focus: index == 0)
+                        }),
+                ])
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let hooked = try #require(snapshot.windows(of: session).last)
+            let panes = snapshot.panes(of: hooked)
+            try #require(panes.count > directories.count)
+            let active = try #require(panes.filter(\.isActive).first)
+            #expect(
+                URL(fileURLWithPath: active.currentPath).resolvingSymlinksInPath().path
+                    == directories[0].resolvingSymlinksInPath().path)
+        }
+    }
+
+    @Test("first-pane directories override session and window directories")
+    func firstPaneDirectoryOverridesItsParents() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(path) = server.endpoint else {
+                Issue.record("The fixture must use an explicit socket path")
+                return
+            }
+            let root = URL(fileURLWithPath: path).deletingLastPathComponent()
+            let first = root.appendingPathComponent("first")
+            try FileManager.default.createDirectory(at: first, withIntermediateDirectories: false)
+            let workspace = Workspace(
+                sessionName: "first-pane",
+                startDirectory: root.path,
+                windows: [
+                    WindowPlan(panes: [PanePlan(startDirectory: first.path), PanePlan()]),
+                    WindowPlan(
+                        startDirectory: root.path, panes: [PanePlan(startDirectory: first.path)]),
+                ]
+            )
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let snapshot = try await server.snapshot()
+            let directories = snapshot.windows(of: session).map { window in
+                snapshot.panes(of: window).map {
+                    URL(fileURLWithPath: $0.currentPath).resolvingSymlinksInPath().path
+                }
+            }
+            #expect(
+                directories == [
+                    [first.resolvingSymlinksInPath().path, root.resolvingSymlinksInPath().path],
+                    [first.resolvingSymlinksInPath().path],
+                ])
+        }
+    }
+
     @Test("a workspace becomes the session, windows, and panes it describes")
     func workspaceBecomesWhatItDescribes() async throws {
         try await withTmuxServer { server in
@@ -151,44 +269,151 @@ struct WorkspaceBuildingTests {
             )
             _ = try await WorkspaceBuilder.build(workspace, on: server)
 
-            await #expect(throws: WorkspaceBuilderError.sessionExists("once")) {
+            let thrown = await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(workspace, on: server)
             }
+            guard case let .sessionExists(name) = try #require(thrown) else {
+                Issue.record("expected sessionExists, got \(String(describing: thrown))")
+                return
+            }
+            #expect(name == "once")
         }
     }
 
     @Test("a workspace with no windows is refused before anything is created")
     func emptyWorkspaceIsRefused() async throws {
         try await withTmuxServer { server in
-            await #expect(throws: WorkspaceBuilderError.noWindows) {
+            let thrown = await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(
                     Workspace(sessionName: "empty", windows: []),
                     on: server
                 )
+            }
+            guard case .noWindows = try #require(thrown) else {
+                Issue.record("expected noWindows, got \(String(describing: thrown))")
+                return
             }
             let sessions = try await server.sessions()
             #expect(!sessions.contains { $0.name == "empty" })
         }
     }
 
+    @Test("a failed callback is carried whole, not flattened into a tmux failure")
+    func callbackFailureIsCarried() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "callback", windows: [WindowPlan(panes: [PanePlan()])])
+            let thrown = await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(
+                    workspace, on: server, environment: [:],
+                    configureSession: { _ in throw CallbackMarker(id: 7) },
+                    configureWindow: { _, _ in })
+            }
+            guard case let .callback(inner) = try #require(thrown) else {
+                Issue.record("expected a callback failure, got \(String(describing: thrown))")
+                return
+            }
+            #expect(inner as? CallbackMarker == CallbackMarker(id: 7))
+            #expect(try await !server.sessions().contains { $0.name == "callback" })
+        }
+    }
+
+    @Test("a pane whose shell never draws a prompt gives up and says it did")
+    func paneReadinessTimeoutIsReported() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            // A shell that draws nothing has the shape of one that has not
+            // started yet, which is the case the probe cannot answer.
+            let shell = URL(fileURLWithPath: socket).deletingLastPathComponent()
+                .appendingPathComponent("silent-shell")
+            try Data("#!/bin/sh\nexec sleep 30\n".utf8).write(to: shell)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: shell.path)
+            let option = try await server.setOption(
+                "default-shell", to: shell.path, scope: .globalSession)
+            try #require(option.isSuccess)
+            let workspace = Workspace(
+                sessionName: "readiness",
+                windows: [WindowPlan(panes: [PanePlan(shellCommands: ["true"])])])
+            let events = ReadinessEvents()
+            _ = try await WorkspaceBuilder.build(
+                workspace, on: server, environment: [:], configureSession: { _ in },
+                configureWindow: { _, _ in }, readinessTimeout: .milliseconds(150),
+                onEvent: { event in await events.record(event) })
+            #expect(await events.timedOut)
+        }
+    }
+
     @Test("a failed build removes the exact session it created")
     func failedBuildRollsBackItsSession() async throws {
         try await withTmuxServer { server in
+            let before = try await server.snapshot()
             let workspace = Workspace(
                 sessionName: "rollback",
                 windows: [
                     WindowPlan(
-                        layout: "not-a-tmux-layout",
                         panes: [PanePlan(), PanePlan()]
                     )
                 ]
             )
 
             await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(
+                    workspace, on: server, environment: [:], configureSession: { _ in },
+                    configureWindow: { window, _ in
+                        try await server.expectSuccess(
+                            TmuxCommand(
+                                "set-option",
+                                ["-w", "-t", window.id.rawValue, "libtmux-invalid-option", "1"]))
+                    })
+            }
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+            #expect(after.panes.map(\.id) == before.panes.map(\.id))
+        }
+    }
+
+    @Test("an interruption reports what it retained instead of rolling it back")
+    func interruptedBuildKeepsItsSession() async throws {
+        try await withTmuxServer { server in
+            let before = try await server.snapshot()
+            let workspace = Workspace(
+                sessionName: "interrupted",
+                windows: [WindowPlan(panes: [PanePlan(), PanePlan()])]
+            )
+            // Unlike an ordinary failure, an interruption is not rolled
+            // back: the same signal that stopped the build could just as
+            // well stop the cleanup that would follow it.
+            await #expect(throws: WorkspaceBuilderError.self) {
+                try await WorkspaceBuilder.build(
+                    workspace, on: server, environment: [:], configureSession: { _ in },
+                    configureWindow: { _, _ in throw CancellationError() })
+            }
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.contains { $0.name == "interrupted" })
+        }
+    }
+
+    @Test(
+        "invalid workspace layouts preserve existing sessions",
+        arguments: ["not-a-layout", "32d2,80x24,0,0{}"])
+    func invalidLayoutPreservesServer(layout: String) async throws {
+        try await withTmuxServer { server in
+            let before = try await server.snapshot()
+            let workspace = Workspace(
+                sessionName: "invalid-layout",
+                windows: [WindowPlan(layout: layout, panes: [PanePlan()])])
+            await #expect(throws: WorkspaceBuilderError.self) {
                 try await WorkspaceBuilder.build(workspace, on: server)
             }
-            let remains = try await server.hasSession("rollback")
-            #expect(!remains)
+            let after = try await server.snapshot()
+            #expect(after.serverProcessID == before.serverProcessID)
+            #expect(after.sessions.map(\.id) == before.sessions.map(\.id))
+            #expect(after.windows.map(\.id) == before.windows.map(\.id))
+            #expect(after.panes.map(\.id) == before.panes.map(\.id))
         }
     }
 
@@ -325,5 +550,16 @@ private actor StuckRollbackTransport: ProcessTransport {
         releaseWaiter = nil
         if finished { return }
         await withCheckedContinuation { finishWaiter = $0 }
+    }
+}
+
+private struct CallbackMarker: Error, Equatable {
+    let id: Int
+}
+
+private actor ReadinessEvents {
+    private(set) var timedOut = false
+    func record(_ event: WorkspaceBuildEvent) {
+        if case .paneNotReady = event { timedOut = true }
     }
 }

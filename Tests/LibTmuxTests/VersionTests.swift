@@ -55,6 +55,20 @@ struct VersionTests {
         #expect(TmuxVersion(parsing: "3.9")! < TmuxVersion(parsing: "3.10")!)
     }
 
+    @Test("an unreleased master snapshot sorts below the release it names")
+    func unreleasedSnapshotOrdersBelowItsRelease() throws {
+        let next = try #require(TmuxVersion(parsing: "next-3.9"))
+        let release = try #require(TmuxVersion(parsing: "3.9"))
+        #expect(next < release)
+        #expect(!(release < next))
+        // An rc is a tagged release candidate, not a snapshot: it ranks with
+        // the number it names, unlike `next-`.
+        let rc = try #require(TmuxVersion(parsing: "3.8-rc"))
+        let rcRelease = try #require(TmuxVersion(parsing: "3.8"))
+        #expect(!(rc < rcRelease))
+        #expect(!(rcRelease < rc))
+    }
+
     @Test("it round-trips through its own description")
     func descriptionRoundTrips() throws {
         for text in ["3.2a", "3.4", "3.7b", "3.4-master", "3.8-next"] {

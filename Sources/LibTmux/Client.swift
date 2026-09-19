@@ -29,10 +29,13 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
     /// The session the client is looking at. A client attaches to exactly one,
     /// and switching sessions changes this rather than making a new client.
     public let sessionID: SessionID
-    /// The pane selected by this client.
+    /// The globally active pane in the client's current session window.
+    ///
+    /// This does not identify a client-local pane selected with `active-pane`.
     public let activePaneID: PaneID?
     /// Whether the client's active window is zoomed.
     public let isWindowZoomed: Bool?
+    package private(set) var flags: Set<String> = []
 
     public init(
         name: String,
@@ -57,6 +60,23 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
         self.isWindowZoomed = isWindowZoomed
         self.incarnation = incarnation
     }
+
+    /// Decodes a client, treating an absent ``flags`` as an empty set so that
+    /// a payload written before the field existed still reads back.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        incarnation = try container.decode(ServerIncarnation.self, forKey: .incarnation)
+        name = try container.decode(String.self, forKey: .name)
+        tty = try container.decode(String.self, forKey: .tty)
+        processID = try container.decode(Int.self, forKey: .processID)
+        width = try container.decodeIfPresent(Int.self, forKey: .width)
+        height = try container.decodeIfPresent(Int.self, forKey: .height)
+        isControlMode = try container.decode(Bool.self, forKey: .isControlMode)
+        sessionID = try container.decode(SessionID.self, forKey: .sessionID)
+        activePaneID = try container.decodeIfPresent(PaneID.self, forKey: .activePaneID)
+        isWindowZoomed = try container.decodeIfPresent(Bool.self, forKey: .isWindowZoomed)
+        flags = try container.decodeIfPresent(Set<String>.self, forKey: .flags) ?? []
+    }
 }
 
 extension Client {
@@ -66,6 +86,7 @@ extension Client {
     private static let widthField = FormatField("client_width", .optionalInteger)
     private static let heightField = FormatField("client_height", .optionalInteger)
     private static let controlField = FormatField("client_control_mode", .flag)
+    private static let flagsField = FormatField("client_flags")
     private static let sessionField = FormatField(
         "session_id", .identifier(SessionID.sigil))
     private static let activePaneField = FormatField(
@@ -75,7 +96,7 @@ extension Client {
     static let projection = FormatProjection(
         [
             nameField, ttyField, pidField, widthField, heightField, controlField,
-            sessionField, activePaneField, zoomedField,
+            sessionField, activePaneField, zoomedField, flagsField,
         ] + ServerIncarnation.projectionFields)
 
     init(row: FormatRow, endpoint: Endpoint) {
@@ -91,5 +112,6 @@ extension Client {
             isWindowZoomed: row.flag(Client.zoomedField),
             incarnation: ServerIncarnation(row: row, endpoint: endpoint)
         )
+        flags = Set(row.text(Client.flagsField).split(separator: ",").map(String.init))
     }
 }

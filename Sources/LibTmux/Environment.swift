@@ -43,6 +43,24 @@ public struct TmuxEnvironmentVariable: Sendable, Hashable, Codable {
 }
 
 extension Server {
+    /// `--` ends the flags, so a name beginning with `-` reaches tmux as a
+    /// name rather than as flags it does not have.
+    private func setEnvironmentCommand(
+        _ name: String, to value: String, in scope: EnvironmentScope
+    ) -> TmuxCommand {
+        TmuxCommand("set-environment", scope.arguments + ["--", name, value])
+    }
+
+    /// Sets a variable in a session's environment, refusing if that session is
+    /// no longer the one this value names.
+    package func setEnvironment(
+        _ name: String, to value: String, in session: Session
+    ) async throws(TmuxError) -> TmuxReply {
+        try await runGuarded(
+            setEnvironmentCommand(name, to: value, in: .session(session.id.rawValue)),
+            by: [.session(session)])
+    }
+
     /// Every variable in an environment, in the order tmux printed them.
     public func environment(
         _ scope: EnvironmentScope = .global
@@ -57,14 +75,26 @@ extension Server {
     /// What one variable is set to, or `nil` when it is unset or marked for
     /// removal.
     ///
-    /// Read from the listing rather than by asking for the name: tmux answers a
-    /// name it does not know with a nonzero status and a message, and this
-    /// library reserves throwing for when no answer exists at all.
+    /// Reads one value directly so embedded newlines remain part of that value.
+    /// tmux's nonzero response for an unknown name becomes `nil`.
     public func environmentValue(
         _ name: String,
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> String? {
-        try await environment(scope).first { $0.name == name }?.value
+        let command = TmuxCommand("show-environment", scope.arguments + ["--", name])
+        let reply = try await run(command)
+        guard reply.isSuccess else {
+            if reply.errorText == "unknown variable: \(name)" { return nil }
+            throw reply.failure(for: command)
+        }
+        var text = reply.text
+        if text.hasSuffix("\n") { text.removeLast() }
+        if text == "-\(name)" { return nil }
+        let prefix = "\(name)="
+        guard text.hasPrefix(prefix) else {
+            throw .invocationFailed(reason: "show-environment returned an unexpected variable.")
+        }
+        return String(text.dropFirst(prefix.count))
     }
 
     /// Sets a variable, replacing whatever was there.
@@ -74,9 +104,9 @@ extension Server {
         to value: String,
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(
-            TmuxCommand("set-environment", scope.arguments + [name, value])
-        )
+        // run(_:) hands argv to tmux, which ends a command at a trailing `;`.
+        // A guarded request is quoted as a command string and needs no escape.
+        try await run(setEnvironmentCommand(name, to: tmuxArgumentData(value), in: scope))
     }
 
     /// Unsets a variable, leaving no trace of it.

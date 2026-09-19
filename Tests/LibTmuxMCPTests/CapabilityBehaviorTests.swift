@@ -5,6 +5,12 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
+
 @Suite("capability behavior", .timeLimit(.minutes(1)))
 struct CapabilityBehaviorTests {
     private func tools(_ server: Server) -> TmuxTools {
@@ -427,6 +433,54 @@ struct CapabilityBehaviorTests {
                     Comment(rawValue: "\(shell) kept the pane lease")
                 )
             }
+        }
+    }
+
+    @Test(
+        "long shell framing preserves traps with canonical terminal input",
+        arguments: [false, true])
+    func longShellFramingWithCanonicalInput(functrace: Bool) async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let bash = ProcessInfo.processInfo.environment["LIBTMUX_BASH_32_BIN"] ?? "/bin/bash"
+            try await server.respawn(pane, running: [bash, "--noprofile", "--norc"])
+            let ready = "libtmux-swift-canonical-\(UUID().uuidString)"
+            let debug = "canonical-debug"
+            let setup =
+                "set +o emacs; set +o vi; "
+                + (functrace ? "set -T; " : "")
+                + "trap \(shellQuoted("/usr/bin/printf '%s\\n' \(debug)")) DEBUG; "
+                + "\(server.shellInvocation) wait-for -S \(shellQuoted(ready))"
+            try await server.sendKeys([setup, "Enter"], to: pane)
+            try await server.wait(for: ready)
+            let tty = try #require(
+                try await server.format("#{pane_tty}", addressing: pane.id.rawValue))
+            let descriptor = open(tty, O_RDONLY | O_NOCTTY | O_NONBLOCK)
+            try #require(descriptor >= 0)
+            defer { close(descriptor) }
+            var attributes = termios()
+            try #require(tcgetattr(descriptor, &attributes) == 0)
+            try #require(attributes.c_lflag & tcflag_t(ICANON) != 0)
+
+            let value = String(repeating: "x", count: 1_024) + "λ;'\"$()"
+            let marker = "canonical-completed"
+            let command =
+                "__libtmux_test_value=\(shellQuoted(value)); "
+                + "test \"$__libtmux_test_value\" = \(shellQuoted(value)) && "
+                + "/usr/bin/printf '%s\\n' \(marker)"
+            let result = try await tools(server).call(
+                ToolCall(
+                    name: "run_shell_command",
+                    arguments: .object([
+                        "command": .string(command), "paneId": .string(pane.id.rawValue),
+                        "maxLines": .integer(2_000), "timeoutMs": .integer(5_000),
+                    ])))
+            let lines = result.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            #expect(result.structured["exitStatus"]?.intValue == 0)
+            #expect(result.structured["timedOut"]?.boolValue == false)
+            #expect(lines.contains(marker))
+            #expect(lines.contains(debug))
+            #expect(!(await TmuxTools.paneRuns.isHeld(pane)))
         }
     }
 

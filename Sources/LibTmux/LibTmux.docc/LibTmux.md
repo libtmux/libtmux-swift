@@ -99,6 +99,8 @@ command explains itself on standard error — so
 
 ### Laying out a window
 
+- ``Server/validateLayouts(_:)``
+- ``Server/selectLayout(_:_:)``
 - ``WindowPlacement``
 - ``PaneDirection``
 - ``ResizeDirection``

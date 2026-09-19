@@ -504,7 +504,10 @@ extension TmuxTools {
                 specialSinks: ["height": state, "width": state, "windowId": lookup],
                 handler: { try await $0.resizeWindow($1) }),
             capability(
-                .selectLayout, "Select layout", "Apply one named tmux layout to a window.",
+                .selectLayout, "Select layout",
+                "Apply a named layout, a unique abbreviation for the running tmux version, "
+                    + "or a checksummed saved layout. Invalid syntax is refused before window lookup; "
+                    + "tmux validates geometry when applying the layout.",
                 toolset: .manage, reach: .none, effects: [.observe, .change], outputs: inspectMeta,
                 arguments: [argument("layout", required: true), windowID()],
                 specialSinks: ["layout": state, "windowId": lookup],

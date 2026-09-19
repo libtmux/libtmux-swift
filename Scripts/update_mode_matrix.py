@@ -53,7 +53,15 @@ def measured() -> dict[str, str]:
     # the command is overridable rather than assumed.
     swift = shlex.split(os.environ.get("SWIFT", "swift"))
     result = subprocess.run(
-        [*swift, "run", "--package-path", "Benchmarks", "libtmux-bench", "--markdown"],
+        [
+            *swift,
+            "run",
+            "--package-path",
+            "Benchmarks",
+            "--force-resolved-versions",
+            "libtmux-bench",
+            "--markdown",
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,

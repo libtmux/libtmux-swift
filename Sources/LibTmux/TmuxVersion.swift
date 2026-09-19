@@ -62,8 +62,13 @@ public struct TmuxVersion: Sendable, Hashable, Comparable, Codable {
     }
 
     public static func < (lhs: TmuxVersion, rhs: TmuxVersion) -> Bool {
-        (lhs.major, lhs.minor, lhs.pointRelease)
-            < (rhs.major, rhs.minor, rhs.pointRelease)
+        let lhsKey = (lhs.major, lhs.minor, lhs.pointRelease)
+        let rhsKey = (rhs.major, rhs.minor, rhs.pointRelease)
+        if lhsKey != rhsKey { return lhsKey < rhsKey }
+        // `next-X.Y` names what master will become, not a release; every
+        // other build (`rc`, `openbsd`, `master`) already happened at that
+        // number, so only this one ranks below it.
+        return lhs.build == "next" && rhs.build != "next"
     }
 }
 

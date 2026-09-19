@@ -230,6 +230,31 @@ extension Server {
 
     // MARK: Clients
 
+    package func switchClient(_ client: Client, to session: Session) async throws(TmuxError) {
+        let expected = try expectedIncarnation([client.incarnation, session.incarnation])
+        guard let current = try await clients().first(where: { $0.name == client.name }) else {
+            throw .staleServerValue
+        }
+        guard current.incarnation == expected else { throw .serverRestarted }
+        guard current.processID == client.processID,
+            current.sessionID == client.sessionID, current.activePaneID == client.activePaneID,
+            !current.flags.contains("active-pane")
+        else { throw .staleServerValue }
+        try await expectSuccess(
+            TmuxCommand("switch-client", ["-c", client.name, "-t", session.id.rawValue]),
+            guardedBy: [.client(client), .session(session)])
+    }
+
+    /// Switches to `session` without naming a client, so tmux applies it to
+    /// whichever client it considers current. The only way to move an
+    /// attached load's terminal when the invoking process has no client of
+    /// its own to name, such as a `run-shell` key binding.
+    package func switchClient(to session: Session) async throws(TmuxError) {
+        try await expectSuccess(
+            TmuxCommand("switch-client", ["-t", session.id.rawValue]),
+            guardedBy: [.session(session)])
+    }
+
     /// Detaches a client from the server it is attached to.
     ///
     /// A server operation despite the name: it acts on a client the server
