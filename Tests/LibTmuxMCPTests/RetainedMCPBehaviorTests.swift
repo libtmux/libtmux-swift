@@ -1421,16 +1421,24 @@ struct RetainedMCPBehaviorTests {
                 try await server.killServer()
                 let root = URL(fileURLWithPath: pane.incarnation.socketPath)
                     .deletingLastPathComponent()
-                let reply = try await server.run(
-                    TmuxCommandList([
-                        TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
-                        TmuxCommand("set-environment", ["-g", "ENV", ""]),
-                        TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
-                        TmuxCommand("new-session", ["-d", "-s", "replacement"]),
-                        try reaperCommand(root: root),
-                    ])
-                )
-                #expect(reply.isSuccess)
+                let start = TmuxCommandList([
+                    TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+                    TmuxCommand("set-environment", ["-g", "ENV", ""]),
+                    TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
+                    TmuxCommand("new-session", ["-d", "-s", "replacement"]),
+                    try reaperCommand(root: root),
+                ])
+                // The killed daemon unlinks its socket as it goes, so a client
+                // sent immediately after can meet one that is still leaving
+                // and report `server exited unexpectedly`. Retrying until a
+                // replacement answers is what the rest of the suite does --
+                // see `staleValueCannotTargetReplacement` -- rather than
+                // assuming teardown finished before this line.
+                let started = try await waitUntil {
+                    if try await server.hasSession("replacement") { return true }
+                    return try await server.run(start).isSuccess
+                }
+                #expect(started)
                 #expect(try await server.incarnation() != pane.incarnation)
             }
 

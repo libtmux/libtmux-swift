@@ -417,7 +417,16 @@ struct SnapshotCaptureTests {
         try await withTmuxServer { server in
             let first = try await server.snapshot()
             _ = try await server.run(TmuxCommand("kill-server"))
-            _ = try await server.run(TmuxCommand("new-session", ["-d", "-s", "second"]))
+            // The dying daemon unlinks its socket, so a new-session sent at
+            // once can meet one still leaving. Retry until a replacement is
+            // answering, the way `staleValueCannotTargetReplacement` does.
+            let replaced = try await waitUntil {
+                if try await server.hasSession("second") { return true }
+                return try await server.run(
+                    TmuxCommand("new-session", ["-d", "-s", "second"])
+                ).isSuccess
+            }
+            #expect(replaced)
 
             let second = try await server.snapshot()
             // The capture that spans a restart is what `snapshot()` rejects;
