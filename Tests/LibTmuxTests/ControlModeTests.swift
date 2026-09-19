@@ -272,7 +272,7 @@ struct ControlModeTests {
             guard version >= TmuxVersion(major: 3, minor: 8) else {
                 // Below 3.8 tmux has no JSON layout reader at all (see
                 // WindowLayout), so there is nothing for the negotiated form
-                // to change. Checked against a build of tmux master.
+                // to change.
                 return
             }
             let link = try #require(try await server.windowLinks().first)
