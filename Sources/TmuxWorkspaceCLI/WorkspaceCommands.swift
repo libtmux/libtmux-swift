@@ -701,11 +701,20 @@ enum WorkspaceCommands {
         }
         let windowPaneIDs = Set(
             snapshot.panes.lazy.filter { $0.windowID == pane.windowID }.map(\.id))
+        // What an attached load ends in is switch-client, and what that
+        // needs is a client it can move - not necessarily one already
+        // parked on the exact pane the command was typed into. Prefer the
+        // client whose active pane is the invoking pane, and fall back to
+        // any other client attached to that pane's session: a load sent to
+        // a background pane, by a script or a key binding, is not wrong
+        // just because nobody is looking at it right now.
+        let sessionClients = snapshot.clients.filter {
+            !$0.isControlMode && $0.sessionID == session.id
+        }
+        let exactClients = sessionClients.filter { $0.activePaneID == pane.id }
         return (
             session,
-            snapshot.clients.filter {
-                !$0.isControlMode && $0.sessionID == session.id && $0.activePaneID == pane.id
-            },
+            exactClients.isEmpty ? sessionClients : exactClients,
             snapshot.clients.contains { client in
                 !client.isControlMode && client.flags.contains("active-pane")
                     && client.activePaneID.map(windowPaneIDs.contains) == true
