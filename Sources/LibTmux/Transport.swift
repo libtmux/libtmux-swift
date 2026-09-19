@@ -55,6 +55,15 @@ func tmuxOutputLimitError(_ limit: Int) -> TmuxError {
 /// the same limit afterwards, so a transport that ignores it still fails
 /// closed rather than returning more than was asked for.
 ///
+/// **A transport must return promptly when its task is cancelled.** It is the
+/// one requirement beyond answering the call. ``Server/withTimeout(_:)`` does
+/// not depend on it -- a bound abandons work that overstays rather than
+/// waiting on it -- but a transport that never observes cancellation leaves
+/// that work running after the call returns, for as long as its own work
+/// takes. Wrapping ``SubprocessTransport`` satisfies this, as does anything
+/// built from another cancellable `async` call; a loop that never checks
+/// `Task.isCancelled` does not.
+///
 /// A control-mode connection does not come through here: it is a long-lived
 /// process this library owns, not one command's round trip. A server in
 /// ``TmuxMode/connected(to:)`` therefore reaches its transport only for the
@@ -81,8 +90,8 @@ func requireReplyFitsLimit(
 ///
 /// Cancellation kills the child's whole process group: tmux forks a daemon and
 /// panes fork shells, so signalling only the direct child would leave the rest
-/// running. That is also what makes ``Server/withTimeout(_:)`` safe — an
-/// abandoned command leaves nothing behind.
+/// running. It is also why a bound that abandons this transport leaves nothing
+/// behind — the work it walks away from has already been told to die.
 public struct SubprocessTransport: ProcessTransport {
     public init() {}
 
