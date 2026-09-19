@@ -380,14 +380,18 @@ public struct Server: Sendable, Hashable {
 
     /// Whether a session by this name or id exists.
     ///
-    /// Asks the question tmux has a command for rather than listing every
-    /// session and searching one: `has-session` answers with its exit status,
-    /// so this decodes nothing and stays correct for a name a listing would
-    /// have to be parsed to find.
+    /// Lists sessions and compares in Swift rather than asking `has-session`
+    /// to resolve the name: a plain `-t name` reads an unambiguous
+    /// abbreviation as a match, so `-t alpha` answers yes for a session
+    /// named only `alphabet`, and `-t =name` answers no for one whose real
+    /// name holds `.` or `:`. Neither target spelling is both exact and
+    /// universal; listing first and comparing by value is. Checking
+    /// ``isRunning()`` first keeps this false rather than thrown for a
+    /// server that is not there yet or just went away -- ``sessions()``
+    /// itself throws on that, unlike the `has-session` this replaces.
     public func hasSession(_ name: String) async throws(TmuxError) -> Bool {
-        try await run(
-            rawArguments: TmuxCommand("has-session", ["-t", name]).argumentVector
-        ).isSuccess
+        guard try await isRunning() else { return false }
+        return try await sessions().contains { $0.name == name || $0.id.rawValue == name }
     }
 
     /// Whether a server is listening on this endpoint.
