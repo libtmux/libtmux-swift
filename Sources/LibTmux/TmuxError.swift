@@ -28,6 +28,15 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// A reply exceeded its finite per-stream memory boundary.
     case outputLimitExceeded(perStreamBytes: Int)
 
+    /// The command did not answer within the time allowed for it.
+    ///
+    /// Distinct from ``cancelled``, which is the caller's own task ending:
+    /// this is a bound the caller asked for, through
+    /// ``Server/withTimeout(_:)`` or a `timeout` argument. The action may have
+    /// reached tmux — a daemon that stopped answering may still have run it —
+    /// so a retry is not free of consequence.
+    case timedOut(after: Duration)
+
     /// The endpoint is not addressable. A UNIX socket path has a hard length
     /// limit far shorter than the filesystem's, and exceeding it fails at bind
     /// time rather than at construction.

@@ -177,19 +177,51 @@ struct FormatProjectionTests {
 
 @Suite("server value semantics")
 struct ServerValueTests {
-    @Test("copies of a server share one runtime")
-    func copiesShareOneRuntime() throws {
+    @Test("a copy of a server is the same server")
+    func aCopyIsTheSameServer() throws {
         let server = try Server(socketPath: "/tmp/libtmux-value")
         let copy = server
         #expect(server == copy)
         #expect(server.endpoint == copy.endpoint)
     }
 
-    @Test("two servers on the same endpoint are distinct")
-    func distinctServersOnTheSameEndpointAreNotEqual() throws {
+    @Test("addressing one daemon the same way twice gives the same server")
+    func sameEndpointMeansSameServer() throws {
         let left = try Server(socketPath: "/tmp/libtmux-value")
         let right = try Server(socketPath: "/tmp/libtmux-value")
-        #expect(left != right)
+
+        // Two values, never copied from each other, denoting one daemon: a
+        // Set of them is a set of servers rather than of handles.
+        #expect(left == right)
+        #expect(Set([left, right]).count == 1)
+    }
+
+    @Test("a different binary or configuration is a different server")
+    func differentReachIsADifferentServer() throws {
+        let plain = try Server(socketPath: "/tmp/libtmux-value")
+        // An absolute path that is nothing on this machine, so the comparison
+        // cannot accidentally name whatever `tmux` resolves to here.
+        let otherBinary = try Server(
+            socketPath: "/tmp/libtmux-value",
+            tmuxExecutable: "/nonexistent/libtmux-other/tmux"
+        )
+        let configured = try Server(
+            socketPath: "/tmp/libtmux-value",
+            configurationFile: "/tmp/libtmux-value.conf"
+        )
+
+        // A client of a different protocol version cannot talk to the same
+        // server at all, and a configuration changes how commands are parsed.
+        #expect(plain != otherBinary)
+        #expect(plain != configured)
+    }
+
+    @Test("a bound and a mode are ways of reaching one server, not other servers")
+    func reachDoesNotChangeIdentity() throws {
+        let server = try Server(socketPath: "/tmp/libtmux-value")
+
+        #expect(server.withTimeout(.seconds(3)) == server)
+        #expect(Set([server, server.withTimeout(.seconds(3))]).count == 1)
     }
 }
 

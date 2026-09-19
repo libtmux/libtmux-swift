@@ -18,6 +18,24 @@ public func chosenAtRuntime(_ server: Server, _ shouldAttach: Bool) async throws
     return sessions
 }
 
+public func boundedByATimeout(_ server: Server) async throws -> [Session] {
+    let sessions = try await server.withTimeout(.seconds(5)).sessions()
+    return sessions
+}
+
+public func aWaitWithItsOwnBound(_ server: Server, _ channel: String) async throws -> Bool {
+    do {
+        try await server.withTimeout(.seconds(5)).wait(
+            for: channel,
+            timeout: .milliseconds(250)
+        )
+        return true
+    } catch TmuxError.timedOut {
+        // The wait took its own bound rather than the server's five seconds.
+        return false
+    }
+}
+
 public func aPipelinedBatch(_ server: Server) async throws -> (Int, Int) {
     let (sessions, panes) = try await server.connected(attachingTo: "main") { server, _ in
         async let sessions = server.sessions()

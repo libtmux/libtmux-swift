@@ -21,6 +21,8 @@ extension TmuxError: CustomStringConvertible, LocalizedError {
             "tmux \(command) exited with status \(exitCode): \(reason)"
         case let .outputLimitExceeded(perStreamBytes):
             "tmux output exceeded the per-stream limit of \(perStreamBytes) bytes."
+        case let .timedOut(after):
+            "tmux did not answer within \(after)."
         case .invalidEndpoint(.empty):
             "The tmux endpoint is empty."
         case let .invalidEndpoint(.socketPathTooLong(actualBytes, maximumBytes)):

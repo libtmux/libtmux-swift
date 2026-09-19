@@ -316,6 +316,30 @@ let sessions = try await server.using(mode) { server in
 Nothing is global and nothing is inherited by a task. `server.mode` reports
 which mode a value carries, so the rule can be read rather than trusted.
 
+### Bounding a command
+
+Cancellation answers "the caller stopped waiting", not "tmux stopped
+answering", so a daemon that is swapping, stopped, or holding a lock will hold
+the calling task for as long as it stays that way. A bound is the other
+question, and it lives on the value the same way a mode does:
+
+```swift
+let sessions = try await server.withTimeout(.seconds(5)).sessions()
+```
+
+An elapsed bound throws `TmuxError.timedOut(after:)` — separate from
+`cancelled`, because you asked for it, and because the command may still have
+reached tmux. Waiting for a channel stays outside it and takes its own bound
+instead, since a wait is *meant* to be slow and a server-wide limit would turn
+every one of them into a failure:
+
+```swift
+try await server.withTimeout(.seconds(5)).wait(
+    for: channel,
+    timeout: .milliseconds(250)
+)
+```
+
 ### What it costs
 
 `swift run --package-path Benchmarks libtmux-bench` runs each scenario under

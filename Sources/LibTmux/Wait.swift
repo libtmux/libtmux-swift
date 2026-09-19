@@ -42,12 +42,25 @@ extension Server {
     ///   the same silent success a real signal produces, so the server's
     ///   identity before and after is what tells a release from a departure.
     ///   ``TmuxError/cancelled`` if the task was cancelled, which ends the
-    ///   wait without a signal.
-    public func wait(for channel: String) async throws(TmuxError) {
+    ///   wait without a signal. ``TmuxError/timedOut(after:)`` if `timeout`
+    ///   was given and elapsed first.
+    ///
+    /// - Parameters:
+    ///   - channel: the channel to wait on.
+    ///   - timeout: how long to wait before giving up. `nil`, the default,
+    ///     waits for the signal however long it takes. This is asked for here
+    ///     rather than taken from ``Server/commandTimeout`` because a wait is
+    ///     *meant* to be slow: a server-wide bound on ordinary commands should
+    ///     not turn every wait into a failure.
+    public func wait(
+        for channel: String,
+        timeout: Duration? = nil
+    ) async throws(TmuxError) {
         let before = try await serverProcessID()
-        let reply = try await runInOwnProcess(
-            rawArguments: TmuxCommand("wait-for", ["--", channel]).argumentVector
-        )
+        let arguments = TmuxCommand("wait-for", ["--", channel]).argumentVector
+        let reply = try await withCommandDeadline(timeout) {
+            try await self.runUnbounded(rawArguments: arguments)
+        }
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }

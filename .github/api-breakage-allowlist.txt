@@ -2,3 +2,5 @@ API breakage: func Server.scanForward(_:since:sourceLinesPerChunk:maximumChunks:
 API breakage: enumelement TmuxError.foreignPaneValue has been added as a new enum case
 API breakage: enumelement TmuxError.rejectedLocally has been added as a new enum case
 API breakage: enumelement OutputWait.Outcome.alreadyOnScreen has been added as a new enum case
+API breakage: enumelement TmuxError.timedOut has been added as a new enum case
+API breakage: func Server.wait(for:) has been renamed to func wait(for:timeout:)
