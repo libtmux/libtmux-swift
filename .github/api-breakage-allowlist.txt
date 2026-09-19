@@ -6,3 +6,9 @@ API breakage: enumelement TmuxError.timedOut has been added as a new enum case
 API breakage: func Server.wait(for:) has been renamed to func wait(for:timeout:)
 API breakage: constructor Server.init(socketPath:tmuxExecutable:configurationFile:) has been removed
 API breakage: constructor Server.init(socketName:tmuxExecutable:configurationFile:) has been removed
+API breakage: constructor Pane.init(id:index:width:height:isActive:isDead:isInputOff:modeCount:isSynchronized:currentCommand:currentPath:isAtTop:isAtBottom:isAtLeft:isAtRight:windowID:incarnation:) has been removed
+API breakage: func Server.newSession(named:startDirectory:windowName:width:height:) has been renamed to func newSession(named:startDirectory:windowName:width:height:running:environment:)
+API breakage: func Server.newWindow(in:named:startDirectory:) has been renamed to func newWindow(in:named:startDirectory:running:environment:)
+API breakage: func Server.newWindow(_:_:named:startDirectory:) has been renamed to func newWindow(_:_:named:startDirectory:running:environment:)
+API breakage: func Server.splitWindow(_:direction:size:startDirectory:) has been renamed to func splitWindow(_:direction:size:startDirectory:running:environment:)
+API breakage: func Server.split(_:direction:size:startDirectory:) has been renamed to func split(_:direction:size:startDirectory:running:environment:)

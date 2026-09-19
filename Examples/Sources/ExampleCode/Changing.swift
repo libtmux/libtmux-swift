@@ -11,6 +11,23 @@ public func buildASessionByHand(_ server: Server) async throws -> Pane {
     return pane
 }
 
+public func runAProgramAndReadItsExit(
+    _ server: Server,
+    _ window: Window
+) async throws -> Int? {
+    _ = try await server.setOption("remain-on-exit", to: "on", scope: .globalWindow)
+    let pane = try await server.splitWindow(
+        window,
+        running: ["sh", "-c", "exit 42"],
+        environment: ["CI": "1"]
+    )
+    var finished = try await server.refresh(pane)
+    while finished?.isDead == false {
+        finished = try await server.refresh(pane)
+    }
+    return finished?.exitStatus
+}
+
 public func readBackWhatAPanePrinted(_ server: Server, _ pane: Pane) async throws -> [String] {
     let lines = try await server.capture(pane)
     print(lines.suffix(5).joined(separator: "\n"))

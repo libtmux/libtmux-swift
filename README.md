@@ -199,6 +199,33 @@ let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)
 ```
 
+### Running a program, not typing one
+
+A pane can be created running a program of its own, which is what a test
+harness wants: nothing has to survive a shell's quoting, nothing is echoed
+into the pane's output, and how it finished is a value rather than something
+to read off the screen.
+
+```swift
+let pane = try await server.splitWindow(
+    window,
+    running: ["sh", "-c", "exit 42"],
+    environment: ["CI": "1"]
+)
+```
+
+`Pane.exitStatus` is `nil` while the pane lives and carries the status once it
+does not — so ask tmux to keep the pane, or it is destroyed as its command
+ends and there is nothing left to ask:
+
+```swift
+_ = try await server.setOption("remain-on-exit", to: "on", scope: .globalWindow)
+```
+
+`Pane` also carries `processID`, `tty`, `title`, and `startCommand` — what the
+pane was asked to run, which still answers after the process has moved on,
+unlike `currentCommand`.
+
 Read a pane back the way a person would:
 
 ```swift

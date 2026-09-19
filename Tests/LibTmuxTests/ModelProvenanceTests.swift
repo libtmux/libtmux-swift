@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -370,5 +371,88 @@ private actor GuardProbeTransport: ProcessTransport {
             standardError: [],
             exitCode: 0
         )
+    }
+}
+
+@Suite("encoded models", .hangLimit)
+struct EncodedModelTests {
+    /// Every key a `Pane` gained after `0.1.0-alpha.5`, which is what an
+    /// encoding written by that release does not carry.
+    private static let paneKeysAddedSinceAlpha5 = [
+        "exitStatus", "processID", "tty", "title", "startCommand",
+    ]
+
+    private func pane() -> Pane {
+        let incarnation = ServerIncarnation(
+            endpoint: .socketPath("/tmp/libtmux-swift-test/encoded/socket"),
+            socketPath: "/tmp/libtmux-swift-test/encoded/socket",
+            processID: 4_242,
+            startedAt: 7
+        )
+        return Pane(
+            id: "%1", index: 0, width: 80, height: 24, isActive: true, isDead: false,
+            isInputOff: false, modeCount: 0, isSynchronized: false, currentCommand: "zsh",
+            currentPath: "/", windowID: "@1", incarnation: incarnation,
+            processID: 91, tty: "/dev/pts/3", title: "shell", startCommand: "exec zsh"
+        )
+    }
+
+    /// Drops the newer keys wherever they appear, which is the encoding the
+    /// older release wrote.
+    private func withoutNewerKeys(_ value: Any) -> Any {
+        if var object = value as? [String: Any] {
+            if object["currentCommand"] != nil {
+                for key in Self.paneKeysAddedSinceAlpha5 { object[key] = nil }
+            }
+            return object.mapValues(withoutNewerKeys)
+        }
+        if let array = value as? [Any] { return array.map(withoutNewerKeys) }
+        return value
+    }
+
+    private func decodingOlderEncoding<Value: Codable>(of value: Value) throws -> Value {
+        let raw = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value))
+        let older = try JSONSerialization.data(withJSONObject: withoutNewerKeys(raw))
+        return try JSONDecoder().decode(Value.self, from: older)
+    }
+
+    @Test("a pane encoded before these fields existed still decodes")
+    func paneFromAnOlderEncodingDecodes() throws {
+        let decoded = try decodingOlderEncoding(of: pane())
+
+        #expect(decoded.id == "%1")
+        #expect(decoded.currentCommand == "zsh")
+        // Absent, not zero: a pid of 0 is a process group to kill(2).
+        #expect(decoded.processID == nil)
+        #expect(decoded.tty == nil)
+        #expect(decoded.title == nil)
+        #expect(decoded.startCommand == nil)
+        #expect(decoded.exitStatus == nil)
+    }
+
+    @Test("a snapshot encoded before these fields existed still decodes")
+    func snapshotFromAnOlderEncodingDecodes() throws {
+        let pane = pane()
+        let snapshot = Snapshot(
+            incarnation: pane.incarnation,
+            sessions: [],
+            windows: [],
+            windowLinks: [],
+            panes: [pane],
+            clients: []
+        )
+
+        let decoded = try decodingOlderEncoding(of: snapshot)
+        #expect(decoded.panes.map(\.id) == ["%1"])
+        #expect(decoded.panes[0].processID == nil)
+    }
+
+    @Test("what a pane reports round-trips unchanged")
+    func paneRoundTripsWhatItReports() throws {
+        let original = pane()
+        let decoded = try JSONDecoder().decode(
+            Pane.self, from: JSONEncoder().encode(original))
+        #expect(decoded == original)
+        #expect(decoded.processID == 91)
     }
 }

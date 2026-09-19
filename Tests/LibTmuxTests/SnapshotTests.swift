@@ -492,6 +492,8 @@ private actor SnapshotReplacementTransport: ProcessTransport {
             "pane_synchronized": "0",
             "pane_current_path": "/tmp", "pane_at_top": "1", "pane_at_bottom": "1",
             "pane_at_left": "1", "pane_at_right": "1",
+            "pane_dead_status": "", "pane_pid": "701", "pane_tty": "/dev/pts/1",
+            "pane_title": "held", "pane_start_command": "exec sh",
         ]
         if command == "display-message" {
             incarnationProbeCount += 1

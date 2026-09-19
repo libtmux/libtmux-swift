@@ -71,3 +71,17 @@ struct ChangingTests {
         }
     }
 }
+
+@Suite("running a program in a pane", .timeLimit(.minutes(1)))
+struct PaneProgramTests {
+    @Test("a pane's program reports how it exited")
+    func aPaneProgramReportsItsExit() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+
+            let status = try await runAProgramAndReadItsExit(server, window)
+
+            #expect(status == 42)
+        }
+    }
+}

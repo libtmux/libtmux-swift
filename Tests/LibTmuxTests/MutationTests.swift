@@ -516,6 +516,57 @@ struct MutationTests {
         }
     }
 
+    @Test("a pane can run a program and report how it exited")
+    func paneRunsAProgramAndReportsItsExit() async throws {
+        try await withTmuxServer { server in
+            // A pane is destroyed as its command ends unless tmux is told to
+            // keep it, and a destroyed pane cannot be asked anything.
+            _ = try await server.setOption("remain-on-exit", to: "on", scope: .globalWindow)
+            let session = try await server.newSession(named: "exits")
+            let window = try await server.newWindow(in: session).window
+
+            let pane = try await server.splitWindow(
+                window,
+                running: ["sh", "-c", "exit 42"],
+                environment: ["LIBTMUX_PROBE": "seen"]
+            )
+
+            let dead = try await waitUntil {
+                try await server.refresh(pane)?.isDead == true
+            }
+            #expect(dead)
+
+            let finished = try #require(try await server.refresh(pane))
+            // The point of the whole call: a harness learns the program failed
+            // without reading the screen or parsing a prompt.
+            #expect(finished.exitStatus == 42)
+            #expect(finished.startCommand?.contains("exit 42") == true)
+            #expect((finished.processID ?? 0) > 0)
+            #expect(finished.tty?.hasPrefix("/dev/") == true)
+        }
+    }
+
+    @Test("a live pane has no exit status, and a program sees its environment")
+    func livePaneHasNoExitStatusAndSeesItsEnvironment() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "env")
+            let window = try await server.newWindow(in: session).window
+            let pane = try await server.splitWindow(
+                window,
+                running: ["sh", "-c", "printenv LIBTMUX_PROBE; sleep 30"],
+                environment: ["LIBTMUX_PROBE": "seen"]
+            )
+
+            // Alive, so nothing has exited and there is no status to report.
+            #expect(pane.exitStatus == nil)
+
+            let printed = try await waitUntil {
+                try await server.capture(pane).contains { $0.contains("seen") }
+            }
+            #expect(printed)
+        }
+    }
+
     @Test("a command line that is a key name is typed, not pressed")
     func keyNamedCommandLineIsTyped() async throws {
         try await withTmuxServer { server in
