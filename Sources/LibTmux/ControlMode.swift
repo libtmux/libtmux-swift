@@ -46,7 +46,8 @@ extension Server {
                         )
                     ]
                 )
-                _ = try request.validate(await control.reply(to: request))
+                _ = try request.validate(
+                    await control.reply(to: request, within: commandTimeout))
                 return try await body(server, control)
             }
         } catch TmuxError.connectionClosed {

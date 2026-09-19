@@ -179,14 +179,10 @@ public struct Server: Sendable, Hashable {
     }
 
     func run(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
-        let runtime = self.runtime
-        let connection = self.connection
-        return try await withCommandDeadline(commandTimeout) {
-            guard let connection else {
-                return try await runtime.run(rawArguments: rawArguments)
-            }
-            return try await connection.reply(to: rawArguments)
+        guard let connection else {
+            return try await runtime.run(rawArguments: rawArguments, within: commandTimeout)
         }
+        return try await connection.reply(to: rawArguments, within: commandTimeout)
     }
 
     /// Runs a command in its own process with no bound at all.
@@ -195,7 +191,7 @@ public struct Server: Sendable, Hashable {
     /// ``runInOwnProcess(rawArguments:)`` is the bounded counterpart, for a
     /// command that needs its own process for some *other* reason.
     func runUnbounded(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
-        try await runtime.run(rawArguments: rawArguments)
+        try await runtime.run(rawArguments: rawArguments, within: nil)
     }
 
     package func run(
@@ -204,7 +200,8 @@ public struct Server: Sendable, Hashable {
     ) async throws(TmuxError) -> TmuxReply {
         try await runtime.run(
             rawArguments: command.argumentVector,
-            environmentOverrides: launchEnvironment
+            environmentOverrides: launchEnvironment,
+            within: commandTimeout
         )
     }
 
@@ -220,10 +217,7 @@ public struct Server: Sendable, Hashable {
     /// reason to wait forever. ``runUnbounded(rawArguments:)`` is for the one
     /// command that is *meant* to.
     func runInOwnProcess(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
-        let runtime = self.runtime
-        return try await withCommandDeadline(commandTimeout) {
-            try await runtime.run(rawArguments: rawArguments)
-        }
+        try await runtime.run(rawArguments: rawArguments, within: commandTimeout)
     }
 
     package func runIsolated(
@@ -232,7 +226,8 @@ public struct Server: Sendable, Hashable {
     ) async throws(TmuxError) -> TmuxReply {
         try await runtime.run(
             rawArguments: command.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
     }
 
@@ -249,7 +244,8 @@ public struct Server: Sendable, Hashable {
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
         return try request.validate(reply)
     }
@@ -276,7 +272,8 @@ public struct Server: Sendable, Hashable {
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
         return try request.validate(reply)
     }
@@ -294,7 +291,8 @@ public struct Server: Sendable, Hashable {
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
         return try request.validateTerminating(reply)
     }
@@ -529,10 +527,13 @@ struct ServerRuntime: Sendable {
         self.transport = transport
     }
 
+    /// - Parameter bound: required, so no caller reaches a process without
+    ///   saying how long it may take. `nil` waits as long as tmux does.
     func run(
         rawArguments: [String],
         perStreamOutputLimit: Int = defaultTmuxReplyByteLimit,
-        environmentOverrides: [String: String] = [:]
+        environmentOverrides: [String: String] = [:],
+        within bound: Duration?
     ) async throws(TmuxError) -> TmuxReply {
         guard perStreamOutputLimit >= 0 else {
             throw .invocationFailed(reason: "output limit cannot be negative")
@@ -544,15 +545,17 @@ struct ServerRuntime: Sendable {
         // newly started daemon passes to panes.
         let configurationArguments = configurationFile.map { ["-f", $0] } ?? []
         let arguments = ["-u"] + configurationArguments + endpoint.addressArguments + rawArguments
-        var environment = TmuxProcessEnvironment.variables()
-        environment.merge(environmentOverrides) { _, override in override }
-        let reply = try await transport.run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment,
-            perStreamOutputLimit: perStreamOutputLimit
-        )
-        try requireReplyFitsLimit(reply, perStreamOutputLimit)
-        return reply
+        let environment = TmuxProcessEnvironment.variables()
+            .merging(environmentOverrides) { _, override in override }
+        return try await withCommandDeadline(bound) {
+            let reply = try await transport.run(
+                executable: executable,
+                arguments: arguments,
+                environment: environment,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+            try requireReplyFitsLimit(reply, perStreamOutputLimit)
+            return reply
+        }
     }
 }

@@ -191,7 +191,7 @@ struct CancellationTests {
 /// `NSLock` rather than `Mutex`: `Synchronization` is macOS 15 and this package
 /// declares macOS 13, which a Linux compiler has no availability to check —
 /// the macOS lane would be the only thing that failed, after a push.
-private final class NeverAnsweringTransport: ProcessTransport, @unchecked Sendable {
+final class NeverAnsweringTransport: ProcessTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var parked: [CheckedContinuation<Void, Never>] = []
 

@@ -43,7 +43,7 @@ extension Server {
         )
         let reply: TmuxReply
         if let connection {
-            reply = try await connection.reply(to: request)
+            reply = try await connection.reply(to: request, within: commandTimeout)
         } else {
             reply = try await run(rawArguments: request.commands.argumentVector)
         }

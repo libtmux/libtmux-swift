@@ -70,7 +70,14 @@ extension ControlSession {
     /// reply rather than becoming a thrown error — the same contract
     /// ``Server/run(_:)`` states — so its text lands on standard error with a
     /// nonzero status instead.
-    func reply(to rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
+    ///
+    /// - Parameter bound: required for the reason ``ServerRuntime`` requires
+    ///   one. An abandoned line keeps its place in the queue, so tmux's late
+    ///   answer is consumed rather than handed to the next caller.
+    func reply(
+        to rawArguments: [String],
+        within bound: Duration?
+    ) async throws(TmuxError) -> TmuxReply {
         guard !rawArguments.isEmpty else {
             return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
         }
@@ -85,7 +92,10 @@ extension ControlSession {
             .joined(separator: " \(TmuxCommandList.separator) ")
 
         // How many commands went out is how many blocks may come back.
-        let reply = try await send(line: line, commands: commands.count)
+        let count = commands.count
+        let reply = try await withCommandDeadline(bound) {
+            try await self.send(line: line, commands: count)
+        }
 
         // A process ends its output with a newline; the connection reports
         // lines. Restore it, so both spellings decode to the same rows.
@@ -100,12 +110,14 @@ extension ControlSession {
         )
     }
 
-    func reply(to request: GuardedRequest) async throws(TmuxError) -> TmuxReply {
+    func reply(
+        to request: GuardedRequest,
+        within bound: Duration?
+    ) async throws(TmuxError) -> TmuxReply {
         try requireSingleLine([request.controlLine])
-        let reply = try await sendFenced(
-            line: request.controlLine,
-            marker: request.fenceMarker
-        )
+        let reply = try await withCommandDeadline(bound) {
+            try await self.sendFenced(line: request.controlLine, marker: request.fenceMarker)
+        }
 
         let bytes =
             reply.lines.isEmpty
