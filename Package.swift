@@ -34,7 +34,14 @@ let package = Package(
     // `Workspace.decode(yaml:)` goes away.
     traits: [.default(enabledTraits: []), "YAMLWorkspaces"],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
+        // A range, not a pin: SwiftPM resolves the whole graph whichever
+        // product a consumer imports, so an exact version here is one every
+        // LibTmux consumer is locked to, and a conflict for anyone whose own
+        // tree already depends on this parser.
+        .package(
+            url: "https://github.com/apple/swift-argument-parser.git",
+            .upToNextMinor(from: "1.8.2")
+        ),
         .package(
             url: "https://github.com/swiftlang/swift-subprocess.git",
             .upToNextMinor(from: "1.0.0")
