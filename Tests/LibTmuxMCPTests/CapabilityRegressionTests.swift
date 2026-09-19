@@ -29,16 +29,9 @@ struct CapabilityRegressionTests {
                 "timeoutMs": .integer(100),
             ])
         )
-        let reported: ToolError?
-        do {
-            reported = try await withCommandDeadline(.milliseconds(500)) { () async -> ToolError? in
-                do {
-                    _ = try await surface.call(call)
-                    return nil as ToolError?
-                } catch { return error as? ToolError }
-            }
-        } catch let error as TmuxError { reported = .tmux(error) }
-        #expect(reported == .tmux(.timedOut(after: .milliseconds(100))))
+        await #expect(throws: ToolError.tmux(.timedOut(after: .milliseconds(100)))) {
+            try await surface.call(call)
+        }
     }
 
     @Test("effective aggregate disclosures are the exact nested union")
