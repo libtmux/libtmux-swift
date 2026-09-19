@@ -1578,6 +1578,43 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("a reused session missing the document's windows is not reported as loaded")
+    func reuseVerifiesWindows() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = [
+                "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUX": "", "TMUX_PANE": "",
+            ]
+            let file = root.appendingPathComponent("reuse.json")
+            try Data(
+                #"""
+                {"session_name":"reuse","windows":[{"window_name":"one","panes":[null]},{"window_name":"two","panes":[null]}]}
+                """#.utf8
+            ).write(to: file)
+            let arguments = ["load", file.path, "-d", "-S", socket, "--json"]
+            let first = await invoke(arguments, in: root, extra: environment)
+            #expect(first.code == 0, "\(first.error)")
+            let again = await invoke(arguments, in: root, extra: environment)
+            #expect(again.code == 0, "\(again.error)")
+
+            let snapshot = try await server.snapshot()
+            let session = try #require(snapshot.sessions.first { $0.name == "reuse" })
+            let window = try #require(snapshot.windows(of: session).first { $0.name == "two" })
+            try await server.kill(window)
+            let mismatched = await invoke(arguments, in: root, extra: environment)
+            #expect(mismatched.code == 1)
+            let result = try mismatched.json()
+            #expect(result["status"] as? String == "partial")
+            let errors = try #require(result["errors"] as? [[String: Any]])
+            #expect(errors.first?["message"] as? String ?? "" != "")
+            #expect((errors.first?["message"] as? String ?? "").contains("two"), "\(errors)")
+            // Comparing is the rule; a mismatch is reported, never rebuilt.
+            let after = try await server.snapshot()
+            #expect(after.windows(of: session).map(\.name) == ["one"])
+        }
+    }
+
     @Test("append preserves the borrowed session and reports failed windows")
     func appendWorkspace() async throws {
         try await withTmuxServer { server in

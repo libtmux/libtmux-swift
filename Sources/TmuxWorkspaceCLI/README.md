@@ -230,7 +230,9 @@ A key inside it this port does not implement is a warning, never a refusal, so
 a document shared with the other ports still loads.
 An unsupported execution key fails before creation; prefix a key with `x-`
 to have it ignored instead, at any level. Existing exact session names are
-reused. A failed build removes only the session that build created and
+reused, and a reused session is compared against the document: a session
+missing windows the document asks for is reported as partial, exit 1, naming
+what is missing, and nothing is rebuilt. A failed build removes only the session that build created and
 reports earlier successful workspaces as partial results.
 
 `load --append` adds windows to the current pane's session. It requires a valid
