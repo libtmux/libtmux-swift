@@ -101,6 +101,7 @@ enum WorkspaceCommands {
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }
         let retained = AppendState()
         let scriptFailure = ScriptFailure()
+        var reusedMismatch = false
         var results: [Value] = []
         var completedCount = 0
         var lastSession: Session?
@@ -134,6 +135,14 @@ enum WorkspaceCommands {
                 }
                 let session: Session
                 if let existing, borrowed == nil {
+                    // A session of the right name is not the workspace. Say
+                    // what is missing; rebuilding it is a separate ask.
+                    if let missing = try await missingWindows(
+                        plan.workspace, in: existing, on: server)
+                    {
+                        reusedMismatch = true
+                        throw CLIError("session_not_found", missing)
+                    }
                     session = existing
                 } else {
                     session = try await WorkspaceBuilder.build(
@@ -343,7 +352,8 @@ enum WorkspaceCommands {
             }
             var fields: [String: Value] = [
                 "schema_version": .integer(1), "command": .string("load"),
-                "status": .string(completedCount == 0 && !changed ? "error" : "partial"),
+                "status": .string(
+                    completedCount == 0 && !changed && !reusedMismatch ? "error" : "partial"),
                 "results": .array(results),
                 "errors": .array([
                     .object([
@@ -491,6 +501,35 @@ enum WorkspaceCommands {
                 return .attached(clients[number - 1])
             }
         }
+    }
+
+    /// What the running `session` is missing of `workspace`, or `nil` when it
+    /// holds everything the document asks for.
+    ///
+    /// Windows are matched by name, and a window the document leaves unnamed
+    /// is counted rather than named, because tmux names it after whatever it
+    /// ends up running.
+    private static func missingWindows(
+        _ workspace: Workspace, in session: Session, on server: Server
+    ) async throws -> String? {
+        let live = try await server.snapshot().windows(of: session).map(\.name)
+        var remaining = live
+        var missing: [String] = []
+        for window in workspace.windows {
+            guard let name = window.windowName else { continue }
+            if let index = remaining.firstIndex(of: name) {
+                remaining.remove(at: index)
+            } else {
+                missing.append(name)
+            }
+        }
+        if !missing.isEmpty {
+            return
+                "Session \(session.name) is already running without \(missing.joined(separator: ", ")); nothing was changed."
+        }
+        guard live.count < workspace.windows.count else { return nil }
+        return
+            "Session \(session.name) is already running with \(live.count) of the workspace's \(workspace.windows.count) windows; nothing was changed."
     }
 
     /// The already-running session a load with this target name would
