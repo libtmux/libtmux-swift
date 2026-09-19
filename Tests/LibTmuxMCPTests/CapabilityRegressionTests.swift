@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("capability regressions", .timeLimit(.minutes(1)))
+@Suite("capability regressions", .hangLimit)
 struct CapabilityRegressionTests {
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(

@@ -37,6 +37,7 @@ actor WaitDoorbell {
             return pending.removeFirst()
         }
         return await withCheckedContinuation { continuation in
+            precondition(waiter == nil, "WaitDoorbell.wait() does not support concurrent waiters")
             waiter = continuation
         }
     }

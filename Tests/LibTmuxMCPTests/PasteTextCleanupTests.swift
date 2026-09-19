@@ -4,7 +4,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("paste_text cleanup", .timeLimit(.minutes(1)))
+@Suite("paste_text cleanup", .hangLimit)
 struct PasteTextCleanupTests {
     @Test("empty text without Enter is a guarded buffer-free no-op")
     func emptyPasteIsBufferFree() async throws {
@@ -79,7 +79,9 @@ struct PasteTextCleanupTests {
             )
 
             await #expect(
-                throws: ToolError.tmux(.invocationFailed(reason: "cleanup rejected"))
+                throws: ToolError.tmux(
+                    .commandFailed(
+                        command: "delete-buffer", exitCode: 1, reason: "cleanup rejected"))
             ) {
                 try await tools.call(
                     ToolCall(

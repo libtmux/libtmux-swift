@@ -23,6 +23,18 @@ public enum OptionScope: Sendable, Hashable, Codable {
         }
     }
 
+    /// The table this scope addresses, in words.
+    var tableDescription: String {
+        switch self {
+        case .server: "the server table"
+        case .globalSession: "the global session table"
+        case .globalWindow: "the global window table"
+        case .session: "a session's own table"
+        case .window: "a window's own table"
+        case .pane: "a pane's own table"
+        }
+    }
+
     var guardedValue: GuardedValue? {
         switch self {
         case .server, .globalSession, .globalWindow: nil
@@ -64,13 +76,14 @@ public struct TmuxOption: Sendable, Hashable, Codable {
 /// neither, unlike ``OptionScope``, whose table addresses are all real.
 public enum HookScope: Sendable, Hashable, Codable {
     case global
-    /// One session's own hooks, addressed by name or id.
+    /// One session's own hooks, addressed by name or id. The name is matched
+    /// exactly -- see ``Server/hasSession(_:)``.
     case session(String)
 
     var arguments: [String] {
         switch self {
         case .global: ["-g"]
-        case let .session(target): ["-t", target]
+        case let .session(target): ["-t", tmuxExactSessionOfPane(target)]
         }
     }
 }
@@ -103,15 +116,15 @@ extension Server {
     /// Every option set in one exact table.
     ///
     /// Reports what tmux has actually been told, not the built-in defaults —
-    /// a fresh server's session table is legitimately empty.
+    /// a fresh server's session table is legitimately empty. An empty result
+    /// is therefore tmux's own answer: a listing tmux could not give throws,
+    /// so no server and no options set cannot be mistaken for each other.
     public func options(
         _ scope: OptionScope
     ) async throws(TmuxError) -> [TmuxOption] {
-        let reply = try await runOptionCommand(
-            TmuxCommand("show-options", scope.selectorArguments),
-            in: scope
-        )
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-options", scope.selectorArguments)
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text.split(separator: "\n").map { line in
             let (name, value) = splitOnFirstSpace(String(line))
             return TmuxOption(name: name, value: value, scope: scope)
@@ -128,56 +141,208 @@ extension Server {
     /// deliberately set to "".
     public func option(
         _ name: String,
-        scope: OptionScope = .server
+        scope: OptionScope
     ) async throws(TmuxError) -> String? {
         let listed = try await options(scope)
         guard listed.contains(where: { $0.name == name }) else { return nil }
 
-        let reply = try await runOptionCommand(
-            TmuxCommand(
-                "show-options",
-                scope.selectorArguments + ["-v", name]
-            ),
-            in: scope
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", name])
+        let reply = try await runOptionCommand(command, in: scope)
+        // Presence came from the listing, so `nil` is already spent on "not
+        // set" and a failure here is a failure.
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         var value = reply.text
         if value.hasSuffix("\n") { value.removeLast() }
         return value
     }
 
     /// The effective value after tmux resolves inherited option tables.
+    ///
+    /// - Throws: ``TmuxError/commandFailed(command:exitCode:reason:)`` for a
+    ///   name tmux does not know, which it answers the same way as a server
+    ///   it cannot reach. `nil` is reserved for a value tmux reported as
+    ///   absent.
     public func resolvedOption(
         _ name: String,
         scope: OptionScope
     ) async throws(TmuxError) -> String? {
-        let reply = try await runOptionCommand(
-            TmuxCommand(
-                "show-options",
-                ["-A"] + scope.selectorArguments + ["-v", name]
-            ),
-            in: scope
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand(
+            "show-options", ["-A"] + scope.selectorArguments + ["-v", name])
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         var value = reply.text
         if value.hasSuffix("\n") { value.removeLast() }
         return value
     }
 
     /// Sets an option.
-    @discardableResult
+    ///
+    /// A value tmux refuses throws ``TmuxError/commandFailed(command:exitCode:reason:)``
+    /// with tmux's reason: `set-option` is dispatched as one command, and
+    /// only its own exit status and standard error are reported.
+    ///
+    /// A scope in the wrong table is not a value tmux refuses. For one of its
+    /// own options tmux takes the table from the name, so `.server` with a
+    /// session option such as `mouse` exits 0 and sets it on whichever session
+    /// tmux considers current — which is why there is no default here to get
+    /// wrong. A ``TmuxOptionKey`` knows its own table, and
+    /// ``setOption(_:to:scope:)-(TmuxOptionKey<Value>,_,_)`` refuses the
+    /// mistake outright.
     public func setOption(
         _ name: String,
         to value: String,
-        scope: OptionScope = .server
-    ) async throws(TmuxError) -> TmuxReply {
-        try await runOptionCommand(
+        scope: OptionScope
+    ) async throws(TmuxError) {
+        try await expectOptionSuccess(
             TmuxCommand(
                 "set-option",
                 scope.selectorArguments + [name, value]
             ),
             in: scope
         )
+    }
+
+    /// The value of a typed option, or `nil` if it is not set in that table.
+    ///
+    /// - Parameters:
+    ///   - key: the option, the type of its value, and its table.
+    ///   - scope: the table to read, or the key's global table when `nil`.
+    /// - Throws: ``TmuxError/decodingFailed(_:)`` when the option holds text
+    ///   that is not a `Value`, since `nil` already means "not set".
+    public func option<Value: TmuxOptionValue>(
+        _ key: TmuxOptionKey<Value>,
+        scope: OptionScope? = nil
+    ) async throws(TmuxError) -> Value? {
+        guard let text = try await option(key.name, scope: key.scope(resolving: scope)) else {
+            return nil
+        }
+        guard let value = Value(tmuxOptionText: text) else {
+            throw .decodingFailed(.invalidValue(rowIndex: 0, field: key.name, raw: text))
+        }
+        return value
+    }
+
+    /// Every element of an array option, by index, or `nil` if the option is
+    /// not set in that table.
+    ///
+    /// tmux arrays are sparse: `status-format[4]` can hold a value with
+    /// nothing at 2 or 3, so an element keeps its index rather than taking one
+    /// from its position. An array emptied by setting it to `""` reads as
+    /// empty, not `nil`. Emptying is a string set, so name the table it
+    /// empties; the string call's default `.server` scope would empty the
+    /// current session's copy instead:
+    ///
+    /// ```swift
+    /// try await server.setOption("update-environment", to: "", scope: .globalSession)
+    /// ```
+    ///
+    /// The indices come from the table listing and the values from
+    /// `show-options -v`, which prints them unquoted in the same order. An
+    /// element holding a newline would break that correspondence, so the
+    /// mismatch throws ``TmuxError/decodingFailed(_:)`` rather than pairing
+    /// values with the wrong indices.
+    public func option(
+        _ key: TmuxOptionKey<[Int: String]>,
+        scope: OptionScope? = nil
+    ) async throws(TmuxError) -> [Int: String]? {
+        let scope = try key.scope(resolving: scope)
+        let prefix = key.name + "["
+        var listed = false
+        var indices: [Int] = []
+        for option in try await options(scope) {
+            if option.name == key.name {
+                listed = true
+            } else if option.name.hasPrefix(prefix), option.name.hasSuffix("]"),
+                let index = Int(option.name.dropFirst(prefix.count).dropLast())
+            {
+                indices.append(index)
+            }
+        }
+        guard !indices.isEmpty else { return listed ? [:] : nil }
+
+        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", key.name])
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
+        var text = reply.text
+        if text.hasSuffix("\n") { text.removeLast() }
+        let values = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard values.count == indices.count else {
+            throw .decodingFailed(
+                .fieldCountMismatch(rowIndex: 0, expected: indices.count, actual: values.count)
+            )
+        }
+        return Dictionary(uniqueKeysWithValues: zip(indices, values.map(String.init)))
+    }
+
+    /// Sets a typed option.
+    ///
+    /// - Parameters:
+    ///   - key: the option, the type of its value, and its table.
+    ///   - value: the value, spelled the way tmux reads it.
+    ///   - scope: the table to write, or the key's global table when `nil`. A
+    ///     scope whose table cannot hold the option throws
+    ///     ``TmuxError/rejectedLocally(reason:)`` without invoking tmux.
+    public func setOption<Value: TmuxOptionValue>(
+        _ key: TmuxOptionKey<Value>,
+        to value: Value,
+        scope: OptionScope? = nil
+    ) async throws(TmuxError) {
+        try await setOption(key.name, to: value.tmuxOptionText, scope: key.scope(resolving: scope))
+    }
+
+    /// Puts a typed option back the way it was before anyone set it.
+    ///
+    /// For an array this restores tmux's default elements rather than
+    /// emptying it. Unsetting one element removes that element alone:
+    ///
+    /// ```swift
+    /// try await server.unsetOption(TmuxOptionKey.updateEnvironment[3])
+    /// ```
+    public func unsetOption<Value>(
+        _ key: TmuxOptionKey<Value>,
+        scope: OptionScope? = nil
+    ) async throws(TmuxError) {
+        try await unsetOption(key.name, scope: key.scope(resolving: scope))
+    }
+
+    /// Whether panes in `scope` outlive the command they were created with.
+    ///
+    /// tmux destroys a pane as its command exits, which leaves nothing to ask
+    /// how the command finished — so ``Pane/exitStatus`` is `nil` for a pane
+    /// that is already gone. Setting this keeps the pane, and is what a caller
+    /// waiting on an exit status needs:
+    ///
+    /// ```swift
+    /// try await server.setPanesOutliveTheirCommand(true, scope: .globalWindow)
+    /// let pane = try await server.splitWindow(window, running: ["sh", "-c", "exit 42"])
+    /// ```
+    ///
+    /// Set it before creating the pane, not after: a command that exits
+    /// quickly is gone before a second call could name the pane it created.
+    /// The pane then stays until something kills it, which is the caller's to
+    /// arrange.
+    ///
+    /// This is `remain-on-exit`, typed because it is the one option
+    /// ``Pane/exitStatus`` depends on, and spelling it as a string is how a
+    /// caller discovers that dependency only by not finding it.
+    public func setPanesOutliveTheirCommand(
+        _ outlive: Bool,
+        scope: OptionScope = .globalWindow
+    ) async throws(TmuxError) {
+        try await setOption("remain-on-exit", to: outlive ? "on" : "off", scope: scope)
+    }
+
+    /// Whether panes in `scope` outlive the command they were created with.
+    ///
+    /// `nil` when tmux reports no value for the scope asked about. tmux also
+    /// answers `failed`, which keeps a pane only when its command exited
+    /// nonzero; that reads as `true` here, since a pane can then outlive its
+    /// command.
+    public func panesOutliveTheirCommand(
+        scope: OptionScope = .globalWindow
+    ) async throws(TmuxError) -> Bool? {
+        guard let value = try await option("remain-on-exit", scope: scope) else { return nil }
+        return value != "off"
     }
 
     /// Puts an option back the way it was before anyone set it.
@@ -187,13 +352,14 @@ extension Server {
     /// listed. One of tmux's own reverts to its built-in default, so it is
     /// still listed, carrying a value nobody chose.
     ///
-    /// Unsetting a name nothing was set to succeeds and changes nothing.
-    @discardableResult
+    /// Unsetting a user option nothing was set to succeeds and changes
+    /// nothing. A name tmux does not know throws
+    /// ``TmuxError/commandFailed(command:exitCode:reason:)``.
     public func unsetOption(
         _ name: String,
-        scope: OptionScope = .server
-    ) async throws(TmuxError) -> TmuxReply {
-        try await runOptionCommand(
+        scope: OptionScope
+    ) async throws(TmuxError) {
+        try await expectOptionSuccess(
             TmuxCommand(
                 "set-option",
                 scope.selectorArguments + ["-u", name]
@@ -210,8 +376,9 @@ extension Server {
     public func hooks(
         _ scope: HookScope = .global
     ) async throws(TmuxError) -> [TmuxHook] {
-        let reply = try await run(TmuxCommand("show-hooks", scope.arguments))
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-hooks", scope.arguments)
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text.split(separator: "\n").compactMap { line in
             let (label, command) = splitOnFirstSpace(String(line))
             guard !command.isEmpty else { return nil }
@@ -283,6 +450,16 @@ extension Server {
             return try await run(command)
         }
         return try await runGuarded(command, by: [guardedValue])
+    }
+
+    private func expectOptionSuccess(
+        _ command: TmuxCommand,
+        in scope: OptionScope
+    ) async throws(TmuxError) {
+        guard let guardedValue = scope.guardedValue else {
+            return try await expectSuccess(command)
+        }
+        try await expectSuccess(command, guardedBy: [guardedValue])
     }
 }
 

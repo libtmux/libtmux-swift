@@ -4,8 +4,269 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("mutations", .timeLimit(.minutes(1)))
+@Suite("mutations", .hangLimit)
 struct MutationTests {
+    @Test("typed and custom layouts preserve tmux's layout strings")
+    func typedLayoutsReachTmux() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            let layouts: [(WindowLayout, String)] = [
+                (.evenHorizontal, "even-horizontal"), (.evenVertical, "even-vertical"),
+                (.mainHorizontal, "main-horizontal"), (.mainVertical, "main-vertical"),
+                (.tiled, "tiled"),
+            ]
+            for (typed, name) in layouts {
+                try await server.selectLayout(window, name)
+                let expected = try #require(try await server.format("#{window_layout}", for: link))
+                let reset = name == "even-horizontal" ? "even-vertical" : "even-horizontal"
+                try await server.selectLayout(window, reset)
+                try await server.selectLayout(window, typed)
+                #expect(try await server.format("#{window_layout}", for: link) == expected)
+                let encoded = try JSONEncoder().encode(typed)
+                #expect(try JSONDecoder().decode(String.self, from: encoded) == name)
+                #expect(try JSONDecoder().decode(WindowLayout.self, from: encoded) == typed)
+            }
+            let saved = try #require(try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenVertical)
+            let custom = WindowLayout.custom(saved)
+            let decoded = try JSONDecoder().decode(
+                WindowLayout.self, from: JSONEncoder().encode(custom))
+            try await server.selectLayout(window, decoded)
+            #expect(try await server.format("#{window_layout}", for: link) == saved)
+        }
+    }
+
+    @Test("a value that is not a layout is refused before dispatch")
+    func unparseableLayoutValueIsRefusedClientSide() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            try await server.selectLayout(window, .evenHorizontal)
+            let beforeAttempt = try #require(
+                try await server.format("#{window_layout}", for: link))
+            // "-o" is select-layout's own "apply the last set layout" flag,
+            // and "--" is what turns it into a layout string instead. Every
+            // value here is one tmux cannot parse, which on 3.3 and 3.3a
+            // frees an uninitialized `cause` and kills the daemon rather than
+            // being rejected -- so none of them is sent at all.
+            for value in ["-o", "garbage", "no-such-preset", "zzzz,80x24,0,0,0"] {
+                await #expect(throws: TmuxError.self) {
+                    try await server.selectLayout(window, WindowLayout.custom(value))
+                }
+            }
+            // The unchanged layout is the proof select-layout never ran; the
+            // server still answering is the proof it survived, which is what
+            // fails on 3.3a without the refusal.
+            #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
+        }
+    }
+
+    @Test("a unique preset prefix applies the same as tmux's own prefix lookup")
+    func uniquePresetPrefixApplies() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+
+            try await server.selectLayout(window, .evenHorizontal)
+            try await server.selectLayout(window, WindowLayout.custom("tile"))
+            let viaPrefix = try #require(
+                try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenHorizontal)
+            try await server.selectLayout(window, .tiled)
+            let viaFullName = try #require(
+                try await server.format("#{window_layout}", for: link))
+            #expect(viaPrefix == viaFullName)
+
+            try await server.selectLayout(window, .evenVertical)
+            try await server.selectLayout(window, WindowLayout.custom("even-h"))
+            let viaOtherPrefix = try #require(
+                try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenVertical)
+            try await server.selectLayout(window, .evenHorizontal)
+            let viaEvenHorizontalName = try await server.format("#{window_layout}", for: link)
+            #expect(viaOtherPrefix == viaEvenHorizontalName)
+        }
+    }
+
+    @Test("an ambiguous preset prefix is refused before dispatch, not sent to layout_parse")
+    func ambiguousPresetPrefixIsRefusedClientSide() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            let beforeAttempt = try #require(
+                try await server.format("#{window_layout}", for: link))
+
+            // "even-" names both even-horizontal and even-vertical; tmux's own
+            // layout_set_lookup treats that the same as no match at all and
+            // falls through to layout_parse, which is the path that kills
+            // 3.3 and 3.3a -- so this is refused rather than forwarded.
+            do {
+                try await server.selectLayout(window, WindowLayout.custom("even-"))
+                Issue.record("an ambiguous preset prefix was accepted")
+            } catch let error as TmuxError {
+                #expect(error.description.contains("even-horizontal"))
+                #expect(error.description.contains("even-vertical"))
+                #expect(!error.description.contains("The tmux invocation failed"))
+            }
+            #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
+        }
+    }
+
+    @Test("a mirrored preset is refused below the release that knows it")
+    func mirroredPresetIsRefusedBelowThreeFive() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            _ = try await server.splitWindow(window)
+            let mirrored = WindowLayout.custom("main-vertical-mirrored")
+            if try await server.version() >= TmuxVersion(major: 3, minor: 5) {
+                try await server.selectLayout(window, mirrored)
+            } else {
+                // An unknown name on 3.3a takes the same fatal path as any
+                // other unparseable layout.
+                await #expect(throws: TmuxError.self) {
+                    try await server.selectLayout(window, mirrored)
+                }
+            }
+            #expect(try await server.windows().first != nil)
+        }
+    }
+
+    @Test("a mirrored-name prefix resolves against the presets the running tmux actually has")
+    func mirroredPrefixResolvesAgainstRunningVersion() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            _ = try await server.splitWindow(window)
+            let running = try await server.version()
+
+            if running >= TmuxVersion(major: 3, minor: 5) {
+                // The mirrored presets exist from here on, so "main-v" and
+                // "main-h" name two presets apiece (main-vertical and its
+                // mirror, main-horizontal and its mirror) -- ambiguous, same
+                // as "even-" above, not a unique match.
+                try await server.selectLayout(window, .tiled)
+                let beforeAttempt = try #require(
+                    try await server.format("#{window_layout}", for: link))
+                for (prefix, full) in [("main-v", "main-vertical"), ("main-h", "main-horizontal")] {
+                    do {
+                        try await server.selectLayout(window, WindowLayout.custom(prefix))
+                        Issue.record("\(prefix) resolved unambiguously on \(running)")
+                    } catch let error as TmuxError {
+                        #expect(error.description.contains(full))
+                        #expect(error.description.contains("\(full)-mirrored"))
+                    }
+                }
+                #expect(
+                    try await server.format("#{window_layout}", for: link) == beforeAttempt)
+            } else {
+                // Below 3.5 the mirrored presets are not registered at all,
+                // so "main-v"/"main-h" name only main-vertical/main-horizontal
+                // and resolve the same as any other unique prefix.
+                try await server.selectLayout(window, .evenHorizontal)
+                try await server.selectLayout(window, WindowLayout.custom("main-v"))
+                let viaPrefix = try #require(
+                    try await server.format("#{window_layout}", for: link))
+                try await server.selectLayout(window, .evenHorizontal)
+                try await server.selectLayout(window, .mainVertical)
+                let viaFullName = try await server.format("#{window_layout}", for: link)
+                #expect(viaPrefix == viaFullName)
+            }
+        }
+    }
+
+    @Test("a JSON-shaped layout is refused before dispatch on a pre-3.8 server")
+    func jsonShapedLayoutIsRefusedClientSideBelowThreeEight() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version < TmuxVersion(major: 3, minor: 8) else {
+                // Covered the other way by wellFormedJSONLayoutAppliesFromThreeEight.
+                return
+            }
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            let beforeAttempt = try #require(
+                try await server.format("#{window_layout}", for: link))
+            // Well-formed JSON, but not a claim it is one this window's pane
+            // count could ever satisfy -- tmux never sees it either way.
+            let json = #"{"V":2,"L":{"t":"p","w":1,"h":1,"x":0,"y":0,"i":0,"I":"%0"}}"#
+            await #expect(throws: TmuxError.self) {
+                try await server.selectLayout(window, WindowLayout.custom(json))
+            }
+            // Unchanged layout is the observable proof select-layout never
+            // ran -- on 3.3/3.3a, an unrefused layout string like this
+            // crashes the daemon instead of being rejected.
+            #expect(try await server.format("#{window_layout}", for: link) == beforeAttempt)
+        }
+    }
+
+    @Test("a layout that only looks like JSON is refused on every version")
+    func malformedJSONShapedLayoutIsRefusedOnEveryVersion() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            do {
+                try await server.selectLayout(window, WindowLayout.custom("{not json"))
+                Issue.record("malformed JSON-shaped layout was accepted")
+            } catch let error as TmuxError {
+                #expect(error.description.contains("not valid JSON"))
+            }
+        }
+    }
+
+    @Test("a well-formed JSON layout applies from 3.8 onward")
+    func wellFormedJSONLayoutAppliesFromThreeEight() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version >= TmuxVersion(major: 3, minor: 8) else {
+                // Covered the other way by jsonShapedLayoutIsRefusedClientSideBelowThreeEight.
+                return
+            }
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(window) }
+            try await server.selectLayout(window, .tiled)
+            let saved = try #require(try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenVertical)
+            try await server.selectLayout(window, WindowLayout.custom(saved))
+            #expect(try await server.format("#{window_layout}", for: link) == saved)
+        }
+    }
+
+    @Test("a saved layout with more panes than the target window degrades without error")
+    func customLayoutWithExtraPanesDegradesSilently() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version >= TmuxVersion(major: 3, minor: 8) else {
+                // The classic form has no pane count of its own to read back
+                // against a mismatched window.
+                return
+            }
+            let session = try #require(try await server.sessions().first)
+            let source = try #require(try await server.windows().first)
+            for _ in 0..<3 { _ = try await server.splitWindow(source) }
+            try await server.selectLayout(source, .tiled)
+            let sourceLink = try #require(
+                try await server.windowLinks().first { $0.windowID == source.id })
+            let saved = try #require(try await server.format("#{window_layout}", for: sourceLink))
+
+            let target = try await server.newWindow(in: session, named: "fewer-panes").window
+            try await server.selectLayout(target, WindowLayout.custom(saved))
+            let targetPanes = try await server.panes().filter { $0.windowID == target.id }
+            // Raw tmux applies the same four-leaf tree to a one-pane window
+            // without refusing it; this is tmux's own behavior (see
+            // WindowLayout), not something this method validates.
+            #expect(targetPanes.count == 1)
+        }
+    }
+
     @Test("creating an object returns it, already read back")
     func creatingReturnsTheObject() async throws {
         try await withTmuxServer { server in
@@ -239,8 +500,8 @@ struct MutationTests {
             )
 
             // Without -l tmux would read this as the Enter key.
-            try await server.sendKeys(["echo Enter-as-text"], to: pane, literally: true)
-            try await server.sendKeys(["Enter"], to: pane)
+            try await server.send([.text("echo Enter-as-text")], to: pane)
+            try await server.send([.key("Enter")], to: pane)
 
             let typed = try await waitUntil {
                 try await server.capture(pane)
@@ -248,6 +509,165 @@ struct MutationTests {
             }
             #expect(typed)
         }
+    }
+
+    @Test("a pane can run a program and report how it exited")
+    func paneRunsAProgramAndReportsItsExit() async throws {
+        try await withTmuxServer { server in
+            // A pane is destroyed as its command ends unless tmux is told to
+            // keep it, and a destroyed pane cannot be asked anything.
+            try await server.setPanesOutliveTheirCommand(true)
+            #expect(try await server.panesOutliveTheirCommand() == true)
+            let session = try await server.newSession(named: "exits")
+            let window = try await server.newWindow(in: session).window
+
+            let pane = try await server.splitWindow(
+                window,
+                running: ["sh", "-c", "exit 42"],
+                environment: ["LIBTMUX_PROBE": "seen"]
+            )
+
+            let dead = try await waitUntil {
+                try await server.refresh(pane)?.isDead == true
+            }
+            #expect(dead)
+
+            let finished = try #require(try await server.refresh(pane))
+            // The point of the whole call: a harness learns the program failed
+            // without reading the screen or parsing a prompt.
+            #expect(finished.exitStatus == 42)
+            #expect(finished.startCommand?.contains("exit 42") == true)
+            #expect((finished.processID ?? 0) > 0)
+            #expect(finished.tty?.hasPrefix("/dev/") == true)
+        }
+    }
+
+    @Test("panes outliving their command is off until it is asked for")
+    func panesOutliveTheirCommandIsOffByDefault() async throws {
+        try await withTmuxServer { server in
+            // tmux's own default. Asserted because `exitStatus` is only ever
+            // readable when this has been turned on, so a caller who never
+            // calls it should find nothing rather than something misleading.
+            #expect(try await server.panesOutliveTheirCommand() == false)
+
+            try await server.setPanesOutliveTheirCommand(true)
+            #expect(try await server.panesOutliveTheirCommand() == true)
+            try await server.setPanesOutliveTheirCommand(false)
+            #expect(try await server.panesOutliveTheirCommand() == false)
+        }
+    }
+
+    @Test("a live pane has no exit status, and a program sees its environment")
+    func livePaneHasNoExitStatusAndSeesItsEnvironment() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "env")
+            let window = try await server.newWindow(in: session).window
+            let pane = try await server.splitWindow(
+                window,
+                running: ["sh", "-c", "printenv LIBTMUX_PROBE; sleep 30"],
+                environment: ["LIBTMUX_PROBE": "seen"]
+            )
+
+            // Alive, so nothing has exited and there is no status to report.
+            #expect(pane.exitStatus == nil)
+
+            let printed = try await waitUntil {
+                try await server.capture(pane).contains { $0.contains("seen") }
+            }
+            #expect(printed)
+        }
+    }
+
+    @Test("a command line that is a key name is typed, not pressed")
+    func keyNamedCommandLineIsTyped() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "keyname")
+            let window = try await server.newWindow(in: session).window
+            let pane = try #require(
+                try await server.snapshot().panes(of: window).first
+            )
+            // `cat` echoes the line it is given, so what the pane received is
+            // readable without depending on a shell's diagnostics.
+            try await server.respawn(pane, running: ["cat"])
+
+            try await server.run("Tab", in: pane)
+
+            let echoed = try await waitUntil {
+                try await server.capture(pane).contains { $0.contains("Tab") }
+            }
+            #expect(echoed)
+        }
+    }
+
+    @Test("mixed pane input groups into one send-keys per run of a kind")
+    func mixedPaneInputGroupsByKind() async throws {
+        let pane = Pane(
+            id: "%0",
+            index: 0,
+            width: 80,
+            height: 24,
+            isActive: true,
+            isDead: false,
+            isInputOff: false,
+            modeCount: 0,
+            isSynchronized: false,
+            currentCommand: "cat",
+            currentPath: "/",
+            isAtTop: true,
+            isAtBottom: true,
+            isAtLeft: true,
+            isAtRight: true,
+            windowID: "@0",
+            incarnation: ServerIncarnation(
+                endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/x/s"),
+                socketPath: "/tmp/libtmux-swift-test/x/s",
+                processID: 1,
+                startedAt: 1
+            )
+        )
+        let commands = Server.sendKeysCommands(
+            for: [.text("a"), .text("b"), .key("Enter"), .key("C-c"), .text("c")],
+            to: pane
+        )
+        #expect(commands.count == 3)
+        #expect(commands[0].arguments == ["-t", "%0", "-l", "--", "a", "b"])
+        #expect(commands[1].arguments == ["-t", "%0", "--", "Enter", "C-c"])
+        #expect(commands[2].arguments == ["-t", "%0", "-l", "--", "c"])
+        #expect(Server.sendKeysCommands(for: [], to: pane).isEmpty)
+    }
+
+    @Test("a trailing semicolon is escaped so tmux does not read it as the end of the command")
+    func trailingSemicolonIsEscaped() throws {
+        let pane = Pane(
+            id: "%0",
+            index: 0,
+            width: 80,
+            height: 24,
+            isActive: true,
+            isDead: false,
+            isInputOff: false,
+            modeCount: 0,
+            isSynchronized: false,
+            currentCommand: "cat",
+            currentPath: "/",
+            isAtTop: true,
+            isAtBottom: true,
+            isAtLeft: true,
+            isAtRight: true,
+            windowID: "@0",
+            incarnation: ServerIncarnation(
+                endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/x/s"),
+                socketPath: "/tmp/libtmux-swift-test/x/s",
+                processID: 1,
+                startedAt: 1
+            )
+        )
+        let commands = Server.sendKeysCommands(
+            for: [.text("echo hi;"), .key(";")],
+            to: pane
+        )
+        #expect(commands[0].arguments == ["-t", "%0", "-l", "--", "echo hi\\;"])
+        #expect(commands[1].arguments == ["-t", "%0", "--", "\\;"])
     }
 
     @Test("a rejected mutation reports what tmux objected to")

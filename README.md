@@ -62,7 +62,7 @@ unless you ask.
 | --- | --- | --- | --- |
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
-| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
 | **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
 
@@ -93,7 +93,7 @@ Neither is what you want from alpha software, so name an exact release:
 
 > [!NOTE]
 > This page documents unreleased `master`. The exact dependency above installs
-> the released alpha.3 API; [read that tag's README][alpha3-readme] for matching
+> the released alpha.5 API; [read that tag's README][alpha5-readme] for matching
 > examples. To compile the examples on this page, depend on `master`:
 
 ```swift
@@ -179,15 +179,66 @@ incarnation before and after them and reports a replacement, but another client
 can still mutate the same daemon between listings. The result is not a tmux
 transaction.
 
+Session creation times also have a local Foundation `Date` view:
+
+```swift
+let created = session.creationDate
+print(created)
+```
+
+`createdAt` remains exact integer epoch seconds in snapshots and encoded data.
+Daemon identity continues to use the original integer `startedAt`.
+
 ## Change what is there
 
 ```swift
 let session = try await server.newSession(named: "work", windowName: "editor")
-_ = try await server.setOption("@purpose", to: "development", scope: .session(session))
+try await server.setOption("@purpose", to: "development", scope: .session(session))
 let logs = try await server.newWindow(in: session, named: "logs").window
 let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)
 ```
+
+tmux keeps every option as text. A `TmuxOptionKey` names an option, the type
+of its value and the table it lives in, so a read comes back as a `Bool` or an
+`Int`. A typed set cannot land somewhere else by mistake either. tmux picks the
+table for its own options from the name alone, so a set aimed at the wrong
+table exits 0 and changes whichever session tmux considers current:
+
+```swift
+try await server.setOption(.mouse, to: true)
+let scrollback = try await server.option(.historyLimit)
+```
+
+A value tmux refuses, such as `history-limit` below zero, throws as any other
+change does.
+
+### Running a program, not typing one
+
+A pane can be created running a program of its own, which is what a test
+harness wants: nothing has to survive a shell's quoting, nothing is echoed
+into the pane's output, and how it finished is a value rather than something
+to read off the screen.
+
+```swift
+let pane = try await server.splitWindow(
+    window,
+    running: ["sh", "-c", "exit 42"],
+    environment: ["CI": "1"]
+)
+```
+
+`Pane.exitStatus` is `nil` while the pane lives and carries the status once it
+does not — so ask tmux to keep the pane, or it is destroyed as its command
+ends and there is nothing left to ask:
+
+```swift
+try await server.setPanesOutliveTheirCommand(true)
+```
+
+`Pane` also carries `processID`, `tty`, `title`, and `startCommand` — what the
+pane was asked to run, which still answers after the process has moved on,
+unlike `currentCommand`.
 
 Read a pane back the way a person would:
 
@@ -206,17 +257,36 @@ for name in ["edit", "test", "logs"] {
 _ = try await server.run(plan)
 ```
 
+Named layouts use `WindowLayout`; saved tmux layout strings use `custom`:
+
+```swift
+try await server.selectLayout(window, .evenHorizontal)
+```
+
+```swift
+try await server.selectLayout(window, .custom(savedLayout))
+```
+
+The string overload remains available. `WindowPlan` also accepts typed layouts;
+its stored layout and JSON/YAML representation remain strings.
+
 ## Filters that travel
 
 Filter with the standard library when the predicate is local to your code.
 `FilterExpr` is for when the filter has to leave it — stored in a config, sent to
-another process, handed to a tool. It is built from key paths, so the compiler
-rejects a text operator on a number, and it holds no closures, so it encodes:
+another process, handed to a tool. Each model's `FilterFields` lists supported
+fields. The compiler checks the field, model and operator types, and expressions
+contain no closures, so they encode:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = FilterExpr<Pane>.where(
+    Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
 let matching = try await server.panes().filter(expression)
 ```
+
+Descriptor construction does not throw. Existing key-path construction remains
+available with `QueryConstructionError` for unsupported fields. Validate decoded
+or dynamically built expressions with `validate()` before evaluating them.
 
 The same expression can also travel all the way to tmux, so the rows that would
 have been discarded never cross the process boundary:
@@ -239,7 +309,7 @@ which fields carry which type — is in [`Filtering.md`][filtering].
 ## One switch changes how work reaches tmux
 
 …and never what you get back. `TmuxMode` is the dial, and it has two settings:
-(One caveat, in [typed errors](#typed-errors-across-a-scope): a scope takes a
+(One caveat, in [typed errors](#typed-errors-and-which-type): a scope takes a
 closure, so it widens the thrown type.)
 
 | Mode | How work travels | Where it wins |
@@ -287,6 +357,30 @@ let sessions = try await server.using(mode) { server in
 Nothing is global and nothing is inherited by a task. `server.mode` reports
 which mode a value carries, so the rule can be read rather than trusted.
 
+### Bounding a command
+
+Cancellation answers "the caller stopped waiting", not "tmux stopped
+answering", so a daemon that is swapping, stopped, or holding a lock will hold
+the calling task for as long as it stays that way. A bound is the other
+question, and it lives on the value the same way a mode does:
+
+```swift
+let sessions = try await server.withTimeout(.seconds(5)).sessions()
+```
+
+An elapsed bound throws `TmuxError.timedOut(after:)` — separate from
+`cancelled`, because you asked for it, and because the command may still have
+reached tmux. Waiting for a channel stays outside it and takes its own bound
+instead, since a wait is *meant* to be slow and a server-wide limit would turn
+every one of them into a failure:
+
+```swift
+try await server.withTimeout(.seconds(5)).wait(
+    for: channel,
+    timeout: .milliseconds(250)
+)
+```
+
 ### What it costs
 
 `swift run --package-path Benchmarks libtmux-bench` runs each scenario under
@@ -302,19 +396,19 @@ that check.
 
 | Work | Direct | Connected |
 | --- | --- | --- |
-| list-sessions, once | 1 process, 1 round trip | 1 process, 2 round trips |
-| list-sessions, twenty times | 20 processes, 20 round trips | 1 process, 21 round trips |
-| sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 7 round trips |
-| sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 5 round trips |
-| the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 5 round trips |
-| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 8 round trips |
-| the same five as one command list | 3 processes, 3 round trips | 1 process, 4 round trips |
-| new-window then split, read back | 5 processes, 5 round trips | 1 process, 6 round trips |
+| list-sessions, once | 1 process, 1 round trip | 1 process, 3 round trips |
+| list-sessions, twenty times | 20 processes, 20 round trips | 1 process, 22 round trips |
+| sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 8 round trips |
+| sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 6 round trips |
+| the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 6 round trips |
+| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 9 round trips |
+| the same five as one command list | 3 processes, 3 round trips | 1 process, 5 round trips |
+| new-window then split, read back | 5 processes, 5 round trips | 1 process, 7 round trips |
 
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |
 | tmux processes spent | 2 | 1 |
-| round trips spent | 2 | 2 |
+| round trips spent | 2 | 3 |
 
 <!-- mode-matrix:end -->
 
@@ -334,21 +428,41 @@ A connection can do one thing a process cannot, which is report what changed
 without being asked:
 
 ```swift
-let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-    for try await notification in events.notifications
-    where notification.name == "output" {
-        return notification.arguments
+let firstOutput: String? = try await server.connected(attachingTo: "work") { server, events in
+    for try await notification in events.notifications {
+        if case let .output(_, bytes) = notification.event {
+            return String(decoding: bytes, as: UTF8.self)
+        }
     }
     return nil
 }
 ```
 
-### Typed errors across a scope
+### Typed errors, and which type
 
-Every call throws `TmuxError` and says so, so a program can be
-`throws(TmuxError)` from top to bottom. The scoped forms are the exception:
-they take a closure, and Swift 6.2 cannot carry a closure's thrown type out of
-one. Wrap the scope to narrow it back:
+Talking to tmux throws `TmuxError` and says so, on nearly two hundred
+declarations, so a program that only talks to tmux can be `throws(TmuxError)`
+from top to bottom. A call that does something *besides* talk to tmux names
+that second failure rather than folding it into the first, because a caller
+who can retry a refused command cannot retry an exhausted match budget:
+
+| Thrown type | What it adds to a tmux failure |
+| --- | --- |
+| `TmuxError` | nothing — the tmux command itself |
+| `OutputWaitError` | `RegexMatchError`, from matching the pane |
+| `FilteredListingError` | `RegexMatchError`, from narrowing the rows |
+| `FilterSelectionError` | `RegexMatchError` and `CardinalityError` |
+| `RegexCompileError` | compiling a pattern, which reaches no server |
+| `FilterLookupError`, `QueryConstructionError`, `FilterValidationError` | building a filter, which reaches no server |
+| `WorkspaceBuilderError` | `TmuxWorkspace`'s own rollback reporting |
+
+`OutputWaitError` and `FilteredListingError` hold the same two cases and stay
+distinct types on purpose: `catch` at the call site should not accept a wait's
+failure where a listing's was meant.
+
+The scoped forms are the one place the type is wider than the work: they take
+a closure, and Swift 6.2 cannot carry a closure's thrown type out of one. Wrap
+the scope to narrow it back:
 
 ```swift
 func names(_ server: Server) async throws(TmuxError) -> [String] {
@@ -364,6 +478,47 @@ This is a language limitation rather than a choice: a `throws(TmuxError)`
 overload of the scopes is unreachable, because a closure literal's thrown type
 is never inferred from its body, and a scope that fails on its own behalf has no
 way to rethrow that as the body's error type.
+
+`TmuxError` and the query/matching error enums provide readable
+`CustomStringConvertible` and Foundation `LocalizedError` descriptions:
+
+```swift
+let message = error.localizedDescription
+print(message)
+```
+
+The enum cases and associated values remain available for structured handling.
+Descriptions omit raw decoded values and predicate literals. Command failure
+reasons retain tmux's diagnostic text.
+
+### Standing in for tmux, or watching it
+
+Every command that takes a process goes through one `ProcessTransport`, and a
+`Server` takes yours. That is the seam for the two things the library will not
+do for you. A connected server carries most of its commands over the
+connection and reaches the transport only for the ones that need a process of
+their own. A **stub**
+answers without a tmux on the machine, so a consumer's own suite can cover its
+decoding and error paths in milliseconds:
+
+```swift
+let server = try Server(socketPath: "/tmp/libtmux-swift-dev/none", transport: transport)
+return try await server.sessions().map(\.name)
+```
+
+A **decorator** wraps the shipped `SubprocessTransport` to log, time, trace or
+count the commands that reach it. The library takes no logging dependency and
+installs no global hook, because a library that picks the logger picks it for
+its host — `ProcessTransport`'s own documentation carries a worked example.
+
+A connected server is the exception, and worth knowing before you rely on one
+for tracing: a control connection is a single long-lived process this library
+owns, so commands travel down its pipe rather than through a transport. Inside
+`connected`/`using`, a decorator sees only the calls that take their own
+process — `wait(for:)` and `buffer(named:)`. Directly, it sees everything.
+
+Driving a real tmux in tests is a different job, and `TmuxFixture` does it:
+one private socket per case, reaped even when a run is killed outright.
 
 ## Waiting without polling
 
@@ -451,7 +606,7 @@ let workspace = Workspace(
     windows: [
         WindowPlan(
             windowName: "editor",
-            layout: "even-horizontal",
+            layout: .evenHorizontal,
             panes: [PanePlan(), PanePlan()]
         ),
         WindowPlan(
@@ -760,13 +915,12 @@ executed against real tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-47 documented examples mapped to consumer sources
-41 have live-test call sites
 ```
 
-That check fails if a fence here has no example behind it. The Examples test
-run is what compiles those sources and exercises the 41 live call sites; CI
-runs both gates.
+That check fails if a fence here has no example behind it, or if CI's
+`--min-executed` floor stops being met. The Examples test run is what compiles
+those sources and exercises the ones with a live-test call site; CI runs both
+gates.
 [`Examples/README.md`](Examples/) says how a fence is matched, and what the
 check cannot see.
 
@@ -870,4 +1024,4 @@ MIT. See [LICENSE](LICENSE).
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
-[alpha3-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.3/README.md
+[alpha5-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.5/README.md

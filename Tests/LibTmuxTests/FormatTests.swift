@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("ad-hoc formats", .timeLimit(.minutes(1)))
+@Suite("ad-hoc formats", .hangLimit)
 struct FormatTests {
     @Test("a format reads a field the models do not carry")
     func formatReadsAnUnmodelledField() async throws {
@@ -162,7 +162,7 @@ struct FormatTests {
             // Only the first separator divides the probe from the answer, so
             // a value containing one of its own is not cut short by it.
             let carried = "a\(FormatProjection.separator)b"
-            _ = try await server.setOption("@carried", to: carried, scope: .server)
+            try await server.setOption("@carried", to: carried, scope: .server)
             #expect(
                 try await server.format("#{@carried}", for: pane, through: link) == carried
             )

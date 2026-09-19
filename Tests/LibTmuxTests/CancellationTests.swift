@@ -4,12 +4,89 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("cancellation", .timeLimit(.minutes(1)))
+@Suite("cancellation", .hangLimit)
 struct CancellationTests {
     /// `wait-for` blocks until something signals the channel, which is the
     /// simplest tmux command that reliably does not return on its own.
     private func blockingCommand() -> TmuxCommand {
         TmuxCommand("wait-for", ["libtmux-cancellation-channel"])
+    }
+
+    @Test("a command that never answers ends at its own deadline")
+    func boundedCommandEndsAtItsDeadline() async throws {
+        try await withTmuxServer { server in
+            let bounded = server.withTimeout(.milliseconds(250))
+            let started = ContinuousClock.now
+
+            await #expect(throws: TmuxError.timedOut(after: .milliseconds(250))) {
+                _ = try await bounded.run(blockingCommand())
+            }
+
+            // The bound is the point: without it this call does not return at
+            // all, so the elapsed time is the assertion, not decoration.
+            #expect(started.duration(to: .now) < .seconds(5))
+            // The daemon is untouched -- only this command's client was killed.
+            let running = try await server.isRunning()
+            #expect(running)
+        }
+    }
+
+    @Test("a command that takes its own process is still bounded")
+    func ownProcessCommandIsStillBounded() async throws {
+        try await withTmuxServer { server in
+            // A buffer read takes its own process because a connection cannot
+            // report its bytes unambiguously -- which is not a reason to let
+            // it outlast the bound. Proven through the transport rather than
+            // against tmux, since a real buffer read returns promptly.
+            let stalled = Server(
+                endpoint: server.endpoint,
+                transport: NeverAnsweringTransport()
+            ).withTimeout(.milliseconds(250))
+
+            await #expect(throws: TmuxError.timedOut(after: .milliseconds(250))) {
+                _ = try await stalled.buffer(named: "anything")
+            }
+        }
+    }
+
+    @Test("a bound is a property of the value, not of the server")
+    func boundBelongsToTheValue() async throws {
+        try await withTmuxServer { server in
+            #expect(server.commandTimeout == nil)
+            #expect(server.withTimeout(.seconds(1)).commandTimeout == .seconds(1))
+            // Same daemon, so the two values are the same server.
+            #expect(server.withTimeout(.seconds(1)) == server)
+            #expect(server.withTimeout(.seconds(1)).withTimeout(nil).commandTimeout == nil)
+        }
+    }
+
+    @Test("waiting for a channel is not bounded by the server's command timeout")
+    func channelWaitIgnoresTheCommandTimeout() async throws {
+        try await withTmuxServer { server in
+            let bounded = server.withTimeout(.milliseconds(100))
+            let waiting = Task { try await bounded.wait(for: "libtmux-unbounded-channel") }
+            // A wait is meant to outlast an ordinary command's bound: this one
+            // is ten times it and still has to be the signal that ends it.
+            try await Task.sleep(for: .seconds(1))
+            try await server.signal("libtmux-unbounded-channel")
+
+            try await waiting.value
+        }
+    }
+
+    @Test("a channel wait ends at its own timeout when given one")
+    func channelWaitHonorsItsOwnTimeout() async throws {
+        try await withTmuxServer { server in
+            let refused = await #expect(
+                throws: TmuxError.timedOut(after: .milliseconds(250))
+            ) {
+                try await server.wait(
+                    for: "libtmux-bounded-channel",
+                    timeout: .milliseconds(250)
+                )
+            }
+            #expect(refused != nil)
+        }
     }
 
     @Test("a cancelled request reports cancellation rather than an empty answer")
@@ -105,5 +182,39 @@ struct CancellationTests {
             let running = try await server.isRunning()
             #expect(running)
         }
+    }
+}
+
+/// Accepts a command and never answers, so a bound is the only thing that can
+/// end the call.
+///
+/// `NSLock` rather than `Mutex`: `Synchronization` is macOS 15 and this package
+/// declares macOS 13, which a Linux compiler has no availability to check —
+/// the macOS lane would be the only thing that failed, after a push.
+final class NeverAnsweringTransport: ProcessTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var parked: [CheckedContinuation<Void, Never>] = []
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        // Suspends until cancelled, which is what the deadline race does to
+        // it. Sleeping for a fixed span would race the bound instead.
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.withLock { parked.append(continuation) }
+            }
+        } onCancel: {
+            let waiting = lock.withLock {
+                let waiters = parked
+                parked.removeAll()
+                return waiters
+            }
+            for waiter in waiting { waiter.resume() }
+        }
+        throw .cancelled
     }
 }

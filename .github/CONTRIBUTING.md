@@ -212,6 +212,40 @@ that package:
 $ python3 Scripts/check_examples.py --min-executed 40
 ```
 
+Typed-filter consumers compile through the public module. Unsupported fields,
+operators, model roots and identifier types must fail type checking:
+
+```console
+$ python3 Scripts/check_filter_types.py
+```
+
+Every API break since the last release is declared. The alpha breaks its
+surface deliberately, so "did anything break" is the wrong question and "is
+every break written down" is the useful one. The script runs
+`swift package diagnose-api-breaking-changes` against the last tag, fetches
+that tag when a shallow clone lacks it, and fails three ways: a break absent
+from `.github/api-breakage-allowlist.txt`, an allowlist entry that no longer
+describes a real break, and a break to a `public` declaration that
+`CHANGELOG.md` does not carry under `## [Unreleased]`. A `package` declaration
+is exempt from that last one — no consumer can see it change:
+
+```console
+$ python3 Scripts/check_api_breakage.py
+```
+
+The allowlist keeps the format the toolchain documents, one exact message per
+line and nothing else, so it can also be passed to
+`--breakage-allowlist-path` directly. That format tolerates no comments: one
+non-message line anywhere in the file silently voids **every** entry in it,
+which is why a justification goes in `CHANGELOG.md` rather than beside the
+entry it explains.
+
+The comparison cannot see a declaration behind a trait. `Workspace.decode(yaml:)`
+exists only with `YAMLWorkspaces`, and the toolchain reports no change to it
+even when run with `--traits YAMLWorkspaces` — measured when it gained a
+parameter and the JSON sibling beside it was reported. A change to trait-gated
+API has to be declared in the changelog by hand.
+
 Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 
@@ -362,6 +396,13 @@ is missing:
 - Rename `## [Unreleased]` in `CHANGELOG.md` to `## [<version>] - <date>` and
   open a fresh `## [Unreleased]` above it. Those lines become the release
   notes, so an empty section fails the release rather than publishing one.
+- Move the API-breakage baseline forward: set `--baseline` in
+  `Scripts/check_api_breakage.py` to the version being tagged, and empty
+  `.github/api-breakage-allowlist.txt`. Every line in it describes a break
+  against the *previous* release, and the notes just written are where those
+  breaks are now recorded. Nothing fails if this is skipped — the gate keeps
+  measuring against the older tag and answering a question nobody asked, which
+  is why it is listed here rather than left to be noticed.
 
 Rehearse before tagging. This runs every check and stops before publishing, so
 the release path is not being executed for the first time on the release:

@@ -2,11 +2,11 @@ import Foundation
 
 /// A tmux server, addressed by its endpoint.
 ///
-/// `Server` is a value: copying one is free, copies compare equal, and passing
-/// one across a task boundary needs no ceremony. The mutable part — the process
-/// boundary and anything cached about the running daemon — lives behind an
-/// actor that every copy shares, so two copies of the same server coordinate
-/// with each other rather than racing.
+/// `Server` is a value: copying one is free, passing one across a task
+/// boundary needs no ceremony, and two values addressing the same daemon the
+/// same way compare equal even when each was constructed separately. Nothing
+/// is cached about the running daemon, so there is no shared mutable state for
+/// copies to coordinate over — every answer comes from asking tmux.
 public struct Server: Sendable, Hashable {
     /// Where this server listens. Every command carries it, so no call can
     /// reach the ambient server by accident.
@@ -22,6 +22,19 @@ public struct Server: Sendable, Hashable {
     let connection: ControlSession?
     /// The session the connection attached to, so ``mode`` can name it.
     private let attachedSession: String?
+
+    /// How long one tmux command may take before it is abandoned.
+    ///
+    /// `nil`, the default, waits as long as tmux does. A bound belongs on the
+    /// value for the same reason ``mode`` does: nothing here is global and
+    /// nothing is inherited by a task, so this is the whole of the answer for
+    /// the server in hand and a program can read it rather than trust it.
+    ///
+    /// ``wait(for:timeout:)`` is deliberately outside it — waiting for a channel is
+    /// meant to take as long as the thing being waited on, so a server-wide
+    /// bound would turn every such wait into a failure. That call takes its
+    /// own `timeout` instead.
+    public let commandTimeout: Duration?
 
     /// The tmux this server runs, resolved to a path.
     ///
@@ -44,27 +57,46 @@ public struct Server: Sendable, Hashable {
         return .connected(to: attachedSession)
     }
 
+    /// A server at an absolute socket path.
+    ///
+    /// - Parameters:
+    ///   - socketPath: where the daemon listens.
+    ///   - tmuxExecutable: the tmux to run. A bare name is resolved on `PATH`
+    ///     once, here, so ``tmuxExecutable`` reports a path.
+    ///   - configurationFile: a `-f` configuration, or tmux's own default.
+    ///   - transport: how a command reaches a process. The default spawns
+    ///     tmux; pass your own to stand in for it, or to wrap it and see
+    ///     every command. See ``ProcessTransport``.
     public init(
         socketPath: String,
         tmuxExecutable: String = "tmux",
-        configurationFile: String? = nil
+        configurationFile: String? = nil,
+        transport: any ProcessTransport = SubprocessTransport()
     ) throws(TmuxError) {
         self.init(
             endpoint: try Endpoint(socketPath: socketPath),
             tmuxExecutable: tmuxExecutable,
-            configurationFile: configurationFile
+            configurationFile: configurationFile,
+            transport: transport
         )
     }
 
+    /// A server at a socket name, which tmux resolves inside `TMUX_TMPDIR`.
+    ///
+    /// The same name can denote different daemons in different environments;
+    /// ``init(socketPath:tmuxExecutable:configurationFile:transport:)`` names
+    /// one socket. Parameters are otherwise as there.
     public init(
         socketName: String,
         tmuxExecutable: String = "tmux",
-        configurationFile: String? = nil
+        configurationFile: String? = nil,
+        transport: any ProcessTransport = SubprocessTransport()
     ) throws(TmuxError) {
         self.init(
             endpoint: try Endpoint(socketName: socketName),
             tmuxExecutable: tmuxExecutable,
-            configurationFile: configurationFile
+            configurationFile: configurationFile,
+            transport: transport
         )
     }
 
@@ -86,6 +118,19 @@ public struct Server: Sendable, Hashable {
         )
         self.connection = nil
         self.attachedSession = nil
+        self.commandTimeout = nil
+    }
+
+    /// The same server, with every ordinary command bounded by `timeout`.
+    ///
+    /// ```swift
+    /// let sessions = try await server.withTimeout(.seconds(5)).sessions()
+    /// ```
+    ///
+    /// Passing `nil` removes the bound. The returned value shares this
+    /// server's daemon and connection, so it compares equal to it.
+    public func withTimeout(_ timeout: Duration?) -> Server {
+        Server(self, commandTimeout: timeout)
     }
 
     /// The same server in another mode.
@@ -104,6 +149,18 @@ public struct Server: Sendable, Hashable {
         self.runtime = other.runtime
         self.connection = connection
         self.attachedSession = session
+        self.commandTimeout = other.commandTimeout
+    }
+
+    /// The same server under a different bound, keeping its mode.
+    private init(_ other: Server, commandTimeout: Duration?) {
+        self.endpoint = other.endpoint
+        self.tmuxExecutablePath = other.tmuxExecutablePath
+        self.configurationFilePath = other.configurationFilePath
+        self.runtime = other.runtime
+        self.connection = other.connection
+        self.attachedSession = other.attachedSession
+        self.commandTimeout = commandTimeout
     }
 
     /// Runs one tmux command and hands back what tmux said.
@@ -111,15 +168,30 @@ public struct Server: Sendable, Hashable {
     /// A nonzero status is a reply, not an error: `has-session` answers a
     /// question with its exit code, and a rejected command carries its reason
     /// on standard error. Each output stream is capped at 1 MiB.
+    ///
+    /// This is also the escape hatch to `wait-for -L`, which has no typed
+    /// wrapper -- see ``wait(for:timeout:)`` for why, and for the hazard reaching for
+    /// it here carries: a timed-out locker is never removed from tmux's own
+    /// queue, so a caller who bounds this call can wedge the channel for
+    /// every later locker on the server, permanently.
     public func run(_ command: TmuxCommand) async throws(TmuxError) -> TmuxReply {
         try await run(rawArguments: command.argumentVector)
     }
 
     func run(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
         guard let connection else {
-            return try await runtime.run(rawArguments: rawArguments)
+            return try await runtime.run(rawArguments: rawArguments, within: commandTimeout)
         }
-        return try await connection.reply(to: rawArguments)
+        return try await connection.reply(to: rawArguments, within: commandTimeout)
+    }
+
+    /// Runs a command in its own process with no bound at all.
+    ///
+    /// For the one command whose whole purpose is to take as long as it takes.
+    /// ``runInOwnProcess(rawArguments:)`` is the bounded counterpart, for a
+    /// command that needs its own process for some *other* reason.
+    func runUnbounded(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
+        try await runtime.run(rawArguments: rawArguments, within: nil)
     }
 
     package func run(
@@ -128,19 +200,24 @@ public struct Server: Sendable, Hashable {
     ) async throws(TmuxError) -> TmuxReply {
         try await runtime.run(
             rawArguments: command.argumentVector,
-            environmentOverrides: launchEnvironment
+            environmentOverrides: launchEnvironment,
+            within: commandTimeout
         )
     }
 
     /// Runs a command in a process of its own, whatever mode this server is in.
     ///
-    /// For the one command that does not return promptly. tmux runs a control
+    /// For a command a connection cannot carry faithfully. tmux runs a control
     /// client's commands one at a time, so a command that blocks holds every
     /// command behind it — including whichever one would release it. Sending
     /// such a command over the connection would deadlock the scope; giving it
     /// its own process keeps the answer identical and the connection free.
+    ///
+    /// Still bounded by ``commandTimeout``: needing its own process is not a
+    /// reason to wait forever. ``runUnbounded(rawArguments:)`` is for the one
+    /// command that is *meant* to.
     func runInOwnProcess(rawArguments: [String]) async throws(TmuxError) -> TmuxReply {
-        try await runtime.run(rawArguments: rawArguments)
+        try await runtime.run(rawArguments: rawArguments, within: commandTimeout)
     }
 
     package func runIsolated(
@@ -149,7 +226,8 @@ public struct Server: Sendable, Hashable {
     ) async throws(TmuxError) -> TmuxReply {
         try await runtime.run(
             rawArguments: command.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
     }
 
@@ -166,7 +244,8 @@ public struct Server: Sendable, Hashable {
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
         return try request.validate(reply)
     }
@@ -193,12 +272,13 @@ public struct Server: Sendable, Hashable {
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
         return try request.validate(reply)
     }
 
-    package func runTerminatingIsolated(
+    func runTerminatingIsolated(
         _ command: TmuxCommand,
         expecting incarnation: ServerIncarnation,
         perStreamOutputLimit: Int
@@ -211,7 +291,8 @@ public struct Server: Sendable, Hashable {
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,
-            perStreamOutputLimit: perStreamOutputLimit
+            perStreamOutputLimit: perStreamOutputLimit,
+            within: commandTimeout
         )
         return try request.validateTerminating(reply)
     }
@@ -272,6 +353,29 @@ public struct Server: Sendable, Hashable {
             projection: Client.projection,
             row: { Client(row: $0, endpoint: endpoint) }
         )
+    }
+
+    /// Sessions attached by at least one client this process did not open for
+    /// its own internal use.
+    ///
+    /// ``Session/isAttached`` answers tmux's own question — is anything
+    /// attached — which counts a connection this process opened for itself
+    /// the same as a person's. So a session reads as attached from inside
+    /// ``connected(attachingTo:_:)-(String,_)``, and while a
+    /// ``waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
+    /// is running, even when nobody is watching it.
+    ///
+    /// Ask this instead when the question is whether a *person* is there —
+    /// before writing into a pane someone may be using, or before tearing a
+    /// session down. A client is matched by process id, which this library
+    /// records for every connection it opens.
+    public func sessionIDsAttachedByOthers() async throws(TmuxError) -> Set<SessionID> {
+        var attached: Set<SessionID> = []
+        for client in try await clients() {
+            guard await !OwnedControlClients.shared.contains(client.processID) else { continue }
+            attached.insert(client.sessionID)
+        }
+        return attached
     }
 
     /// Reads every object from one daemon incarnation.
@@ -357,11 +461,16 @@ public struct Server: Sendable, Hashable {
     ///
     /// Asks the question tmux has a command for rather than listing every
     /// session and searching one: `has-session` answers with its exit status,
-    /// so this decodes nothing and stays correct for a name a listing would
-    /// have to be parsed to find.
+    /// so this decodes nothing.
+    ///
+    /// The name is matched exactly, the way ``session(named:)`` matches it.
+    /// tmux's own `-t` would also accept a unique prefix of it and a glob, so
+    /// `hasSession("wor")` answered `true` for a server whose only session is
+    /// `work` while `session(named: "wor")` answered `nil`.
     public func hasSession(_ name: String) async throws(TmuxError) -> Bool {
         try await run(
-            rawArguments: TmuxCommand("has-session", ["-t", name]).argumentVector
+            rawArguments: TmuxCommand("has-session", ["-t", tmuxExactSession(name)])
+                .argumentVector
         ).isSuccess
     }
 
@@ -373,20 +482,45 @@ public struct Server: Sendable, Hashable {
         ).isSuccess
     }
 
+    /// Two servers are the same server when they address the same daemon the
+    /// same way.
+    ///
+    /// The endpoint, the tmux binary and the configuration file are what
+    /// decide that: a command built from either value reaches the same daemon
+    /// and is parsed by the same tmux. A mode, a bound, and the process
+    /// boundary underneath are ways of *reaching* that server rather than
+    /// different servers, so they are not part of this — which is what lets
+    /// `server.withTimeout(_:)` and a connected scope's server still compare
+    /// equal to the one they came from.
+    ///
+    /// A substituted ``ProcessTransport`` is deliberately not part of it
+    /// either, which has one consequence worth stating: a server wired to a
+    /// test double compares equal to one that reaches the real daemon. That
+    /// is the intended reading — a double stands in for *that* server — but it
+    /// means equality answers "which tmux is this addressing", never "will
+    /// these two behave alike".
     public static func == (lhs: Server, rhs: Server) -> Bool {
-        lhs.runtime === rhs.runtime
+        lhs.endpoint == rhs.endpoint
+            && lhs.tmuxExecutablePath == rhs.tmuxExecutablePath
+            && lhs.configurationFilePath == rhs.configurationFilePath
     }
 
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(ObjectIdentifier(runtime))
+        hasher.combine(endpoint)
+        hasher.combine(tmuxExecutablePath)
+        hasher.combine(configurationFilePath)
     }
 }
 
-/// The mutable half of a server.
+/// How a command reaches one daemon: which tmux to run, with what
+/// configuration, over which process boundary.
 ///
-/// An actor, so that copies of one ``Server`` coordinate rather than race: the
-/// value is free to be copied because everything mutable lives behind here.
-actor ServerRuntime {
+/// This was an actor, on the reasoning that copies of a ``Server`` should
+/// coordinate rather than race. It holds no mutable state and never did, so
+/// there was nothing to coordinate and the isolation bought only an executor
+/// hop per command — and an identity, which is what made two servers on one
+/// socket compare unequal. A value says what it is instead.
+struct ServerRuntime: Sendable {
     private let endpoint: Endpoint
     private let tmuxExecutable: String
     private let configurationFile: String?
@@ -404,32 +538,35 @@ actor ServerRuntime {
         self.transport = transport
     }
 
+    /// - Parameter bound: required, so no caller reaches a process without
+    ///   saying how long it may take. `nil` waits as long as tmux does.
     func run(
         rawArguments: [String],
         perStreamOutputLimit: Int = defaultTmuxReplyByteLimit,
-        environmentOverrides: [String: String] = [:]
+        environmentOverrides: [String: String] = [:],
+        within bound: Duration?
     ) async throws(TmuxError) -> TmuxReply {
         guard perStreamOutputLimit >= 0 else {
-            throw .invocationFailed(reason: "output limit cannot be negative")
+            throw .rejectedLocally(reason: "output limit cannot be negative")
         }
         try requireTmuxCommandFits(rawArguments)
-        // Copied out of isolation before the await so the actor is not held for
-        // the lifetime of a tmux process.
         let transport = self.transport
         let executable = tmuxExecutable
         // `-u` keeps format bytes in UTF-8 without changing the environment a
         // newly started daemon passes to panes.
         let configurationArguments = configurationFile.map { ["-f", $0] } ?? []
         let arguments = ["-u"] + configurationArguments + endpoint.addressArguments + rawArguments
-        var environment = TmuxProcessEnvironment.variables()
-        environment.merge(environmentOverrides) { _, override in override }
-        let reply = try await transport.run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment,
-            perStreamOutputLimit: perStreamOutputLimit
-        )
-        try requireReplyFitsLimit(reply, perStreamOutputLimit)
-        return reply
+        let environment = TmuxProcessEnvironment.variables()
+            .merging(environmentOverrides) { _, override in override }
+        return try await withCommandDeadline(bound) {
+            let reply = try await transport.run(
+                executable: executable,
+                arguments: arguments,
+                environment: environment,
+                perStreamOutputLimit: perStreamOutputLimit
+            )
+            try requireReplyFitsLimit(reply, perStreamOutputLimit)
+            return reply
+        }
     }
 }

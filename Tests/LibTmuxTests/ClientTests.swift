@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("clients and connection close", .timeLimit(.minutes(1)))
+@Suite("clients and connection close", .hangLimit)
 struct ClientTests {
     @Test("a control connection appears as a client and detaches")
     func controlConnectionIsAClientAndDetaches() async throws {
@@ -143,6 +143,26 @@ struct ClientTests {
                 try Client.projection.decode(encoded())
             }
             values[field] = original
+        }
+    }
+}
+
+@Suite("attachment by someone else", .hangLimit)
+struct AttachmentOwnershipTests {
+    @Test("this process's own connection does not read as a person")
+    func ownConnectionIsNotAnAttachment() async throws {
+        try await withTmuxServer { server in
+            let session = try #require(try await server.sessions().first)
+
+            try await server.connected(attachingTo: session.id.rawValue) { connected, _ in
+                // tmux's own answer counts the connection this library just
+                // opened, which is why it cannot answer "is a person here".
+                let refreshed = try #require(try await connected.session(session.id))
+                #expect(refreshed.isAttached)
+
+                let byOthers = try await connected.sessionIDsAttachedByOthers()
+                #expect(byOthers.isEmpty)
+            }
         }
     }
 }

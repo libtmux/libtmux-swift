@@ -44,6 +44,25 @@ private let panes = [
 
 @Suite("filter expressions")
 struct FilterExprTests {
+    @Test("typed descriptors preserve wire fields and decoded evaluation")
+    func typedDescriptorsPreserveWireFields() throws {
+        let expression = FilterExpr<Pane>.and([
+            .where(Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"])),
+            .where(Pane.FilterFields.isActive, .equals(false)),
+            .where(Pane.FilterFields.index, .equals(2)),
+            .where(Pane.FilterFields.windowID, .equals("@0")),
+        ])
+        try expression.validate()
+        #expect(try panes.filter(expression).map(\.id) == ["%2"])
+        let data = try JSONEncoder().encode(expression)
+        let decoded = try JSONDecoder().decode(FilterExpr<Pane>.self, from: data)
+        #expect(try panes.filter(decoded).map(\.id) == ["%2"])
+        #expect(
+            FilterExpr<Pane>.where(Pane.FilterFields.currentCommand, .equals("nvim"))
+                == .comparison(field: "pane.command", operation: .equals(.text("nvim")))
+        )
+    }
+
     @Test("a key path lowers to its stable wire id")
     func keyPathLowersToItsWireID() throws {
         let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim"]))
@@ -79,14 +98,14 @@ struct FilterExprTests {
             isControlMode: true, sessionID: session.id, incarnation: filterIncarnation
         )
 
-        let sessionID = try FilterExpr<Session>.where(\.id, .equals(session.id))
-        let clientSessionID = try FilterExpr<Client>.where(
-            \.sessionID, .isIn([session.id])
+        let sessionID = FilterExpr<Session>.where(Session.FilterFields.id, .equals(session.id))
+        let clientSessionID = FilterExpr<Client>.where(
+            Client.FilterFields.sessionID, .isIn([session.id])
         )
-        let windowID = try FilterExpr<Window>.where(\.id, .equals(window.id))
-        let paneWindowID = try FilterExpr<Pane>.where(\.windowID, .isIn([window.id]))
-        let paneID = try FilterExpr<Pane>.where(\.id, .equals(pane.id))
-        let paneIDs = try FilterExpr<Pane>.where(\.id, .isIn([pane.id]))
+        let windowID = FilterExpr<Window>.where(Window.FilterFields.id, .equals(window.id))
+        let paneWindowID = FilterExpr<Pane>.where(Pane.FilterFields.windowID, .isIn([window.id]))
+        let paneID = FilterExpr<Pane>.where(Pane.FilterFields.id, .equals(pane.id))
+        let paneIDs = FilterExpr<Pane>.where(Pane.FilterFields.id, .isIn([pane.id]))
 
         #expect(try sessionID.matches(session))
         #expect(try clientSessionID.matches(client))

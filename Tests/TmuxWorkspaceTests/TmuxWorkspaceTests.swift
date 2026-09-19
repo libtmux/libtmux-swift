@@ -5,8 +5,24 @@ import TmuxFixture
 @testable import LibTmux
 @testable import TmuxWorkspace
 
-@Suite("workspace decoding", .timeLimit(.minutes(1)))
+@Suite("workspace decoding", .hangLimit)
 struct WorkspaceDecodingTests {
+    @Test("typed workspace layouts preserve tmuxp JSON")
+    func typedWorkspaceLayoutsPreserveJSON() throws {
+        let typed = WindowPlan(layout: .evenHorizontal, panes: [PanePlan(), PanePlan()])
+        let legacy = WindowPlan(layout: "even-horizontal", panes: [PanePlan(), PanePlan()])
+        #expect(typed == legacy)
+        let encoded = try JSONEncoder().encode(typed)
+        let decoded = try JSONDecoder().decode(WindowPlan.self, from: encoded)
+        #expect(decoded.layout == "even-horizontal")
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["layout"] as? String == "even-horizontal")
+        let custom = WindowPlan(layout: .custom("saved-layout"), panes: [PanePlan()])
+        #expect(custom.layout == "saved-layout")
+        #expect(WindowPlan(panes: [PanePlan()]).layout == nil)
+        #expect(WindowPlan(layout: nil, panes: [PanePlan()]).layout == nil)
+    }
+
     @Test("a tmuxp file decodes through its own key names")
     func tmuxpFileDecodes() throws {
         let json = Data(
@@ -71,7 +87,7 @@ struct WorkspaceDecodingTests {
     }
 }
 
-@Suite("workspace building", .timeLimit(.minutes(1)))
+@Suite("workspace building", .hangLimit)
 struct WorkspaceBuildingTests {
     @Test("a workspace becomes the session, windows, and panes it describes")
     func workspaceBecomesWhatItDescribes() async throws {
@@ -127,7 +143,7 @@ struct WorkspaceBuildingTests {
                 sessionName: "laid-out",
                 windows: [
                     WindowPlan(
-                        layout: "even-horizontal",
+                        layout: .evenHorizontal,
                         panes: [PanePlan(), PanePlan()]
                     )
                 ]
@@ -139,6 +155,24 @@ struct WorkspaceBuildingTests {
             #expect(panes.count == 2)
             // even-horizontal splits the width, so the panes are side by side.
             #expect(panes[0].height == panes[1].height)
+        }
+    }
+
+    @Test("a unique layout preset abbreviation builds instead of rolling back")
+    func uniqueLayoutAbbreviationSurvivesBuild() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "abbrev",
+                windows: [
+                    WindowPlan(
+                        layout: "tile",
+                        panes: [PanePlan(), PanePlan()]
+                    )
+                ]
+            )
+            _ = try await WorkspaceBuilder.build(workspace, on: server)
+            let remains = try await server.hasSession("abbrev")
+            #expect(remains)
         }
     }
 
@@ -261,6 +295,32 @@ struct WorkspaceBuildingTests {
             let running = try await server.panes()
                 .first { $0.id == pane.id }?.currentCommand
             #expect(running != "sleep")
+        }
+    }
+
+    @Test("a shell_command matching a tmux key name is typed, not pressed, when enter runs")
+    func shellCommandNamedLikeAKeyIsTypedNotPressed() async throws {
+        try await withTmuxServer { server in
+            let workspace = Workspace(
+                sessionName: "key-name-command",
+                windows: [
+                    WindowPlan(panes: [
+                        PanePlan(shellCommands: [TmuxShellCommand("Tab", enter: true)])
+                    ])
+                ]
+            )
+            let session = try await WorkspaceBuilder.build(workspace, on: server)
+            let pane = try #require(try await server.snapshot().panes(of: session).first)
+
+            // Typed as text and submitted, "Tab" reaches the shell as an
+            // unknown command and appears on screen either way -- as the
+            // typed line or the shell's own error. Read as the Tab key
+            // instead, pressed on an empty prompt, it leaves nothing on
+            // screen at all.
+            let typedAsText = try await waitUntil {
+                try await server.capture(pane).contains { $0.contains("Tab") }
+            }
+            #expect(typedAsText)
         }
     }
 

@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("pane input transitions", .timeLimit(.minutes(2)))
+@Suite("pane input transitions", .hangLimit)
 struct PaneInputTransitionTests {
     @Test("run rechecks once after setup and refuses every observed transition")
     func runRefusesPostSetupTransitions() async throws {

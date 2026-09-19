@@ -2,7 +2,7 @@
 ///
 /// A pane runs a shell, and a shell says nothing about when it is finished.
 /// Watching the pane for a prompt guesses; a channel does not. The command you
-/// start signals when it is done, and ``Server/wait(for:)`` returns at that
+/// start signals when it is done, and ``Server/wait(for:timeout:)`` returns at that
 /// point rather than on a timer.
 ///
 /// ```swift
@@ -24,17 +24,43 @@ extension Server {
     /// this would hold back every call beside it, ``Server/signal(_:)``
     /// included, and nothing would ever release it.
     ///
+    /// This has no `-L` (lock) counterpart on purpose. `wait-for -L` blocks
+    /// every later locker of the same channel until it is unlocked, and tmux
+    /// hands a released lock to whichever locker has been queued longest --
+    /// including one whose client is long gone. Bounding a wait -- with
+    /// `timeout`, or with task cancellation --
+    /// stops the caller from waiting forever; it does not and cannot remove
+    /// that caller's place in tmux's own queue, so a timed-out lock wait can
+    /// wedge the channel for every locker after it, permanently, for the life
+    /// of the server. A caller that needs `-L` anyway reaches it through the
+    /// raw escape hatch (``Server/run(_:)-(TmuxCommand)`` or ``ControlSession/send(_:)``
+    /// with `TmuxCommand("wait-for", ["-L", channel])`) and accepts that risk
+    /// explicitly, with no bound this library can add back.
+    ///
     /// - Throws: ``TmuxError/serverRestarted`` if the server went away while
     ///   this was waiting. tmux releases its waiters when it shuts down, with
     ///   the same silent success a real signal produces, so the server's
     ///   identity before and after is what tells a release from a departure.
     ///   ``TmuxError/cancelled`` if the task was cancelled, which ends the
-    ///   wait without a signal.
-    public func wait(for channel: String) async throws(TmuxError) {
+    ///   wait without a signal. ``TmuxError/timedOut(after:)`` if `timeout`
+    ///   was given and elapsed first.
+    ///
+    /// - Parameters:
+    ///   - channel: the channel to wait on.
+    ///   - timeout: how long to wait before giving up. `nil`, the default,
+    ///     waits for the signal however long it takes. This is asked for here
+    ///     rather than taken from ``Server/commandTimeout`` because a wait is
+    ///     *meant* to be slow: a server-wide bound on ordinary commands should
+    ///     not turn every wait into a failure.
+    public func wait(
+        for channel: String,
+        timeout: Duration? = nil
+    ) async throws(TmuxError) {
         let before = try await serverProcessID()
-        let reply = try await runInOwnProcess(
-            rawArguments: TmuxCommand("wait-for", ["--", channel]).argumentVector
-        )
+        let arguments = TmuxCommand("wait-for", ["--", channel]).argumentVector
+        let reply = try await withCommandDeadline(timeout) {
+            try await self.runUnbounded(rawArguments: arguments)
+        }
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }
@@ -51,6 +77,10 @@ extension Server {
     /// signal puts the channel back rather than storing a second release, so
     /// an unpaired signal is worth avoiding — what a later wait does depends
     /// on how many went unmatched, not how many were sent.
+    ///
+    /// Signalling never wedges a channel the way a lock (`-L`) can; see
+    /// ``wait(for:timeout:)`` for that hazard, which is specific to the raw `-L`
+    /// escape hatch and does not apply here.
     public func signal(_ channel: String) async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("wait-for", ["-S", "--", channel]))
     }

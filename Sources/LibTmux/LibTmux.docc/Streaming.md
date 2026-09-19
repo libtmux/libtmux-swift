@@ -4,15 +4,16 @@ Being told, rather than asking.
 
 ## Overview
 
-``Server/connected(attachingTo:_:)`` hands back the connection alongside the
+``Server/connected(attachingTo:_:)-(String,_)`` hands back the connection alongside the
 server, because reporting what changed without being asked is the one thing a
 connection can do and a process cannot:
 
 ```swift
-let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
-    for try await notification in events.notifications
-    where notification.name == "output" {
-        return notification.arguments
+let firstOutput: String? = try await server.connected(attachingTo: "work") { server, events in
+    for try await notification in events.notifications {
+        if case let .output(_, bytes) = notification.event {
+            return String(decoding: bytes, as: UTF8.self)
+        }
     }
     return nil
 }
@@ -20,6 +21,10 @@ let firstLine: String? = try await server.connected(attachingTo: "work") { serve
 
 There is no way to write this against a server that has no connection — the
 value carrying the stream exists only inside the scope that opened one.
+
+> Important: Drive `notifications` and ``ControlSession/changes(named:)``
+> with `for try await`, as above. Calling their iterator's `next()` by hand
+> inside `try?` or a `do`/`catch` crashes the Swift 6.2.4 compiler.
 
 The loop leaves on the notification it was waiting for, and the stream ends by
 itself when the connection closes, which is what the `nil` answers. A loop with
@@ -42,7 +47,7 @@ Measured by `swift run --package-path Benchmarks libtmux-bench`, noticing that a
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |
 | tmux processes spent | 2 | 1 |
-| round trips spent | 2 | 2 |
+| round trips spent | 2 | 3 |
 
 <!-- noticing-matrix:end -->
 
@@ -58,6 +63,20 @@ The connection is scoped to the closure: a live process handed out as a value
 would be a value that lies. When the closure returns, the connection closes and
 the child is reaped before the call does. A command still waiting at that point
 fails with ``TmuxError/connectionClosed`` rather than hanging.
+
+A program that wants one connection for as long as it runs puts the rest of
+itself inside the closure, the way structured concurrency puts long-lived work
+inside a task group. The closure is not a ceremony to escape; it is what makes
+"the connection is gone" a place in the code rather than a state some other
+code has to notice.
+
+There is no reconnect, on purpose. When a connection ends, the daemon behind it
+has either ended the client — its session is gone, or the server is shutting
+down — or been replaced, which ``Server/connected(attachingTo:_:)-(Session,_)``
+reports as ``TmuxError/serverRestarted``. Neither is something to paper over
+by attaching again: the first means there is nothing left to attach to, and the
+second means every value read so far describes a daemon that no longer exists.
+Catch the error, read the server again, and open a new scope.
 
 ``Server/withControlMode(attachingTo:_:)`` is the layer beneath, for speaking
 the control protocol directly.

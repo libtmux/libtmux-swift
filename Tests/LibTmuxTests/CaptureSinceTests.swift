@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("reading only what is new", .timeLimit(.minutes(1)))
+@Suite("reading only what is new", .hangLimit)
 struct CaptureSinceTests {
     private func bootstrapPane(_ server: Server) async throws -> Pane {
         try #require(try await server.panes().first)
@@ -56,6 +56,33 @@ struct CaptureSinceTests {
             #expect(capture.lines.contains(String(format: "row-%03d", count - 1)))
             #expect(capture.droppedLines > 0)
             try await server.signal(hold)
+        }
+    }
+
+    @Test("a dead pane with no process still answers an incremental capture")
+    func deadPaneStillAnswersIncrementalCapture() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            // Global rather than per-pane: it has to be in place before the
+            // respawn whose exit is what kills the pane's process, and there
+            // is no pane left afterward to set a pane-scoped option on.
+            try await server.setOption("remain-on-exit", to: "on", scope: .globalWindow)
+            try await server.respawn(pane, running: ["true"])
+            try #require(
+                try await waitUntil {
+                    try await server.panes().first(where: { $0.id == pane.id })?.isDead == true
+                }
+            )
+
+            // `#{pane_pid}` for a pane with no process is `"0"` on tmux before
+            // 3.8 and the empty string from 3.8 on (tmux CHANGES, 3.7c -> 3.8).
+            // Both are opaque text as far as this call is concerned, so either
+            // one answers rather than throwing -- the establishing read and
+            // the incremental one that follows it, which additionally compares
+            // the value against itself to decide the pane did not restart.
+            let first = try await server.capture(pane, since: nil)
+            let second = try await server.capture(pane, since: first.cursor)
+            #expect(second.lines.isEmpty)
         }
     }
 
@@ -136,7 +163,7 @@ struct CaptureSinceTests {
                 sourceLinesPerChunk: 16,
                 maximumChunks: 8,
                 perStreamOutputLimit: 1_048_576
-            ) { rows in
+            ) { rows, _ in
                 visited.append(contentsOf: rows)
                 return false
             }
@@ -172,7 +199,7 @@ struct CaptureSinceTests {
                 sourceLinesPerChunk: 4,
                 maximumChunks: 8,
                 perStreamOutputLimit: 1_048_576
-            ) { rows in
+            ) { rows, _ in
                 visited.append(contentsOf: rows)
                 return false
             }
@@ -187,7 +214,7 @@ struct CaptureSinceTests {
     func historyCollectionKeepsTheDelta() async throws {
         try await withTmuxServer { server in
             let historyLimit = 20
-            _ = try await server.setOption(
+            try await server.setOption(
                 "history-limit",
                 to: String(historyLimit),
                 scope: .globalSession

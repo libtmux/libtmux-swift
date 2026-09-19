@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("pane input reservations", .timeLimit(.minutes(1)))
+@Suite("pane input reservations", .hangLimit)
 struct PaneRunCoordinatorTests {
     private func pane(
         _ id: PaneID,

@@ -287,4 +287,22 @@ struct ControlProtocolTests {
         )
         #expect(events.compactMap { if case .reply = $0 { true } else { nil } }.count == 2)
     }
+
+    @Test("a token starting with % is always quoted, even when otherwise safe")
+    func percentLedTokenIsAlwaysQuoted() {
+        // tmux's control-mode line parser -- stricter than its argv parser --
+        // parse-errors on a bare `%<id>:<word>` compound token (verified
+        // against a real `tmux -C attach-session`). Every character here is
+        // individually in the "safe" set; only the leading `%` forces
+        // quoting.
+        #expect(tmuxQuoted("%0:off") == "'%0:off'")
+        #expect(tmuxQuoted("%12:on") == "'%12:on'")
+        // A bare pane id alone parses either way, and quoting it changes
+        // nothing it targets.
+        #expect(tmuxQuoted("%0") == "'%0'")
+        // Unaffected: `%` elsewhere in an otherwise-safe argument, and a safe
+        // argument that does not start with `%` at all.
+        #expect(tmuxQuoted("50%") == "50%")
+        #expect(tmuxQuoted("session_name") == "session_name")
+    }
 }

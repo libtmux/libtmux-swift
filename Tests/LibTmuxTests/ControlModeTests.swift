@@ -16,7 +16,7 @@ private actor ControlBodyProbe {
     }
 }
 
-@Suite("control mode", .timeLimit(.minutes(1)))
+@Suite("control mode", .hangLimit)
 struct ControlModeTests {
     @Test("a rejected attachment never enters the body")
     func rejectedAttachmentNeverEntersBody() async throws {
@@ -119,6 +119,29 @@ struct ControlModeTests {
                 )
                 #expect(!after.isError)
                 #expect(after.lines == ["alive"])
+            }
+        }
+    }
+
+    @Test("refresh-client -A parses a bare %pane:state token over the connection")
+    func refreshClientPaneStateTokenParses() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            try await server.withControlMode(attachingTo: "bootstrap") { control in
+                // `%0:off` sent bare parse-errors on every tmux 3.7c/master
+                // control connection -- `%` and `:` were both in
+                // `tmuxQuoted`'s "safe, no quoting needed" set, so the
+                // compound token went out unquoted and tmux's control-mode
+                // line parser, stricter here than its argv parser, rejected
+                // it.
+                let off = try await control.send(
+                    TmuxCommand("refresh-client", ["-A", "\(pane.id.rawValue):off"])
+                )
+                #expect(!off.isError)
+                let on = try await control.send(
+                    TmuxCommand("refresh-client", ["-A", "\(pane.id.rawValue):on"])
+                )
+                #expect(!on.isError)
             }
         }
     }
@@ -239,6 +262,29 @@ struct ControlModeTests {
             #expect(clients.isEmpty)
             let running = try await server.isRunning()
             #expect(running)
+        }
+    }
+
+    @Test("a control connection reads window_layout as JSON, matching a direct read")
+    func controlConnectionMatchesDirectLayoutFormat() async throws {
+        try await withTmuxServer { server in
+            let version = try await server.version()
+            guard version >= TmuxVersion(major: 3, minor: 8) else {
+                // Below 3.8 tmux has no JSON layout reader at all (see
+                // WindowLayout), so there is nothing for the negotiated form
+                // to change.
+                return
+            }
+            let link = try #require(try await server.windowLinks().first)
+            _ = try await server.splitWindow(try #require(try await server.windows().first))
+            let direct = try #require(try await server.format("#{window_layout}", for: link))
+            #expect(direct.hasPrefix("{"))
+
+            let overControl = try await server.connected(attachingTo: "bootstrap") {
+                connected, _ in
+                try await connected.format("#{window_layout}", for: link)
+            }
+            #expect(overControl?.hasPrefix("{") == true)
         }
     }
 }

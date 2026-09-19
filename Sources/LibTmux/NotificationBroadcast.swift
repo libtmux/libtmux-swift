@@ -19,6 +19,13 @@ public struct ControlNotificationStream: AsyncSequence, Sendable {
     }
 
     /// Iterates notifications with `TmuxError` as the failure type.
+    ///
+    /// Drive this with `for try await`, as ``Server/connected(attachingTo:_:)-(String,_)``'s
+    /// example does. Calling ``next()`` by hand inside `try?` or a `do`/`catch`
+    /// crashes the Swift 6.2.4 compiler (SILGen, on `emitExistentialErasure`)
+    /// for both this iterator and ``SubscriptionChangeStream``'s -- a
+    /// toolchain defect, not a contract of this type, but `for try await` is
+    /// the form that has always compiled.
     public struct Iterator: AsyncIteratorProtocol {
         private var base: Base.Iterator
 

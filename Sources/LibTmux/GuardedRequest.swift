@@ -21,15 +21,29 @@ extension Server {
         by values: [GuardedValue],
         checkingTargets: Bool = true
     ) async throws(TmuxError) -> TmuxReply {
+        try await runGuarded([command], by: values, checkingTargets: checkingTargets)
+    }
+
+    /// Runs several commands behind one guard.
+    ///
+    /// The guard already composes a command list to carry its own marker, so
+    /// adding to that list costs nothing and keeps what would otherwise be
+    /// separate dispatches atomic: every command runs under the same
+    /// incarnation and target check, or none of them does.
+    func runGuarded(
+        _ commands: [TmuxCommand],
+        by values: [GuardedValue],
+        checkingTargets: Bool = true
+    ) async throws(TmuxError) -> TmuxReply {
         let expected = try expectedIncarnation(values.map(\.incarnation))
         let request = GuardedRequest(
-            command: command,
+            commands: commands,
             incarnation: expected,
             targets: checkingTargets ? values.compactMap(\.targetGuard) : []
         )
         let reply: TmuxReply
         if let connection {
-            reply = try await connection.reply(to: request)
+            reply = try await connection.reply(to: request, within: commandTimeout)
         } else {
             reply = try await run(rawArguments: request.commands.argumentVector)
         }
@@ -103,6 +117,14 @@ struct GuardedRequest: Sendable {
         incarnation: ServerIncarnation,
         targets: [GuardedTarget]
     ) {
+        self.init(commands: [command], incarnation: incarnation, targets: targets)
+    }
+
+    init(
+        commands actions: [TmuxCommand],
+        incarnation: ServerIncarnation,
+        targets: [GuardedTarget]
+    ) {
         let nonce = Self.randomNonce()
         let trueMarker = "\(nonce)_true"
         let staleMarker = "\(nonce)_stale"
@@ -113,7 +135,7 @@ struct GuardedRequest: Sendable {
         self.restartedMarker = restartedMarker
         self.fenceMarker = fenceMarker
 
-        var guarded = Self.guardedAction(command, trueMarker: trueMarker)
+        var guarded = Self.guardedAction(actions, trueMarker: trueMarker)
         for target in targets.reversed() {
             guarded = Self.commandGuard(
                 condition: target.condition,
@@ -172,13 +194,13 @@ struct GuardedRequest: Sendable {
     }
 
     private static func guardedAction(
-        _ command: TmuxCommand,
+        _ commands: [TmuxCommand],
         trueMarker: String
     ) -> TmuxCommand {
         TmuxCommand(
             "if-shell",
             [
-                "-F", "1", commandListString([command, markerCommand(trueMarker)]),
+                "-F", "1", commandListString(commands + [markerCommand(trueMarker)]),
                 "",
             ]
         )

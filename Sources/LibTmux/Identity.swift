@@ -10,6 +10,13 @@ public struct ServerIncarnation: Sendable, Hashable, Codable {
     public let processID: Int
     public let startedAt: Int
 
+    /// When this daemon started, as a Foundation date.
+    ///
+    /// ``startedAt`` keeps tmux's exact integer seconds, which is what
+    /// identity compares and what an encoded value carries; this is the same
+    /// instant for a reader. No I/O.
+    public var startDate: Date { Date(timeIntervalSince1970: TimeInterval(startedAt)) }
+
     public init(endpoint: Endpoint, socketPath: String, processID: Int, startedAt: Int) {
         self.endpoint = endpoint
         self.socketPath = socketPath
@@ -33,6 +40,30 @@ extension ServerIncarnation {
         )
     }
 }
+
+/// Addresses a session name exactly, for a command whose `-t` is a session.
+///
+/// tmux resolves a target by exact match, then by unique prefix, then through
+/// `fnmatch`, so `work` reaches a session named `workspace` when no `work`
+/// exists and `w*` reaches whichever one matches. A leading `=` asks for the
+/// name as written. tmux strips it before looking for a `$`-prefixed id and
+/// before its own target table, so an id and `{last}` still resolve through
+/// it. A name that itself begins with `=` reaches the session of that name,
+/// because the one tmux strips is this one.
+func tmuxExactSession(_ name: String) -> String { "=" + name }
+
+/// Addresses a session name exactly, for a command whose `-t` is a *pane*.
+///
+/// `show-options`, `set-option`, `show-hooks` and `set-hook` all declare a
+/// pane target, where `=` prefixes the session component of
+/// `session:window.pane` rather than the target as a whole: a bare `=work`
+/// is read as a pane there and refused with `no such session: =work`. The
+/// trailing colon is what names the session component and leaves the window
+/// and pane empty.
+///
+/// Both forms measured on tmux 3.2a, 3.4 and 3.7b, with names, with `$`-ids,
+/// and with a session whose name begins with `=`.
+func tmuxExactSessionOfPane(_ name: String) -> String { "=" + name + ":" }
 
 /// A tmux session id such as `$1`.
 public struct SessionID:

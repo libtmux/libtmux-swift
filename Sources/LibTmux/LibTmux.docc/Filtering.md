@@ -12,21 +12,30 @@ let editors = try await server.panes().filter { $0.currentCommand == "nvim" }
 ```
 
 Reach for ``FilterExpr`` when the filter has to *travel* — stored in a config,
-sent to another process, or handed to a tool. It is built from key paths, so the
-compiler rejects a text operator on a number, and it holds no closures, so it
-can be encoded:
+sent to another process, or handed to a tool. Each model lists supported
+fields in its `FilterFields` namespace. A ``FilterField`` fixes the model and
+value type, so unsupported fields and text operators on numbers fail to compile.
+Expressions hold no closures and can be encoded:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = FilterExpr<Pane>.where(
+    Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
 let matching = try await server.panes().filter(expression)
 ```
+
+Typed descriptor construction does not throw. Existing key-path calls remain
+available and throw ``QueryConstructionError`` for unsupported properties.
+Dynamically supplied ``FilterExpr/comparison(field:operation:)`` values and
+decoded expressions still need ``FilterExpr/validate()`` before evaluation.
+``FilterLookup/parse(_:as:model:)`` validates textual lookups against
+``FilterSchema/current``.
 
 Regular-expression filters carry a compiled ``RegexPattern`` rather than an
 unchecked string:
 
 ```swift
 let editors = try RegexPattern("^(n?vim|hx)$", options: [.caseInsensitive])
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .matches(editors))
+let expression = FilterExpr<Pane>.where(Pane.FilterFields.currentCommand, .matches(editors))
 let matching = try await server.panes().filter(expression)
 ```
 
@@ -48,7 +57,7 @@ would have been discarded never cross the process boundary:
 
 ```swift
 let editors = try await server.panes(
-    where: .where(\.currentCommand, .isIn(["nvim", "vim"]))
+    where: .where(Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
 )
 ```
 

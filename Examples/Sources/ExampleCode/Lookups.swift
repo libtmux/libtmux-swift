@@ -1,6 +1,7 @@
 // The examples in the README's "Finding one object" and "Typed errors across a
 // scope" sections, and in <doc:Modes>.
 
+import Foundation
 import LibTmux
 
 public func findOneObjectWithoutListingTheRest(
@@ -22,7 +23,7 @@ public func letTmuxDoTheNarrowing(
 
 public func askTmuxForTheEditors(_ server: Server) async throws -> [Pane] {
     let editors = try await server.panes(
-        where: .where(\.currentCommand, .isIn(["nvim", "vim"]))
+        where: .where(Pane.FilterFields.currentCommand, .isIn(["nvim", "vim"]))
     )
     return editors
 }
@@ -36,4 +37,10 @@ public func typedErrorsAcrossAScope(_ server: Server) async throws -> [String] {
         }
     }
     return try await names(server)
+}
+
+public func reportFailure(_ error: TmuxError) -> String {
+    let message = error.localizedDescription
+    print(message)
+    return message
 }

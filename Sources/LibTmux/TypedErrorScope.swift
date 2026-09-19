@@ -2,7 +2,7 @@
 ///
 /// Every call in this library throws ``TmuxError`` and says so, which lets a
 /// program write `throws(TmuxError)` from top to bottom. The scoped forms —
-/// ``Server/using(_:_:)``, ``Server/connected(attachingTo:_:)`` and
+/// ``Server/using(_:_:)``, ``Server/connected(attachingTo:_:)-(String,_)`` and
 /// ``Server/withControlMode(attachingTo:_:)`` — are the exception: they take a
 /// closure, and a closure's thrown type cannot be carried out of one.
 ///

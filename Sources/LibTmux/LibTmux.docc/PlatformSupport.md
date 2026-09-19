@@ -29,7 +29,7 @@ affects pane sizes.
 
 ## A broken pipe is your program's call, not this library's
 
-``Server/connected(attachingTo:_:)`` writes to a tmux it started. If that tmux
+``Server/connected(attachingTo:_:)-(String,_)`` writes to a tmux it started. If that tmux
 goes away first — the session it attached to was killed, or the server shut
 down — the write reaches a pipe with no reader, and the kernel raises SIGPIPE.
 Its default action is to end the process, so a program that has not said

@@ -40,6 +40,39 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
     /// The window this pane is in. Panes move between windows, so this is
     /// where it is now rather than where it started.
     public let windowID: WindowID
+    /// What the pane's configured process exited with, once ``isDead`` is set.
+    ///
+    /// `nil` while the pane is alive, which is the whole reason it is optional:
+    /// ``isDead`` says a command finished and this says how, so a test harness
+    /// can tell a passing run from a failing one without reading the screen.
+    ///
+    /// A pane only survives its command's exit when tmux is told to keep it —
+    /// `remain-on-exit`, or `respawn-pane -k` into a pane that already has it
+    /// set. Without that, tmux destroys the pane as its command ends and there
+    /// is nothing left to read a status from.
+    public let exitStatus: Int?
+    /// The process id of the pane's own process — the shell, or whatever was
+    /// started in its place — not the foreground process inside it.
+    ///
+    /// `nil` when tmux did not report it, which for a value decoded from an
+    /// encoding older than these fields is every pane. Optional rather than a
+    /// zero, because `0` is a process group to `kill(2)` rather than a
+    /// missing answer.
+    public let processID: Int?
+    /// The pseudo-terminal tmux gave the pane, as a device path. `nil` when
+    /// tmux did not report it.
+    public let tty: String?
+    /// The pane's title, which a program inside it can change. `nil` when
+    /// tmux did not report it; a pane with no title of its own reports one
+    /// tmux chose, never an empty string.
+    public let title: String?
+    /// The command the pane was created with, as tmux recorded it.
+    ///
+    /// Unlike ``currentCommand`` this does not follow the foreground process,
+    /// so it still says what was asked for after the process has moved on or
+    /// exited. Empty when the pane was created with no command of its own,
+    /// and `nil` when tmux did not report it at all.
+    public let startCommand: String?
 
     public init(
         id: PaneID,
@@ -58,8 +91,18 @@ public struct Pane: Sendable, Hashable, Codable, Identifiable {
         isAtLeft: Bool = false,
         isAtRight: Bool = false,
         windowID: WindowID,
-        incarnation: ServerIncarnation
+        incarnation: ServerIncarnation,
+        exitStatus: Int? = nil,
+        processID: Int? = nil,
+        tty: String? = nil,
+        title: String? = nil,
+        startCommand: String? = nil
     ) {
+        self.exitStatus = exitStatus
+        self.processID = processID
+        self.tty = tty
+        self.title = title
+        self.startCommand = startCommand
         self.id = id
         self.index = index
         self.width = width
@@ -98,13 +141,27 @@ extension Pane {
     private static let atRightField = FormatField("pane_at_right", .flag)
     private static let windowField = FormatField(
         "window_id", .identifier(WindowID.sigil))
+    // Empty while the pane is alive, which is what `optionalInteger` is for.
+    private static let exitStatusField = FormatField("pane_dead_status", .optionalInteger)
+    private static let processField = FormatField("pane_pid", .integer)
+    private static let ttyField = FormatField("pane_tty")
+    private static let titleField = FormatField("pane_title")
+    private static let startCommandField = FormatField("pane_start_command")
 
+    /// Every field `Pane` reads from tmux's row, including the harness fields.
+    ///
+    /// Exit status, pid, tty, title, and start command widen every row, but
+    /// cost no extra round trip: one `list-panes` still answers all of them,
+    /// and a reply this wide stays far inside the 1 MiB reply cap. Kept whole
+    /// rather than split into a narrow projection and a wide one, which would
+    /// make every caller choose and every `Pane` mean two different things.
     static let projection = FormatProjection(
         [
             idField, indexField, widthField, heightField, activeField, deadField,
             inputOffField, modeCountField, synchronizedField,
             commandField, pathField, atTopField, atBottomField, atLeftField,
             atRightField, windowField,
+            exitStatusField, processField, ttyField, titleField, startCommandField,
         ] + ServerIncarnation.projectionFields)
 
     init(row: FormatRow, endpoint: Endpoint) {
@@ -125,7 +182,12 @@ extension Pane {
             isAtLeft: row.flag(Pane.atLeftField),
             isAtRight: row.flag(Pane.atRightField),
             windowID: row.identifier(Pane.windowField, as: WindowID.self),
-            incarnation: ServerIncarnation(row: row, endpoint: endpoint)
+            incarnation: ServerIncarnation(row: row, endpoint: endpoint),
+            exitStatus: row.optionalInteger(Pane.exitStatusField),
+            processID: row.integer(Pane.processField),
+            tty: row.text(Pane.ttyField),
+            title: row.text(Pane.titleField),
+            startCommand: row.text(Pane.startCommandField)
         )
     }
 }

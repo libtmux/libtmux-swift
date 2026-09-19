@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("watching a pane without polling", .timeLimit(.minutes(1)))
+@Suite("watching a pane without polling", .hangLimit)
 struct WatchTests {
     /// The bootstrap session's only pane.
     private func bootstrapPane(_ server: Server) async throws -> Pane {
@@ -106,6 +106,31 @@ struct WatchTests {
         }
     }
 
+    @Test("a wait reports the row it matched, not only the pattern")
+    func waitReportsTheMatchedRow() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let result = try await printing(
+                "listening on port 41234",
+                into: pane,
+                on: server
+            ) {
+                try await server.waitForOutput(
+                    in: pane,
+                    matching: [try RegexPattern("listening on port [0-9]+")],
+                    requiringFreshOutput: true,
+                    timeout: .seconds(20)
+                )
+            }
+
+            #expect(result.outcome == .matched)
+            // The pattern a caller already had, and the text it was for.
+            #expect(result.matched == "listening on port [0-9]+")
+            let line = try #require(result.matchedLine)
+            #expect(line.contains("listening on port 41234"))
+        }
+    }
+
     @Test("a matcher refusal remains distinct from a timeout")
     func matcherRefusalPropagates() throws {
         let pattern = try RegexPattern("z$")
@@ -176,7 +201,7 @@ struct WatchTests {
                 timeout: .seconds(2)
             )
 
-            #expect(result.outcome == .matched)
+            #expect(result.outcome == .alreadyOnScreen)
             #expect(result.matchedAtEntry)
             #expect(!result.sawNewOutput)
             let requests = await transport.captureRequests
@@ -366,7 +391,7 @@ struct WatchTests {
     func sustainedOutputCannotMoveTheDeadline() async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
-            _ = try await fixture.setOption(
+            try await fixture.setOption(
                 "history-limit",
                 to: "100000",
                 scope: .globalSession
@@ -549,7 +574,7 @@ struct WatchTests {
                 timeout: .seconds(5)
             )
 
-            #expect(result.outcome == .matched)
+            #expect(result.outcome == .alreadyOnScreen)
             #expect(result.matchedAtEntry)
         }
     }
@@ -558,7 +583,7 @@ struct WatchTests {
     func outputContinuityLossFailsTheWait() async throws {
         try await withTmuxServer { server in
             let historyLimit = 20
-            _ = try await server.setOption(
+            try await server.setOption(
                 "history-limit",
                 to: String(historyLimit),
                 scope: .globalSession
@@ -641,7 +666,10 @@ struct WatchTests {
             #expect(!painted.sawNewOutput)
 
             // Leaving restores the grid that accumulates history, so the wait
-            // that follows matches again: the suppression never latches.
+            // that follows sees the marker again: the suppression never
+            // latches. It was printed before the wait began, so the answer is
+            // `alreadyOnScreen` rather than `matched` -- either way it is no
+            // longer suppressed, which is what this asserts.
             try await server.run(#"printf '\033[?1049l'"#, in: pane)
             try await server.run("printf 'printed-marker\\n'", in: pane)
             let printed = try await server.waitForOutput(
@@ -649,7 +677,7 @@ struct WatchTests {
                 matching: [try RegexPattern("printed-marker")],
                 timeout: .seconds(5)
             )
-            #expect(printed.outcome == .matched)
+            #expect(printed.outcome == .alreadyOnScreen)
         }
     }
 
@@ -666,8 +694,8 @@ struct WatchTests {
                 timeout: .seconds(3)
             )
             try await Task.sleep(for: .milliseconds(500))
-            try await server.sendKeys(
-                [#"printf '\033[?1049h'; printf 'paint\n'"#, "Enter"], to: pane)
+            try await server.send(
+                [.key(#"printf '\033[?1049h'; printf 'paint\n'"#), .key("Enter")], to: pane)
             #expect(try await entering.outcome == .alternateScreen)
 
             // Leaving mid-wait resumes on the grid the cursor came from.
@@ -677,8 +705,8 @@ struct WatchTests {
                 timeout: .seconds(8)
             )
             try await Task.sleep(for: .milliseconds(500))
-            try await server.sendKeys(
-                [#"printf '\033[?1049l'; printf 'back-again\n'"#, "Enter"], to: pane)
+            try await server.send(
+                [.key(#"printf '\033[?1049l'; printf 'back-again\n'"#), .key("Enter")], to: pane)
             #expect(try await leaving.outcome == .matched)
 
             // Begun under the program, so the grid it hands back is what was
@@ -693,8 +721,7 @@ struct WatchTests {
                 timeout: .seconds(2)
             )
             try await Task.sleep(for: .milliseconds(500))
-            try await server.sendKeys(
-                [#"printf '\033[?1049l'"#, "Enter"], to: pane)
+            try await server.send([.key(#"printf '\033[?1049l'"#), .key("Enter")], to: pane)
             #expect(try await fresh.outcome != .matched)
         }
     }
@@ -714,7 +741,7 @@ struct WatchTests {
                 matching: [try RegexPattern("stale-marker")],
                 timeout: .seconds(30)
             )
-            #expect(answered.outcome == .matched)
+            #expect(answered.outcome == .alreadyOnScreen)
             #expect(answered.matchedAtEntry)
             #expect(!answered.sawNewOutput)
             // Well inside the thirty-second timeout: `matchedAtEntry` already
@@ -744,6 +771,31 @@ struct WatchTests {
             #expect(result.outcome == .timedOut)
             #expect(result.matchedAtEntry)
             #expect(!result.sawNewOutput)
+        }
+    }
+
+    @Test("a pending, unsubmitted input line is never reported as a match")
+    func pendingInputLineIsNeverAMatch() async throws {
+        try await withTmuxServer { server in
+            let pane = try await bootstrapPane(server)
+            let started = try await server.capture(pane, since: nil)
+            let marker = "pending-\(UUID().uuidString.prefix(8))"
+
+            // Typed but never submitted: sits on the input line, not run.
+            try await server.send([.text(marker)], to: pane)
+
+            let result = try await server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern(marker)],
+                requiringFreshOutput: true,
+                startingAt: started.cursor,
+                timeout: .milliseconds(600)
+            )
+            // The marker is genuinely new since the cursor -- it was just
+            // typed -- but it is the pending input line this server itself
+            // sent, not output the pane produced, so it must not match.
+            #expect(result.outcome == .timedOut)
+            #expect(try await server.capture(pane).contains { $0.contains(marker) })
         }
     }
 

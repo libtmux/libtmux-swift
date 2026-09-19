@@ -12,7 +12,7 @@ import TmuxFixture
 /// a bare `tmux -C` runs its default command and *creates* a session, which is
 /// worse than attaching to a named one. So the connection shows up in what the
 /// server reports about itself, and only there.
-@Suite("dispatch over a connection", .timeLimit(.minutes(1)))
+@Suite("dispatch over a connection", .hangLimit)
 struct ModeProbeTests {
     @Test("the same query answers the same over either mode")
     func sameQueryAnswersTheSame() async throws {
@@ -63,12 +63,11 @@ struct ModeProbeTests {
             try await Task.sleep(for: .milliseconds(10))
             let target = try await server.newSession(named: "option-target")
 
-            let direct = try await server.setOption(
+            try await server.setOption(
                 "@mode-target",
                 to: "direct",
                 scope: .session(target)
             )
-            #expect(direct.isSuccess, Comment(rawValue: direct.errorText))
             let directValue = try await server.run(
                 TmuxCommand(
                     "show-options",
@@ -83,16 +82,13 @@ struct ModeProbeTests {
                     ["-t", target.id.rawValue, "-u", "@mode-target"]
                 )
             )
-            let connected = try await server.connected(attachingTo: "bootstrap") {
-                server,
-                _ in
+            try await server.connected(attachingTo: "bootstrap") { server, _ in
                 try await server.setOption(
                     "@mode-target",
                     to: "connected",
                     scope: .session(target)
                 )
             }
-            #expect(connected.isSuccess, Comment(rawValue: connected.errorText))
             let connectedValue = try await server.run(
                 TmuxCommand(
                     "show-options",
@@ -194,12 +190,11 @@ struct ModeProbeTests {
         try await withTmuxServer { server in
             // A process takes an argument vector, so a newline inside one is
             // just a byte.
-            let direct = try await server.setOption(
+            try await server.setOption(
                 "@spanning",
                 to: "one\ntwo",
                 scope: .server
             )
-            #expect(direct.isSuccess, Comment(rawValue: direct.errorText))
 
             // A connection takes a command *line*. Nothing encodes such an
             // argument safely: single quotes leave the newline ending the

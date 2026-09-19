@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("navigation and buffers", .timeLimit(.minutes(1)))
+@Suite("navigation and buffers", .hangLimit)
 struct NavigationTests {
     @Test("selecting changes which object is active")
     func selectingChangesWhatIsActive() async throws {
@@ -372,7 +372,7 @@ struct NavigationTests {
     }
 }
 
-@Suite("pane geometry and replacement", .timeLimit(.minutes(1)))
+@Suite("pane geometry and replacement", .hangLimit)
 struct PaneGeometryTests {
     @Test("a lone pane is against all four edges")
     func lonePaneIsAgainstEveryEdge() async throws {
@@ -465,7 +465,7 @@ struct PaneGeometryTests {
             )
             let second = try await server.newWindow(in: session).window
 
-            _ = try await server.setOption("@marked", to: "yes", scope: .window(first))
+            try await server.setOption("@marked", to: "yes", scope: .window(first))
             let onFirst = try await server.option("@marked", scope: .window(first))
             let onSecond = try await server.option("@marked", scope: .window(second))
             #expect(onFirst == "yes")

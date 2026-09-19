@@ -5,13 +5,14 @@
 /// ``OptionScope``, whose four tables are all real.
 public enum EnvironmentScope: Sendable, Hashable, Codable {
     case global
-    /// A session's own environment, addressed by name or id.
+    /// A session's own environment, addressed by name or id. The name is
+    /// matched exactly -- see ``Server/hasSession(_:)``.
     case session(String)
 
     var arguments: [String] {
         switch self {
         case .global: ["-g"]
-        case let .session(target): ["-t", target]
+        case let .session(target): ["-t", tmuxExactSession(target)]
         }
     }
 }
@@ -47,8 +48,9 @@ extension Server {
     public func environment(
         _ scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> [TmuxEnvironmentVariable] {
-        let reply = try await run(TmuxCommand("show-environment", scope.arguments))
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-environment", scope.arguments)
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text
             .split(separator: "\n", omittingEmptySubsequences: true)
             .compactMap { TmuxEnvironmentVariable(line: String($0)) }

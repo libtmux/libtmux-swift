@@ -67,7 +67,7 @@ extension Server {
             sourceValue.incarnation, destination.incarnation,
         ])
         guard requestedIndex.map({ $0 >= 0 }) ?? true else {
-            throw .invocationFailed(reason: "window index cannot be negative")
+            throw .rejectedLocally(reason: "window index cannot be negative")
         }
         guard !moving || sourceSessionID != destination.id || requestedIndex != nil else {
             throw .invocationFailed(reason: "move destination is the source session")

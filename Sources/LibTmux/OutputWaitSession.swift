@@ -78,6 +78,7 @@ struct OutputWaitSession: Sendable {
             _ outcome: OutputWait.Outcome,
             matched: String? = nil,
             matchedIndex: Int? = nil,
+            line: String? = nil,
             sawNewOutput: Bool = false,
             tail: [String] = [],
             cursor: CaptureCursor? = nil
@@ -86,6 +87,7 @@ struct OutputWaitSession: Sendable {
                 outcome: outcome,
                 matched: matched,
                 matchedIndex: matchedIndex,
+                matchedLine: line,
                 sawNewOutput: sawNewOutput,
                 matchedAtEntry: wasAlreadyShowing,
                 tail: Array(tail.suffix(keptTail)),
@@ -98,10 +100,16 @@ struct OutputWaitSession: Sendable {
         // screen" and "never happened" look identical afterwards, and only one
         // of them is fixed by waiting longer.
         if let entryHit, !requireFresh {
+            // A match already on screen is reported as its own outcome: a
+            // caller that treats `matched` as "it happened" would otherwise
+            // read the echo of a command it just sent as the command's own
+            // output. A stop condition keeps its outcome, since a stop is a
+            // reason to give up either way.
             return ending(
-                entryHit.outcome,
+                entryHit.outcome == .matched ? .alreadyOnScreen : entryHit.outcome,
                 matched: entryHit.matched,
                 matchedIndex: entryHit.matchedIndex,
+                line: entryHit.line,
                 tail: entryRows,
                 cursor: entryRead.cursor
             )
@@ -124,6 +132,7 @@ struct OutputWaitSession: Sendable {
                 hit.outcome,
                 matched: hit.matched,
                 matchedIndex: hit.matchedIndex,
+                line: hit.line,
                 sawNewOutput: true,
                 tail: tail
             )
@@ -546,7 +555,7 @@ struct OutputWaitSession: Sendable {
                 sourceLinesPerChunk: Self.waitCaptureLines,
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
-            ) { rows in
+            ) { rows, endsOnLiveCursorRow in
                 guard ContinuousClock.now < deadline else {
                     deadlineReached = true
                     return true
@@ -554,8 +563,13 @@ struct OutputWaitSession: Sendable {
                 let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
+                // The last row may be the pane's pending, unsubmitted input
+                // line rather than a row it produced -- see `waitForOutput`'s
+                // doc. Still counted above for `tail`/`sawNewOutput`; just not
+                // eligible on its own to satisfy a pattern or stop condition.
+                let matchable = endsOnLiveCursorRow ? Array(arrived.dropLast()) : arrived
                 do {
-                    output = try answer(arrived, tail, false)
+                    output = try answer(matchable, tail, false)
                     if output != nil {
                         let selectedAt = ContinuousClock.now
                         if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -620,6 +634,11 @@ struct OutputWaitSession: Sendable {
             guard ContinuousClock.now < deadline else { return timedOut() }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
+            // Unlike the forward-scan chunk above, `arrived` here already had
+            // every blank row filtered out (`waitLookbackRows`), so its last
+            // element is not reliably the pane's live cursor row -- it can be
+            // real, already-committed output with a blank cursor row after it
+            // that the filter already removed. Not excluded from matching.
             do {
                 output = try answer(arrived, tail, false)
                 if output != nil {
@@ -909,7 +928,8 @@ private func firstOutputWaitHit(
             return OutputWaitHit(
                 outcome: .stopped,
                 matched: stops[index].source,
-                matchedIndex: index
+                matchedIndex: index,
+                line: row
             )
         }
         guard !patterns.isEmpty else {
@@ -922,7 +942,8 @@ private func firstOutputWaitHit(
             return OutputWaitHit(
                 outcome: .matched,
                 matched: patterns[index].source,
-                matchedIndex: index
+                matchedIndex: index,
+                line: row
             )
         }
     }
@@ -933,6 +954,7 @@ private struct OutputWaitHit {
     let outcome: OutputWait.Outcome
     var matched: String? = nil
     var matchedIndex: Int? = nil
+    var line: String? = nil
 }
 
 private func withOutputWaitErrorMapping<Result>(

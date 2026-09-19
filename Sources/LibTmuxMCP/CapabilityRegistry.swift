@@ -25,11 +25,12 @@ extension TmuxTools {
         maximumUTF8Bytes: Int? = nil,
         pattern: String? = nil,
         tmuxFormatControl: TmuxFormatControl? = nil,
-        itemSchema: JSONValue? = nil
+        itemSchema: JSONValue? = nil,
+        summary: String? = nil
     ) -> ToolArgument {
         ToolArgument(
             name: name,
-            summary: "Caller-controlled \(name).",
+            summary: summary ?? "Caller-controlled \(name).",
             kind: kind,
             isRequired: required,
             allowed: allowed,
@@ -504,9 +505,21 @@ extension TmuxTools {
                 specialSinks: ["height": state, "width": state, "windowId": lookup],
                 handler: { try await $0.resizeWindow($1) }),
             capability(
-                .selectLayout, "Select layout", "Apply one named tmux layout to a window.",
+                .selectLayout, "Select layout",
+                "Apply a named tmux layout, or a window_layout string captured earlier, "
+                    + "to a window.",
                 toolset: .manage, reach: .none, effects: [.observe, .change], outputs: inspectMeta,
-                arguments: [argument("layout", required: true), windowID()],
+                arguments: [
+                    argument(
+                        "layout", required: true,
+                        summary: "even-horizontal, even-vertical, main-horizontal, "
+                            + "main-vertical, tiled, or a window_layout string this window "
+                            + "produced earlier, to restore it verbatim. This tool checks the "
+                            + "value and refuses one it does not recognize before tmux ever "
+                            + "sees it, because tmux 3.3 and 3.3a crash the daemon on an "
+                            + "unparseable layout string instead of rejecting it."),
+                    windowID(),
+                ],
                 specialSinks: ["layout": state, "windowId": lookup],
                 handler: { try await $0.capabilitySelectLayout($1) }),
             capability(
@@ -654,7 +667,12 @@ extension TmuxTools {
                 outputs: inspectMeta,
                 arguments: [
                     boolean("enter"), boolean("force"),
-                    argument("keys", kind: .stringArray, required: true), boolean("literal"),
+                    argument("keys", kind: .stringArray, required: true),
+                    argument(
+                        "literal", kind: .boolean,
+                        summary: "Type every string in keys as literal characters (tmux's -l) "
+                            + "instead of reading it as a key name. Applies to the whole call, "
+                            + "not per item. enter still presses Enter afterward as its own key."),
                     paneID(),
                 ],
                 specialSinks: [
