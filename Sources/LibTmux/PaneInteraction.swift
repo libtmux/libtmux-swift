@@ -92,10 +92,22 @@ extension Server {
                 }
             if !pending.isEmpty, isText != pendingIsText { flush() }
             pendingIsText = isText
-            pending.append(value)
+            pending.append(escapingTrailingCommandSeparator(value))
         }
         flush()
         return commands
+    }
+
+    /// Escapes a value's trailing `;` so tmux's own command-list splitter
+    /// reads it as data instead of as the end of this command -- `--` does
+    /// not protect against it, because the split happens before `send-keys`
+    /// ever sees its arguments. `TmuxCommandList` documents the same rule for
+    /// a command built by hand; a piece of pane input carries whatever text
+    /// or key name a caller passed, so it has to be applied here instead of
+    /// left to them.
+    private static func escapingTrailingCommandSeparator(_ value: String) -> String {
+        guard value.hasSuffix(TmuxCommandList.separator) else { return value }
+        return String(value.dropLast()) + "\\" + TmuxCommandList.separator
     }
 
     /// Types a shell command line into a pane and presses Enter.
