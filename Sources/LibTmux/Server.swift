@@ -57,27 +57,46 @@ public struct Server: Sendable, Hashable {
         return .connected(to: attachedSession)
     }
 
+    /// A server at an absolute socket path.
+    ///
+    /// - Parameters:
+    ///   - socketPath: where the daemon listens.
+    ///   - tmuxExecutable: the tmux to run. A bare name is resolved on `PATH`
+    ///     once, here, so ``tmuxExecutable`` reports a path.
+    ///   - configurationFile: a `-f` configuration, or tmux's own default.
+    ///   - transport: how a command reaches a process. The default spawns
+    ///     tmux; pass your own to stand in for it, or to wrap it and see
+    ///     every command. See ``ProcessTransport``.
     public init(
         socketPath: String,
         tmuxExecutable: String = "tmux",
-        configurationFile: String? = nil
+        configurationFile: String? = nil,
+        transport: any ProcessTransport = SubprocessTransport()
     ) throws(TmuxError) {
         self.init(
             endpoint: try Endpoint(socketPath: socketPath),
             tmuxExecutable: tmuxExecutable,
-            configurationFile: configurationFile
+            configurationFile: configurationFile,
+            transport: transport
         )
     }
 
+    /// A server at a socket name, which tmux resolves inside `TMUX_TMPDIR`.
+    ///
+    /// The same name can denote different daemons in different environments;
+    /// ``init(socketPath:tmuxExecutable:configurationFile:transport:)`` names
+    /// one socket. Parameters are otherwise as there.
     public init(
         socketName: String,
         tmuxExecutable: String = "tmux",
-        configurationFile: String? = nil
+        configurationFile: String? = nil,
+        transport: any ProcessTransport = SubprocessTransport()
     ) throws(TmuxError) {
         self.init(
             endpoint: try Endpoint(socketName: socketName),
             tmuxExecutable: tmuxExecutable,
-            configurationFile: configurationFile
+            configurationFile: configurationFile,
+            transport: transport
         )
     }
 

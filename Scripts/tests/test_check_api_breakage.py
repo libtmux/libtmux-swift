@@ -79,6 +79,41 @@ def test_a_public_break_absent_from_the_changelog_fails() -> None:
     assert "absent from the changelog" in found[0]
 
 
+def test_a_longer_word_does_not_stand_in_for_the_symbol() -> None:
+    """A rename to `send` is not excused by a sentence about `sendKeys`."""
+    renamed = "API breakage: func Server.send(_:to:) has been removed"
+    found = failures(
+        [renamed],
+        [renamed],
+        exported={"send"},
+        unreleased="`Server.sendKeys(_:to:literally:)` is unchanged.",
+    )
+
+    assert len(found) == 1
+    assert "absent from the changelog" in found[0]
+
+
+def test_a_constructor_is_owed_its_owning_type() -> None:
+    """`init` is not a member name the changelog gate can resolve on a type."""
+    removed = (
+        "API breakage: constructor Server.init(socketPath:tmuxExecutable:) "
+        "has been removed"
+    )
+
+    assert not failures(
+        [removed],
+        [removed],
+        exported={"Server", "init"},
+        unreleased="Every `Server` initializer now takes a transport.",
+    )
+    assert failures(
+        [removed],
+        [removed],
+        exported={"Server", "init"},
+        unreleased="Something about panes.",
+    )
+
+
 def test_a_package_break_needs_no_changelog_entry() -> None:
     """`package` is reachable only from this package, so nobody is told."""
     assert not failures(

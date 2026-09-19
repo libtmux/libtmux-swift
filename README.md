@@ -449,6 +449,26 @@ The enum cases and associated values remain available for structured handling.
 Descriptions omit raw decoded values and predicate literals. Command failure
 reasons retain tmux's diagnostic text.
 
+### Standing in for tmux, or watching it
+
+Every command goes through one `ProcessTransport`, and a `Server` takes yours.
+That is the seam for the two things the library will not do for you. A **stub**
+answers without a tmux on the machine, so a consumer's own suite can cover its
+decoding and error paths in milliseconds:
+
+```swift
+let server = try Server(socketPath: "/tmp/libtmux-swift-dev/none", transport: transport)
+return try await server.sessions().map(\.name)
+```
+
+A **decorator** wraps the shipped `SubprocessTransport` to log, time, trace or
+count every command. The library takes no logging dependency and installs no
+global hook, because a library that picks the logger picks it for its host —
+`ProcessTransport`'s own documentation carries a worked example.
+
+Driving a real tmux in tests is a different job, and `TmuxFixture` does it:
+one private socket per case, reaped even when a run is killed outright.
+
 ## Waiting without polling
 
 tmux has no hook that fires when a pane prints something, so a wait built from

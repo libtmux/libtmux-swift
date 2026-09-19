@@ -41,7 +41,7 @@ import sys
 BREAKAGE = re.compile(r"(API breakage: .+?)\s*$")
 # `API breakage: enumelement TmuxError.foreignPaneValue has been added...`,
 # `API breakage: func Server.scanForward(_:since:) has parameter 5 type...`
-SYMBOL = re.compile(r"^API breakage: \w+ ([A-Za-z_][\w.]*)")
+SYMBOL = re.compile(r"^API breakage: (\w+) ([A-Za-z_][\w.]*)")
 UNRELEASED = re.compile(r"^## \[Unreleased\]")
 RELEASED = re.compile(r"^## \[(?!Unreleased)")
 
@@ -174,14 +174,22 @@ def failures(
         symbol = SYMBOL.match(entry)
         if not symbol:
             continue
-        member = symbol.group(1).rsplit(".", 1)[-1]
+        kind, qualified = symbol.group(1), symbol.group(2)
+        components = qualified.split(".")
+        # A constructor has no member name to reference: `init` is not a name
+        # `check_changelog_symbols.py` can resolve on a type, so what a reader
+        # is owed is the owning type and a sentence about its initializer.
+        required = components[0] if kind == "constructor" else components[-1]
+        # A whole word, so a short name is not satisfied by a longer one that
+        # merely starts with it -- "initializer" must not stand in for `init`.
+        named = re.search(rf"\b{re.escape(required)}\b", unreleased) is not None
         # A `package` declaration cannot be seen from outside this package, so
         # its change is not something a consumer has to be told about.
-        if member in exported and member not in unreleased:
+        if required in exported and not named:
             found.append(
                 f"public API break absent from the changelog:\n    {entry}\n"
                 f"  CHANGELOG.md's ## [Unreleased] section does not mention "
-                f"`{member}`."
+                f"`{required}`."
             )
 
     return found
