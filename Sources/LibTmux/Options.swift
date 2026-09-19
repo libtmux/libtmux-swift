@@ -141,7 +141,7 @@ extension Server {
     /// deliberately set to "".
     public func option(
         _ name: String,
-        scope: OptionScope = .server
+        scope: OptionScope
     ) async throws(TmuxError) -> String? {
         let listed = try await options(scope)
         guard listed.contains(where: { $0.name == name }) else { return nil }
@@ -181,15 +181,16 @@ extension Server {
     /// with tmux's reason, as every other mutation does.
     ///
     /// A scope in the wrong table is not a value tmux refuses. For one of its
-    /// own options tmux takes the table from the name, so the default `.server`
-    /// scope with a session option such as `mouse` exits 0 and sets it on
-    /// whichever session tmux considers current. A ``TmuxOptionKey`` knows its
-    /// table, and ``setOption(_:to:scope:)-(TmuxOptionKey<Value>,_,_)`` refuses
-    /// the mistake instead.
+    /// own options tmux takes the table from the name, so `.server` with a
+    /// session option such as `mouse` exits 0 and sets it on whichever session
+    /// tmux considers current — which is why there is no default here to get
+    /// wrong. A ``TmuxOptionKey`` knows its own table, and
+    /// ``setOption(_:to:scope:)-(TmuxOptionKey<Value>,_,_)`` refuses the
+    /// mistake outright.
     public func setOption(
         _ name: String,
         to value: String,
-        scope: OptionScope = .server
+        scope: OptionScope
     ) async throws(TmuxError) {
         try await expectOptionSuccess(
             TmuxCommand(
@@ -355,7 +356,7 @@ extension Server {
     /// ``TmuxError/invocationFailed(reason:)``.
     public func unsetOption(
         _ name: String,
-        scope: OptionScope = .server
+        scope: OptionScope
     ) async throws(TmuxError) {
         try await expectOptionSuccess(
             TmuxCommand(

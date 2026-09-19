@@ -30,7 +30,7 @@ struct DiscoveryTests {
             guard case let .socketPath(path) = server.endpoint else { return }
             let directory = (path as NSString).deletingLastPathComponent
             let session = try #require(try await server.sessions().first)
-            try await server.setOption("exit-empty", to: "off")
+            try await server.setOption("exit-empty", to: "off", scope: .server)
             try await server.kill(session)
             #expect(try await server.isRunning())
 

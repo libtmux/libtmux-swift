@@ -30,3 +30,5 @@ API breakage: struct ForwardCaptureResult has been removed
 API breakage: func Server.runTerminatingIsolated(_:expecting:perStreamOutputLimit:) has been removed
 API breakage: func Server.scanForward(_:since:sourceLinesPerChunk:maximumChunks:perStreamOutputLimit:_:) has been removed
 API breakage: func Server.captureLookbackThroughCursor(_:historyLines:perStreamOutputLimit:) has been removed
+API breakage: func Server.option(_:scope:) has removed default argument from parameter 1
+API breakage: func Server.setOption(_:to:scope:) has removed default argument from parameter 2
