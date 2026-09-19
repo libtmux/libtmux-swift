@@ -11,6 +11,174 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `FilterFields` on each filterable model lists the fields `FilterField`
+  accepts, catching a bad predicate at compile time instead of runtime.
+  Existing key-path filters and dynamic validation keep working. (#15)
+
+- `TmuxError` and its query, decoding, and matching error types print
+  readable `description` and `localizedDescription` text instead of the
+  bare case name. (#15)
+
+- `ProcessTransport` and `SubprocessTransport`, the seam between this
+  library and the tmux process, are public, and every `Server`
+  initializer takes one. A stub answers commands with no tmux installed,
+  for a consumer's own tests. (#15)
+
+- `TmuxOptionKey`, `TmuxOptionValue`, and `TmuxOptionTable` give a tmux
+  option a type; the typed `option`/`setOption`/`unsetOption` calls read
+  and write `Bool`, `Int`, `String`, enum, or sparse-array values.
+  `setPanesOutliveTheirCommand(_:scope:)` types the option
+  `Pane.exitStatus` depends on — set it before creating the pane. (#15)
+
+- `Pane` carries `exitStatus`, `processID`, `tty`, `title`, and
+  `startCommand`, so a caller can read how a pane's command finished. All
+  five are optional and `nil` when tmux never reported them. (#15)
+
+- `Server.newSession`, `newWindow`, `splitWindow`, and `split` take
+  `running:` — a command and its arguments — and `environment:`, so
+  creating a pane no longer means typing a command into a shell and
+  guessing how it finished. (#15)
+
+- `ControlNotification.event` decodes a control-mode notification into
+  typed pane output, window/session/pane changes, or `.unrecognized`.
+  `ControlSession.pauseOutput(of:)`, `resumeOutput(of:)`, and
+  `pauseOutput(after:)` type the flow control reachable only through raw
+  `run(_:)` before. (#15)
+
+- `Server.connected(attachingTo:_:)` takes a `Session` as well as a name,
+  reattaching to the exact session held rather than whatever the name
+  now resolves to. A stale `Session` throws `TmuxError.serverRestarted`
+  instead of attaching to its namesake. (#15)
+
+- `capture(...)` and `captureRange(...)` take `includingAttributes:` for
+  colour and styling, and `maximumBytes:`; `captureOutputByteLimit` is
+  public as the default (1 MiB per stream). (#15)
+
+- `Server.withTimeout(_:)` bounds every ordinary command a `Server`
+  sends, distinct from cancellation; a command that does not answer in
+  time throws the new `TmuxError.timedOut(after:)`. **Breaking:**
+  `TmuxError` gains a case, so an exhaustive `switch` needs it. (#15)
+
+- `Server.send(_:to:)` sends a sequence of typed `PaneInput` values —
+  `.text` for characters, `.key` for a name tmux reads like `Enter` — to
+  one pane in a single dispatch. `PaneInput` is `Codable`. (#15)
+
+- `OutputWait.matchedLine` is the row a wait's pattern fired on, so a
+  caller no longer rescans `tail` to find what the wait was for. (#15)
+
+- `Workspace.decode(json:strict:)` and `decode(yaml:strict:)` refuse an
+  unrecognized key, naming it through the new `WorkspaceDecodingError`,
+  instead of silently building a session that doesn't match the file.
+  Lenient decoding stays the default. (#15)
+
+- `TmuxFixtureRoot` lets a `TmuxFixture` consumer choose where its
+  sockets go, instead of sharing this package's own reaper directory.
+  (#15)
+
+- `TmuxCapabilities` and `Server.capabilities()` name what the running
+  tmux can do (`mirroredLayoutPresets` from 3.5, `jsonWindowLayout` from
+  3.8) instead of a caller comparing version numbers itself. (#15)
+
+- `Session.creationDate`, `ServerIncarnation.startDate`, and
+  `TmuxReply.Termination` expose session, daemon-start, and command-exit
+  data as typed values instead of raw integers. (#15)
+
+- `WindowLayout` offers named cases for tmux's built-in layouts plus
+  `.custom(_:)` for a saved one. Existing string calls keep working.
+  (#15)
+
+### Changed
+
+- **Breaking.** `Server.option(_:scope:)`, `setOption(_:to:scope:)`, and
+  `unsetOption(_:scope:)` — the `String`-keyed forms — require an
+  explicit scope and throw on a refused value instead of returning a
+  reply to check. A `TmuxOptionKey` still defaults. (#15)
+
+### Fixed
+
+- `Server.selectLayout(_:_:)` refuses a layout that is not a known
+  preset, a reported layout string, or (tmux 3.8+) well-formed JSON,
+  before tmux ever sees it — tmux 3.3/3.3a kill the daemon on an
+  unparseable layout otherwise. A unique preset prefix (`tile` for
+  `tiled`) is now accepted; an ambiguous one is refused, naming the
+  candidates. `WorkspaceBuilder.build(_:on:)` rolls back on a refusal.
+  (#15)
+
+- Errors now name which side refused a call instead of lumping every
+  failure under `invocationFailed(reason:)`: a local refusal throws
+  `rejectedLocally(reason:)`, a tmux-refused value throws
+  `commandFailed(command:exitCode:reason:)`, a stale pane throws
+  `staleServerValue`, and a same-server foreign-pane cursor throws
+  `foreignPaneValue`. **Breaking:** code matching `invocationFailed` for
+  any of these now sees the specific case. (#15)
+
+- `Server.options(_:)`, `option(_:scope:)`, `hooks(_:)`, `environment(_:)`,
+  `buffers()`, and `buffer(named:)` throw when tmux cannot answer,
+  instead of reporting empty the same as "nothing is set." **Breaking:**
+  these throw where they used to return empty. (#15)
+
+- `Server.hasSession(_:)`, `EnvironmentScope.session(_:)`,
+  `HookScope.session(_:)`, and `connected(attachingTo:)` now match a
+  session name exactly, not tmux's prefix/glob fallback. **Breaking:** a
+  prefix or glob that used to reach a session now gets no match. (#15)
+
+- Two `Server` values addressing the same daemon the same way now
+  compare equal and hash alike, instead of each construction getting its
+  own identity. **Breaking:** code relying on two separately built
+  servers being distinct will now see one. (#15)
+
+- A command sent over a control connection whose argument starts with
+  `%` — pausing or resuming pane output, for instance — no longer fails
+  to parse; reachable only through raw `run(_:)` or
+  `ControlSession.send(_:)`. (#15)
+
+- `Server.waitForOutput` and `wait_for_text` no longer misreport a
+  match: a pattern already on the pane when the wait began now answers
+  `alreadyOnScreen` instead of `matched`, and a pattern whose only
+  occurrence is the pane's own unsubmitted input line is ignored.
+  **Breaking:** `OutputWait.Outcome` gains a case; `.matched` for the
+  first case now matches `.alreadyOnScreen`. (#15)
+
+- Sending text that spells a tmux key name (`Tab`, `Up`, a script called
+  `Up`) now types it instead of pressing it, in `Server.run(_:in:)`,
+  `WorkspaceBuilder.build(_:on:)`, and the MCP's `send_keys`/`send_keys_batch`;
+  Enter always presses as its own key now. (#15)
+
+- `list_sessions` and `get_session_info` no longer report a session as
+  attached while only one of this process's own control connections (an
+  in-flight `wait_for_text`, say) is attached to it.
+  `Server.sessionIDsAttachedByOthers()` answers the question directly.
+  (#15)
+
+- `run_shell_command` runs long commands without truncation, preserves
+  inherited shell traps, and holds a pane's reservation until the run
+  completes, giving up after 30 seconds if nothing confirms it ended. A
+  cleanup failure after completion retries in the background instead of
+  discarding the result; staging no longer crashes on some Darwin
+  filesystems. (#15)
+
+- `TmuxVersion` orders a tagged build (`next`, `master`, `openbsd`) below
+  the plain release at the same number, so `next-3.9` sorts above `3.8`
+  and below `3.9`. (#15)
+
+- `Server.connected(attachingTo:_:)` and `withControlMode(attachingTo:_:)`
+  now negotiate JSON `window_layout` on tmux 3.8+, matching a direct read
+  of the same window instead of tmux's older compatibility form. (#15)
+
+- `libtmux-mcp` answers `--help` and `--version` without starting a
+  server, and refuses an unrecognized argument instead of ignoring it.
+  (#15)
+
+### Removed
+
+- **Breaking.** `Server`'s `sendKeys` method is removed; call
+  `Server.send(_:to:)`
+  instead — `literally: true` becomes `.text`, and the default becomes
+  `.key`. A single `literally` flag couldn't express "type this, then
+  press Enter." (#15)
+
 ## [0.1.0-alpha.5] - 2026-09-12
 
 ### Added
