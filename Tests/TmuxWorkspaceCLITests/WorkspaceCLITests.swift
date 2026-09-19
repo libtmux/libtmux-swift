@@ -2259,6 +2259,52 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("declining the last input's attach prompt still builds an earlier input")
+    func declinedAttachStillBuildsEarlierInputs() async throws {
+        try await withTmuxServer { server in
+            guard case let .socketPath(socket) = server.endpoint else { return }
+            let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
+            let environment = ["LIBTMUX_TMUX_BIN": server.tmuxExecutable]
+            // The prompt is asked about the last input's session only, so a
+            // decline must not turn into a whole-load early return: "first"
+            // has no existing session and nothing to prompt about, and still
+            // has to be built.
+            _ = try await server.newSession(named: "second")
+            let first = root.appendingPathComponent("first.json")
+            try Data(#"{"session_name":"first","windows":[{"panes":[null]}]}"#.utf8).write(
+                to: first)
+            let second = root.appendingPathComponent("second.json")
+            try Data(
+                #"""
+                {"session_name":"second","windows":[{"window_name":"w1","panes":[null]}]}
+                """#.utf8
+            ).write(to: second)
+            // Not --json: machine load requires -d or --append, and -d would
+            // never reach the attach prompt this test is exercising.
+            let declined = await invoke(
+                ["load", first.path, second.path, "-S", socket], in: root,
+                extra: environment, responses: ["n"])
+            #expect(declined.code == 0, "\(declined.error)")
+            // "first created" is the row load prints per built result; the
+            // prompt line itself names "second", so the absence checked here
+            // is that row, not the substring.
+            #expect(
+                declined.output.contains { $0.contains("first  created") }, "\(declined.output)")
+            #expect(
+                !declined.output.contains {
+                    $0.contains("second  created") || $0.contains("second  reused")
+                },
+                "\(declined.output)")
+            #expect(try await server.sessions().contains { $0.name == "first" })
+            // "second" was left exactly as it was found: no window named
+            // in the document was added to it.
+            let secondSession = try #require(
+                try await server.sessions().first { $0.name == "second" })
+            let after = try await server.snapshot()
+            #expect(after.windows(of: secondSession).map(\.name) != ["w1"])
+        }
+    }
+
     @Test("freeze never writes a session name load would refuse")
     func freezeRefusesUnaddressableName() async throws {
         try await withTmuxServer { server in

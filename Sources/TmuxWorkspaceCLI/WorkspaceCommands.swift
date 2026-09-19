@@ -105,6 +105,11 @@ enum WorkspaceCommands {
         try await WorkspaceLayout.validate(plans.map(\.workspace), on: server)
         let borrowed: Session?
         if case let .append(session) = target { borrowed = session } else { borrowed = nil }
+        // Only the last input's session can be named here — the prompt this
+        // came from only ever asks about that one — so every earlier input
+        // still builds normally, and the loop below skips exactly this one.
+        let leftAlone: String?
+        if case let .declinedReuse(name) = target { leftAlone = name } else { leftAlone = nil }
         let retained = AppendState()
         let scriptFailure = ScriptFailure()
         let createdSession = CreatedSession()
@@ -138,6 +143,15 @@ enum WorkspaceCommands {
                     }
                 } else {
                     existing = nil
+                }
+                if let existing, borrowed == nil, leftAlone == plan.workspace.sessionName {
+                    // Declining "already running, attach?" means no reuse
+                    // happened at all: leave this session exactly as it was
+                    // found, comparing and building neither.
+                    try await output.warning(
+                        "\(existing.name) is already running; nothing was loaded for this input.",
+                        code: "declined")
+                    continue
                 }
                 let session: Session
                 if let existing, borrowed == nil {
@@ -440,6 +454,13 @@ enum WorkspaceCommands {
 
     private enum LoadTarget {
         case detached
+        /// Declining "already running. Attach?" for the named session. Like
+        /// `.detached`, nothing is switched to at the end — but this also
+        /// tells the per-input loop to leave that one session exactly as it
+        /// found it: no reuse comparison, no rebuild. Only the last input
+        /// can be named here, since that is the one session the prompt asks
+        /// about; every input before it still builds normally.
+        case declinedReuse(of: String)
         case append(Session)
         case attached(Client?)
         /// Inside tmux, with no client identified for the invoking pane — a
@@ -479,10 +500,13 @@ enum WorkspaceCommands {
             let answer = try await prompt(
                 "\(existingSession.name) is already running. Attach? [Y/n]", context: context)
             // Declining here means no reuse happened at all: the document
-            // comparison below answers "I went to reuse this and it does not
-            // satisfy you," and after a decline nobody went to reuse
-            // anything. Stop before that comparison ever runs.
-            if ["n", "no"].contains(answer) { throw PromptDeclined() }
+            // comparison the per-input loop would otherwise run answers "I
+            // went to reuse this and it does not satisfy you," and after a
+            // decline nobody went to reuse anything. This is about the last
+            // input only — every input before it still builds normally.
+            if ["n", "no"].contains(answer) {
+                return .declinedReuse(of: existingSession.name)
+            }
         }
         guard insideTmux else { return .attached(nil) }
         let rawPane = context.environment["TMUX_PANE"] ?? ""
