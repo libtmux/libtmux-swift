@@ -616,97 +616,118 @@ struct RetainedMCPBehaviorTests {
             let transport = RetainedProbeFailureTransport(executingWith: fixture.tmuxExecutable)
             let server = Server(
                 endpoint: fixture.endpoint, tmuxExecutable: wrapper.path, transport: transport)
-            let pane = try #require(try await server.panes().first)
-            let command = "printf x >> \(shellQuoted(output.path))"
-            let running: Task<ToolOutcome, any Error>?
-            if let interruption {
-                let release = try await retainRun(
-                    on: pane, using: server, controlledBy: fixture,
-                    interruption: interruption, afterRelease: command)
-                try await fixture.signal(release)
-                running = nil
-            } else {
-                running = Task {
-                    try await tools(server).call(
-                        ToolCall(
-                            name: "run_shell_command",
-                            arguments: .object([
-                                "command": .string(command),
-                                "paneId": .string(pane.id.rawValue),
-                                "timeoutMs": .integer(5_000),
-                            ])
+            var phase = "read pane"
+            var captured: ServerIncarnation?
+            do {
+                let pane = try #require(try await server.panes().first)
+                captured = pane.incarnation
+                phase = "initial command"
+                let command = "printf x >> \(shellQuoted(output.path))"
+                let running: Task<ToolOutcome, any Error>?
+                if let interruption {
+                    let release = try await retainRun(
+                        on: pane, using: server, controlledBy: fixture,
+                        interruption: interruption, afterRelease: command)
+                    try await fixture.signal(release)
+                    running = nil
+                } else {
+                    running = Task {
+                        try await tools(server).call(
+                            ToolCall(
+                                name: "run_shell_command",
+                                arguments: .object([
+                                    "command": .string(command),
+                                    "paneId": .string(pane.id.rawValue),
+                                    "timeoutMs": .integer(5_000),
+                                ])
+                            )
                         )
-                    )
+                    }
                 }
-            }
-            defer { running?.cancel() }
-            try #require(
-                try await waitUntil(within: .seconds(3)) {
-                    FileManager.default.fileExists(atPath: injected.path)
-                }
-            )
-            let channel = try #require(await transport.releaseChannel)
-            let nonce = String(channel.dropFirst("libtmux-mcp-release-".count))
-            let status = "@libtmux_mcp_\(nonce)_status"
-            let staged = "/tmp/libtmux-mcp-run-\(nonce)"
-            if failure == .notSubmitted {
-                #expect(await TmuxTools.paneRuns.isHeld(pane))
-                #expect(try await fixture.option(status, scope: .pane(pane)) == "releasing")
-                #expect(FileManager.default.fileExists(atPath: staged))
-                await #expect(throws: ToolError.self) {
-                    try await tools(server).call(
-                        ToolCall(
-                            name: "send_keys",
-                            arguments: .object([
-                                "force": .bool(true),
-                                "keys": .array([.string("must-not-overlap")]),
-                                "literal": .bool(true),
-                                "paneId": .string(pane.id.rawValue),
-                            ])
+                defer { running?.cancel() }
+                phase = "acknowledgment injection"
+                try #require(
+                    try await waitUntil(within: .seconds(3)) {
+                        FileManager.default.fileExists(atPath: injected.path)
+                    }
+                )
+                let channel = try #require(await transport.releaseChannel)
+                let nonce = String(channel.dropFirst("libtmux-mcp-release-".count))
+                let status = "@libtmux_mcp_\(nonce)_status"
+                let staged = "/tmp/libtmux-mcp-run-\(nonce)"
+                phase = "status after injection"
+                if failure == .notSubmitted {
+                    #expect(await TmuxTools.paneRuns.isHeld(pane))
+                    #expect(try await fixture.option(status, scope: .pane(pane)) == "releasing")
+                    #expect(FileManager.default.fileExists(atPath: staged))
+                    await #expect(throws: ToolError.self) {
+                        try await tools(server).call(
+                            ToolCall(
+                                name: "send_keys",
+                                arguments: .object([
+                                    "force": .bool(true),
+                                    "keys": .array([.string("must-not-overlap")]),
+                                    "literal": .bool(true),
+                                    "paneId": .string(pane.id.rawValue),
+                                ])
+                            )
                         )
+                    }
+                } else {
+                    try #require(
+                        try await waitUntil(within: .seconds(3)) {
+                            !(await TmuxTools.paneRuns.isHeld(pane))
+                                && !FileManager.default.fileExists(atPath: staged)
+                        }
                     )
+                    #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
                 }
-            } else {
+                phase = "retry permission"
+                try #require(
+                    try await waitUntil(within: .seconds(3)) {
+                        FileManager.default.fileExists(atPath: waiting.path)
+                    }
+                )
+                try Data().write(to: permit)
+                phase = "original result"
+                if let running {
+                    #expect(try await running.value.structured["exitStatus"]?.intValue == 0)
+                }
                 try #require(
                     try await waitUntil(within: .seconds(3)) {
                         !(await TmuxTools.paneRuns.isHeld(pane))
                             && !FileManager.default.fileExists(atPath: staged)
+                            && FileManager.default.fileExists(atPath: retried.path)
                     }
                 )
+                phase = "status after retry"
                 #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
-            }
-            try #require(
-                try await waitUntil(within: .seconds(3)) {
-                    FileManager.default.fileExists(atPath: waiting.path)
-                }
-            )
-            try Data().write(to: permit)
-            if let running {
-                #expect(try await running.value.structured["exitStatus"]?.intValue == 0)
-            }
-            try #require(
-                try await waitUntil(within: .seconds(3)) {
-                    !(await TmuxTools.paneRuns.isHeld(pane))
-                        && !FileManager.default.fileExists(atPath: staged)
-                        && FileManager.default.fileExists(atPath: retried.path)
-                }
-            )
-            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
-            #expect(try String(contentsOf: output, encoding: .utf8) == "x")
-            #expect(await transport.inputDispatches == 1)
-            #expect(await transport.releaseAttempts == 1)
-            let next = try await tools(server).call(
-                ToolCall(
-                    name: "run_shell_command",
-                    arguments: .object([
-                        "command": .string("printf 'acknowledgment-recovered\\n'"),
-                        "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(5_000),
-                    ])
+                #expect(try String(contentsOf: output, encoding: .utf8) == "x")
+                #expect(await transport.inputDispatches == 1)
+                #expect(await transport.releaseAttempts == 1)
+                phase = "recovery command"
+                let next = try await tools(server).call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "command": .string("printf 'acknowledgment-recovered\\n'"),
+                            "paneId": .string(pane.id.rawValue),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
                 )
-            )
-            #expect(next.structured["exitStatus"]?.intValue == 0)
-            #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+                #expect(next.structured["exitStatus"]?.intValue == 0)
+                phase = "status after recovery"
+                #expect(try await fixture.option(status, scope: .pane(pane)) == nil)
+            } catch {
+                let current = try? await fixture.withTimeout(.seconds(1)).incarnation()
+                print(
+                    "acknowledgment failure: phase=\(phase) error=\(String(reflecting: error)) "
+                        + "captured=\(String(reflecting: captured)) "
+                        + "current=\(String(reflecting: current))"
+                )
+                throw error
+            }
         }
     }
 
