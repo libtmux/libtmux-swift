@@ -250,29 +250,24 @@ public struct Server: Sendable, Hashable {
         return try request.validate(reply)
     }
 
-    /// Refuses a dead pane or a replacement process before executing the command.
+    /// Guards the captured pane process before executing the command.
     package func runIsolated(
         _ command: TmuxCommand,
         guardingProcessOf pane: Pane,
+        allowingDead: Bool = false,
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         let expected = try expectedIncarnation([pane.incarnation])
         guard let processID = pane.processID, processID > 0 else {
             throw .staleServerValue
         }
+        let identity = FormatCondition.all(
+            .equals("pane_id", pane.id.rawValue), .equals("pane_pid", processID))
+        let condition = allowingDead ? identity : .all(identity, .equals("pane_dead", 0))
         let request = GuardedRequest(
             command: command,
             incarnation: expected,
-            targets: [
-                GuardedTarget(
-                    target: pane.id.rawValue,
-                    condition: .all(
-                        .equals("pane_id", pane.id.rawValue),
-                        .equals("pane_pid", processID),
-                        .equals("pane_dead", 0)
-                    )
-                )
-            ]
+            targets: [GuardedTarget(target: pane.id.rawValue, condition: condition)]
         )
         let reply = try await runtime.run(
             rawArguments: request.commands.argumentVector,

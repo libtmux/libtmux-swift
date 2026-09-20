@@ -33,22 +33,33 @@ struct RunShellStagingTests {
             _ = try await recording.preflightPaneInput(
                 pane.id.rawValue, scope: .singularPOSIXShell, force: false,
                 transitionFrom: initial, operation: "run_shell_command")
+            _ = try await recording.server.formatGlobal(
+                "#{session_id}\t#{pane_id}\t#{pane_pid}\t#{pane_dead}", for: initial.source)
             // Replay daemon reads so process startup does not spend the timeout.
             let reads = await recorder.reads
             let stalledIndex = try #require(read.index(in: reads))
-            let transport = RunShellSetupTransport(replaying: reads, stallingAt: stalledIndex)
+            let transport = RunShellSetupTransport(
+                replaying: reads, stallingAt: stalledIndex,
+                ignoringCancellation: read == .lifecycleIgnoresCancellation)
             let surface = tools(fixture, transport: transport)
             let staged = directory.appendingPathComponent("must-not-exist")
 
+            let arguments = try arguments(for: pane, command: "true", timeoutMs: 100)
+            let running = Task { try await surface.runShell(arguments, stagingAt: staged.path) }
             do {
-                _ = try await surface.runShell(
-                    arguments(for: pane, command: "true", timeoutMs: 100),
-                    stagingAt: staged.path
-                )
+                _ = try await withCommandDeadline(.seconds(1)) { try await running.value }
                 Issue.record("a stalled setup read completed without a timeout")
             } catch let TmuxError.timedOut(after) {
                 #expect(after > .zero && after <= .milliseconds(100))
+            } catch {
+                await transport.releaseStall()
+                running.cancel()
+                _ = await running.result
+                throw error
             }
+            await transport.releaseStall()
+            running.cancel()
+            _ = await running.result
             #expect(await transport.didStall)
             #expect(await transport.inputDispatchCount == 0)
             #expect(!FileManager.default.fileExists(atPath: staged.path))
@@ -270,7 +281,7 @@ struct RunShellStagingTests {
 }
 
 enum RunShellSetupRead: String, CaseIterable, Sendable {
-    case initialPreflight, capture, width, finalPreflight
+    case initialPreflight, capture, width, finalPreflight, lifecycle, lifecycleIgnoresCancellation
 
     fileprivate func index(in reads: [RunShellSetupTransport.Read]) -> Int? {
         switch self {
@@ -286,6 +297,10 @@ enum RunShellSetupRead: String, CaseIterable, Sendable {
             }
         case .finalPreflight:
             reads.lastIndex { $0.arguments.contains("list-panes") }
+        case .lifecycle, .lifecycleIgnoresCancellation:
+            reads.firstIndex { read in
+                read.arguments.contains { $0.contains("#{pane_pid}\t#{pane_dead}") }
+            }
         }
     }
 }
@@ -299,14 +314,25 @@ private actor RunShellSetupTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private let replay: [Read]?
     private let stalledIndex: Int?
+    private let ignoringCancellation: Bool
+    private var stalled: CheckedContinuation<Void, Never>?
     private var index = 0
     private(set) var reads: [Read] = []
     private(set) var didStall = false
     private(set) var inputDispatchCount = 0
 
-    init(replaying reads: [Read]? = nil, stallingAt index: Int? = nil) {
+    init(
+        replaying reads: [Read]? = nil, stallingAt index: Int? = nil,
+        ignoringCancellation: Bool = false
+    ) {
         self.replay = reads
         self.stalledIndex = index
+        self.ignoringCancellation = ignoringCancellation
+    }
+
+    func releaseStall() {
+        stalled?.resume()
+        stalled = nil
     }
 
     func run(
@@ -328,6 +354,10 @@ private actor RunShellSetupTransport: ProcessTransport {
             index += 1
             if shouldStall {
                 didStall = true
+                if ignoringCancellation {
+                    await withCheckedContinuation { stalled = $0 }
+                    throw .cancelled
+                }
                 let (events, continuation) = AsyncStream<Void>.makeStream()
                 defer { continuation.finish() }
                 for await _ in events {}

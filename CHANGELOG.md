@@ -114,6 +114,10 @@ version number says only which alpha you have. Pin an exact one.
 - `run_shell_command` refuses input if its captured shell exits or respawns
   before dispatch. (#15)
 
+- `run_shell_command` stops waiting and releases its reservation when the
+  original pane, shell, or daemon ends. Cleanup preserves replacement shell
+  state. (#15)
+
 - `run_shell_command` releases a timed-out pane after bounded cleanup when
   completion cannot be confirmed. (#15)
 

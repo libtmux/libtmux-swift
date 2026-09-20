@@ -22,7 +22,7 @@ extension Server {
         }
     }
 
-    func connectedGuardingIncarnation<Result: Sendable>(
+    package func connectedGuardingIncarnation<Result: Sendable>(
         attachingTo sessionID: SessionID,
         expecting incarnation: ServerIncarnation,
         _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result

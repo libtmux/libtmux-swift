@@ -15,6 +15,7 @@ extension TmuxTools {
         _ progress: ProgressReporter = .silent,
         stagingAt scriptPath: String? = nil
     ) async throws -> ToolOutcome {
+        let server = server.withTimeout(min(server.commandTimeout ?? .seconds(1), .seconds(1)))
         let requested = try arguments.string("paneId")
         let force = try arguments.bool("force", or: false)
         let command = try arguments.string("command")
@@ -52,6 +53,7 @@ extension TmuxTools {
         )
         var lifetime = RunShellLifetime.preDispatch
         var stagedFile: RunShellFile?
+        var observation: RunShellObservation?
         do {
             try Task.checkCancellation()
             guard ContinuousClock.now < deadline else {
@@ -106,6 +108,10 @@ extension TmuxTools {
                     "run_shell_command exceeded its timeout before input"
                 )
             }
+            let observer = try await RunShellObservation.start(
+                for: pane, using: server, within: ContinuousClock.now.duration(to: deadline))
+            observation = observer
+            try Task.checkCancellation()
             lifetime = .submitting(cleanup)
             let echoTargets = [
                 PaneEchoes.Key(incarnation: cleanup.pane.incarnation, pane: cleanup.pane.id)
@@ -143,6 +149,7 @@ extension TmuxTools {
             lifetime = .started(cleanup)
             let finished = try await waitForRunShell(
                 cleanup,
+                observation: observer,
                 timeout: ContinuousClock.now.duration(to: deadline),
                 progress: progress
             )
@@ -150,13 +157,15 @@ extension TmuxTools {
                 lifetime = .finishing(cleanup)
             }
             try Task.checkCancellation()
-            let result = try await finishRunShell(
-                cleanup,
-                finished: finished,
-                enforcedTimeout: enforced,
-                maxLines: maxLines,
-                started: started
-            )
+            let result = try await observer.whileAlive {
+                try await finishRunShell(
+                    cleanup,
+                    finished: finished,
+                    enforcedTimeout: enforced,
+                    maxLines: maxLines,
+                    started: started
+                )
+            }
             if let status = result.exitStatus {
                 // The command already ran, and `result` already carries its
                 // exit status and output. A cleanup hiccup from here on must
@@ -168,7 +177,9 @@ extension TmuxTools {
                 do {
                     try await server.using(.direct) { server in
                         try await Self.releaseRunShell(cleanup, status: status, server: server)
-                        try await Self.waitForRunShellRelease(cleanup, server: server)
+                        try await observer.whileAlive {
+                            try await Self.waitForRunShellRelease(cleanup, server: server)
+                        }
                     }
                     releaseObserved = true
                     try await server.using(.direct) { server in
@@ -187,8 +198,10 @@ extension TmuxTools {
             } else {
                 schedulePaneRunCleanup(cleanup, reservation: reservation)
             }
+            await observer.close()
             return .init(result)
         } catch {
+            await observation?.close()
             switch lifetime {
             case .preDispatch:
                 Self.releaseRunShellFile(stagedFile)
@@ -333,10 +346,11 @@ extension TmuxTools {
 
     private func waitForRunShell(
         _ cleanup: RunShellCleanup,
+        observation: RunShellObservation,
         timeout: Duration,
         progress: ProgressReporter
     ) async throws -> Bool {
-        let server = server
+        let server = server.withTimeout(min(server.commandTimeout ?? .seconds(1), .seconds(1)))
         do {
             return try await progress.whileRunning(
                 upTo: timeout,
@@ -344,18 +358,24 @@ extension TmuxTools {
             ) {
                 try await withThrowingTaskGroup(of: Bool.self) { group in
                     group.addTask {
-                        try await server.using(.direct) { server in
-                            try await server.wait(for: cleanup.channel)
+                        do {
+                            try await withCommandDeadline(timeout) {
+                                try await server.using(.direct) { server in
+                                    try await server.wait(for: cleanup.channel)
+                                }
+                            }
+                            return true
+                        } catch let error as TmuxError {
+                            if case .timedOut = error { return false }
+                            throw error
                         }
-                        return true
                     }
                     group.addTask {
-                        try await Task.sleep(for: timeout)
-                        return false
+                        try await observation.wait()
+                        throw TmuxError.staleServerValue
                     }
-                    let first = try await group.next() ?? false
-                    group.cancelAll()
-                    return first
+                    defer { group.cancelAll() }
+                    return try await group.next() ?? false
                 }
             }
         } catch {
@@ -371,7 +391,8 @@ extension TmuxTools {
         maxLines: Int,
         started: ContinuousClock.Instant
     ) async throws -> RunShellResult {
-        try await server.using(.direct) { server in
+        let server = server.withTimeout(min(server.commandTimeout ?? .seconds(1), .seconds(1)))
+        return try await server.using(.direct) { server in
             let captureLimit = try cleanup.captureLineLimit(for: maxLines)
             let captureDeadline = ContinuousClock.now.advanced(
                 by: Self.runShellCaptureSettleTimeout
@@ -490,6 +511,7 @@ extension TmuxTools {
         releaseObserved: Bool,
         proofTimeout: Duration = retainedRunProofTimeout
     ) async {
+        let server = server.withTimeout(min(server.commandTimeout ?? .seconds(1), .seconds(1)))
         let (proofs, continuation) = AsyncStream<RetainedRunProof>.makeStream(
             bufferingPolicy: .bufferingOldest(1)
         )
@@ -522,14 +544,16 @@ extension TmuxTools {
             }
         }
         let presence = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
-                if await retainedRunEnded(cleanup.pane, server: server) {
+            do {
+                let observer = try await RunShellObservation.observe(cleanup.pane, using: server)
+                do {
+                    try await observer.waitForEnd()
                     continuation.yield(.ended)
-                    return
-                }
-            }
+                } catch {}
+                await observer.close()
+            } catch TmuxError.staleServerValue {
+                continuation.yield(.ended)
+            } catch {}
         }
         // Bounded so a proof that never arrives cannot strand the reservation
         // and staged file forever: `completion` and `presence` otherwise
@@ -552,6 +576,8 @@ extension TmuxTools {
         continuation.finish()
         completion.cancel()
         presence.cancel()
+        await completion.value
+        await presence.value
         await paneRuns.release(reservation)
         releaseRunShellFile(cleanup.stagedFile)
         if proof == nil {
@@ -561,7 +587,7 @@ extension TmuxTools {
             FileHandle.standardError.write(Data(message.utf8))
         }
         if proof == .ended {
-            _ = try? await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
+            try? await clearRunShellStatus(cleanup, server: server)
         }
     }
 
@@ -612,7 +638,7 @@ extension TmuxTools {
         )
         let reply = try await server.runIsolated(
             command,
-            expecting: cleanup.pane.incarnation,
+            guardingProcessOf: cleanup.pane,
             perStreamOutputLimit: 4_096
         )
         guard reply.isSuccess else {
@@ -648,56 +674,20 @@ extension TmuxTools {
         return status
     }
 
-    private static func retainedRunEnded(_ pane: Pane, server: Server) async -> Bool {
-        do {
-            let before = try await server.incarnation()
-            guard before == pane.incarnation else { return true }
-            let reply = try await server.run(
-                TmuxCommand("list-panes", ["-a", "-F", retainedPaneFormat])
-            )
-            let after = try await server.incarnation()
-            guard after == pane.incarnation else { return true }
-            guard reply.isSuccess else { return false }
-            return retainedPaneEnded(pane, listing: reply.text)
-        } catch {
-            return retainedProcessEnded(pane.incarnation.processID)
-        }
-    }
-
-    static func retainedPaneEnded(_ pane: Pane, listing: String) -> Bool {
-        if listing.isEmpty { return true }
-        var lines = listing.split(separator: "\n", omittingEmptySubsequences: false)
-        if lines.last?.isEmpty == true { lines.removeLast() }
-        guard !lines.isEmpty, lines.allSatisfy({ !$0.isEmpty }) else { return false }
-        var panes: [PaneID: RetainedPaneState] = [:]
-        for line in lines {
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
-            guard fields.count == 3 else { return false }
-            let paneID = String(fields[0])
-            let windowID = String(fields[1])
-            guard let id = PaneID(rawValue: paneID), UInt32(paneID.dropFirst()) != nil,
-                let window = WindowID(rawValue: windowID), UInt32(windowID.dropFirst()) != nil,
-                fields[2] == "0" || fields[2] == "1"
-            else { return false }
-            let row = RetainedPaneState(id: id, windowID: window, isDead: fields[2] == "1")
-            if let existing = panes[row.id], existing != row { return false }
-            panes[row.id] = row
-        }
-        guard let observed = panes[pane.id] else { return true }
-        return observed.windowID == pane.windowID && observed.isDead
-    }
-
-    private static func retainedProcessEnded(_ processID: Int) -> Bool {
-        guard processID > 0, processID <= Int(Int32.max) else { return false }
-        errno = 0
-        return kill(pid_t(processID), 0) == -1 && errno == ESRCH
-    }
-
     private static func clearRunShellStatus(
         _ cleanup: RunShellCleanup,
         server: Server
     ) async throws {
-        try await server.unsetOption(cleanup.statusOption, scope: .pane(cleanup.pane))
+        let reply = try await server.runIsolated(
+            TmuxCommand(
+                "set-option", ["-pu", "-t", cleanup.pane.id.rawValue, cleanup.statusOption]),
+            guardingProcessOf: cleanup.pane,
+            allowingDead: true,
+            perStreamOutputLimit: 4_096)
+        guard reply.isSuccess else {
+            throw TmuxError.commandFailed(
+                command: "set-option", exitCode: reply.exitCode, reason: reply.errorText)
+        }
     }
 
     private static func releaseRunShellFile(_ file: RunShellFile?) {
@@ -812,12 +802,6 @@ extension TmuxTools {
         case released
     }
 
-    private struct RetainedPaneState: Equatable {
-        let id: PaneID
-        let windowID: WindowID
-        let isDead: Bool
-    }
-
     struct RunShellCleanup: Sendable {
         let pane: Pane
         let channel: String
@@ -851,7 +835,6 @@ extension TmuxTools {
     }
 
     private static let runShellCaptureSettleTimeout = Duration.seconds(1)
-    private static let retainedPaneFormat = "#{pane_id}\t#{window_id}\t#{pane_dead}"
     static let firstSettleDelay = Duration.milliseconds(10)
     static let longestSettleDelay = Duration.milliseconds(160)
 
@@ -990,7 +973,7 @@ extension TmuxTools {
             + "#{==:#{start_time},\(cleanup.pane.incarnation.startedAt)}}"
         let originalPane =
             "#{&&:\(originalDaemon),#{&&:#{==:#{pane_id},\(cleanup.pane.id.rawValue)},"
-            + "#{==:#{pane_dead},0}}}"
+            + "#{&&:#{==:#{pane_pid},\(cleanup.pane.processID ?? -1)},#{==:#{pane_dead},0}}}}"
         // A lost acknowledgment reply may be retried after cleanup removed it.
         // The guard prevents that retry from recreating the completed state.
         let acknowledge =

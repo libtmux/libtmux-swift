@@ -1,3 +1,5 @@
+import CProcessObservation
+import Dispatch
 import Foundation
 import Testing
 import TmuxFixture
@@ -851,36 +853,48 @@ struct RetainedMCPBehaviorTests {
         _ phase: (acknowledgment: Bool, end: RetainedRunEndProof), ignoreHUP: Bool
     ) async throws {
         let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
-            .appendingPathComponent("daemon-retry-\(UUID().uuidString)")
+            .appendingPathComponent("retry-matrix-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
         )
         defer { try? FileManager.default.removeItem(at: directory) }
+        let events = try ShellTestEvents(at: directory.appendingPathComponent("events"))
+        defer { events.close() }
+        let gate = directory.appendingPathComponent("gate")
+        try #require(mkfifo(gate.path, 0o600) == 0)
+        let gateDescriptor = open(gate.path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+        try #require(gateDescriptor >= 0)
+        defer { _ = close(gateDescriptor) }
         let attempts = directory.appendingPathComponent("attempts")
-        let ready = directory.appendingPathComponent("ready")
         let output = directory.appendingPathComponent("output")
         let traps = directory.appendingPathComponent("traps")
         let functionStatus = directory.appendingPathComponent("function-status")
-        let permit = directory.appendingPathComponent("permit")
-        let waiting = directory.appendingPathComponent("waiting")
         let wrapper = directory.appendingPathComponent("tmux")
         try await withTmuxServer { fixture in
+            var checkpoint = "setup"
+            defer {
+                if checkpoint != "complete" { print("Shell retry stopped at \(checkpoint)") }
+            }
             let pattern = phase.acknowledgment ? "*' released'" : "*'_status 0'"
-            let secondAttempt =
-                phase.end != .daemonEnd
-                ? "if [ -e \(shellQuoted(attempts.path)) ]; then "
-                    + ": > \(shellQuoted(waiting.path)); "
-                    + "while [ ! -e \(shellQuoted(permit.path)) ]; do /bin/sleep 0.01; done; "
-                    + "exec \(shellQuoted(fixture.tmuxExecutable)) \"$@\"; fi"
-                : ":"
+            let second =
+                phase.end == .daemonEnd
+                ? ":"
+                : """
+                if [ -e \(shellQuoted(attempts.path)) ]; then
+                    printf 'blocked %s\\n' "$PPID" > \(shellQuoted(events.path))
+                    IFS= read -r permit < \(shellQuoted(gate.path))
+                    exec \(shellQuoted(fixture.tmuxExecutable)) "$@"
+                fi
+                """
             let script = """
                 #!/bin/sh
                 previous=
                 for argument do previous=$argument; done
                 case "$previous" in
                     \(pattern))
-                        \(secondAttempt)
+                        \(second)
                         printf '%s\\n' "$PPID" >> \(shellQuoted(attempts.path))
+                        printf 'attempt %s\\n' "$PPID" > \(shellQuoted(events.path))
                         exit 72 ;;
                 esac
                 exec \(shellQuoted(fixture.tmuxExecutable)) "$@"
@@ -888,7 +902,6 @@ struct RetainedMCPBehaviorTests {
             try script.write(to: wrapper, atomically: false, encoding: .utf8)
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
-            defer { try? Data().write(to: permit) }
             let server = Server(endpoint: fixture.endpoint, tmuxExecutable: wrapper.path)
             let pane = try #require(try await server.panes().first)
             if phase.end == .paneMissing || phase.end == .paneDead {
@@ -899,17 +912,13 @@ struct RetainedMCPBehaviorTests {
             let parentText = try #require(
                 try await fixture.format("#{pane_pid}", addressing: pane.id.rawValue))
             let parent = try #require(Int32(parentText))
-            try #require(parent > 0)
             defer { _ = kill(parent, SIGKILL) }
             let configure =
                 "kill() { :; }; " + (ignoreHUP ? "trap '' HUP; " : "")
-                + "printf ready > \(shellQuoted(ready.path))"
+                + "printf 'ready\\n' > \(shellQuoted(events.path))"
             try await fixture.send([.key(configure), .key("Enter")], to: pane)
-            try #require(
-                try await waitUntil {
-                    FileManager.default.fileExists(atPath: ready.path)
-                }
-            )
+            checkpoint = "shell ready"
+            #expect(try await events.next() == "ready")
             let running = Task {
                 try await tools(server).call(
                     ToolCall(
@@ -923,75 +932,360 @@ struct RetainedMCPBehaviorTests {
                             "paneId": .string(pane.id.rawValue),
                             "timeoutMs": .integer(5_000),
                         ])
-                    )
-                )
+                    ))
             }
             defer { running.cancel() }
-            try #require(
-                try await waitUntil(within: .seconds(3)) {
-                    if phase.end != .daemonEnd {
-                        return FileManager.default.fileExists(atPath: waiting.path)
-                    }
-                    return (try? String(contentsOf: attempts, encoding: .utf8))?
-                        .split(separator: "\n").count ?? 0 >= 2
+            checkpoint = "first retry"
+            let first: String
+            do {
+                first = try await events.next()
+            } catch {
+                let screen =
+                    (try? await fixture.capture(pane))?.joined(separator: " | ") ?? "<none>"
+                print("Shell retry pane: \(screen)")
+                if let result = try? await shellTestWithinOneSecond({ await running.result }) {
+                    print("Shell retry caller: \(result)")
                 }
-            )
-            let processIDs = try String(contentsOf: attempts, encoding: .utf8)
-                .split(separator: "\n").compactMap { Int32($0) }
-            let frame = try #require(processIDs.first)
-            try #require(frame > 0 && frame != parent && processIDs.allSatisfy { $0 == frame })
+                running.cancel()
+                _ = await running.result
+                throw error
+            }
+            try #require(first.hasPrefix("attempt "))
+            let frame = try #require(Int32(first.dropFirst("attempt ".count)))
+            try #require(frame > 0 && frame != parent)
             defer { _ = kill(frame, SIGKILL) }
+            let frameExit = try ShellTestExit(process: frame)
+            defer { frameExit.close() }
+            checkpoint = "second retry"
+            #expect(
+                try await events.next()
+                    == "\(phase.end == .daemonEnd ? "attempt" : "blocked") \(frame)")
             #expect(try String(contentsOf: traps, encoding: .utf8).contains("HUP") == ignoreHUP)
             #expect(try String(contentsOf: functionStatus, encoding: .utf8) == "0")
+            let releaseObservation = try #require(await TmuxTools.paneRuns.observeRelease(of: pane))
+            checkpoint = "target termination"
             switch phase.end {
-            case .daemonEnd:
+            case .daemonEnd, .daemonReplacement:
+                let daemonExit = try ShellTestExit(process: Int32(pane.incarnation.processID))
+                defer { daemonExit.close() }
                 try await fixture.killServer()
-            case .daemonReplacement:
-                try await fixture.killServer()
-                let root = URL(fileURLWithPath: pane.incarnation.socketPath)
-                    .deletingLastPathComponent()
-                let start = TmuxCommandList([
-                    TmuxCommand("new-session", ["-d", "-s", "replacement", "/bin/sh"]),
-                    try reaperCommand(root: root),
-                ])
-                // The killed daemon unlinks its socket as it goes, so a client
-                // sent at once can meet one still leaving. Retry until a
-                // replacement answers, as the identity suite does.
-                let started = try await waitUntil {
-                    if try await fixture.hasSession("replacement") { return true }
-                    return try await fixture.run(start).isSuccess
+                checkpoint = "daemon exit"
+                try await daemonExit.wait()
+                if phase.end == .daemonReplacement {
+                    let root = URL(fileURLWithPath: pane.incarnation.socketPath)
+                        .deletingLastPathComponent()
+                    let replacement = try await fixture.run(
+                        TmuxCommandList([
+                            TmuxCommand("new-session", ["-d", "-s", "replacement", "/bin/sh"]),
+                            try reaperCommand(root: root),
+                        ]))
+                    try #require(replacement.isSuccess)
+                    try #require(try await fixture.incarnation() != pane.incarnation)
                 }
-                try #require(started)
-                try #require(try await fixture.incarnation() != pane.incarnation)
             case .paneMissing:
-                let reply = try await fixture.run(
+                let killed = try await fixture.run(
                     TmuxCommand("kill-pane", ["-t", pane.id.rawValue]))
-                try #require(reply.isSuccess)
+                try #require(killed.isSuccess)
+                #expect(try await fixture.panes().allSatisfy { $0.id != pane.id })
             case .paneDead:
-                let reply = try await fixture.run(
+                let dead = "printf 'pane-dead\\n' > \(shellQuoted(events.path))"
+                let hook = try await fixture.run(
+                    TmuxCommand(
+                        "set-hook", ["-g", "pane-died", "run-shell -b \(shellQuoted(dead))"]))
+                try #require(hook.isSuccess)
+                let retained = try await fixture.run(
                     TmuxCommand(
                         "set-option", ["-p", "-t", pane.id.rawValue, "remain-on-exit", "on"]))
-                try #require(reply.isSuccess)
+                try #require(retained.isSuccess)
                 try #require(kill(parent, SIGKILL) == 0)
-                try #require(
-                    try await waitUntil {
-                        try await fixture.format("#{pane_dead}", addressing: pane.id.rawValue)
-                            == "1"
-                    }
-                )
+                checkpoint = "pane-dead hook"
+                #expect(try await events.next() == "pane-dead")
+                #expect(
+                    try await fixture.format("#{pane_dead}", addressing: pane.id.rawValue) == "1")
             }
-            try Data().write(to: permit)
-            _ = await running.result
-            #expect(
-                try await waitUntil(within: .seconds(3)) {
-                    kill(frame, 0) == -1 && errno == ESRCH
-                }
-            )
-            let stopped = try String(contentsOf: attempts, encoding: .utf8)
-            try await Task.sleep(for: .milliseconds(200))
-            #expect(try String(contentsOf: attempts, encoding: .utf8) == stopped)
+            let permit = Array("release\n".utf8)
+            try #require(
+                permit.withUnsafeBytes { write(gateDescriptor, $0.baseAddress, $0.count) }
+                    == permit.count)
+            checkpoint = "frame exit"
+            try await frameExit.wait()
+            checkpoint = "caller completion"
+            let result = try await shellTestWithinOneSecond { await running.result }
+            switch result {
+            case .success(let outcome):
+                #expect(phase.acknowledgment)
+                #expect(outcome.structured["exitStatus"]?.intValue == 0)
+                #expect(outcome.structured["timedOut"]?.boolValue == false)
+            case .failure:
+                #expect(!phase.acknowledgment)
+            }
+            checkpoint = "reservation release"
+            let released = try await shellTestWithinOneSecond {
+                for await _ in releaseObservation.events { return true }
+                return false
+            }
+            #expect(released)
+            #expect(!(await TmuxTools.paneRuns.isHeld(releaseObservation.reservation)))
+            let processIDs = try String(contentsOf: attempts, encoding: .utf8)
+                .split(separator: "\n").compactMap { Int32($0) }
+            #expect(!processIDs.isEmpty && processIDs.allSatisfy { $0 == frame })
             #expect(try String(contentsOf: output, encoding: .utf8) == "x")
-            try await expectReleased(pane)
+            checkpoint = "complete"
+
+        }
+    }
+
+    @Test(
+        "target termination ends a caller while command processes survive",
+        arguments: ShellTestTargetEnd.allCases)
+    func shellRemovalWithLiveProcesses(_ end: ShellTestTargetEnd) async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("live-removal-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let events = try ShellTestEvents(at: directory.appendingPathComponent("events"))
+        defer { events.close() }
+        let gate = directory.appendingPathComponent("gate")
+        try #require(mkfifo(gate.path, 0o600) == 0)
+        let gateDescriptor = open(gate.path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+        try #require(gateDescriptor >= 0)
+        defer { _ = close(gateDescriptor) }
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let parent = try #require(pane.processID)
+            defer { _ = kill(Int32(parent), SIGKILL) }
+            let keepalive = try await fixture.run(
+                TmuxCommand("new-session", ["-d", "-s", "keepalive", "/bin/sh"]))
+            try #require(keepalive.isSuccess)
+            try await fixture.send(
+                [
+                    .text("trap '' HUP; printf 'ready\\n' > \(shellQuoted(events.path))"),
+                    .key("Enter"),
+                ], to: pane)
+            #expect(try await events.next() == "ready")
+            let running = Task {
+                try await tools(fixture).call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "paneId": .string(pane.id.rawValue),
+                            "command": .string(
+                                "trap '' HUP; printf 'running\\n' > \(shellQuoted(events.path)); "
+                                    + "IFS= read -r permit < \(shellQuoted(gate.path))"),
+                            "timeoutMs": .integer(5_000),
+                        ])))
+            }
+            defer { running.cancel() }
+            #expect(try await events.next() == "running")
+            let released = try #require(await TmuxTools.paneRuns.observeRelease(of: pane))
+            switch end {
+            case .dead:
+                let dead = "printf 'dead\\n' > \(shellQuoted(events.path))"
+                let configured = try await fixture.run(
+                    TmuxCommandList([
+                        TmuxCommand(
+                            "set-option", ["-p", "-t", pane.id.rawValue, "remain-on-exit", "on"]),
+                        TmuxCommand(
+                            "set-hook", ["-g", "pane-died", "run-shell -b \(shellQuoted(dead))"]),
+                    ]))
+                try #require(configured.isSuccess)
+                try #require(kill(Int32(parent), SIGKILL) == 0)
+                #expect(try await events.next() == "dead")
+            case .missing:
+                try await fixture.kill(pane)
+                #expect(try await fixture.panes().allSatisfy { $0.id != pane.id })
+                try #require(kill(Int32(parent), 0) == 0)
+            case .respawn:
+                try await fixture.respawn(pane, running: ["/bin/sh"])
+                let replacement = try #require(try await fixture.panes().first { $0.id == pane.id })
+                #expect(replacement.processID != parent)
+                try #require(kill(Int32(parent), 0) == 0)
+            }
+            do {
+                let result = try await shellTestWithinOneSecond { await running.result }
+                if case .success = result { Issue.record("ended target returned success") }
+            } catch {
+                Issue.record("ended target did not settle the uncancelled caller: \(error)")
+            }
+            let observedRelease: Bool
+            do {
+                observedRelease = try await shellTestWithinOneSecond {
+                    for await _ in released.events { return true }
+                    return false
+                }
+            } catch {
+                Issue.record("ended target did not release its reservation: \(error)")
+                observedRelease = false
+            }
+            #expect(observedRelease)
+            #expect(!(await TmuxTools.paneRuns.isHeld(released.reservation)))
+            let permit = Array("release\n".utf8)
+            try #require(
+                permit.withUnsafeBytes { write(gateDescriptor, $0.baseAddress, $0.count) }
+                    == permit.count)
+            running.cancel()
+            _ = try await shellTestWithinOneSecond { await running.result }
+            _ = kill(Int32(parent), SIGKILL)
+
+        }
+    }
+
+    @Test("owned runs survive pane movement and observer disconnection", arguments: [false, true])
+    func shellSurvivesObservationChange(move: Bool) async throws {
+        let directory = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+            .appendingPathComponent("observation-change-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let events = try ShellTestEvents(at: directory.appendingPathComponent("events"))
+        defer { events.close() }
+        let gate = directory.appendingPathComponent("gate")
+        try #require(mkfifo(gate.path, 0o600) == 0)
+        let descriptor = open(gate.path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+        try #require(descriptor >= 0)
+        defer { _ = close(descriptor) }
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let attachment = "printf 'attached\\n' > \(shellQuoted(events.path))"
+            let hook = try await fixture.run(
+                TmuxCommand(
+                    "set-hook",
+                    ["-g", "client-attached", "run-shell -b \(shellQuoted(attachment))"]))
+            try #require(hook.isSuccess)
+            let running = Task {
+                try await tools(fixture).call(
+                    ToolCall(
+                        name: "run_shell_command",
+                        arguments: .object([
+                            "paneId": .string(pane.id.rawValue),
+                            "command": .string(
+                                "printf 'running\\n' > \(shellQuoted(events.path)); "
+                                    + "IFS= read -r permit < \(shellQuoted(gate.path)); printf 'owned-result\\n'"
+                            ),
+                            "timeoutMs": .integer(5_000),
+                        ])))
+            }
+            defer { running.cancel() }
+            var initialEvents: Set<String> = []
+            while initialEvents.count < 2 { initialEvents.insert(try await events.next()) }
+            #expect(initialEvents == ["attached", "running"])
+            let released = try #require(await TmuxTools.paneRuns.observeRelease(of: pane))
+            if move {
+                let created = try await fixture.run(
+                    TmuxCommand(
+                        "new-session", ["-d", "-s", "destination", "/bin/sh"]))
+                try #require(created.isSuccess)
+                let destination = try #require(try await fixture.panes().first { $0.id != pane.id })
+                let moved = try await fixture.run(
+                    TmuxCommand(
+                        "join-pane", ["-d", "-s", pane.id.rawValue, "-t", destination.id.rawValue]))
+                try #require(moved.isSuccess)
+            } else {
+                let client = try #require(try await fixture.clients().first)
+                let detached = try await fixture.run(
+                    TmuxCommand("detach-client", ["-t", client.name]))
+                try #require(detached.isSuccess)
+            }
+            #expect(try await events.next() == "attached")
+            let permit = Array("release\n".utf8)
+            try #require(
+                permit.withUnsafeBytes { write(descriptor, $0.baseAddress, $0.count) }
+                    == permit.count)
+            let result = try await shellTestWithinOneSecond { try await running.value }
+            #expect(result.structured["exitStatus"]?.intValue == 0)
+            #expect(
+                result.structured["output"]?.arrayValue?.compactMap(\.stringValue) == [
+                    "owned-result"
+                ])
+            let observedRelease = try await shellTestWithinOneSecond {
+                for await _ in released.events { return true }
+                return false
+            }
+            #expect(observedRelease)
+            #expect(!(await TmuxTools.paneRuns.isHeld(released.reservation)))
+            let hooks = try await fixture.run(TmuxCommand("show-hooks", ["-g", "client-attached"]))
+            #expect(hooks.text.contains(events.path))
+        }
+    }
+
+    @Test("cancelling one lifecycle waiter preserves observation and reaps its client")
+    func lifecycleWaiterCancellation() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            _ = try await server.split(pane, direction: .right)
+            let observer = try await RunShellObservation.start(
+                for: pane, using: server, within: .seconds(1))
+            do {
+                let cancelled = Task { try await observer.wait() }
+                cancelled.cancel()
+                switch await cancelled.result {
+                case .success: Issue.record("cancelled waiter completed without cancellation")
+                case .failure(let error):
+                    #expect(error is CancellationError || error as? TmuxError == .cancelled)
+                }
+                #expect(try await observer.whileAlive { true })
+                try await server.kill(pane)
+                try await shellTestWithinOneSecond { try await observer.waitForEnd() }
+            } catch {
+                await observer.close()
+                throw error
+            }
+            await observer.close()
+            #expect(try await server.clients().isEmpty)
+        }
+    }
+
+    @Test("retained cleanup preserves a replacement shell's status")
+    func shellCleanupRejectsRespawn() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let reservation = try #require(await TmuxTools.paneRuns.reserve([pane]))
+            let released = try #require(await TmuxTools.paneRuns.observeRelease(of: pane))
+            let capture = try await server.captureBounded(
+                pane, since: nil, maximumLines: 1, perStreamOutputLimit: 4_096)
+            let option = "@libtmux_mcp_test_replacement_status"
+            let cleanup = TmuxTools.RunShellCleanup(
+                pane: pane, channel: "unused-done", releaseChannel: "unused-release",
+                statusOption: option, cursor: capture.cursor, startMarker: [], endMarker: [],
+                payload: "", scriptPath: "/tmp/libtmux-swift-test/unused-\(UUID().uuidString)")
+            try await server.respawn(pane, running: ["/bin/sh"])
+            let replacement = try #require(try await server.panes().first { $0.id == pane.id })
+            try #require(replacement.processID != pane.processID)
+            try await server.setOption(option, to: "replacement", scope: .pane(replacement))
+            try await shellTestWithinOneSecond {
+                await TmuxTools.finishTimedOutRun(
+                    cleanup, server: server, reservation: reservation, releaseObserved: false)
+            }
+            #expect(try await server.option(option, scope: .pane(replacement)) == "replacement")
+            let observedRelease = try await shellTestWithinOneSecond {
+                for await _ in released.events { return true }
+                return false
+            }
+            #expect(observedRelease)
+            #expect(!(await TmuxTools.paneRuns.isHeld(reservation)))
+        }
+    }
+
+    @Test("lifecycle observation resumes after a transient metadata failure")
+    func lifecycleRecoversAfterReadFailure() async throws {
+        try await withProbeServer { fixture, server, pane, transport in
+            _ = try await fixture.split(pane, direction: .right)
+            await transport.arm(.invocationFailed)
+            let observer = try await RunShellObservation.observe(pane, using: server)
+            do {
+                await #expect(throws: RetainedProbeFailure.invocationFailed.error) {
+                    try await observer.wait()
+                }
+                #expect(await transport.failureWasInjected)
+                try await fixture.kill(pane)
+                try await shellTestWithinOneSecond { try await observer.waitForEnd() }
+            } catch {
+                await observer.close()
+                throw error
+            }
+            await observer.close()
+            #expect(try await fixture.clients().isEmpty)
         }
     }
 
@@ -1184,10 +1478,7 @@ struct RetainedMCPBehaviorTests {
                 pane: pane,
                 channel: "unused-done",
                 releaseChannel: "unused-release",
-                // A status option nothing ever sets: retainedRunState reads
-                // it as neither completed nor released, and the live pane
-                // never satisfies retainedRunEnded either, so nothing this
-                // function polls for ever arrives on its own.
+                // No completion status or lifecycle event can release this run.
                 statusOption: "@libtmux_mcp_test_unset_status",
                 cursor: capture.cursor,
                 startMarker: [],
@@ -1401,6 +1692,7 @@ struct RetainedMCPBehaviorTests {
                 interruption: .cancel
             )
 
+            let released = try #require(await TmuxTools.paneRuns.observeRelease(of: pane))
             switch proof {
             case .paneMissing:
                 try await server.kill(pane)
@@ -1443,30 +1735,12 @@ struct RetainedMCPBehaviorTests {
                 #expect(try await server.incarnation() != pane.incarnation)
             }
 
-            try await expectReleased(pane)
-        }
-    }
-
-    @Test("retained pane snapshots require complete consistent rows")
-    func retainedPaneSnapshotsRequireConsistency() async throws {
-        try await withTmuxServer { server in
-            let pane = try #require(try await server.panes().first)
-            let prefix = "\(pane.id.rawValue)\t\(pane.windowID.rawValue)\t"
-            let dead = "\(prefix)1\n"
-            let live = "\(prefix)0\n"
-
-            #expect(TmuxTools.retainedPaneEnded(pane, listing: ""))
-            #expect(TmuxTools.retainedPaneEnded(pane, listing: dead + dead))
-            #expect(!TmuxTools.retainedPaneEnded(pane, listing: live))
-            #expect(!TmuxTools.retainedPaneEnded(pane, listing: dead + live))
-            #expect(!TmuxTools.retainedPaneEnded(pane, listing: "\(pane.id.rawValue)\t@999\t1\n"))
-            for malformed in [
-                "\(prefix)unknown\n", "%01\t\(pane.windowID.rawValue)\t1\n",
-                "%4294967296\t\(pane.windowID.rawValue)\t1\n",
-                "\(pane.id.rawValue)\t@01\t1\n", "\(pane.id.rawValue)\t@4294967296\t1\n",
-            ] {
-                #expect(!TmuxTools.retainedPaneEnded(pane, listing: malformed))
+            let observed = try await shellTestWithinOneSecond {
+                for await _ in released.events { return true }
+                return false
             }
+            #expect(observed)
+            #expect(!(await TmuxTools.paneRuns.isHeld(released.reservation)))
         }
     }
 
@@ -1541,6 +1815,10 @@ enum RetainedProbeFailure: String, CaseIterable, Sendable {
 enum RetainedRunInterruption: String, CaseIterable, Sendable {
     case cancel
     case timeout
+}
+
+enum ShellTestTargetEnd: CaseIterable, Sendable {
+    case missing, dead, respawn
 }
 
 enum RetainedRunEndProof: String, CaseIterable, Sendable {
@@ -1765,4 +2043,127 @@ private actor RetainedProbeFailureTransport: ProcessTransport {
             perStreamOutputLimit: perStreamOutputLimit
         )
     }
+}
+
+private enum ShellTestFailure: Error {
+    case deadline
+    case ended
+    case system(String, Int32)
+}
+
+private func shellTestWithinOneSecond<Value: Sendable>(
+    _ body: @escaping @Sendable () async throws -> Value
+) async throws -> Value {
+    let (results, continuation) = AsyncStream<Result<Value, any Error>>.makeStream()
+    let timer = DispatchSource.makeTimerSource(queue: .global())
+    timer.schedule(deadline: .now() + .seconds(1), repeating: .never)
+    timer.setEventHandler { continuation.yield(.failure(ShellTestFailure.deadline)) }
+    timer.resume()
+    let operation = Task {
+        do { continuation.yield(.success(try await body())) } catch {
+            continuation.yield(.failure(error))
+        }
+    }
+    defer {
+        timer.cancel()
+        operation.cancel()
+        continuation.finish()
+    }
+    for await result in results { return try result.get() }
+    throw ShellTestFailure.ended
+}
+
+private final class ShellTestEvents: @unchecked Sendable {
+    let path: String
+    private let descriptor: Int32
+    private let source: any DispatchSourceRead
+    private let events: AsyncStream<String>
+    private let continuation: AsyncStream<String>.Continuation
+    private var buffered: [UInt8] = []
+
+    init(at url: URL) throws {
+        path = url.path
+        guard mkfifo(path, 0o600) == 0 else { throw ShellTestFailure.system("mkfifo", errno) }
+        descriptor = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+        guard descriptor >= 0 else { throw ShellTestFailure.system("open FIFO", errno) }
+        (events, continuation) = AsyncStream<String>.makeStream()
+        source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: .global())
+        let ownedDescriptor = descriptor
+        source.setCancelHandler { _ = shellTestClose(ownedDescriptor) }
+        source.setEventHandler { [weak self] in self?.receive() }
+        source.resume()
+    }
+
+    func next() async throws -> String {
+        let events = events
+        return try await shellTestWithinOneSecond {
+            for await event in events { return event }
+            throw ShellTestFailure.ended
+        }
+    }
+
+    func close() {
+        source.cancel()
+        continuation.finish()
+    }
+
+    private func receive() {
+        var bytes = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = bytes.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }
+            guard count > 0 else { return }
+            buffered += bytes.prefix(count)
+            while let newline = buffered.firstIndex(of: 10) {
+                continuation.yield(String(decoding: buffered[..<newline], as: UTF8.self))
+                buffered.removeFirst(newline + 1)
+            }
+        }
+    }
+}
+
+private final class ShellTestExit: @unchecked Sendable {
+    private let source: any DispatchSourceProtocol
+    private let events: AsyncStream<Bool>
+    private let continuation: AsyncStream<Bool>.Continuation
+
+    init(process: Int32) throws {
+        (events, continuation) = AsyncStream<Bool>.makeStream()
+        #if canImport(Darwin)
+            source = DispatchSource.makeProcessSource(
+                identifier: process, eventMask: .exit, queue: .global())
+        #else
+            let descriptor = libtmux_open_process(process)
+            guard descriptor >= 0 else { throw ShellTestFailure.system("pidfd_open", errno) }
+            source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: .global())
+            source.setCancelHandler { _ = shellTestClose(descriptor) }
+        #endif
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            continuation.yield(true)
+            continuation.finish()
+            source.cancel()
+        }
+        source.resume()
+    }
+
+    func wait() async throws {
+        let events = events
+        _ = try await shellTestWithinOneSecond {
+            for await event in events { return event }
+            throw ShellTestFailure.ended
+        }
+    }
+
+    func close() {
+        source.cancel()
+        continuation.finish()
+    }
+}
+
+private func shellTestClose(_ descriptor: Int32) -> Int32 {
+    #if canImport(Darwin)
+        Darwin.close(descriptor)
+    #else
+        Glibc.close(descriptor)
+    #endif
 }

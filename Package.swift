@@ -79,10 +79,11 @@ let package = Package(
         ),
         .target(
             name: "LibTmuxMCP",
-            dependencies: ["LibTmux"],
+            dependencies: ["LibTmux", "CProcessObservation"],
             exclude: ["AGENTS.md", "CLAUDE.md", "README.md"],
             resources: [.copy("minimal.conf")]
         ),
+        .target(name: "CProcessObservation"),
         .executableTarget(
             name: "libtmux-mcp",
             dependencies: ["LibTmux", "LibTmuxMCP"],
@@ -113,7 +114,7 @@ let package = Package(
         .testTarget(
             name: "LibTmuxMCPTests",
             dependencies: [
-                "LibTmuxMCP", "LibTmux", "TmuxFixture",
+                "LibTmuxMCP", "LibTmux", "TmuxFixture", "CProcessObservation",
                 .product(name: "Subprocess", package: "swift-subprocess"),
             ]
         ),
