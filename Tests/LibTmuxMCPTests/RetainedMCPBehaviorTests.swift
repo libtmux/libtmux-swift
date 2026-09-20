@@ -613,7 +613,7 @@ struct RetainedMCPBehaviorTests {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
             defer { try? Data().write(to: permit) }
-            let transport = RetainedProbeFailureTransport()
+            let transport = RetainedProbeFailureTransport(executingWith: fixture.tmuxExecutable)
             let server = Server(
                 endpoint: fixture.endpoint, tmuxExecutable: wrapper.path, transport: transport)
             let pane = try #require(try await server.panes().first)
@@ -757,7 +757,7 @@ struct RetainedMCPBehaviorTests {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
             defer { try? Data().write(to: permit) }
-            let transport = RetainedProbeFailureTransport()
+            let transport = RetainedProbeFailureTransport(executingWith: fixture.tmuxExecutable)
             let server = Server(
                 endpoint: fixture.endpoint, tmuxExecutable: wrapper.path, transport: transport)
             let pane = try #require(try await server.panes().first)
@@ -914,7 +914,10 @@ struct RetainedMCPBehaviorTests {
             try script.write(to: wrapper, atomically: false, encoding: .utf8)
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
-            let server = Server(endpoint: fixture.endpoint, tmuxExecutable: wrapper.path)
+            let transport = RetainedProbeFailureTransport(
+                executingWith: fixture.tmuxExecutable, setupEvents: events)
+            let server = Server(
+                endpoint: fixture.endpoint, tmuxExecutable: wrapper.path, transport: transport)
             let pane = try #require(try await server.panes().first)
             if phase.end == .paneMissing || phase.end == .paneDead {
                 let keepalive = try await fixture.run(
@@ -952,6 +955,12 @@ struct RetainedMCPBehaviorTests {
             let first: String
             var phases: [String] = []
             do {
+                checkpoint = "capture preparation"
+                try #require(try await events.next() == "capture")
+                phases.append("capture=\(launched.duration(to: .now))")
+                checkpoint = "input dispatch"
+                try #require(try await events.next() == "dispatch")
+                phases.append("dispatch=\(launched.duration(to: .now))")
                 checkpoint = "command start"
                 try #require(try await events.next() == "running")
                 phases.append("running=\(launched.duration(to: .now))")
@@ -1863,6 +1872,9 @@ enum RetainedReleaseFailure: String, CaseIterable, Sendable {
 
 private actor RetainedProbeFailureTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
+    private let nativeExecutable: String?
+    private let setupEvents: ShellTestEvents?
+    private var reportedCapturePreparation = false
     private var armedFailure: RetainedProbeFailure?
     private var doneWaitCount = 0
     private var returnsFirstWaitEarly = false
@@ -1886,6 +1898,11 @@ private actor RetainedProbeFailureTransport: ProcessTransport {
     private(set) var releaseWasDelivered = false
     private(set) var cleanupFailureWasInjected = false
     private(set) var delayedReleaseWasDelivered = false
+
+    init(executingWith nativeExecutable: String? = nil, setupEvents: ShellTestEvents? = nil) {
+        self.nativeExecutable = nativeExecutable
+        self.setupEvents = setupEvents
+    }
 
     func failRelease(with failure: RetainedReleaseFailure) {
         releaseFailure = failure
@@ -1937,8 +1954,14 @@ private actor RetainedProbeFailureTransport: ProcessTransport {
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
+        let executable = nativeExecutable ?? executable
+        if !reportedCapturePreparation, arguments.contains(where: { $0.contains("capture-pane") }) {
+            reportedCapturePreparation = true
+            setupEvents?.emit("capture")
+        }
         if arguments.contains(where: { $0.contains("send-keys") }) {
             inputDispatches += 1
+            setupEvents?.emit("dispatch")
         }
         let commandText = arguments.joined(separator: " ")
         if commandText.contains("set-option"), commandText.contains("_status"),
@@ -2127,6 +2150,10 @@ private final class ShellTestEvents: @unchecked Sendable {
             for await event in events { return event }
             throw ShellTestFailure.ended
         }
+    }
+
+    func emit(_ event: String) {
+        continuation.yield(event)
     }
 
     func close() {
