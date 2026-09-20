@@ -264,6 +264,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_api_breakage.py
 
+      - name: Ensure the stack debugger is available
+        run: |
+          if ! command -v gdb >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends gdb
+          fi
+
       - name: Test
         run: |
           # Every test resolves its tmux through this, so the whole suite runs
@@ -280,7 +287,18 @@ jobs:
           # The examples are their own package, so the root invocation does not
           # reach them. Their resolved-version flag enforces
           # `Examples/Package.resolved` and leaves the root lock alone.
-          swift test --package-path Examples --force-resolved-versions --no-parallel
+          python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/examples" -- \
+            swift test --package-path Examples --force-resolved-versions --no-parallel
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
-          swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+          swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
+          python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/suite" -- \
+            swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-test-diagnostics-${{ matrix.tmux }}
+          path: ${{ runner.temp }}/swift-diagnostics
+          retention-days: 3

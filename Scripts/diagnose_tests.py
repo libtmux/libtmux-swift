@@ -1,4 +1,4 @@
-"""Capture macOS test process stacks before a stalled command exhausts CI."""
+"""Capture test process stacks before a stalled command exhausts CI."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -44,7 +45,7 @@ def snapshot(
             return
         with (
             (directory / f"files-{pid}.txt").open("w") as output,
-            contextlib.suppress(subprocess.TimeoutExpired),
+            contextlib.suppress(OSError, subprocess.TimeoutExpired),
         ):
             subprocess.run(
                 ["lsof", "-nP", "-p", str(pid)],
@@ -56,28 +57,57 @@ def snapshot(
         remaining = deadline - time.monotonic()
         if remaining <= 0 or process.poll() is not None:
             return
+        if sys.platform != "darwin":
+            quiet_for = time.time() - (directory.parent / "command.log").stat().st_mtime
+            if quiet_for < 30 or remaining < 5:
+                continue
+            command = [
+                "sudo",
+                "-n",
+                "timeout",
+                "--signal=INT",
+                "--kill-after=1s",
+                "2s",
+                "gdb",
+                "--batch",
+                "--nx",
+                "-iex",
+                "set auto-load off",
+                "-ex",
+                "set pagination off",
+                "-ex",
+                "thread apply all bt",
+                "-ex",
+                "detach",
+                "-p",
+                str(pid),
+            ]
+            sample_timeout = 4
+        else:
+            command = [
+                "sample",
+                str(pid),
+                "1",
+                "1",
+                "-file",
+                str(directory / f"sample-{pid}.txt"),
+            ]
+            sample_timeout = min(3, remaining)
         with (
             (directory / f"sample-{pid}.log").open("w") as output,
-            contextlib.suppress(subprocess.TimeoutExpired),
+            contextlib.suppress(OSError, subprocess.TimeoutExpired),
         ):
             subprocess.run(
-                [
-                    "sample",
-                    str(pid),
-                    "1",
-                    "1",
-                    "-file",
-                    str(directory / f"sample-{pid}.txt"),
-                ],
+                command,
                 stdout=output,
                 stderr=subprocess.STDOUT,
-                timeout=min(3, remaining),
+                timeout=sample_timeout,
                 check=False,
             )
 
 
 def main() -> int:
-    """Run one command, retaining bounded diagnostic evidence on macOS."""
+    """Run one command, retaining bounded diagnostic evidence."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)

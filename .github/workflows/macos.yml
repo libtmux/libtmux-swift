@@ -179,20 +179,16 @@ jobs:
           if [[ "${{ inputs.debug_enabled }}" == 'true' ]]; then
             xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
             for attempt in 1 2 3; do
-              python3 Scripts/diagnose_macos_tests.py --output "$RUNNER_TEMP/swift-diagnostics/attempt-$attempt" -- \
+              python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/attempt-$attempt" -- \
                 xcrun swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel \
                 --filter "$DEBUG_TEST_FILTER"
             done
             exit 0
           fi
-          xcrun swift test --package-path Examples --force-resolved-versions
-          # Serialized here and not on Linux. Every case drives a real tmux
-          # server, and Darwin schedules the parallel suite badly enough that
-          # cases doing sub-second work report forty seconds and the ones at
-          # the tail pass their own time limit. AGENTS.md already requires
-          # --no-parallel for real-tmux runs; this lane is where CI needs it.
+          python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/examples" -- \
+            xcrun swift test --package-path Examples --force-resolved-versions --no-parallel
           xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
-          python3 Scripts/diagnose_macos_tests.py --output "$RUNNER_TEMP/swift-diagnostics/suite" -- \
+          python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/suite" -- \
             xcrun swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel
       - name: Upload macOS diagnostics
         if: always()
