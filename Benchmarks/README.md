@@ -20,11 +20,18 @@ built rather than from a copy of it:
 dependencies: [.package(name: "libtmux", path: "..")]
 ```
 
-The root package's `TmuxFixture` product comes from
-[`Tests/TmuxFixture`][fixture], the same fixture every suite provisions servers
-through. The benchmark consumes that product rather than copying the fixture,
-so it provisions and reaps servers exactly as the suites do — including reaping
-them when a run is killed outright.
+The benchmark uses the root package's [`TmuxFixture`][fixture] crash reaper.
+Each measurement owns a server with an empty tmux configuration and a
+non-login `/bin/sh` pane. The server is reaped when the measurement ends,
+including when the benchmark process is killed.
+
+The output-noticing comparison disables terminal echo before preparing its
+marker. The measured command prints that marker without typing its literal
+value, so echoed input cannot satisfy either observer. Both lanes exclude
+pane lookup and producer preparation; streaming includes opening and closing
+the control connection. Streaming matches only the target pane's output and
+retains partial markers across notifications. Ending the stream without a
+match fails the measurement.
 
 ## Running it
 

@@ -266,13 +266,16 @@ func withBenchServer<Result>(
     let counting = try CountingTmux(realTmux: resolveRealTmux(), at: root)
     let server = try Server(
         socketPath: root.appendingPathComponent("s").path,
-        tmuxExecutable: counting.executable
+        tmuxExecutable: counting.executable,
+        configurationFile: "/dev/null"
     )
     _ = try await server.run([
         // As the suite does, and for the same reason: a pane otherwise runs
         // whichever shell the machine is configured with, which would make the
         // streaming figures somebody's dotfiles rather than the library's.
         TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+        TmuxCommand("set-environment", ["-g", "ENV", ""]),
+        TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
         TmuxCommand("new-session", ["-d", "-s", "bench"]),
         try reaperCommand(root: root),
     ])
@@ -465,24 +468,31 @@ for scenario in scenarios {
 
 // MARK: - Noticing that a pane printed something
 
-/// How long until a caller learns a pane produced a line, and how much it asked
-/// tmux in the meantime. Polling has to guess an interval; a connection is told.
-///
-/// Both sides are charged from the same moment — the pane is found first and
-/// costs neither — so streaming pays for opening its connection and polling
-/// pays for every tick. That is the honest comparison: the connection is not
-/// free, and the ticks are not one-off.
+func prepareNoticing(_ server: Server, pane: Pane, marker: String) async throws {
+    let ready = "noticing-\(UUID().uuidString)"
+    let signal = "\(server.shellInvocation) wait-for -S \(ready)"
+    // Disable echo before typing the marker, including during preparation.
+    try await server.run("stty -echo; \(signal)", in: pane)
+    try await server.wait(for: ready, timeout: .seconds(1))
+    try await server.run("marker='\(marker)'; \(signal)", in: pane)
+    try await server.wait(for: ready, timeout: .seconds(1))
+}
+
+/// Charges dispatch and observation, including opening and closing the connection.
+/// Pane lookup and producer preparation are outside both measurements.
 func measureNoticing() async throws -> (polled: Measurement, streamed: Measurement) {
     let marker = "printed-marker"
+    let command = "printf '\\n%s\\n' \"$marker\""
     let clock = ContinuousClock()
 
     // Polling: capture the pane on an interval until the line shows up.
     let polled = try await withBenchServer { server, counting in
         guard let pane = try await server.panes().first else { throw BenchError.noPane }
+        try await prepareNoticing(server, pane: pane, marker: marker)
         try counting.reset()
         var ticks = 0
         let elapsed = try await clock.measure {
-            try await server.run("echo \(marker)", in: pane)
+            try await server.run(command, in: pane)
             while true {
                 ticks += 1
                 if try await server.capture(pane).contains(where: {
@@ -504,22 +514,30 @@ func measureNoticing() async throws -> (polled: Measurement, streamed: Measureme
     // Streaming: the server says so, unprompted.
     let streamed = try await withBenchServer { server, counting in
         guard let pane = try await server.panes().first else { throw BenchError.noPane }
+        try await prepareNoticing(server, pane: pane, marker: marker)
         try counting.reset()
-        return try await server.connected(attachingTo: "bench") { server, events in
-            let elapsed = try await clock.measure {
-                try await server.run("echo \(marker)", in: pane)
-                for try await notification in events.notifications
-                where notification.arguments.contains(marker) {
-                    break
+        let elapsed = try await clock.measure {
+            try await server.connected(attachingTo: "bench") { server, events in
+                try await server.run(command, in: pane)
+                var output = ""
+                for try await notification in events.notifications {
+                    guard case let .output(source, bytes) = notification.event,
+                        source == pane.id
+                    else { continue }
+                    output += String(decoding: bytes, as: UTF8.self)
+                    if output.contains(marker) { return }
+                    // A marker may span notifications; retain the possible prefix.
+                    output = String(output.suffix(marker.count - 1))
                 }
+                throw BenchError.noOutput
             }
-            return Measurement(
-                elapsed: elapsed,
-                processes: counting.processes,
-                roundTrips: counting.roundTrips,
-                output: "no tick"
-            )
         }
+        return Measurement(
+            elapsed: elapsed,
+            processes: counting.processes,
+            roundTrips: counting.roundTrips,
+            output: "no tick"
+        )
     }
 
     return (polled, streamed)
@@ -577,6 +595,7 @@ func stableWaitingMeasurement(quietSeconds: Int) async throws -> Measurement {
 enum BenchError: Error {
     case noPane
     case noWindowLink
+    case noOutput
 }
 
 // Five runs here too: a latency claim from one sample is an anecdote.
