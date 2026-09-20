@@ -44,7 +44,17 @@ def snapshot(
         return
     (directory / "processes.txt").write_text(listing)
     rows = [line.split(None, 4) for line in listing.splitlines()]
-    for pid in sorted(descendants(listing, process.pid))[:8]:
+    quiet_for = time.time() - (directory.parent / "command.log").stat().st_mtime
+    if quiet_for < 30:
+        return
+    children = descendants(listing, process.pid)
+    runners = {
+        int(row[0])
+        for row in rows
+        if len(row) == 5 and int(row[0]) in children and ".xctest" in row[4]
+    }
+    targets = runners or ({process.pid} if sys.platform == "darwin" else set())
+    for pid in sorted(targets)[:8]:
         remaining = deadline - time.monotonic()
         if remaining <= 0 or process.poll() is not None:
             return
@@ -63,14 +73,7 @@ def snapshot(
         if remaining <= 0 or process.poll() is not None:
             return
         if sys.platform != "darwin":
-            quiet_for = time.time() - (directory.parent / "command.log").stat().st_mtime
-            if quiet_for < 30 or remaining < 5:
-                continue
-            if not any(
-                int(row[0]) == pid and ".xctest" in row[4]
-                for row in rows
-                if len(row) == 5
-            ):
+            if remaining < 5:
                 continue
             command = [
                 "sudo",

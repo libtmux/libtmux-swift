@@ -525,12 +525,12 @@ struct CapabilityBehaviorTests {
                 let errorOut = "trap-error-\(shell)-\"stdout\""
                 let errorError = "trap-error-\(shell)-'stderr'"
                 let debugAction = """
-                    /usr/bin/printf '%s\\n' \(shellQuoted(debugOut))
-                    /usr/bin/printf '%s\\n' \(shellQuoted(debugError)) >&2
+                    builtin printf '%s\\n' \(shellQuoted(debugOut))
+                    builtin printf '%s\\n' \(shellQuoted(debugError)) >&2
                     """
                 let errorAction = """
-                    /usr/bin/printf '%s\\n' \(shellQuoted(errorOut))
-                    /usr/bin/printf '%s\\n' \(shellQuoted(errorError)) >&2
+                    builtin printf '%s\\n' \(shellQuoted(errorOut))
+                    builtin printf '%s\\n' \(shellQuoted(errorError)) >&2
                     """
                 let ready = "libtmux-swift-traps-\(UUID().uuidString)"
                 let setup =
