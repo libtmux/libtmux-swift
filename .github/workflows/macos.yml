@@ -26,6 +26,10 @@ on:
         description: Inspect the tmux 3.2a lane through tmate
         type: boolean
         default: false
+      debug_filter:
+        description: Test filter for the bounded diagnostic runs
+        type: string
+        default: CapabilityBehaviorTests
 
 concurrency:
   group: macos-${{ github.ref }}
@@ -164,6 +168,8 @@ jobs:
           path: ${{ runner.temp }}/tmate-connection.txt
           retention-days: 1
       - name: Test
+        env:
+          DEBUG_TEST_FILTER: ${{ inputs.debug_filter }}
         run: |
           set -euo pipefail
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
@@ -171,10 +177,12 @@ jobs:
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
           if [[ "${{ inputs.debug_enabled }}" == 'true' ]]; then
-            python3 Scripts/diagnose_macos_tests.py --output "$RUNNER_TEMP/swift-diagnostics/examples" -- \
-              xcrun swift test --package-path Examples --force-resolved-versions
-            python3 Scripts/diagnose_macos_tests.py --output "$RUNNER_TEMP/swift-diagnostics/suite" -- \
-              xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+            xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
+            for attempt in 1 2 3; do
+              python3 Scripts/diagnose_macos_tests.py --output "$RUNNER_TEMP/swift-diagnostics/attempt-$attempt" -- \
+                xcrun swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel \
+                --filter "$DEBUG_TEST_FILTER"
+            done
             exit 0
           fi
           xcrun swift test --package-path Examples --force-resolved-versions
