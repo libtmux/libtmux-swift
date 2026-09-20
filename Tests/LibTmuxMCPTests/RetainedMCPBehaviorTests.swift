@@ -886,6 +886,17 @@ struct RetainedMCPBehaviorTests {
                     exec \(shellQuoted(fixture.tmuxExecutable)) "$@"
                 fi
                 """
+            let publication =
+                phase.acknowledgment
+                ? """
+                *'_status 0')
+                    \(shellQuoted(fixture.tmuxExecutable)) "$@"
+                    result=$?
+                    if [ "$result" -eq 0 ]; then
+                        printf 'published\\n' > \(shellQuoted(events.path))
+                    fi
+                    exit "$result" ;;
+                """ : ""
             let script = """
                 #!/bin/sh
                 previous=
@@ -896,6 +907,7 @@ struct RetainedMCPBehaviorTests {
                         printf '%s\\n' "$PPID" >> \(shellQuoted(attempts.path))
                         printf 'attempt %s\\n' "$PPID" > \(shellQuoted(events.path))
                         exit 72 ;;
+                    \(publication)
                 esac
                 exec \(shellQuoted(fixture.tmuxExecutable)) "$@"
                 """
@@ -918,14 +930,16 @@ struct RetainedMCPBehaviorTests {
                 + "printf 'ready\\n' > \(shellQuoted(events.path))"
             try await fixture.send([.key(configure), .key("Enter")], to: pane)
             checkpoint = "shell ready"
-            #expect(try await events.next() == "ready")
+            try #require(try await events.next() == "ready")
+            let launched = ContinuousClock.now
             let running = Task {
                 try await tools(server).call(
                     ToolCall(
                         name: "run_shell_command",
                         arguments: .object([
                             "command": .string(
-                                "trap > \(shellQuoted(traps.path)); "
+                                "printf 'running\\n' > \(shellQuoted(events.path)); "
+                                    + "trap > \(shellQuoted(traps.path)); "
                                     + "kill -0 2147483647; "
                                     + "printf '%s' \"$?\" > \(shellQuoted(functionStatus.path)); "
                                     + "printf x >> \(shellQuoted(output.path))"),
@@ -935,14 +949,27 @@ struct RetainedMCPBehaviorTests {
                     ))
             }
             defer { running.cancel() }
-            checkpoint = "first retry"
             let first: String
+            var phases: [String] = []
             do {
+                checkpoint = "command start"
+                try #require(try await events.next() == "running")
+                phases.append("running=\(launched.duration(to: .now))")
+                if phase.acknowledgment {
+                    checkpoint = "status publication"
+                    try #require(try await events.next() == "published")
+                    phases.append("published=\(launched.duration(to: .now))")
+                }
+                checkpoint = "first retry"
                 first = try await events.next()
+                let elapsed = launched.duration(to: .now)
+                if elapsed > .seconds(1) {
+                    print("Shell retry phase timing: \(phases), attempt=\(elapsed)")
+                }
             } catch {
                 let screen =
                     (try? await fixture.capture(pane))?.joined(separator: " | ") ?? "<none>"
-                print("Shell retry pane: \(screen)")
+                print("Shell retry pane: \(screen); phases: \(phases)")
                 if let result = try? await shellTestWithinOneSecond({ await running.result }) {
                     print("Shell retry caller: \(result)")
                 }
