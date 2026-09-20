@@ -23,12 +23,20 @@ extension TmuxTools {
         let maxLines = try arguments.integer("maxLines", or: 200)
         let started = ContinuousClock.now
         let deadline = started.advanced(by: timeout)
-        let initial = try await preflightPaneInput(
-            requested,
-            scope: .singularPOSIXShell,
-            force: force,
-            operation: "run_shell_command"
-        )
+        let resolved = try await withCommandDeadline(
+            max(.zero, ContinuousClock.now.duration(to: deadline))
+        ) { () async -> Result<PaneInputResolution, any Error> in
+            do {
+                return .success(
+                    try await preflightPaneInput(
+                        requested,
+                        scope: .singularPOSIXShell,
+                        force: force,
+                        operation: "run_shell_command"
+                    ))
+            } catch { return .failure(error) }
+        }
+        let initial = try resolved.get()
         try Self.requireSafeShellRoute(
             executable: server.tmuxExecutable,
             socketPath: initial.source.incarnation.socketPath,
@@ -37,6 +45,7 @@ extension TmuxTools {
             )
         )
         let pane = initial.source
+        // The caller owns reservations; deadline tasks may outlive it.
         let reservation = try await Self.reservePaneInput(
             initial,
             operation: "run_shell_command"
@@ -50,31 +59,45 @@ extension TmuxTools {
                     "run_shell_command exceeded its timeout before setup"
                 )
             }
-            let prepared = try await prepareRunShell(
-                in: pane,
-                command: command,
-                tmuxInvocation: Self.pinnedTmuxInvocation(
-                    executable: server.tmuxExecutable,
-                    socketPath: pane.incarnation.socketPath
-                ),
-                scriptPath: scriptPath
-            )
+            let preparation = try await withCommandDeadline(
+                max(.zero, ContinuousClock.now.duration(to: deadline))
+            ) { () async -> Result<RunShellCleanup, any Error> in
+                do {
+                    let prepared = try await prepareRunShell(
+                        in: pane,
+                        command: command,
+                        tmuxInvocation: Self.pinnedTmuxInvocation(
+                            executable: server.tmuxExecutable,
+                            socketPath: pane.incarnation.socketPath
+                        ),
+                        scriptPath: scriptPath
+                    )
+                    try Task.checkCancellation()
+                    try Self.requireSafeShellRoute(
+                        executable: server.tmuxExecutable,
+                        socketPath: pane.incarnation.socketPath,
+                        requiringTrapCapture: Self.capturesInheritedTraps(
+                            pane.currentCommand
+                        )
+                    )
+                    _ = try await preflightPaneInput(
+                        requested,
+                        scope: .singularPOSIXShell,
+                        force: force,
+                        transitionFrom: initial,
+                        reservation: reservation,
+                        operation: "run_shell_command"
+                    )
+                    return .success(prepared)
+                } catch { return .failure(error) }
+            }
+            let prepared = try preparation.get()
             try Task.checkCancellation()
-            try Self.requireSafeShellRoute(
-                executable: server.tmuxExecutable,
-                socketPath: pane.incarnation.socketPath,
-                requiringTrapCapture: Self.capturesInheritedTraps(
-                    pane.currentCommand
+            guard ContinuousClock.now < deadline else {
+                throw ToolError.refusedForSafety(
+                    "run_shell_command exceeded its timeout before staging"
                 )
-            )
-            _ = try await preflightPaneInput(
-                requested,
-                scope: .singularPOSIXShell,
-                force: force,
-                transitionFrom: initial,
-                reservation: reservation,
-                operation: "run_shell_command"
-            )
+            }
             let (cleanup, dispatch) = try stageRunShell(with: prepared)
             stagedFile = cleanup.stagedFile
             try Task.checkCancellation()

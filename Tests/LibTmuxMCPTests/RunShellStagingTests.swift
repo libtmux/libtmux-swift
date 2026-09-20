@@ -13,6 +13,49 @@ import TmuxFixture
 
 @Suite("run shell staging", .hangLimit)
 struct RunShellStagingTests {
+    @Test("the shell deadline bounds every setup read", arguments: RunShellSetupRead.allCases)
+    func setupReadDeadline(_ read: RunShellSetupRead) async throws {
+        try await withTmuxServer { fixture in
+            let pane = try #require(try await fixture.panes().first)
+            let directory = try stagingDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let recorder = RunShellSetupTransport()
+            let recording = tools(fixture, transport: recorder)
+            let initial = try await recording.preflightPaneInput(
+                pane.id.rawValue, scope: .singularPOSIXShell, force: false,
+                operation: "run_shell_command")
+            try await recording.server.using(.direct) { server in
+                _ = try await server.captureBounded(
+                    initial.source, since: nil, maximumLines: 1,
+                    perStreamOutputLimit: PaneOutputBudget.sourceBytes)
+                _ = try await server.formatGlobal("#{pane_width}", for: initial.source)
+            }
+            _ = try await recording.preflightPaneInput(
+                pane.id.rawValue, scope: .singularPOSIXShell, force: false,
+                transitionFrom: initial, operation: "run_shell_command")
+            // Replay daemon reads so process startup does not spend the timeout.
+            let reads = await recorder.reads
+            let stalledIndex = try #require(read.index(in: reads))
+            let transport = RunShellSetupTransport(replaying: reads, stallingAt: stalledIndex)
+            let surface = tools(fixture, transport: transport)
+            let staged = directory.appendingPathComponent("must-not-exist")
+
+            do {
+                _ = try await surface.runShell(
+                    arguments(for: pane, command: "true", timeoutMs: 100),
+                    stagingAt: staged.path
+                )
+                Issue.record("a stalled setup read completed without a timeout")
+            } catch let TmuxError.timedOut(after) {
+                #expect(after > .zero && after <= .milliseconds(100))
+            }
+            #expect(await transport.didStall)
+            #expect(await transport.inputDispatchCount == 0)
+            #expect(!FileManager.default.fileExists(atPath: staged.path))
+            #expect(!(await TmuxTools.paneRuns.isHeld(pane)))
+        }
+    }
+
     @Test(
         "local staging failures preserve foreign files and release input", arguments: [false, true])
     func stagingFailureDoesNotOwnPath(existingFile: Bool) async throws {
@@ -188,7 +231,7 @@ struct RunShellStagingTests {
         }
     }
 
-    private func tools(_ fixture: Server, transport: PausedRunShellTransport) -> TmuxTools {
+    private func tools(_ fixture: Server, transport: any ProcessTransport) -> TmuxTools {
         TmuxTools(
             server: Server(
                 endpoint: fixture.endpoint,
@@ -223,6 +266,107 @@ struct RunShellStagingTests {
             attributes: [.posixPermissions: 0o700]
         )
         return directory
+    }
+}
+
+enum RunShellSetupRead: String, CaseIterable, Sendable {
+    case initialPreflight, capture, width, finalPreflight
+
+    fileprivate func index(in reads: [RunShellSetupTransport.Read]) -> Int? {
+        switch self {
+        case .initialPreflight:
+            reads.firstIndex { $0.arguments.contains("list-panes") }
+        case .capture:
+            reads.firstIndex { $0.arguments.contains { $0.contains("capture-pane") } }
+        case .width:
+            reads.firstIndex {
+                $0.arguments.contains {
+                    $0.contains("#{pane_id}\(FormatProjection.separator)#{pane_width}")
+                }
+            }
+        case .finalPreflight:
+            reads.lastIndex { $0.arguments.contains("list-panes") }
+        }
+    }
+}
+
+private actor RunShellSetupTransport: ProcessTransport {
+    struct Read: Sendable {
+        let arguments: [String]
+        let reply: TmuxReply
+    }
+
+    private let underlying = SubprocessTransport()
+    private let replay: [Read]?
+    private let stalledIndex: Int?
+    private var index = 0
+    private(set) var reads: [Read] = []
+    private(set) var didStall = false
+    private(set) var inputDispatchCount = 0
+
+    init(replaying reads: [Read]? = nil, stallingAt index: Int? = nil) {
+        self.replay = reads
+        self.stalledIndex = index
+    }
+
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        if arguments.contains(where: { $0.contains("send-keys") }) {
+            inputDispatchCount += 1
+            throw .requestNotSubmitted
+        }
+        if let replay {
+            guard index < replay.count,
+                replay[index].arguments.map(Self.withoutNonce) == arguments.map(Self.withoutNonce)
+            else { throw .invocationFailed(reason: "unexpected setup read during replay") }
+            let read = replay[index]
+            let shouldStall = index == stalledIndex
+            index += 1
+            if shouldStall {
+                didStall = true
+                let (events, continuation) = AsyncStream<Void>.makeStream()
+                defer { continuation.finish() }
+                for await _ in events {}
+                throw .cancelled
+            }
+            // Guarded replies carry a new nonce on each invocation.
+            guard let oldNonce = Self.nonce(in: read.arguments),
+                let newNonce = Self.nonce(in: arguments)
+            else { return read.reply }
+            func rebind(_ bytes: [UInt8]) -> [UInt8] {
+                Array(
+                    String(decoding: bytes, as: UTF8.self)
+                        .replacingOccurrences(of: oldNonce, with: newNonce).utf8)
+            }
+            return TmuxReply(
+                standardOutput: rebind(read.reply.standardOutput),
+                standardError: rebind(read.reply.standardError), exitCode: read.reply.exitCode)
+        }
+        let reply = try await underlying.run(
+            executable: executable, arguments: arguments, environment: environment,
+            perStreamOutputLimit: perStreamOutputLimit)
+        reads.append(Read(arguments: arguments, reply: reply))
+        return reply
+    }
+
+    private static let noncePattern = "__libtmux_request_[a-f0-9]{32}"
+
+    private static func withoutNonce(_ argument: String) -> String {
+        argument.replacingOccurrences(
+            of: noncePattern, with: "request", options: .regularExpression)
+    }
+
+    private static func nonce(in arguments: [String]) -> String? {
+        for argument in arguments {
+            if let range = argument.range(of: noncePattern, options: .regularExpression) {
+                return String(argument[range])
+            }
+        }
+        return nil
     }
 }
 
