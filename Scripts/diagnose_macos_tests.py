@@ -12,16 +12,25 @@ import time
 from pathlib import Path
 
 
-def snapshot(directory: Path, owner: int) -> None:
+def snapshot(
+    directory: Path, process: subprocess.Popen[bytes], deadline: float
+) -> None:
     """Record the command's descendants, open files, and sampled stacks."""
     directory.mkdir(parents=True, exist_ok=True)
-    listing = subprocess.check_output(
-        ["ps", "-axo", "pid=,ppid=,stat=,etime=,command="],
-        text=True,
-    )
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return
+    try:
+        listing = subprocess.check_output(
+            ["ps", "-axo", "pid=,ppid=,stat=,etime=,command="],
+            text=True,
+            timeout=min(3, remaining),
+        )
+    except subprocess.TimeoutExpired:
+        return
     (directory / "processes.txt").write_text(listing)
     rows = [line.split(None, 4) for line in listing.splitlines()]
-    descendants = {owner}
+    descendants = {process.pid}
     while True:
         found = {
             int(row[0]) for row in rows if len(row) == 5 and int(row[1]) in descendants
@@ -30,6 +39,9 @@ def snapshot(directory: Path, owner: int) -> None:
             break
         descendants.update(found)
     for pid in sorted(descendants)[:8]:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or process.poll() is not None:
+            return
         with (
             (directory / f"files-{pid}.txt").open("w") as output,
             contextlib.suppress(subprocess.TimeoutExpired),
@@ -38,9 +50,12 @@ def snapshot(directory: Path, owner: int) -> None:
                 ["lsof", "-nP", "-p", str(pid)],
                 stdout=output,
                 stderr=subprocess.STDOUT,
-                timeout=3,
+                timeout=min(3, remaining),
                 check=False,
             )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or process.poll() is not None:
+            return
         with (
             (directory / f"sample-{pid}.log").open("w") as output,
             contextlib.suppress(subprocess.TimeoutExpired),
@@ -56,7 +71,7 @@ def snapshot(directory: Path, owner: int) -> None:
                 ],
                 stdout=output,
                 stderr=subprocess.STDOUT,
-                timeout=3,
+                timeout=min(3, remaining),
                 check=False,
             )
 
@@ -74,6 +89,7 @@ def main() -> int:
         parser.error("a command is required after --")
     args.output.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
+    deadline = started + 300
     snapshots = 0
     timed_out = False
     with (args.output / "command.log").open("w") as output:
@@ -85,15 +101,18 @@ def main() -> int:
         )
         try:
             while True:
+                if process.poll() is not None:
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
                 try:
-                    status = process.wait(timeout=30)
+                    status = process.wait(timeout=min(30, remaining))
                     break
                 except subprocess.TimeoutExpired:
                     snapshots += 1
-                    snapshot(args.output / f"snapshot-{snapshots}", process.pid)
-                    if time.monotonic() - started >= 240:
-                        timed_out = True
-                        break
+                    snapshot(args.output / f"snapshot-{snapshots}", process, deadline)
         finally:
             if process.poll() is None:
                 with contextlib.suppress(ProcessLookupError):
