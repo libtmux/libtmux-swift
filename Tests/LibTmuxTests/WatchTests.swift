@@ -901,19 +901,31 @@ struct WatchTests {
         }
     }
 
-    @Test("output from a pane respawn ends an established wait")
-    func respawnedPaneOutputIsNotLost() async throws {
+    @Test("output from a pane respawn ends an established wait", arguments: [false, true])
+    func respawnedPaneOutputIsNotLost(staleLookback: Bool) async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
             let transport = CaptureRecordingTransport(tracing: true)
             let server = Server(
                 endpoint: fixture.endpoint, tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport)
+            let release = "respawn-output-\(UUID().uuidString)"
+            let gate = staleLookback ? "\(fixture.shellInvocation) wait-for \(release); " : ""
+            if staleLookback {
+                await transport.beforeCapture(4) {
+                    // Change the grid after the respawn mark, once lookback has read its bounds.
+                    try await fixture.signal(release)
+                    try #require(
+                        try await waitUntil {
+                            try await fixture.capture(pane).contains("after-respawn")
+                        })
+                }
+            }
             let command = TmuxCommand(
                 "respawn-pane",
                 [
                     "-k", "-t", pane.id.rawValue,
-                    "printf 'after-respawn\\n'; exec sleep 30",
+                    gate + "printf 'after-respawn\\n'; exec sleep 30",
                 ]
             ).parsedString
             let hook = try await server.setHook("client-attached", to: command)

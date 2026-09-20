@@ -430,7 +430,13 @@ struct OutputWaitSession: Sendable {
                                 switch currentRace {
                                 case .completed(nil):
                                     return .finished(.paneClosed, progress)
-                                case .completed:
+                                case let .completed(current?):
+                                    if case .tmux(.staleServerValue) = error,
+                                        current.hasSameLocation(as: attachment)
+                                    {
+                                        await doorbell.ring(.scan)
+                                        continue
+                                    }
                                     throw error
                                 case let .failed(readError):
                                     throw readError

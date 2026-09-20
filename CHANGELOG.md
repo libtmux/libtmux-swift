@@ -102,6 +102,9 @@ version number says only which alpha you have. Pin an exact one.
 - Output waits rescan a respawned pane when its process ID changes, even if
   tmux omits the output notification. (#15)
 
+- Output waits retry stale captures without reopening the control connection
+  and rerunning attachment hooks. (#15)
+
 - `Server.selectLayout` rejects unsupported or malformed layouts before
   dispatch and accepts unambiguous preset prefixes. (#15)
 
