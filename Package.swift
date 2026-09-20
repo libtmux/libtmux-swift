@@ -112,7 +112,10 @@ let package = Package(
         ),
         .testTarget(
             name: "LibTmuxMCPTests",
-            dependencies: ["LibTmuxMCP", "LibTmux", "TmuxFixture"]
+            dependencies: [
+                "LibTmuxMCP", "LibTmux", "TmuxFixture",
+                .product(name: "Subprocess", package: "swift-subprocess"),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]
