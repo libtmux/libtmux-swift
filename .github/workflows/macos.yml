@@ -21,6 +21,11 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: Inspect the tmux 3.2a lane through tmate
+        type: boolean
+        default: false
 
 concurrency:
   group: macos-${{ github.ref }}
@@ -34,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tmux: ["3.2a", "3.7b"]
+        tmux: ${{ fromJSON(inputs.debug_enabled && '["3.2a"]' || '["3.2a", "3.7b"]') }}
 
     steps:
       - uses: actions/checkout@v7
@@ -122,6 +127,12 @@ jobs:
           set -euo pipefail
           echo "before: $(sysctl -n kern.tty.ptmx_max)"
           sudo sysctl -w kern.tty.ptmx_max=999
+      - name: Debug the macOS runner
+        if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3
+        with:
+          detached: true
+          limit-access-to-actor: true
       - name: Test
         run: |
           set -euo pipefail
