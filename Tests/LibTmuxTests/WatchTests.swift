@@ -944,6 +944,49 @@ struct WatchTests {
         }
     }
 
+    @Test("a pane respawn wakes a wait when output notifications are unavailable")
+    func respawnWithoutOutputNotification() async throws {
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            let hook = try await fixture.setHook(
+                "client-attached", to: "refresh-client -f no-output")
+            try #require(hook.isSuccess)
+            let transport = CaptureRecordingTransport()
+            await transport.afterEveryCapture {
+                // Entry, pre-attachment catch-up, then the primed observation scan.
+                guard await transport.captureRequests.count == 3 else { return }
+                let clients = try await fixture.run(
+                    TmuxCommand("list-clients", ["-F", "#{client_flags}"]))
+                try #require(clients.text.contains("no-output"))
+                let respawn = try await fixture.run(
+                    TmuxCommand(
+                        "respawn-pane",
+                        [
+                            "-k", "-t", pane.id.rawValue,
+                            "printf 'quiet-respawn\\n'; exec sleep 30",
+                        ]
+                    ))
+                try #require(respawn.isSuccess)
+                try #require(
+                    try await waitUntil {
+                        try await fixture.capture(pane).contains("quiet-respawn")
+                    })
+            }
+            let server = Server(
+                endpoint: fixture.endpoint, tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport)
+            let result = try await server.waitForOutput(
+                in: pane,
+                matching: [try RegexPattern("^quiet-respawn$")],
+                requiringFreshOutput: true,
+                timeout: .seconds(3)
+            )
+            #expect(await transport.captureRequests.count >= 3)
+            #expect(result.outcome == .matched)
+            #expect(result.sawNewOutput)
+        }
+    }
+
     @Test("a subscription reports the foreground command changing")
     func subscriptionReportsCommandChange() async throws {
         try await withTmuxServer { server in

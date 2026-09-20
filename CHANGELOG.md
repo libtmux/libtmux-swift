@@ -99,6 +99,9 @@ version number says only which alpha you have. Pin an exact one.
 - `ControlSession.notifications` avoids deadlock when cancellation races with
   notification delivery. (#15)
 
+- Output waits rescan a respawned pane when its process ID changes, even if
+  tmux omits the output notification. (#15)
+
 - `Server.selectLayout` rejects unsupported or malformed layouts before
   dispatch and accepts unambiguous preset prefixes. (#15)
 

@@ -290,7 +290,7 @@ struct OutputWaitSession: Sendable {
         }
         guard let living = try settled(race) else { return .expired }
         guard let current = living else { return .paneClosed }
-        guard current != attachment else {
+        guard !current.hasSameLocation(as: attachment) else {
             if stale { return .reattach }
             throw error
         }
@@ -341,6 +341,7 @@ struct OutputWaitSession: Sendable {
                         await doorbell.ring(.timedOut)
                     }
                     group.addTask {
+                        var processID = attachment.processID
                         while !Task.isCancelled {
                             try? await Task.sleep(for: .seconds(1))
                             guard !Task.isCancelled else { return }
@@ -353,9 +354,13 @@ struct OutputWaitSession: Sendable {
                                     await doorbell.ring(.paneClosed)
                                     return
                                 }
-                                if current != attachment {
+                                if !current.hasSameLocation(as: attachment) {
                                     await doorbell.ring(.reattach)
                                     return
+                                }
+                                if current.processID != processID {
+                                    processID = current.processID
+                                    await doorbell.ring(.scan)
                                 }
                             case let .failed(error):
                                 await doorbell.ring(.failed(waitTmuxError(error)))
@@ -451,7 +456,7 @@ struct OutputWaitSession: Sendable {
                             case .completed(nil):
                                 return .finished(.paneClosed, progress)
                             case let .completed(current?):
-                                guard current == attachment else {
+                                guard current.hasSameLocation(as: attachment) else {
                                     return .reattach(progress)
                                 }
                             case let .failed(error): throw error
@@ -517,22 +522,23 @@ struct OutputWaitSession: Sendable {
         guard
             let value = try await server.formatGlobal(
                 "#{session_id}\(separator)#{window_id}\(separator)#{pane_id}"
-                    + "\(separator)#{pane_dead}",
+                    + "\(separator)#{pane_dead}\(separator)#{pane_pid}",
                 for: pane
             )
         else { return nil }
         let fields = value.components(separatedBy: separator)
-        guard fields.count == 4 else {
+        guard fields.count == 5 else {
             throw .invocationFailed(reason: "tmux returned an incomplete pane attachment")
         }
         if fields[3] == "1" { return nil }
         guard fields[2] == pane.id.rawValue,
             let sessionID = SessionID(rawValue: fields[0]),
-            let windowID = WindowID(rawValue: fields[1])
+            let windowID = WindowID(rawValue: fields[1]),
+            let processID = Int32(fields[4]), processID > 0
         else {
             throw .invocationFailed(reason: "tmux returned an invalid pane attachment")
         }
-        return PaneAttachment(sessionID: sessionID, windowID: windowID)
+        return PaneAttachment(sessionID: sessionID, windowID: windowID, processID: processID)
     }
 
     private func raceOrdinaryWaitOperation<Value: Sendable>(
@@ -743,6 +749,11 @@ struct OutputWaitSession: Sendable {
 private struct PaneAttachment: Sendable, Hashable {
     let sessionID: SessionID
     let windowID: WindowID
+    let processID: Int32
+
+    func hasSameLocation(as other: PaneAttachment) -> Bool {
+        sessionID == other.sessionID && windowID == other.windowID
+    }
 }
 
 /// What one turn of a wait carries forward: where reading stopped, what it has
