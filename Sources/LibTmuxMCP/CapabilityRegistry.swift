@@ -416,6 +416,7 @@ extension TmuxTools {
                 "Wait for pane text, discounting this MCP server's recent input. "
                     + "Wait for a new shell's prompt before typing. Wrapped echoes can still match, "
                     + "and output identical to input can be discounted; prefer output-only markers. "
+                    + "Use run_shell_command to execute a command with a completion boundary and exit status. "
                     + "The returned tail contains raw captured rows, including input.",
                 toolset: .inspect, reach: .none, effects: [.observe], outputs: terminal,
                 arguments: [

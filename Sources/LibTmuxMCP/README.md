@@ -100,6 +100,12 @@ selected tmux executable and socket route, and isolates the command in a
 subshell so `cd`, variables, traps, syntax errors, and `exit` do not alter or
 terminate the interactive parent.
 
+`wait_for_text` matches rendered screen text and discounts recognized input from
+this MCP process on a best-effort basis. Wrapped echoes can still match, and real
+output identical to input can be discounted. Wait for a new shell's prompt before
+typing and prefer output-only markers. Use `run_shell_command` to execute a
+command with a completion boundary and exit status.
+
 These are safeguards for a trusted shell, tmux daemon, and configuration, not
 universal containment for a hostile shell environment. Pane state can still
 change after the final check.

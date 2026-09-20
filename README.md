@@ -819,6 +819,12 @@ wait does not hold up the `ping` beside it, and `notifications/cancelled` stops
 one that the client has stopped caring about. `wait_for_text` and
 `wait_for_channel` expose the two blocking operations through bounded calls.
 
+`wait_for_text` discounts recognized input from this MCP process on a best-effort
+basis. Wrapped echoes can still match, and real output identical to input can be
+discounted. Wait for a new shell's prompt before typing and prefer output-only
+markers. Use `run_shell_command` to execute a command with a completion boundary
+and exit status.
+
 **It will not spend context you did not ask it to.** Pane reads collect at most
 262,144 bytes per stream and return at most 128,000 UTF-8 bytes in whole rows;
 they say when older output was omitted. `run_shell_command` returns only what
