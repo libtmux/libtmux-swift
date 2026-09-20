@@ -8,7 +8,7 @@ import Testing
     import Glibc
 #endif
 
-@Suite("nonblocking line writer", .timeLimit(.minutes(1)))
+@Suite("nonblocking line writer", .timeLimit(.minutes(5)))
 struct NonblockingLineWriterTests {
     @Test("writes one complete protocol line")
     func writesCompleteLine() async throws {

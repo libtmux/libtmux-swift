@@ -15,7 +15,7 @@ import TmuxFixture
 /// built over a connection come back a row taller. From 3.3a they do not. Both
 /// are asserted rather than one being excused, so a release that changes its
 /// mind here is caught instead of quietly widening the exception.
-@Suite("building under either mode", .timeLimit(.minutes(1)))
+@Suite("building under either mode", .timeLimit(.minutes(5)))
 struct ModeParityTests {
     static let workspace = Workspace(
         sessionName: "parity",

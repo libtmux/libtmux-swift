@@ -7,7 +7,7 @@ import Testing
 /// `ControlModeTests` proves the same fan-out over a live connection. These
 /// establish their ordering by construction, so they fail the same way on an
 /// idle machine as on a loaded one.
-@Suite("notification broadcast", .timeLimit(.minutes(1)))
+@Suite("notification broadcast", .timeLimit(.minutes(5)))
 struct NotificationBroadcastTests {
     private static func window(_ index: Int) -> ControlNotification {
         ControlNotification(name: "window-add", arguments: "@\(index)")

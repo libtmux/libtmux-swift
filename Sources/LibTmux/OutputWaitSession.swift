@@ -352,7 +352,12 @@ struct OutputWaitSession: Sendable {
                         // notification until it returns to its event loop, so
                         // the capture that follows is already reading them.
                         var wake = await doorbell.wait()
-                        if ContinuousClock.now >= deadline { wake = .timedOut }
+                        // A cancelled wait reports cancellation even past its
+                        // deadline: the caller asked it to stop, and a timeout
+                        // would say the pane stayed quiet instead.
+                        if wake != .cancelled, ContinuousClock.now >= deadline {
+                            wake = .timedOut
+                        }
 
                         if wake == .output || wake == .scan || wake == .inspect
                             || wake == .reattach
@@ -454,6 +459,8 @@ struct OutputWaitSession: Sendable {
                             return .finished(.paneClosed, progress)
                         case .timedOut:
                             return .finished(.timedOut, progress)
+                        case .cancelled:
+                            throw OutputWaitError.tmux(.cancelled)
                         case let .failed(error): throw error
                         }
                     }

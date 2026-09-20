@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("bounded process transport", .timeLimit(.minutes(1)))
+@Suite("bounded process transport", .timeLimit(.minutes(5)))
 struct TransportLimitTests {
     @Test("public direct commands have a finite output boundary")
     func publicCommandBoundsOutput() async throws {

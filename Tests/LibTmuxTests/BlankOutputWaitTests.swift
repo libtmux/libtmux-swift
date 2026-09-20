@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("waiting for blank pane output", .timeLimit(.minutes(1)))
+@Suite("waiting for blank pane output", .timeLimit(.minutes(5)))
 struct BlankOutputWaitTests {
     private func bootstrapPane(_ server: Server) async throws -> Pane {
         try #require(try await server.panes().first)

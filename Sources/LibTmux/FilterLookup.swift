@@ -108,6 +108,11 @@ public enum FilterLookup {
     }
 }
 
+/// Why a filter keyword could not be turned into a comparison.
+///
+/// Every case is a caller mistake caught before anything ran, so nothing was
+/// sent and nothing needs undoing. The associated value names the part that
+/// was wrong rather than repeating the whole keyword.
 public enum FilterLookupError: Error, Sendable, Hashable {
     case missingValue
     case unknownField(String)

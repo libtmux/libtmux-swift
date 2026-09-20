@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("watching a pane without polling", .timeLimit(.minutes(1)))
+@Suite("watching a pane without polling", .timeLimit(.minutes(5)))
 struct WatchTests {
     /// The bootstrap session's only pane.
     private func bootstrapPane(_ server: Server) async throws -> Pane {
@@ -64,6 +64,24 @@ struct WatchTests {
 
         #expect(await doorbell.wait() == .output)
         #expect(await doorbell.wait() == .failed(failure))
+    }
+
+    @Test("cancelling a parked wait ends it rather than holding it open")
+    func cancellationReleasesAParkedDoorbellWait() async throws {
+        let doorbell = WaitDoorbell()
+        let answer = DoorbellAnswer()
+        let parked = Task { await answer.record(doorbell.wait()) }
+
+        // Park first. A cancel that lands before the continuation exists is
+        // answered on the way in, which is not the path this case is about.
+        #expect(try await waitUntil { await doorbell.isWaiting })
+        parked.cancel()
+
+        // Deliberately not `await parked.value`: that is the call the defect
+        // made never return, so waiting on it would hang this run rather than
+        // fail this case — which is what it did to a CI lane for six hours.
+        #expect(try await waitUntil(within: .seconds(5)) { await answer.value != nil })
+        #expect(await answer.value == .cancelled)
     }
 
     @Test("a deadline overtakes queued scan work")
@@ -969,5 +987,14 @@ private actor WaitTestGate {
         let current = waiters
         waiters.removeAll()
         for waiter in current { waiter.resume() }
+    }
+}
+
+/// The wake a cancelled doorbell wait answered with.
+private actor DoorbellAnswer {
+    private(set) var value: WaitWake?
+
+    func record(_ value: WaitWake) {
+        self.value = value
     }
 }

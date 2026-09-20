@@ -62,6 +62,11 @@ enum ControlEvent: Sendable, Hashable {
     case protocolViolation(String)
 }
 
+/// One command's reply, framed between tmux's `%begin` and its terminator.
+///
+/// Framing is all this carries: whether the command succeeded is ``isError``,
+/// and what it said is the body. Replies and notifications arrive on the same
+/// stream, so a reader gets both and has to expect either.
 public struct ControlReply: Sendable, Hashable {
     /// The number tmux stamped on this reply's block.
     ///
@@ -104,6 +109,11 @@ public struct ControlReply: Sendable, Hashable {
     }
 }
 
+/// Something tmux said without being asked.
+///
+/// These arrive between replies rather than in response to anything, so a
+/// caller waiting on a command still sees them and a caller that never reads
+/// them makes tmux buffer.
 public struct ControlNotification: Sendable, Hashable {
     /// The name without its `%`, so `%output` is `output`.
     public let name: String
