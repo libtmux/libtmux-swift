@@ -1,7 +1,7 @@
 /// A control-mode notification, decoded.
 ///
 /// ``ControlNotification`` keeps what tmux sent as a name and an unsplit
-/// argument string, which is exact and forces every reader to parse. This is
+/// argument string, using octal escapes for non-UTF-8 output bytes. This is
 /// the same notification in the terms a program acts on. Only the formats this
 /// library has read in tmux's own source are decoded; anything else arrives as
 /// ``ControlNotification/Event/unrecognized(_:)`` with the raw notification intact, so a newer tmux never

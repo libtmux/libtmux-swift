@@ -1,3 +1,4 @@
+import Foundation
 import Subprocess
 
 /// One submitted line, and the blocks tmux has answered it with so far.
@@ -296,7 +297,15 @@ public actor ControlSession {
     /// that is still collecting — see ``SubmittedLine`` for why that is not one
     /// block each.
     func consume(_ line: String) {
-        guard let event = parser.consume(line) else { return }
+        handle(parser.consume(line))
+    }
+
+    func consume(_ bytes: Data) throws(TmuxError) {
+        handle(try parser.consume(bytes))
+    }
+
+    private func handle(_ event: ControlEvent?) {
+        guard let event else { return }
         switch event {
         case let .reply(reply):
             guard isAttached else {

@@ -7,18 +7,49 @@ package struct BoundedLineFramer: Sendable {
         case invalidUTF8
     }
 
+    private var bytes: BoundedByteLineFramer
+
+    package init(maximumBytes: Int) {
+        bytes = BoundedByteLineFramer(maximumBytes: maximumBytes)
+    }
+
+    package var bufferedBytes: Int { bytes.bufferedBytes }
+
+    package mutating func append(_ chunk: Data) -> [Event] {
+        bytes.append(chunk).map(Self.decode)
+    }
+
+    package mutating func finish() -> [Event] {
+        bytes.finish().map(Self.decode)
+    }
+
+    private static func decode(_ event: BoundedByteLineFramer.Event) -> Event {
+        switch event {
+        case let .line(bytes):
+            String(data: bytes, encoding: .utf8).map(Event.line) ?? .invalidUTF8
+        case .oversized: .oversized
+        }
+    }
+}
+
+struct BoundedByteLineFramer: Sendable {
+    enum Event: Sendable, Equatable {
+        case line(Data)
+        case oversized
+    }
+
     private let maximumBytes: Int
     private var buffer = Data()
     private var discarding = false
 
-    package init(maximumBytes: Int) {
+    init(maximumBytes: Int) {
         precondition(maximumBytes > 0)
         self.maximumBytes = maximumBytes
     }
 
-    package var bufferedBytes: Int { buffer.count }
+    var bufferedBytes: Int { buffer.count }
 
-    package mutating func append(_ chunk: Data) -> [Event] {
+    mutating func append(_ chunk: Data) -> [Event] {
         var events: [Event] = []
         var start = chunk.startIndex
         while start < chunk.endIndex,
@@ -33,7 +64,7 @@ package struct BoundedLineFramer: Sendable {
         return events
     }
 
-    package mutating func finish() -> [Event] {
+    mutating func finish() -> [Event] {
         defer {
             buffer.removeAll(keepingCapacity: false)
             discarding = false
@@ -65,9 +96,6 @@ package struct BoundedLineFramer: Sendable {
     private func decodeLine() -> Event {
         var bytes = buffer
         if bytes.last == 0x0D { bytes.removeLast() }
-        guard let line = String(data: bytes, encoding: .utf8) else {
-            return .invalidUTF8
-        }
-        return .line(line)
+        return .line(bytes)
     }
 }

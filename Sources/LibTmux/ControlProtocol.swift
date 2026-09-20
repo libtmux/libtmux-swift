@@ -2,12 +2,12 @@ import Foundation
 
 struct ControlLineInput: Sendable {
     enum Event: Sendable, Hashable {
-        case line(String)
+        case line(Data)
         case failure(TmuxError)
     }
 
     static let maximumBytes = 2_000_000
-    private var framer = BoundedLineFramer(maximumBytes: maximumBytes)
+    private var framer = BoundedByteLineFramer(maximumBytes: maximumBytes)
 
     mutating func append(_ data: Data) -> [Event] {
         map(framer.append(data))
@@ -25,7 +25,7 @@ struct ControlLineInput: Sendable {
         return []
     }
 
-    private func map(_ events: [BoundedLineFramer.Event]) -> [Event] {
+    private func map(_ events: [BoundedByteLineFramer.Event]) -> [Event] {
         events.map { event in
             switch event {
             case let .line(line): .line(line)
@@ -35,8 +35,6 @@ struct ControlLineInput: Sendable {
                         reason: "control protocol line exceeds \(Self.maximumBytes) bytes"
                     )
                 )
-            case .invalidUTF8:
-                .failure(.invocationFailed(reason: "control protocol line is not UTF-8"))
             }
         }
     }
@@ -107,9 +105,8 @@ public struct ControlReply: Sendable, Hashable {
 public struct ControlNotification: Sendable, Hashable {
     /// The name without its `%`, so `%output` is `output`.
     public let name: String
-    /// Everything after the name, unsplit. A notification's arguments are not
-    /// uniformly shaped — `%output` carries arbitrary pane bytes — so splitting
-    /// them here would be guessing.
+    /// Everything after the name, unsplit. Output bytes that are not valid
+    /// UTF-8 use tmux's octal escaping. ``event`` recovers the exact pane bytes.
     public let arguments: String
 
     public init(name: String, arguments: String) {
@@ -138,6 +135,35 @@ struct ControlProtocolParser: Sendable {
     init(maximumReplyBytes: Int = defaultTmuxReplyByteLimit) {
         precondition(maximumReplyBytes >= 0)
         self.maximumReplyBytes = maximumReplyBytes
+    }
+
+    mutating func consume(_ bytes: Data) throws(TmuxError) -> ControlEvent? {
+        if let line = String(data: bytes, encoding: .utf8) { return consume(line) }
+        guard openBlock == nil, let line = Self.escapedOutputLine(bytes) else {
+            throw .invocationFailed(reason: "control protocol line is not UTF-8")
+        }
+        return consume(line)
+    }
+
+    private static func escapedOutputLine(_ bytes: Data) -> String? {
+        guard
+            bytes.starts(with: "%output ".utf8)
+                || bytes.starts(with: "%extended-output ".utf8)
+        else { return nil }
+        var escaped: [UInt8] = []
+        for byte in bytes {
+            if byte < 0x80 {
+                escaped.append(byte)
+            } else {
+                escaped += [0x5C, 0x30 + (byte >> 6), 0x30 + ((byte >> 3) & 7), 0x30 + (byte & 7)]
+            }
+        }
+        let line = String(decoding: escaped, as: UTF8.self)
+        let (name, arguments) = splitOnFirstSpace(String(line.dropFirst()))
+        switch ControlNotification(name: name, arguments: arguments).event {
+        case .output, .extendedOutput: return line
+        default: return nil
+        }
     }
 
     /// Consumes one line, returning an event if that line completed one.

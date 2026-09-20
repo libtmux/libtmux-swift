@@ -312,7 +312,10 @@ private func consumeControlInput(
 ) async throws(TmuxError) {
     switch event {
     case let .line(line):
-        await control.consume(line)
+        do { try await control.consume(line) } catch {
+            await control.finish(throwing: error)
+            throw error
+        }
     case let .failure(error):
         await control.finish(throwing: error)
         throw error

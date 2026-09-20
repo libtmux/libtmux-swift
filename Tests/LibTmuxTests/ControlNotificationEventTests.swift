@@ -66,12 +66,12 @@ struct ControlNotificationEventTests {
                 let notifications = control.notifications
                 return try await withThrowingTaskGroup(of: [UInt8].self) { group in
                     group.addTask {
-                        // The suffix waits until the tab has arrived in a separate notification.
+                        // tmux splits the UTF-8 character across separate notifications.
                         try await server.send(
                             [
                                 .text(
-                                    "printf 'X\\t'; \(server.shellInvocation) wait-for \(release); "
-                                        + "printf 'Y\\\\Z\\n'"),
+                                    "printf 'X\\t\\342'; \(server.shellInvocation) wait-for \(release); "
+                                        + "printf '\\202\\254Y\\\\Z\\n'"),
                                 .key("Enter"),
                             ], to: target)
                         var released = false
@@ -81,11 +81,11 @@ struct ControlNotificationEventTests {
                                 pane == target.id
                             else { continue }
                             received += data
-                            if received.contains(0x09), !released {
+                            if received.contains(0xE2), !released {
                                 released = true
                                 try await server.signal(release)
                             }
-                            if String(decoding: received, as: UTF8.self).contains("X\tY\\Z") {
+                            if String(decoding: received, as: UTF8.self).contains("X\t€Y\\Z") {
                                 return received
                             }
                         }
@@ -99,8 +99,8 @@ struct ControlNotificationEventTests {
                     return try await group.next() ?? []
                 }
             }
-            // A tab and a backslash, both of which tmux escaped on the wire.
-            #expect(String(decoding: bytes, as: UTF8.self).contains("X\tY\\Z"))
+            // Pane bytes survive both octal escaping and a split UTF-8 character.
+            #expect(String(decoding: bytes, as: UTF8.self).contains("X\t€Y\\Z"))
         }
     }
 
