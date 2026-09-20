@@ -9,7 +9,22 @@ private final class NotificationCancellationExecutor: TaskExecutor, @unchecked S
     private let queue = DispatchQueue(label: "notification-cancellation-test")
     private let lock = NSLock()
     private var beforeEnqueue: (@Sendable () -> Void)?
-    let suspended = DispatchSemaphore(value: 0)
+    private let suspension = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingOldest(1))
+
+    func waitUntilSuspended() async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                for await _ in self.suspension.stream { return true }
+                return false
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(1))
+                return false
+            }
+            return await group.next() ?? false
+        }
+    }
 
     func cancelOnNextEnqueue(_ cancel: @escaping @Sendable () -> Void) {
         lock.lock()
@@ -26,7 +41,7 @@ private final class NotificationCancellationExecutor: TaskExecutor, @unchecked S
         callback?()
         queue.async {
             job.runSynchronously(on: self.asUnownedTaskExecutor())
-            self.suspended.signal()
+            self.suspension.continuation.yield(())
         }
     }
 }
@@ -83,7 +98,7 @@ struct NotificationBroadcastTests {
         }
         defer { consumer.cancel() }
         // The executor signals after the job returns, so next() is suspended.
-        try #require(executor.suspended.wait(timeout: .now() + 1) == .success)
+        try #require(await executor.waitUntilSuspended())
         executor.cancelOnNextEnqueue { consumer.cancel() }
 
         broadcast.yield(Self.window(1))
