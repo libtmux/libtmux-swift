@@ -288,12 +288,12 @@ jobs:
           # reach them. Their resolved-version flag enforces
           # `Examples/Package.resolved` and leaves the root lock alone.
           python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/examples" -- \
-            swift test --package-path Examples --force-resolved-versions --no-parallel
+            stdbuf -oL -eL swift test --package-path Examples --force-resolved-versions --no-parallel
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
           swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
           python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/suite" -- \
-            swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+            stdbuf -oL -eL swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel
 
       - name: Upload test diagnostics
         if: always()

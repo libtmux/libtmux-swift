@@ -61,6 +61,12 @@ def snapshot(
             quiet_for = time.time() - (directory.parent / "command.log").stat().st_mtime
             if quiet_for < 30 or remaining < 5:
                 continue
+            if not any(
+                int(row[0]) == pid and ".xctest" in row[4]
+                for row in rows
+                if len(row) == 5
+            ):
+                continue
             command = [
                 "sudo",
                 "-n",
@@ -71,8 +77,13 @@ def snapshot(
                 "gdb",
                 "--batch",
                 "--nx",
+                "--readnever",
                 "-iex",
                 "set auto-load off",
+                "-iex",
+                "set debuginfod enabled off",
+                "-iex",
+                "handle SIGINT stop noprint nopass",
                 "-ex",
                 "set pagination off",
                 "-ex",
