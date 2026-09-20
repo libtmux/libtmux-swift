@@ -110,7 +110,7 @@ final class NotificationBroadcast: Sendable {
     }
 
     func yield(_ notification: ControlNotification) {
-        let overflowed = withLock { () -> [ControlNotificationStream.Continuation] in
+        let observers = withLock { () -> [(Int, ControlNotificationStream.Continuation)] in
             if state.backlog != nil {
                 if state.backlog?.count ?? 0 < limit {
                     state.backlog?.append(notification)
@@ -118,14 +118,14 @@ final class NotificationBroadcast: Sendable {
                     state.backlogOverflowed = true
                 }
             }
-            var dropped: [Int] = []
-            for (id, observer) in state.observers {
-                if case .dropped = observer.yield(notification) { dropped.append(id) }
-            }
-            return dropped.compactMap { state.observers.removeValue(forKey: $0) }
+            return Array(state.observers)
         }
-        for observer in overflowed {
-            observer.finish(throwing: TmuxError.notificationBufferOverflow(limit: limit))
+        // Resuming a consumer can synchronously run its cancellation handler.
+        for (id, observer) in observers {
+            if case .dropped = observer.yield(notification) {
+                let removed = withLock { state.observers.removeValue(forKey: id) }
+                removed?.finish(throwing: TmuxError.notificationBufferOverflow(limit: limit))
+            }
         }
     }
 

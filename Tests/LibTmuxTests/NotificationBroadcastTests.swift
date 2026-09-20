@@ -1,6 +1,35 @@
+import Dispatch
+import Foundation
 import Testing
 
 @testable import LibTmux
+
+@available(macOS 15.0, *)
+private final class NotificationCancellationExecutor: TaskExecutor, @unchecked Sendable {
+    private let queue = DispatchQueue(label: "notification-cancellation-test")
+    private let lock = NSLock()
+    private var beforeEnqueue: (@Sendable () -> Void)?
+    let suspended = DispatchSemaphore(value: 0)
+
+    func cancelOnNextEnqueue(_ cancel: @escaping @Sendable () -> Void) {
+        lock.lock()
+        beforeEnqueue = cancel
+        lock.unlock()
+    }
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        lock.lock()
+        let callback = beforeEnqueue
+        beforeEnqueue = nil
+        lock.unlock()
+        callback?()
+        queue.async {
+            job.runSynchronously(on: self.asUnownedTaskExecutor())
+            self.suspended.signal()
+        }
+    }
+}
 
 /// What a connection's fan-out promises, without a connection.
 ///
@@ -41,6 +70,26 @@ struct NotificationBroadcastTests {
 
         #expect(try await Self.drain(first) == ["@1", "@2"])
         #expect(try await Self.drain(second) == ["@1", "@2"])
+    }
+
+    @Test("canceling a consumer during delivery cannot deadlock the broadcast")
+    @available(macOS 15.0, *)
+    func cancellationDuringDeliveryDoesNotDeadlock() async throws {
+        let broadcast = NotificationBroadcast()
+        let notifications = broadcast.subscribe()
+        let executor = NotificationCancellationExecutor()
+        let consumer = Task(executorPreference: executor) {
+            try await Self.first(notifications)
+        }
+        defer { consumer.cancel() }
+        // The executor signals after the job returns, so next() is suspended.
+        try #require(executor.suspended.wait(timeout: .now() + 1) == .success)
+        executor.cancelOnNextEnqueue { consumer.cancel() }
+
+        broadcast.yield(Self.window(1))
+
+        #expect(try await consumer.value?.arguments == "@1")
+        broadcast.finish()
     }
 
     @Test("what arrived before the first observer is replayed to it alone")
