@@ -13,6 +13,19 @@ import time
 from pathlib import Path
 
 
+def descendants(listing: str, root: int) -> set[int]:
+    """Find children even when they create separate process groups."""
+    rows = [line.split(None, 4) for line in listing.splitlines()]
+    found = {root}
+    while True:
+        children = {
+            int(row[0]) for row in rows if len(row) == 5 and int(row[1]) in found
+        }
+        if children <= found:
+            return found
+        found.update(children)
+
+
 def snapshot(
     directory: Path, process: subprocess.Popen[bytes], deadline: float
 ) -> None:
@@ -31,15 +44,7 @@ def snapshot(
         return
     (directory / "processes.txt").write_text(listing)
     rows = [line.split(None, 4) for line in listing.splitlines()]
-    descendants = {process.pid}
-    while True:
-        found = {
-            int(row[0]) for row in rows if len(row) == 5 and int(row[1]) in descendants
-        }
-        if found <= descendants:
-            break
-        descendants.update(found)
-    for pid in sorted(descendants)[:8]:
+    for pid in sorted(descendants(listing, process.pid))[:8]:
         remaining = deadline - time.monotonic()
         if remaining <= 0 or process.poll() is not None:
             return
@@ -130,7 +135,9 @@ def main() -> int:
         parser.error("a command is required after --")
     args.output.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    deadline = started + 300
+    listing_timeout = 1
+    teardown_timeout = 5
+    deadline = started + 300 - listing_timeout - teardown_timeout
     snapshots = 0
     timed_out = False
     with (args.output / "command.log").open("w") as output:
@@ -156,9 +163,18 @@ def main() -> int:
                     snapshot(args.output / f"snapshot-{snapshots}", process, deadline)
         finally:
             if process.poll() is None:
+                with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+                    listing = subprocess.check_output(
+                        ["ps", "-axo", "pid=,ppid=,stat=,etime=,command="],
+                        text=True,
+                        timeout=listing_timeout,
+                    )
+                    for pid in descendants(listing, process.pid) - {process.pid}:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.kill(pid, signal.SIGKILL)
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=5)
+                process.wait(timeout=teardown_timeout)
     status = 124 if timed_out else process.returncode
     (args.output / "result.json").write_text(
         json.dumps(
