@@ -15,16 +15,13 @@ name: docs
 # index until the shape is proven.
 on:
   push:
-    # DO NOT MERGE: docs-site publishes /en/swift/latest/ before anything
-    # merges. Drop it from this list in the change that merges to master.
-    branches: [master, docs-site]
+    branches: [master]
   workflow_dispatch:
 
-# Workflow level, so a second push queues behind the first rather than racing
-# it into the same prefix.
+# Keep one publication to this prefix at a time.
 concurrency:
   group: docs-deploy-${{ github.repository }}
-  queue: max
+  cancel-in-progress: false
 
 permissions:
   contents: read
