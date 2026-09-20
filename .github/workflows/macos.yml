@@ -127,20 +127,37 @@ jobs:
           set -euo pipefail
           echo "before: $(sysctl -n kern.tty.ptmx_max)"
           sudo sysctl -w kern.tty.ptmx_max=999
+      - name: Check the tmate relay
+        id: tmate-relay
+        if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        run: |
+          python3 - <<'PY'
+          import os, socket
+          try:
+              socket.getaddrinfo("ssh.tmate.io", 22)
+              available = "true"
+          except socket.gaierror as error:
+              print(f"tmate relay DNS unavailable: {error}")
+              available = "false"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"available={available}\n")
+          PY
       - name: Debug the macOS runner
         id: tmate
-        if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        if: steps.tmate-relay.outputs.available == 'true'
+        timeout-minutes: 2
+        continue-on-error: true
         uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3
         with:
           detached: true
           limit-access-to-actor: true
       - name: Record the debug connection
-        if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        if: steps.tmate.outputs.ssh-address != ''
         env:
           TMATE_SSH_ADDRESS: ${{ steps.tmate.outputs.ssh-address }}
         run: printf '%s\n' "$TMATE_SSH_ADDRESS" > "$RUNNER_TEMP/tmate-connection.txt"
       - name: Upload the debug connection
-        if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        if: steps.tmate.outputs.ssh-address != ''
         uses: actions/upload-artifact@v7
         with:
           name: macos-tmate-connection
@@ -153,6 +170,13 @@ jobs:
           "$LIBTMUX_TMUX_BIN" -V
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
+          if [[ "${{ inputs.debug_enabled }}" == 'true' ]]; then
+            python3 Scripts/diagnose_macos_tests.py --output "$RUNNER_TEMP/swift-diagnostics/examples" -- \
+              xcrun swift test --package-path Examples --force-resolved-versions
+            python3 Scripts/diagnose_macos_tests.py --output "$RUNNER_TEMP/swift-diagnostics/suite" -- \
+              xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+            exit 0
+          fi
           xcrun swift test --package-path Examples --force-resolved-versions
           # Serialized here and not on Linux. Every case drives a real tmux
           # server, and Darwin schedules the parallel suite badly enough that
@@ -160,3 +184,10 @@ jobs:
           # the tail pass their own time limit. AGENTS.md already requires
           # --no-parallel for real-tmux runs; this lane is where CI needs it.
           xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+      - name: Upload macOS diagnostics
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-test-diagnostics
+          path: ${{ runner.temp }}/swift-diagnostics
+          retention-days: 3
