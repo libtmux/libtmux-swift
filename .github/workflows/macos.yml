@@ -40,6 +40,10 @@ on:
         type: choice
         options: ['3', '20']
         default: '3'
+      debug_protocol:
+        description: Capture verbose tmux protocol logs
+        type: boolean
+        default: false
 
 concurrency:
   group: macos-${{ github.ref }}
@@ -188,6 +192,7 @@ jobs:
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
           if [[ "${{ inputs.debug_enabled }}" == 'true' ]]; then
+            if [[ "${{ inputs.debug_protocol }}" == 'true' ]]; then
             python3 - <<'PY'
           import os, pathlib, shlex
           wrapper = pathlib.Path(os.environ["RUNNER_TEMP"]) / "tmux-debug"
@@ -195,7 +200,8 @@ jobs:
           wrapper.write_text(f'#!/bin/sh\nexec {command} "$@"\n')
           wrapper.chmod(0o700)
           PY
-            export LIBTMUX_TMUX_BIN="$RUNNER_TEMP/tmux-debug"
+              export LIBTMUX_TMUX_BIN="$RUNNER_TEMP/tmux-debug"
+            fi
             xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
             case "$DEBUG_TEST_REPETITIONS" in
               3|20) ;;

@@ -534,9 +534,16 @@ private func runCaptureAction(
 actor CaptureRecordingTransport: ProcessTransport {
     private let underlying = SubprocessTransport()
     private(set) var captureRequests: [RecordedCaptureRequest] = []
+    private(set) var captureTrace: [String] = []
+    private let tracing: Bool
+    private let started = ContinuousClock.now
     private var captureActions: [Int: @Sendable () async throws -> Void] = [:]
     private var nextCaptureAction: (@Sendable () async throws -> Void)?
     private var afterCaptureAction: (@Sendable () async throws -> Void)?
+
+    init(tracing: Bool = false) {
+        self.tracing = tracing
+    }
 
     var captureLimits: [Int] {
         captureRequests.map(\.perStreamOutputLimit)
@@ -584,12 +591,20 @@ actor CaptureRecordingTransport: ProcessTransport {
                 try await runCaptureAction(nextCaptureAction)
             }
         }
+        let ordinal = captureRequests.count
+        if isCapture, tracing {
+            captureTrace.append("capture \(ordinal) starts \(started.duration(to: .now))")
+        }
         let reply = try await underlying.run(
             executable: executable,
             arguments: arguments,
             environment: environment,
             perStreamOutputLimit: perStreamOutputLimit
         )
+        if isCapture, tracing {
+            captureTrace.append(
+                "capture \(ordinal) ends \(started.duration(to: .now)): \(reply.text.prefix(4096))")
+        }
         if isCapture, let afterCaptureAction {
             try await runCaptureAction(afterCaptureAction)
         }

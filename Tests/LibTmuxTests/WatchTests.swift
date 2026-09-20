@@ -903,8 +903,12 @@ struct WatchTests {
 
     @Test("output from a pane respawn ends an established wait")
     func respawnedPaneOutputIsNotLost() async throws {
-        try await withTmuxServer { server in
-            let pane = try await bootstrapPane(server)
+        try await withTmuxServer { fixture in
+            let pane = try await bootstrapPane(fixture)
+            let transport = CaptureRecordingTransport(tracing: true)
+            let server = Server(
+                endpoint: fixture.endpoint, tmuxExecutable: fixture.tmuxExecutable,
+                transport: transport)
             let command = TmuxCommand(
                 "respawn-pane",
                 [
@@ -923,6 +927,7 @@ struct WatchTests {
             )
 
             if result.outcome != .matched {
+                print(await transport.captureTrace.joined(separator: "\n"))
                 let state = try? await server.formatGlobal(
                     "#{pane_pid}|#{pane_dead}|#{pane_current_command}",
                     for: pane
