@@ -125,7 +125,7 @@ extension TmuxTools {
                         .map(tmuxQuoted).joined(separator: " ")
                     let command = TmuxCommand("if-shell", ["-F", "1", action])
                     let reply = try await server.runIsolated(
-                        command, expecting: cleanup.pane.incarnation, perStreamOutputLimit: 4_096)
+                        command, guardingProcessOf: cleanup.pane, perStreamOutputLimit: 4_096)
                     guard reply.isSuccess else {
                         throw TmuxError.commandFailed(
                             command: "send-keys", exitCode: reply.exitCode, reason: reply.errorText)

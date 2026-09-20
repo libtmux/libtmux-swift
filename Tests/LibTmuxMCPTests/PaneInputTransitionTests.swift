@@ -57,17 +57,23 @@ struct PaneInputTransitionTests {
                     )
                     Issue.record("\(mutation.rawValue) was accepted")
                 } catch let error as ToolError {
-                    #expect(
-                        error.description.contains(
-                            "run_shell_command pane state changed after setup; no input was sent"
-                        ),
-                        Comment(rawValue: "\(mutation.rawValue): \(error)")
-                    )
+                    if mutation == .shellRespawnAtDispatch {
+                        #expect(error == .tmux(.staleServerValue))
+                    } else {
+                        #expect(
+                            error.description.contains(
+                                "run_shell_command pane state changed after setup; no input was sent"
+                            ),
+                            Comment(rawValue: "\(mutation.rawValue): \(error)")
+                        )
+                    }
                 }
 
                 #expect(await transport.listPaneCount == 2, Comment(rawValue: mutation.rawValue))
                 #expect(
-                    await transport.inputDispatchCount == 0, Comment(rawValue: mutation.rawValue))
+                    await transport.inputDispatchCount
+                        == (mutation == .shellRespawnAtDispatch ? 1 : 0),
+                    Comment(rawValue: mutation.rawValue))
                 #expect(await transport.waitCount == 0, Comment(rawValue: mutation.rawValue))
                 #expect(!(await TmuxTools.paneRuns.isHeld(source)))
                 let surviving = try await fixture.panes()
@@ -311,6 +317,7 @@ enum TransitionMutation: String, CaseIterable, Sendable {
     case dead
     case shell
     case shellRespawn
+    case shellRespawnAtDispatch
     case cohortWidens
     case synchronizationOnly
     case windowPlacement
@@ -360,9 +367,16 @@ private actor TransitionTransport: ProcessTransport {
         }
         if arguments.contains("list-panes") {
             listPaneCount += 1
-            if listPaneCount == 2, mutation != .windowLinkIndex { try await mutate() }
+            if listPaneCount == 2, mutation != .windowLinkIndex,
+                mutation != .shellRespawnAtDispatch
+            {
+                try await mutate()
+            }
         }
-        if commandLine.contains("send-keys") { inputDispatchCount += 1 }
+        if commandLine.contains("send-keys") {
+            inputDispatchCount += 1
+            if mutation == .shellRespawnAtDispatch { try await mutate() }
+        }
         if commandLine.contains("paste-buffer") { pasteDispatchCount += 1 }
         if arguments.contains("wait-for") { waitCount += 1 }
         if commandLine.contains("capture-pane") { captureCount += 1 }
@@ -393,7 +407,7 @@ private actor TransitionTransport: ProcessTransport {
         case .shell:
             try await fixture.respawn(source, running: ["sleep", "30"])
             try await waitForFormat("#{pane_current_command}", toEqual: "sleep")
-        case .shellRespawn:
+        case .shellRespawn, .shellRespawnAtDispatch:
             try await fixture.respawn(source, running: ["/bin/sh"])
         case .cohortWidens, .callerJoins:
             for pane in [source, peer] {
