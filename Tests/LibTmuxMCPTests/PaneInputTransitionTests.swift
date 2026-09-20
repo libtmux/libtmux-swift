@@ -310,6 +310,7 @@ enum TransitionMutation: String, CaseIterable, Sendable {
     case mode
     case dead
     case shell
+    case shellRespawn
     case cohortWidens
     case synchronizationOnly
     case windowPlacement
@@ -392,6 +393,8 @@ private actor TransitionTransport: ProcessTransport {
         case .shell:
             try await fixture.respawn(source, running: ["sleep", "30"])
             try await waitForFormat("#{pane_current_command}", toEqual: "sleep")
+        case .shellRespawn:
+            try await fixture.respawn(source, running: ["/bin/sh"])
         case .cohortWidens, .callerJoins:
             for pane in [source, peer] {
                 _ = try await fixture.run(

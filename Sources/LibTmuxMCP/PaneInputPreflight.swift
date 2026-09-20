@@ -24,6 +24,7 @@ fileprivate struct PaneInputMemberSignature: Sendable, Hashable {
     let isInputOff: Bool
     let modeCount: Int
     let currentCommand: String?
+    let processID: Int?
 
     init(_ pane: Pane, includeCommand: Bool) {
         self.incarnation = pane.incarnation
@@ -34,6 +35,7 @@ fileprivate struct PaneInputMemberSignature: Sendable, Hashable {
         self.isInputOff = pane.isInputOff
         self.modeCount = pane.modeCount
         self.currentCommand = includeCommand ? pane.currentCommand : nil
+        self.processID = includeCommand ? pane.processID : nil
     }
 }
 

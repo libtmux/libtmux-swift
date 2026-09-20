@@ -111,6 +111,9 @@ version number says only which alpha you have. Pin an exact one.
 - `run_shell_command` preserves completed output and exit status when cleanup
   fails. (#15)
 
+- `run_shell_command` refuses a pane whose shell was respawned during setup.
+  (#15)
+
 - `run_shell_command` releases a timed-out pane after bounded cleanup when
   completion cannot be confirmed. (#15)
 
