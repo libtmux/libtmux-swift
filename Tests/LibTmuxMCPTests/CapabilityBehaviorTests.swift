@@ -372,6 +372,7 @@ struct CapabilityBehaviorTests {
             for (path, flags) in candidates
             where FileManager.default.isExecutableFile(atPath: path) {
                 try await server.respawn(original, running: [path] + flags)
+                try await waitForShellPrompt(on: server, within: .seconds(1))
                 // tmux names the pane's command per platform: Linux reports
                 // argv[0]'s basename, so /bin/sh reads as `sh`, while Darwin
                 // reports the executable it actually is, and Darwin's /bin/sh
@@ -380,14 +381,14 @@ struct CapabilityBehaviorTests {
                 let supported = Set([
                     "sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh",
                 ])
-                let reported = try await waitUntil {
+                let reported = try await waitUntil(within: .seconds(1)) {
                     guard
                         let command = try await server.panes()
                             .first(where: { $0.id == original.id })?.currentCommand
                     else { return false }
                     return supported.contains(command)
                 }
-                #expect(reported, Comment(rawValue: path))
+                try #require(reported, Comment(rawValue: path))
                 let shell = try #require(
                     try await server.panes().first(where: { $0.id == original.id })?
                         .currentCommand
@@ -400,7 +401,7 @@ struct CapabilityBehaviorTests {
                     + (shell == "bash" ? "trap ':' DEBUG; trap ':' ERR; " : "")
                     + "set -e; set -x; \(server.shellInvocation) wait-for -S \(ready)"
                 try await server.send([.key(setup), .key("Enter")], to: original)
-                try await server.wait(for: ready)
+                try await server.wait(for: ready, timeout: .seconds(1))
 
                 let surface = tools(server)
                 let run = try await surface.call(
@@ -462,7 +463,7 @@ struct CapabilityBehaviorTests {
                         .key("unalias printf; \(server.shellInvocation) wait-for -S \(unaliased)"),
                         .key("Enter"),
                     ], to: original)
-                try await server.wait(for: unaliased)
+                try await server.wait(for: unaliased, timeout: .seconds(1))
                 let function = try await surface.call(
                     ToolCall(
                         name: "run_shell_command",
@@ -510,8 +511,9 @@ struct CapabilityBehaviorTests {
                 if canonicalInput && shell != "bash" { continue }
                 let arguments = flags + (canonicalInput ? ["--noediting"] : [])
                 try await server.respawn(pane, running: [path] + arguments)
-                #expect(
-                    try await waitUntil {
+                try await waitForShellPrompt(on: server, within: .seconds(1))
+                try #require(
+                    try await waitUntil(within: .seconds(1)) {
                         try await server.panes().first(where: { $0.id == pane.id })?
                             .currentCommand == shell
                     },
@@ -540,7 +542,7 @@ struct CapabilityBehaviorTests {
                     + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(ready)
                 try await server.send([.key(setup), .key("Enter")], to: pane)
-                try await server.wait(for: ready)
+                try await server.wait(for: ready, timeout: .seconds(1))
                 let shellProcessText = try #require(
                     try await server.format("#{pane_pid}", addressing: pane.id.rawValue)
                 )
@@ -642,7 +644,7 @@ struct CapabilityBehaviorTests {
                     + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(oversizedReady)
                 try await server.send([.key(oversizedSetup), .key("Enter")], to: pane)
-                try await server.wait(for: oversizedReady)
+                try await server.wait(for: oversizedReady, timeout: .seconds(1))
 
                 let refusedMarker = "trap-refused-\(shell)"
                 let refused = try await run(
@@ -667,7 +669,7 @@ struct CapabilityBehaviorTests {
                                 + "\(server.shellInvocation) wait-for -S -- "
                                 + shellQuoted(restored)), .key("Enter"),
                     ], to: pane)
-                try await server.wait(for: restored)
+                try await server.wait(for: restored, timeout: .seconds(1))
                 let recoveredMarker = "trap-recovered-\(shell)"
                 let recovered = try await run(
                     "/usr/bin/printf '%s\\n' \(shellQuoted(recoveredMarker))"
