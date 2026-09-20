@@ -61,25 +61,43 @@ struct ControlNotificationEventTests {
             // to, so the pane has to be this session's -- not the fixture's.
             let target = try #require(
                 try await server.snapshot().panes(of: session).first)
+            let release = "events-\(UUID().uuidString)"
             let bytes = try await server.connected(attachingTo: session) { server, control in
-                try await server.send(
-                    [.text("printf 'X\\tY\\\\Z\\n'"), .key("Enter")], to: target)
-                var seen = 0
-                var received: [UInt8] = []
-                for try await notification in control.notifications {
-                    seen += 1
-                    // Output arrives in pieces, and the shell's echo of the
-                    // typed command comes first. Only printf's output holds a
-                    // real tab -- the echo holds a backslash and a `t`.
-                    if case let .output(pane, data) = notification.event, pane == target.id {
-                        received += data
-                        if received.contains(0x09) { return received }
+                let notifications = control.notifications
+                return try await withThrowingTaskGroup(of: [UInt8].self) { group in
+                    group.addTask {
+                        // The suffix waits until the tab has arrived in a separate notification.
+                        try await server.send(
+                            [
+                                .text(
+                                    "printf 'X\\t'; \(server.shellInvocation) wait-for \(release); "
+                                        + "printf 'Y\\\\Z\\n'"),
+                                .key("Enter"),
+                            ], to: target)
+                        var released = false
+                        var received: [UInt8] = []
+                        for try await notification in notifications {
+                            guard case let .output(pane, data) = notification.event,
+                                pane == target.id
+                            else { continue }
+                            received += data
+                            if received.contains(0x09), !released {
+                                released = true
+                                try await server.signal(release)
+                            }
+                            if String(decoding: received, as: UTF8.self).contains("X\tY\\Z") {
+                                return received
+                            }
+                        }
+                        return []
                     }
-                    // A loop with no way out holds the connection for as long
-                    // as the server lives; this one gives up.
-                    if seen > 500 { return [] }
+                    group.addTask {
+                        try await Task.sleep(for: .seconds(1))
+                        return []
+                    }
+                    defer { group.cancelAll() }
+                    return try await group.next() ?? []
                 }
-                return []
             }
             // A tab and a backslash, both of which tmux escaped on the wire.
             #expect(String(decoding: bytes, as: UTF8.self).contains("X\tY\\Z"))
