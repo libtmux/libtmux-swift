@@ -210,7 +210,7 @@ extension Server {
         _ body: @escaping @Sendable (ControlSession) async throws -> Result
     ) async throws -> Result {
         var platformOptions = PlatformOptions()
-        platformOptions.createSession = true
+        platformOptions.processGroupID = 0
 
         let configurationArguments = configurationFilePath.map { ["-f", $0] } ?? []
         let arguments =

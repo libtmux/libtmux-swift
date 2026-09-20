@@ -105,7 +105,7 @@ public struct SubprocessTransport: ProcessTransport {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         var platformOptions = PlatformOptions()
-        platformOptions.createSession = true
+        platformOptions.processGroupID = 0
         platformOptions.teardownSequence = [
             .send(
                 signal: .kill,

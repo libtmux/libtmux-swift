@@ -92,6 +92,10 @@ version number says only which alpha you have. Pin an exact one.
 
 ### Fixed
 
+- `SubprocessTransport` and `Server.withControlMode` avoid the extra macOS fork
+  required for a new process session. Cancellation still targets each child's
+  separate process group. (#15)
+
 - `ControlSession.notifications` avoids deadlock when cancellation races with
   notification delivery. (#15)
 
