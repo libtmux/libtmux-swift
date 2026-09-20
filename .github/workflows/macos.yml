@@ -23,13 +23,23 @@ on:
   workflow_dispatch:
     inputs:
       debug_enabled:
-        description: Inspect the tmux 3.2a lane through tmate
+        description: Inspect the selected tmux lane through tmate
         type: boolean
         default: false
+      debug_tmux:
+        description: tmux version for the diagnostic runs
+        type: choice
+        options: ['3.2a', '3.7b']
+        default: '3.2a'
       debug_filter:
         description: Test filter for the bounded diagnostic runs
         type: string
         default: CapabilityBehaviorTests
+      debug_repetitions:
+        description: Number of diagnostic runs
+        type: choice
+        options: ['3', '20']
+        default: '3'
 
 concurrency:
   group: macos-${{ github.ref }}
@@ -43,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tmux: ${{ fromJSON(inputs.debug_enabled && '["3.2a"]' || '["3.2a", "3.7b"]') }}
+        tmux: ${{ fromJSON(inputs.debug_enabled && format('["{0}"]', inputs.debug_tmux || '3.2a') || '["3.2a", "3.7b"]') }}
 
     steps:
       - uses: actions/checkout@v7
@@ -170,6 +180,7 @@ jobs:
       - name: Test
         env:
           DEBUG_TEST_FILTER: ${{ inputs.debug_filter }}
+          DEBUG_TEST_REPETITIONS: ${{ inputs.debug_repetitions || '3' }}
         run: |
           set -euo pipefail
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
@@ -178,7 +189,11 @@ jobs:
           mkdir -p "$TMUX_TMPDIR"
           if [[ "${{ inputs.debug_enabled }}" == 'true' ]]; then
             xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
-            for attempt in 1 2 3; do
+            case "$DEBUG_TEST_REPETITIONS" in
+              3|20) ;;
+              *) exit 2 ;;
+            esac
+            for attempt in $(seq 1 "$DEBUG_TEST_REPETITIONS"); do
               python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/attempt-$attempt" -- \
                 xcrun swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel \
                 --filter "$DEBUG_TEST_FILTER"

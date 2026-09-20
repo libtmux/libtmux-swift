@@ -922,6 +922,17 @@ struct WatchTests {
                 timeout: .seconds(3)
             )
 
+            if result.outcome != .matched {
+                let state = try? await server.formatGlobal(
+                    "#{pane_pid}|#{pane_dead}|#{pane_current_command}",
+                    for: pane
+                )
+                let screen = try? await server.capture(pane)
+                let hooks = try? await server.run(TmuxCommand("show-hooks", ["-g"]))
+                print("respawn wait state: \(String(describing: state))")
+                print("respawn wait screen: \(String(describing: screen))")
+                print("respawn wait hooks: \(String(describing: hooks))")
+            }
             #expect(result.outcome == .matched)
             #expect(result.matched == "^after-respawn$")
             #expect(result.sawNewOutput)
