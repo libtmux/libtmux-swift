@@ -197,14 +197,7 @@ extension Server {
                     advanced && aligned.tail == nil && rows.first?.isEmpty == true
                 if rows.first == (aligned.tail ?? "") { rows.removeFirst() }
                 if completedBlankAnchor { rows.insert("", at: 0) }
-                // Whether `rows.last` is still the pane's live cursor row:
-                // only when this read reaches it and that row is not empty.
-                // An empty one is the "nothing typed yet" case the strip
-                // below removes outright, so what remains after it is
-                // already-committed content, not the pending line -- true
-                // whether or not a *new* row was created, since typing into
-                // an already-anchored row without a newline never advances
-                // past it but still changes what that row holds.
+                // Typing can change the live row without advancing beyond its anchor.
                 let endsOnLiveCursorRow =
                     end == state.absoluteCursorRow && rows.last?.isEmpty == false
                 if advanced, rows.last?.isEmpty == true {

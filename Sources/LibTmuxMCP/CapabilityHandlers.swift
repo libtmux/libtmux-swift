@@ -683,11 +683,7 @@ extension TmuxTools {
         let sendsEnter = try arguments.bool("enter", or: false)
         let force = try arguments.bool("force", or: false)
         let literal = try arguments.bool("literal", or: false)
-        // `-l` (literal) applies to every argument in one dispatch, so an
-        // "Enter" appended to a literal call would be typed as the four
-        // letters E-n-t-e-r rather than pressed. Non-literal already presses
-        // it correctly as part of the same call, so only the literal path
-        // needs a second, non-literal dispatch just for the key.
+        // A literal run represents Enter as a key after its text operands.
         let pressEnterSeparately = sendsEnter && literal
         if sendsEnter, !literal { keys.append("Enter") }
         let initial = try await preflightPaneInput(
@@ -717,9 +713,6 @@ extension TmuxTools {
         // Publish the discount before tmux can emit the corresponding echo.
         let echoUpdate = await Self.paneEchoes.apply(echoDispatch, to: echoTargets)
         do {
-            // One dispatch: `-l` applies per `send-keys` call, so the keys
-            // and a literal run's Enter used to need two, and a pane could be
-            // left holding an unsubmitted line if the second never landed.
             var input = keys.map { literal ? PaneInput.text($0) : PaneInput.key($0) }
             if pressEnterSeparately { input.append(.key("Enter")) }
             try await server.send(input, to: final.source)

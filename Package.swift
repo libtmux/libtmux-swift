@@ -33,13 +33,8 @@ let package = Package(
     // `Workspace.decode(yaml:)` goes away.
     traits: [.default(enabledTraits: []), "YAMLWorkspaces"],
     dependencies: [
-        // Minor releases rather than the usual major, because two behaviours
-        // this package depends on come from here and neither is part of a
-        // type signature a SemVer-major bump would announce: killing the
-        // child's whole process group on cancellation, which is what lets an
-        // abandoned command leave nothing running, and bounded output
-        // collection. The cost is resolution: a graph that also needs 1.1 or
-        // later cannot pick this package until the range here moves.
+        // The tested minor line provides process-group cancellation and
+        // bounded output collection; wider dependency graphs may conflict.
         .package(
             url: "https://github.com/swiftlang/swift-subprocess.git",
             .upToNextMinor(from: "1.0.0")

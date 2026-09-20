@@ -2,12 +2,6 @@ import Foundation
 
 /// Bounds one tmux command by wall-clock time.
 ///
-/// Cancellation is the only bound a `Task` gives for free, and it is the wrong
-/// one here: it fires when the *caller* is done waiting, not when a daemon has
-/// stopped answering. A tmux that is wedged — swapping, stopped, or waiting on
-/// a lock nothing will release — otherwise holds the calling task for as long
-/// as it stays that way.
-///
 /// The race is deliberately unstructured. A task group would be tidier and
 /// would not hold: a group awaits its children at scope exit, so `cancelAll()`
 /// *asks* the work to stop and a transport that never observes cancellation
