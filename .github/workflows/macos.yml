@@ -130,7 +130,7 @@ jobs:
         run: xcrun swift build --force-resolved-versions
 
       - name: Test the private MCP swap tool
-        if: matrix.tmux == '3.7b'
+        if: matrix.tmux == '3.7b' && !inputs.debug_enabled
         run: xcrun swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
 
       # Every pane is a pty, the suite runs its cases in parallel, and Darwin
@@ -188,6 +188,14 @@ jobs:
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
           if [[ "${{ inputs.debug_enabled }}" == 'true' ]]; then
+            python3 - <<'PY'
+          import os, pathlib, shlex
+          wrapper = pathlib.Path(os.environ["RUNNER_TEMP"]) / "tmux-debug"
+          command = shlex.join([os.environ["LIBTMUX_TMUX_BIN"], "-vv"])
+          wrapper.write_text(f'#!/bin/sh\nexec {command} "$@"\n')
+          wrapper.chmod(0o700)
+          PY
+            export LIBTMUX_TMUX_BIN="$RUNNER_TEMP/tmux-debug"
             xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
             case "$DEBUG_TEST_REPETITIONS" in
               3|20) ;;
@@ -211,4 +219,27 @@ jobs:
         with:
           name: macos-test-diagnostics-${{ matrix.tmux }}
           path: ${{ runner.temp }}/swift-diagnostics
+          retention-days: 3
+      - name: Remove environment values from tmux logs
+        id: sanitize-tmux
+        if: always() && inputs.debug_enabled
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          values = sorted(
+              ((value, key) for key, value in os.environ.items() if len(value) >= 8),
+              reverse=True, key=lambda item: len(item[0]))
+          for path in pathlib.Path.cwd().glob("tmux-*.log"):
+              text = "".join(line for line in path.read_text(errors="replace").splitlines(True)
+                             if "environ" not in line.lower())
+              for value, key in values:
+                  text = text.replace(value, f"<environment:{key}>")
+              path.write_text(text)
+          PY
+      - name: Upload tmux protocol logs
+        if: always() && steps.sanitize-tmux.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-tmux-protocol-${{ matrix.tmux }}
+          path: tmux-*.log
           retention-days: 3

@@ -931,7 +931,7 @@ struct WatchTests {
                 let hooks = try? await server.run(TmuxCommand("show-hooks", ["-g"]))
                 print("respawn wait state: \(String(describing: state))")
                 print("respawn wait screen: \(String(describing: screen))")
-                print("respawn wait hooks: \(String(describing: hooks))")
+                print("respawn wait hooks: \(hooks?.text ?? "unavailable")")
             }
             #expect(result.outcome == .matched)
             #expect(result.matched == "^after-respawn$")
