@@ -60,14 +60,20 @@ struct PaneEchoTests {
         #expect(await echoes.discount(for: pane, waitStart: .now).transform("xMARKER") == "")
     }
 
-    @Test("unknown keys stop tracking the current line")
+    @Test("unknown keys stop tracking the current line for an existing wait")
     func unknownKey() async throws {
         let echoes = PaneEchoes()
         let pane = try key()
-        await echoes.commit(await echoes.apply(.keys(["visible", "Left"]), to: [pane]))
+        let wait = PaneEchoes.Wait(key: pane, source: echoes)
+        await echoes.commit(await echoes.apply(.keys(["visible"]), to: [pane]))
+        #expect(await wait.discount().transform("visible") == "")
+        await echoes.commit(await echoes.apply(.keys(["Left"]), to: [pane]))
         let discount = await echoes.discount(for: pane, waitStart: .now)
         #expect(discount.transform("visible") == "visible")
         #expect(!discount.cursorRowUnsettled)
+        let existing = await wait.discount()
+        #expect(existing.transform("visible") == "visible")
+        #expect(!existing.cursorRowUnsettled)
     }
 
     @Test("oversized input fails open until a line reset")
@@ -111,13 +117,17 @@ struct PaneEchoTests {
         #expect(discount.cursorRowUnsettled)
     }
 
-    @Test("waits retain seen echoes after expiry and record eviction")
-    func retainedDiscounts() async throws {
+    @Test(
+        "waits retain submitted and erased echoes after expiry and eviction",
+        arguments: [["Enter"], ["BSpace", "Left"]])
+    func retainedDiscounts(finishingKeys: [String]) async throws {
         let echoes = PaneEchoes()
         let pane = try key()
         let started = ContinuousClock.now
         let wait = PaneEchoes.Wait(key: pane, source: echoes)
-        await echoes.commit(await echoes.apply(.keys(["old", "Enter"]), to: [pane], now: started))
+        await echoes.commit(await echoes.apply(.keys(["old"]), to: [pane], now: started))
+        #expect(await wait.discount(now: started).transform("old") == "")
+        await echoes.commit(await echoes.apply(.keys(finishingKeys), to: [pane], now: started))
         #expect(await wait.discount(now: started).transform("old") == "")
         let expired = started.advanced(by: .seconds(11))
         #expect(await echoes.discount(for: pane, waitStart: expired).transform("old") == "old")

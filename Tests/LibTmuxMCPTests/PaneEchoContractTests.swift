@@ -215,14 +215,22 @@ struct PaneEchoContractTests {
         }
     }
 
-    @Test("unknown editing keys leave current input untracked")
+    @Test("unknown editing keys release pending text from an existing wait")
     func unknownKey() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
             let surface = tools(server)
-            try await send(surface, pane, ["MARKER", "Left"])
-            let result = try await wait(surface, pane, "MARKER")
-            #expect(result.structured["matched"]?.stringValue == "MARKER")
+            try await send(surface, pane, ["MARKER"])
+            let key = PaneEchoes.Key(incarnation: pane.incarnation, pane: pane.id)
+            let echoWait = PaneEchoes.Wait(key: key, source: TmuxTools.paneEchoes)
+            #expect(await echoWait.discount().transform("MARKER") == "")
+            try await send(surface, pane, ["Left"])
+            let result = try await server.waitForOutput(
+                in: pane, matching: [try RegexPattern("MARKER")], timeout: .milliseconds(150),
+                discounting: { await echoWait.discount() }
+            )
+            #expect(result.outcome == .alreadyOnScreen)
+            #expect(result.matchedIndex == 0)
         }
     }
 

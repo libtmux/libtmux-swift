@@ -109,20 +109,25 @@ actor PaneEchoes {
     }
 
     struct Snapshot: Sendable {
-        let echoes: [String]
+        let recent: [String]
+        let current: String
         let pending: Bool
+
+        var echoes: [String] { recent + (current.isEmpty ? [] : [current]) }
     }
 
     func snapshot(for key: Key, now: ContinuousClock.Instant = .now) -> Snapshot {
         evictStale(now: now)
-        guard let record = table[key] else { return Snapshot(echoes: [], pending: false) }
+        guard let record = table[key] else {
+            return Snapshot(recent: [], current: "", pending: false)
+        }
         return Snapshot(
-            echoes: record.recent.map(\.text) + (record.pending.isEmpty ? [] : [record.pending]),
+            recent: record.recent.map(\.text), current: record.pending,
             pending: record.hasPending
         )
     }
 
-    /// Retains discounts already seen even after the shared record expires.
+    /// Retains submitted and erased echoes while refreshing the current input.
     actor Wait {
         let key: Key
         let source: PaneEchoes
@@ -135,8 +140,9 @@ actor PaneEchoes {
 
         func discount(now: ContinuousClock.Instant = .now) async -> OutputWaitDiscount {
             let snapshot = await source.snapshot(for: key, now: now)
-            for echo in snapshot.echoes where !seen.contains(echo) { seen.append(echo) }
-            let echoes = seen.sorted { $0.count > $1.count }
+            for echo in snapshot.recent where !seen.contains(echo) { seen.append(echo) }
+            let echoes = (seen + (snapshot.current.isEmpty ? [] : [snapshot.current]))
+                .sorted { $0.count > $1.count }
             return OutputWaitDiscount(
                 transform: { PaneEchoMask.mask($0, echoes: echoes) },
                 cursorRowUnsettled: snapshot.pending
