@@ -280,7 +280,7 @@ jobs:
           # The examples are their own package, so the root invocation does not
           # reach them. Their resolved-version flag enforces
           # `Examples/Package.resolved` and leaves the root lock alone.
-          swift test --package-path Examples --force-resolved-versions
+          swift test --package-path Examples --force-resolved-versions --no-parallel
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
-          swift test --traits YAMLWorkspaces --force-resolved-versions
+          swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
