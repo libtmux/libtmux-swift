@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("capability regressions", .timeLimit(.minutes(1)))
+@Suite("capability regressions", .hangLimit)
 struct CapabilityRegressionTests {
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(
@@ -13,6 +13,25 @@ struct CapabilityRegressionTests {
             authority: ToolAuthority(toolsets: [.inspect, .manage, .execute, .teardown]),
             caller: nil
         )
+    }
+
+    @Test("the output wait deadline bounds pane lookup")
+    func outputWaitBoundsPaneLookup() async throws {
+        let server = try Server(
+            socketPath: "/tmp/libtmux-swift-test/wait-lookup/socket",
+            transport: StalledPaneLookupTransport()
+        )
+        let surface = tools(server)
+        let call = ToolCall(
+            name: "wait_for_text",
+            arguments: .object([
+                "paneId": .string("%0"), "patterns": .array([.string("ready")]),
+                "timeoutMs": .integer(100),
+            ])
+        )
+        await #expect(throws: ToolError.tmux(.timedOut(after: .milliseconds(100)))) {
+            try await surface.call(call)
+        }
     }
 
     @Test("effective aggregate disclosures are the exact nested union")
@@ -234,5 +253,19 @@ struct CapabilityRegressionTests {
             #expect(returnedCursor != nil)
             #expect(returnedCursor?.isEmpty == false)
         }
+    }
+}
+
+private struct StalledPaneLookupTransport: ProcessTransport {
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        let (events, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        for await _ in events {}
+        throw .cancelled
     }
 }

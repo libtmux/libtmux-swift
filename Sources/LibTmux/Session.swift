@@ -1,3 +1,5 @@
+import Foundation
+
 /// A tmux session, as it was when the listing was read.
 ///
 /// This is a value, not a live handle: nothing here re-reads tmux, and two
@@ -17,11 +19,19 @@ public struct Session: Sendable, Hashable, Codable, Identifiable {
     public let windowCount: Int
     /// Whether any client is looking at this session. Opening a connection
     /// attaches one, so this reads differently from inside
-    /// ``Server/connected(attachingTo:_:)`` — see <doc:Modes>.
+    /// ``Server/connected(attachingTo:_:)-(String,_)`` — see <doc:Modes>.
     public let isAttached: Bool
     /// When tmux created the session, in seconds since the epoch. tmux's clock,
     /// not this process's.
     public let createdAt: Int
+
+    /// The captured creation timestamp as a Foundation date.
+    ///
+    /// ``createdAt`` retains tmux's exact integer seconds in encoded snapshots.
+    /// Reading this property performs no I/O.
+    public var creationDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(createdAt))
+    }
 
     public init(
         id: SessionID,

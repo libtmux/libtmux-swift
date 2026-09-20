@@ -55,6 +55,11 @@ command explains itself on standard error — so
 - ``TmuxReply``
 - ``TmuxCommandList``
 - ``TmuxVersion``
+- ``TmuxCapabilities``
+- ``Server/capabilities()``
+- ``Server/withTimeout(_:)``
+- ``ProcessTransport``
+- ``SubprocessTransport``
 
 ### Naming one thing
 
@@ -92,6 +97,12 @@ command explains itself on standard error — so
 - ``Pane/modeCount``
 - ``Pane/isSynchronized``
 
+### Sending to a pane
+
+- ``Server/send(_:to:)``
+- ``PaneInput``
+- ``Server/run(_:in:)``
+
 ### Controlling pane modes
 
 - ``Server/enterCopyMode(_:)``
@@ -109,7 +120,7 @@ command explains itself on standard error — so
 - ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
 - ``OutputWait``
 - ``OutputWaitError``
-- ``Server/wait(for:)``
+- ``Server/wait(for:timeout:)``
 - ``Server/signal(_:)``
 
 ### Reading a field nothing models
@@ -124,6 +135,9 @@ command explains itself on standard error — so
 - ``EnvironmentScope``
 - ``TmuxEnvironmentVariable``
 - ``TmuxOption``
+- ``TmuxOptionKey``
+- ``TmuxOptionValue``
+- ``TmuxOptionTable``
 - ``TmuxHook``
 - ``OptionScope``
 - ``HookScope``
@@ -180,7 +194,7 @@ command explains itself on standard error — so
 - ``TmuxMode``
 - ``Server/using(_:_:)``
 - ``Server/mode``
-- ``Server/connected(attachingTo:_:)``
+- ``Server/connected(attachingTo:_:)-(String,_)``
 - ``Server/withControlMode(attachingTo:_:)``
 
 ### The control protocol

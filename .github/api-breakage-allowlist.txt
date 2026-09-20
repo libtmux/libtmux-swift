@@ -1,0 +1,34 @@
+API breakage: enumelement TmuxError.foreignPaneValue has been added as a new enum case
+API breakage: enumelement TmuxError.rejectedLocally has been added as a new enum case
+API breakage: enumelement OutputWait.Outcome.alreadyOnScreen has been added as a new enum case
+API breakage: enumelement TmuxError.timedOut has been added as a new enum case
+API breakage: func Server.wait(for:) has been renamed to func wait(for:timeout:)
+API breakage: constructor Server.init(socketPath:tmuxExecutable:configurationFile:) has been removed
+API breakage: constructor Server.init(socketName:tmuxExecutable:configurationFile:) has been removed
+API breakage: constructor Pane.init(id:index:width:height:isActive:isDead:isInputOff:modeCount:isSynchronized:currentCommand:currentPath:isAtTop:isAtBottom:isAtLeft:isAtRight:windowID:incarnation:) has been removed
+API breakage: func Server.newSession(named:startDirectory:windowName:width:height:) has been renamed to func newSession(named:startDirectory:windowName:width:height:running:environment:)
+API breakage: func Server.newWindow(in:named:startDirectory:) has been renamed to func newWindow(in:named:startDirectory:running:environment:)
+API breakage: func Server.newWindow(_:_:named:startDirectory:) has been renamed to func newWindow(_:_:named:startDirectory:running:environment:)
+API breakage: func Server.splitWindow(_:direction:size:startDirectory:) has been renamed to func splitWindow(_:direction:size:startDirectory:running:environment:)
+API breakage: func Server.split(_:direction:size:startDirectory:) has been renamed to func split(_:direction:size:startDirectory:running:environment:)
+API breakage: func Server.sendKeys(_:to:literally:) has parameter 0 type change from [Swift.String] to [LibTmux.PaneInput]
+API breakage: func Server.sendKeys(_:to:literally:) has been renamed to func send(_:to:)
+API breakage: func Server.capture(_:includingHistory:maximumLines:) has been renamed to func capture(_:includingHistory:maximumLines:includingAttributes:maximumBytes:)
+API breakage: func Server.captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:) has been renamed to func captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:includingAttributes:maximumBytes:)
+API breakage: func reaperCommand(root:) has been renamed to func reaperCommand(root:within:)
+API breakage: func Workspace.decode(json:) has been renamed to func decode(json:strict:)
+API breakage: constructor OutputWait.init(outcome:matched:matchedIndex:sawNewOutput:matchedAtEntry:tail:cursor:seconds:) has been removed
+API breakage: func Server.setOption(_:to:scope:) has return type change from LibTmux.TmuxReply to ()
+API breakage: func Server.unsetOption(_:scope:) has generic signature change from  to <Value>
+API breakage: func Server.unsetOption(_:scope:) has return type change from LibTmux.TmuxReply to ()
+API breakage: func Server.unsetOption(_:scope:) has parameter 0 type change from Swift.String to LibTmux.TmuxOptionKey<Value>
+API breakage: func Server.unsetOption(_:scope:) has parameter 1 type change from LibTmux.OptionScope to LibTmux.OptionScope?
+API breakage: var TmuxServers.maximumCandidates has been removed
+API breakage: func tmuxFormatRequestsShellJob(_:) has been removed
+API breakage: enum CursorReanchor has been removed
+API breakage: struct ForwardCaptureResult has been removed
+API breakage: func Server.runTerminatingIsolated(_:expecting:perStreamOutputLimit:) has been removed
+API breakage: func Server.scanForward(_:since:sourceLinesPerChunk:maximumChunks:perStreamOutputLimit:_:) has been removed
+API breakage: func Server.captureLookbackThroughCursor(_:historyLines:perStreamOutputLimit:) has been removed
+API breakage: func Server.option(_:scope:) has removed default argument from parameter 1
+API breakage: func Server.setOption(_:to:scope:) has removed default argument from parameter 2

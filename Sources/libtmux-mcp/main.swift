@@ -24,6 +24,32 @@ private func note(_ message: String) {
     FileHandle.standardError.write(Data("libtmux-mcp: \(message)\n".utf8))
 }
 
+private let usage = """
+    Usage: libtmux-mcp [--help] [--version]
+
+    Serves the Model Context Protocol over stdio. There are no other
+    command-line arguments -- configuration is read from LIBTMUX_*
+    environment variables (see the LibTmuxMCP README).
+    """
+
+// Argv is otherwise ignored: a bare `libtmux-mcp` (or an unrecognised flag,
+// silently) used to start serving the default socket regardless of what was
+// typed, so a `--help` probe launched a real server instead of answering.
+let cliArguments = Array(CommandLine.arguments.dropFirst())
+if cliArguments.contains("--help") || cliArguments.contains("-h") {
+    print(usage)
+    exit(0)
+}
+if cliArguments.contains("--version") || cliArguments.contains("-V") {
+    print("libtmux-mcp \(LibTmuxVersion.current)")
+    exit(0)
+}
+if let unrecognized = cliArguments.first {
+    note("unrecognized argument: \(unrecognized)")
+    FileHandle.standardError.write(Data((usage + "\n").utf8))
+    exit(64)  // EX_USAGE
+}
+
 private let inputChunkBytes = 64 * 1_024
 private let queuedRequestLines = 8
 

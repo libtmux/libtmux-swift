@@ -141,6 +141,10 @@ struct FormatProjectionTests {
             "socket_path": "/tmp/libtmux-swift-test/pane-state", "pid": "42",
             "start_time": "9", "pane_dead": "0", "pane_in_mode": "2",
             "pane_input_off": "1", "pane_synchronized": "1",
+            // A live pane reports no exit status at all, which is what makes
+            // pane_dead_status an optional integer rather than an integer.
+            "pane_dead_status": "", "pane_pid": "4242", "pane_tty": "/dev/pts/9",
+            "pane_title": "shell", "pane_start_command": "exec zsh",
         ]
         func encoded() -> [UInt8] {
             let row = Pane.projection.fields.map { values[$0.name] ?? "" }
@@ -156,12 +160,19 @@ struct FormatProjectionTests {
         #expect(pane.isInputOff)
         #expect(pane.modeCount == 2)
         #expect(pane.isSynchronized)
+        #expect(pane.exitStatus == nil)
+        #expect(pane.processID == 4242)
+        #expect(pane.tty == "/dev/pts/9")
+        #expect(pane.title == "shell")
+        #expect(pane.startCommand == "exec zsh")
 
         for (field, malformed) in [
             ("pane_dead", ""), ("pane_dead", "2"),
             ("pane_input_off", ""), ("pane_input_off", "2"),
             ("pane_in_mode", ""), ("pane_in_mode", "many"),
             ("pane_synchronized", ""), ("pane_synchronized", "on"),
+            ("pane_pid", ""), ("pane_pid", "many"),
+            ("pane_dead_status", "many"),
         ] {
             let original = values[field]
             values[field] = malformed
@@ -177,19 +188,51 @@ struct FormatProjectionTests {
 
 @Suite("server value semantics")
 struct ServerValueTests {
-    @Test("copies of a server share one runtime")
-    func copiesShareOneRuntime() throws {
+    @Test("a copy of a server is the same server")
+    func aCopyIsTheSameServer() throws {
         let server = try Server(socketPath: "/tmp/libtmux-value")
         let copy = server
         #expect(server == copy)
         #expect(server.endpoint == copy.endpoint)
     }
 
-    @Test("two servers on the same endpoint are distinct")
-    func distinctServersOnTheSameEndpointAreNotEqual() throws {
+    @Test("addressing one daemon the same way twice gives the same server")
+    func sameEndpointMeansSameServer() throws {
         let left = try Server(socketPath: "/tmp/libtmux-value")
         let right = try Server(socketPath: "/tmp/libtmux-value")
-        #expect(left != right)
+
+        // Two values, never copied from each other, denoting one daemon: a
+        // Set of them is a set of servers rather than of handles.
+        #expect(left == right)
+        #expect(Set([left, right]).count == 1)
+    }
+
+    @Test("a different binary or configuration is a different server")
+    func differentReachIsADifferentServer() throws {
+        let plain = try Server(socketPath: "/tmp/libtmux-value")
+        // An absolute path that is nothing on this machine, so the comparison
+        // cannot accidentally name whatever `tmux` resolves to here.
+        let otherBinary = try Server(
+            socketPath: "/tmp/libtmux-value",
+            tmuxExecutable: "/nonexistent/libtmux-other/tmux"
+        )
+        let configured = try Server(
+            socketPath: "/tmp/libtmux-value",
+            configurationFile: "/tmp/libtmux-value.conf"
+        )
+
+        // A client of a different protocol version cannot talk to the same
+        // server at all, and a configuration changes how commands are parsed.
+        #expect(plain != otherBinary)
+        #expect(plain != configured)
+    }
+
+    @Test("a bound and a mode are ways of reaching one server, not other servers")
+    func reachDoesNotChangeIdentity() throws {
+        let server = try Server(socketPath: "/tmp/libtmux-value")
+
+        #expect(server.withTimeout(.seconds(3)) == server)
+        #expect(Set([server, server.withTimeout(.seconds(3))]).count == 1)
     }
 }
 

@@ -12,15 +12,66 @@ func tmuxOutputLimitError(_ limit: Int) -> TmuxError {
     import SystemPackage
 #endif
 
-/// The process boundary.
+/// The process boundary: what turns an argument vector into tmux's answer.
 ///
-/// Kept behind a protocol so tests can drive a server without spawning tmux,
-/// and so the upstream process API stays out of the public surface.
+/// Every command that takes a process goes through one of these, which makes
+/// it the seam for the two things a consumer cannot otherwise do. A server in
+/// ``TmuxMode/connected(to:)`` carries most of its commands over the
+/// connection instead, and reaches here only for the ones that take their own
+/// process -- see the note at the end.
+///
+/// A **test double** stands in for tmux, so a suite can exercise decoding,
+/// provenance guards and error paths without a tmux on the machine. This
+/// package's own suite is built on that, and it is why the protocol has one
+/// requirement: implementing it should not be a project.
+///
+/// A **decorator** wraps the shipped ``SubprocessTransport`` to see every
+/// command — to log it, time it, trace it, or count it. The library takes no
+/// logging dependency and installs no global hook, because a library that
+/// picks the logger picks it for its host; wrapping the seam leaves that
+/// choice where it belongs.
+///
+/// ```swift
+/// struct LoggingTransport: ProcessTransport {
+///     let wrapped = SubprocessTransport()
+///
+///     func run(
+///         executable: String,
+///         arguments: [String],
+///         environment: [String: String],
+///         perStreamOutputLimit: Int
+///     ) async throws(TmuxError) -> TmuxReply {
+///         let started = ContinuousClock.now
+///         defer { print(arguments.joined(separator: " "), started.duration(to: .now)) }
+///         return try await wrapped.run(
+///             executable: executable,
+///             arguments: arguments,
+///             environment: environment,
+///             perStreamOutputLimit: perStreamOutputLimit
+///         )
+///     }
+/// }
+/// ```
 ///
 /// A transport is told the limit so it can stop reading at it rather than
-/// buffering what it will then discard. ``ServerRuntime`` checks the reply
-/// against the same limit, so a transport that ignores it still fails closed.
-protocol ProcessTransport: Sendable {
+/// buffering what it will then discard. The library checks the reply against
+/// the same limit afterwards, so a transport that ignores it still fails
+/// closed rather than returning more than was asked for.
+///
+/// **A transport must return promptly when its task is cancelled.** It is the
+/// one requirement beyond answering the call. ``Server/withTimeout(_:)`` does
+/// not depend on it -- a bound abandons work that overstays rather than
+/// waiting on it -- but a transport that never observes cancellation leaves
+/// that work running after the call returns, for as long as its own work
+/// takes. Wrapping ``SubprocessTransport`` satisfies this, as does anything
+/// built from another cancellable `async` call; a loop that never checks
+/// `Task.isCancelled` does not.
+///
+/// A control-mode connection does not come through here: it is a long-lived
+/// process this library owns, not one command's round trip. A server in
+/// ``TmuxMode/connected(to:)`` therefore reaches its transport only for the
+/// calls that take their own process.
+public protocol ProcessTransport: Sendable {
     func run(
         executable: String,
         arguments: [String],
@@ -38,20 +89,23 @@ func requireReplyFitsLimit(
     }
 }
 
-/// The shipped transport.
+/// The shipped transport, and what a ``Server`` uses unless told otherwise.
 ///
 /// Cancellation kills the child's whole process group: tmux forks a daemon and
 /// panes fork shells, so signalling only the direct child would leave the rest
-/// running.
-struct SubprocessTransport: ProcessTransport {
-    func run(
+/// running. It is also why a bound that abandons this transport leaves nothing
+/// behind — the work it walks away from has already been told to die.
+public struct SubprocessTransport: ProcessTransport {
+    public init() {}
+
+    public func run(
         executable: String,
         arguments: [String],
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         var platformOptions = PlatformOptions()
-        platformOptions.createSession = true
+        platformOptions.processGroupID = 0
         platformOptions.teardownSequence = [
             .send(
                 signal: .kill,

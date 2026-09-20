@@ -1,3 +1,4 @@
+import Foundation
 import Subprocess
 
 /// One submitted line, and the blocks tmux has answered it with so far.
@@ -165,6 +166,12 @@ public actor ControlSession {
     /// commands, so replies are matched to waiters in that order — which holds
     /// because writes are chained, not merely because they are usually fast.
     /// A reply exceeding 1 MiB fails with ``TmuxError/outputLimitExceeded(perStreamBytes:)``.
+    ///
+    /// This carries `wait-for -L` the same way ``Server/run(_:)-(TmuxCommand)`` does over a
+    /// process, with the same hazard: cancelling this call never removes the
+    /// locker from tmux's own queue, so a bounded wait for a lock can wedge
+    /// the channel permanently for whoever waits on it next. See
+    /// ``Server/wait(for:timeout:)`` for why there is no typed lock wrapper.
     public func send(_ command: TmuxCommand) async throws(TmuxError) -> ControlReply {
         try requireSingleLine(command.argumentVector)
         return try await send(
@@ -290,7 +297,15 @@ public actor ControlSession {
     /// that is still collecting — see ``SubmittedLine`` for why that is not one
     /// block each.
     func consume(_ line: String) {
-        guard let event = parser.consume(line) else { return }
+        handle(parser.consume(line))
+    }
+
+    func consume(_ bytes: Data) throws(TmuxError) {
+        handle(try parser.consume(bytes))
+    }
+
+    private func handle(_ event: ControlEvent?) {
+        guard let event else { return }
         switch event {
         case let .reply(reply):
             guard isAttached else {

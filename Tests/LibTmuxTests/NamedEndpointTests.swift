@@ -41,7 +41,7 @@ struct NamedSocketNamespaceTests {
 /// up only as the suite addressing the machine-wide default directory.
 @Suite(
     "addressing a server by name",
-    .timeLimit(.minutes(1)),
+    .hangLimit,
     .enabled(if: namedSocketsAvailable, "needs TMUX_TMPDIR under the suite root")
 )
 struct NamedEndpointTests {
@@ -52,6 +52,7 @@ struct NamedEndpointTests {
             #expect(sessions.count == 1)
             #expect(sessions.first?.name == "bootstrap")
             #expect(server.mode == .direct)
+            #expect(try await server.format("#{config_files}") == "/dev/null")
         }
     }
 

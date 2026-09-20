@@ -1,13 +1,57 @@
+import Dispatch
+import Foundation
 import Testing
 
 @testable import LibTmux
+
+@available(macOS 15.0, *)
+private final class NotificationCancellationExecutor: TaskExecutor, @unchecked Sendable {
+    private let queue = DispatchQueue(label: "notification-cancellation-test")
+    private let lock = NSLock()
+    private var beforeEnqueue: (@Sendable () -> Void)?
+    private let suspension = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingOldest(1))
+
+    func waitUntilSuspended() async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                for await _ in self.suspension.stream { return true }
+                return false
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(1))
+                return false
+            }
+            return await group.next() ?? false
+        }
+    }
+
+    func cancelOnNextEnqueue(_ cancel: @escaping @Sendable () -> Void) {
+        lock.lock()
+        beforeEnqueue = cancel
+        lock.unlock()
+    }
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        lock.lock()
+        let callback = beforeEnqueue
+        beforeEnqueue = nil
+        lock.unlock()
+        callback?()
+        queue.async {
+            job.runSynchronously(on: self.asUnownedTaskExecutor())
+            self.suspension.continuation.yield(())
+        }
+    }
+}
 
 /// What a connection's fan-out promises, without a connection.
 ///
 /// `ControlModeTests` proves the same fan-out over a live connection. These
 /// establish their ordering by construction, so they fail the same way on an
 /// idle machine as on a loaded one.
-@Suite("notification broadcast", .timeLimit(.minutes(1)))
+@Suite("notification broadcast", .hangLimit)
 struct NotificationBroadcastTests {
     private static func window(_ index: Int) -> ControlNotification {
         ControlNotification(name: "window-add", arguments: "@\(index)")
@@ -41,6 +85,26 @@ struct NotificationBroadcastTests {
 
         #expect(try await Self.drain(first) == ["@1", "@2"])
         #expect(try await Self.drain(second) == ["@1", "@2"])
+    }
+
+    @Test("canceling a consumer during delivery cannot deadlock the broadcast")
+    @available(macOS 15.0, *)
+    func cancellationDuringDeliveryDoesNotDeadlock() async throws {
+        let broadcast = NotificationBroadcast()
+        let notifications = broadcast.subscribe()
+        let executor = NotificationCancellationExecutor()
+        let consumer = Task(executorPreference: executor) {
+            try await Self.first(notifications)
+        }
+        defer { consumer.cancel() }
+        // The executor signals after the job returns, so next() is suspended.
+        try #require(await executor.waitUntilSuspended())
+        executor.cancelOnNextEnqueue { consumer.cancel() }
+
+        broadcast.yield(Self.window(1))
+
+        #expect(try await consumer.value?.arguments == "@1")
+        broadcast.finish()
     }
 
     @Test("what arrived before the first observer is replayed to it alone")

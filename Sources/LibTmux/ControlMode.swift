@@ -22,7 +22,7 @@ extension Server {
         }
     }
 
-    func connectedGuardingIncarnation<Result: Sendable>(
+    package func connectedGuardingIncarnation<Result: Sendable>(
         attachingTo sessionID: SessionID,
         expecting incarnation: ServerIncarnation,
         _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result
@@ -46,7 +46,8 @@ extension Server {
                         )
                     ]
                 )
-                _ = try request.validate(await control.reply(to: request))
+                _ = try request.validate(
+                    await control.reply(to: request, within: commandTimeout))
                 return try await body(server, control)
             }
         } catch TmuxError.connectionClosed {
@@ -55,6 +56,42 @@ extension Server {
             }
             throw TmuxError.connectionClosed
         }
+    }
+
+    /// Runs `body` over a connection attached to `session`, refusing a session
+    /// value from a daemon that has since been replaced.
+    ///
+    /// The same scope as ``connected(attachingTo:_:)-(String,_)``, addressed the
+    /// way every other call in this library is: by a value carrying the id tmux
+    /// minted and the daemon it came from. A name can be renamed, reused, or
+    /// resolve to a different session on a daemon restarted under the same
+    /// socket; a `Session` cannot, so a stale one throws
+    /// ``TmuxError/serverRestarted`` or ``TmuxError/staleServerValue`` instead of
+    /// attaching to something else.
+    ///
+    /// ```swift
+    /// guard let work = try await server.session(named: "work") else { return }
+    /// try await server.connected(attachingTo: work) { server, events in
+    ///     // ...
+    /// }
+    /// ```
+    ///
+    /// The closure is the connection's whole lifetime — see
+    /// <doc:Streaming#Lifetime> for why, and for how a long-running program
+    /// holds one open.
+    ///
+    /// > Important: a process that has not ignored `SIGPIPE` can be killed by
+    /// a write to a tmux that went away first. This library cannot set that
+    /// disposition for its host — see <doc:PlatformSupport>.
+    public func connected<Result: Sendable>(
+        attachingTo session: Session,
+        _ body: @escaping @Sendable (Server, ControlSession) async throws -> Result
+    ) async throws -> Result {
+        try await connectedGuardingIncarnation(
+            attachingTo: session.id,
+            expecting: session.incarnation,
+            body
+        )
     }
 
     /// Runs `body` with every command carried by one live connection instead
@@ -73,8 +110,11 @@ extension Server {
     /// nothing — a control client with no target runs tmux's default command
     /// and creates a session. So the connection attaches to `session`, and that
     /// is visible in what the server reports about itself: that session reads
-    /// as attached, and ``Server/clients()`` includes the connection. Nothing
-    /// else differs.
+    /// as attached, and ``Server/clients()`` includes the connection. This
+    /// also negotiates JSON `window_layout` values on tmux 3.8 and later, so a
+    /// read or a `%layout-change` notification over the connection matches a
+    /// direct read rather than tmux's older, control-only compatibility form.
+    /// Nothing else differs.
     ///
     /// The connection is handed over too, because it can do one thing a
     /// process cannot: report what changed without being asked. That capability
@@ -120,7 +160,7 @@ extension Server {
     /// ```
     ///
     /// Scoped even for ``TmuxMode/direct``, where nothing needs closing, so that
-    /// the two read identically at the call site. ``connected(attachingTo:_:)``
+    /// the two read identically at the call site. ``connected(attachingTo:_:)-(String,_)``
     /// is the same thing with the connection handed over as well, for the one
     /// capability a process does not have.
     ///
@@ -146,7 +186,7 @@ extension Server {
     /// Opens a control-mode connection for the duration of `body`, handing
     /// over the connection itself.
     ///
-    /// ``connected(attachingTo:_:)`` is the one to reach for: it gives the same
+    /// ``connected(attachingTo:_:)-(String,_)`` is the one to reach for: it gives the same
     /// connection *and* a server that speaks over it. This is the layer beneath,
     /// for talking the control protocol directly.
     ///
@@ -170,12 +210,12 @@ extension Server {
         _ body: @escaping @Sendable (ControlSession) async throws -> Result
     ) async throws -> Result {
         var platformOptions = PlatformOptions()
-        platformOptions.createSession = true
+        platformOptions.processGroupID = 0
 
         let configurationArguments = configurationFilePath.map { ["-f", $0] } ?? []
         let arguments =
             ["-u", "-C"] + configurationArguments + endpoint.addressArguments
-            + ["attach-session", "-E", "-t", session]
+            + ["attach-session", "-E", "-t", tmuxExactSession(session)]
 
         let outcome = try await Subprocess.run(
             Subprocess.Configuration(
@@ -195,46 +235,71 @@ extension Server {
             error: .discarded
         ) { execution in
             let control = ControlSession(writer: execution.standardInputWriter)
-            return try await withThrowingTaskGroup(
-                of: ControlOutcome<Result>.self
-            ) { group in
-                defer {
-                    group.cancelAll()
-                    try? execution.send(signal: .terminate, toProcessGroup: true)
-                }
-                group.addTask {
-                    var input = ControlLineInput()
-                    for try await chunk in execution.standardOutput {
-                        let data = chunk.withUnsafeBytes { Data($0) }
-                        for event in input.append(data) {
+            // This process *is* the tmux client tmux will report attached to
+            // `session` -- exec'd directly, not run through a wrapper -- so
+            // its pid is exactly what a later `Client.processID` compares
+            // against. Registered for the whole scope so a caller reading
+            // attachment elsewhere (the MCP's `list_sessions`, for one) can
+            // tell this connection apart from a person's.
+            let ownPID = Int(execution.processIdentifier.value)
+            await OwnedControlClients.shared.register(ownPID)
+            // Awaited, not left to a `defer`-spawned `Task`: that would return
+            // control to this scope's caller before the registry forgot the
+            // pid, a window a reused pid could fall into and be misread as
+            // this process's own connection.
+            do {
+                let value = try await withThrowingTaskGroup(
+                    of: ControlOutcome<Result>.self
+                ) { group in
+                    defer {
+                        group.cancelAll()
+                        try? execution.send(signal: .terminate, toProcessGroup: true)
+                    }
+                    group.addTask {
+                        var input = ControlLineInput()
+                        for try await chunk in execution.standardOutput {
+                            let data = chunk.withUnsafeBytes { Data($0) }
+                            for event in input.append(data) {
+                                try await consumeControlInput(event, with: control)
+                            }
+                        }
+                        for event in input.finish() {
                             try await consumeControlInput(event, with: control)
                         }
+                        await control.finish()
+                        return .streamEnded
                     }
-                    for event in input.finish() {
-                        try await consumeControlInput(event, with: control)
+                    try await control.waitUntilAttached()
+                    // tmux 3.8+ sends `window_layout` as JSON only to a control
+                    // client that asked; unrequested, this connection's reads and
+                    // %layout-change events stay classic while a direct read gets
+                    // JSON. Harmless on 3.7 and earlier (verified against 3.2a).
+                    _ = try await control.send(
+                        TmuxCommand("refresh-client", ["-f", "new-layouts"]))
+                    group.addTask {
+                        defer { Task { await control.finish() } }
+                        return .body(try await body(control))
                     }
-                    await control.finish()
-                    return .streamEnded
-                }
-                try await control.waitUntilAttached()
-                group.addTask {
-                    defer { Task { await control.finish() } }
-                    return .body(try await body(control))
-                }
 
-                while let outcome = try await group.next() {
-                    switch outcome {
-                    case let .body(value):
-                        return value
-                    case .streamEnded:
-                        group.cancelAll()
-                        do {
-                            while try await group.next() != nil {}
-                        } catch {}
-                        throw TmuxError.connectionClosed
+                    while let outcome = try await group.next() {
+                        switch outcome {
+                        case let .body(value):
+                            return value
+                        case .streamEnded:
+                            group.cancelAll()
+                            do {
+                                while try await group.next() != nil {}
+                            } catch {}
+                            throw TmuxError.connectionClosed
+                        }
                     }
+                    throw TmuxError.connectionClosed
                 }
-                throw TmuxError.connectionClosed
+                await OwnedControlClients.shared.unregister(ownPID)
+                return value
+            } catch {
+                await OwnedControlClients.shared.unregister(ownPID)
+                throw error
             }
         }
         return outcome.closureResult
@@ -247,7 +312,10 @@ private func consumeControlInput(
 ) async throws(TmuxError) {
     switch event {
     case let .line(line):
-        await control.consume(line)
+        do { try await control.consume(line) } catch {
+            await control.finish(throwing: error)
+            throw error
+        }
     case let .failure(error):
         await control.finish(throwing: error)
         throw error

@@ -27,6 +27,25 @@ struct ModeTests {
         }
     }
 
+    @Test("a bounded server answers the same as an unbounded one")
+    func aBoundedServerAnswersTheSame() async throws {
+        try await withMain { server in
+            let bounded = try await boundedByATimeout(server)
+            let unbounded = try await server.sessions()
+            #expect(bounded.map(\.name).sorted() == unbounded.map(\.name).sorted())
+        }
+    }
+
+    @Test("a wait takes its own bound rather than the server's")
+    func aWaitTakesItsOwnBound() async throws {
+        try await withMain { server in
+            // Nothing signals this channel, so the wait's own 250ms bound is
+            // what ends it -- well inside the server's five seconds.
+            let signalled = try await aWaitWithItsOwnBound(server, "libtmux-example-channel")
+            #expect(!signalled)
+        }
+    }
+
     @Test("choosing the mode at runtime changes neither the calls nor the answer")
     func choosingAtRuntimeChangesNothing() async throws {
         try await withMain { server in

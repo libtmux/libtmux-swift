@@ -144,17 +144,14 @@ public enum WorkspaceBuilder {
 
         for (plan, pane) in zip(window.panes, panes) {
             for command in plan.shellCommands {
-                if command.enter {
-                    try await server.run(command.command, in: pane)
-                } else {
-                    // Typed and left sitting there. Literal, so the text lands
-                    // as text rather than being read as key names.
-                    try await server.sendKeys(
-                        [command.command],
-                        to: pane,
-                        literally: true
-                    )
-                }
+                // A tmuxp `shell_command` is user-authored config, so it is
+                // typed rather than read for key names: a command called
+                // `Tab` stays text. Enter is a key, and travels in the same
+                // dispatch, so a pane is never left holding an unsubmitted
+                // line because a second call found it gone.
+                var input: [PaneInput] = [.text(command.command)]
+                if command.enter { input.append(.key("Enter")) }
+                try await server.send(input, to: pane)
             }
         }
     }

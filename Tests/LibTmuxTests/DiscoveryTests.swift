@@ -4,7 +4,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("finding servers", .timeLimit(.minutes(1)))
+@Suite("finding servers", .hangLimit)
 struct DiscoveryTests {
     @Test("a running server is found in the directory its socket is in")
     func runningServerIsFound() async throws {
@@ -30,7 +30,7 @@ struct DiscoveryTests {
             guard case let .socketPath(path) = server.endpoint else { return }
             let directory = (path as NSString).deletingLastPathComponent
             let session = try #require(try await server.sessions().first)
-            _ = try await server.setOption("exit-empty", to: "off")
+            try await server.setOption("exit-empty", to: "off", scope: .server)
             try await server.kill(session)
             #expect(try await server.isRunning())
 

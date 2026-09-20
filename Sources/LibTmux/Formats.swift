@@ -118,7 +118,7 @@ struct FormatCondition: Sendable, Hashable {
 ///
 /// `##` is tmux's own escape for a literal `#`, so a run of them decides:
 /// `##(` is text and `###(` is a job again.
-package func tmuxFormatRequestsShellJob(_ template: String) -> Bool {
+func tmuxFormatRequestsShellJob(_ template: String) -> Bool {
     var hashes = 0
     for character in template {
         if character == "#" {
@@ -394,7 +394,7 @@ extension Server {
     ///   legitimately empty.
     public func format(_ template: String) async throws(TmuxError) -> String? {
         let reply = try await run(
-            rawArguments: TmuxCommand("display-message", ["-p", template])
+            rawArguments: TmuxCommand("display-message", ["-p", "--", template])
                 .argumentVector
         )
         guard reply.isSuccess else { return nil }

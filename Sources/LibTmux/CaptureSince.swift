@@ -54,7 +54,7 @@ extension Server {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> IncrementalCapture {
         guard maximumLines > 0 else {
-            throw .invocationFailed(reason: "a bounded capture needs at least one line")
+            throw .rejectedLocally(reason: "a bounded capture needs at least one line")
         }
         return try await captureIncremental(
             pane,
@@ -67,22 +67,33 @@ extension Server {
     /// Visits unseen rows oldest-first without retaining completed chunks.
     /// At most `maximumChunks` are read; `hasMore` tells the caller to resume.
     /// Returning `true` from `visit` stops before the remaining rows are read.
-    package func scanForward(
+    ///
+    /// `visit`'s second argument says whether `rows.last`, if any, is still
+    /// the pane's live cursor row: `true` only when this read reaches it and
+    /// that row is not empty. An empty one is already the "nothing typed
+    /// yet" case this function strips before handing rows over, so `false`
+    /// here can mean either more remains to read or the last row handed over
+    /// is already-committed content. A caller matching row content needs the
+    /// distinction: `true` means that last row could be the pane's pending,
+    /// unsubmitted input line rather than something it produced -- whether or
+    /// not a new row was created, since typing into an already-anchored row
+    /// without a newline changes that row without advancing past it.
+    func scanForward(
         _ pane: Pane,
         since cursor: CaptureCursor,
         sourceLinesPerChunk: Int,
         maximumChunks: Int,
         perStreamOutputLimit: Int,
-        _ visit: ([String]) -> Bool
+        _ visit: ([String], _ endsOnLiveCursorRow: Bool) async -> Bool
     ) async throws(TmuxError) -> ForwardCaptureResult {
         guard sourceLinesPerChunk > 1 else {
-            throw .invocationFailed(reason: "a forward capture chunk needs at least two lines")
+            throw .rejectedLocally(reason: "a forward capture chunk needs at least two lines")
         }
         guard maximumChunks > 0 else {
-            throw .invocationFailed(reason: "a forward capture needs at least one chunk")
+            throw .rejectedLocally(reason: "a forward capture needs at least one chunk")
         }
         guard perStreamOutputLimit > 0 else {
-            throw .invocationFailed(reason: "a forward capture needs a positive output limit")
+            throw .rejectedLocally(reason: "a forward capture needs a positive output limit")
         }
         var previousCursor = cursor
         var remainingAttempts = Self.incrementalCaptureAttempts
@@ -186,6 +197,9 @@ extension Server {
                     advanced && aligned.tail == nil && rows.first?.isEmpty == true
                 if rows.first == (aligned.tail ?? "") { rows.removeFirst() }
                 if completedBlankAnchor { rows.insert("", at: 0) }
+                // Typing can change the live row without advancing beyond its anchor.
+                let endsOnLiveCursorRow =
+                    end == state.absoluteCursorRow && rows.last?.isEmpty == false
                 if advanced, rows.last?.isEmpty == true {
                     rows.removeLast()
                 }
@@ -199,8 +213,8 @@ extension Server {
                 previousCursor = nextCursor
                 remainingAttempts = Self.incrementalCaptureAttempts
                 completedChunks += 1
-                let stopped = visit(rows)
                 let hasMore = end != state.absoluteCursorRow
+                let stopped = await visit(rows, endsOnLiveCursorRow)
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
                     linesMissed: false,
@@ -256,7 +270,7 @@ extension Server {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> IncrementalCapture {
         guard limit >= 0 else {
-            throw .invocationFailed(reason: "an incremental capture limit cannot be negative")
+            throw .rejectedLocally(reason: "an incremental capture limit cannot be negative")
         }
         let state = try await incrementalPaneState(for: pane)
         let bounds = state.bounds
@@ -415,7 +429,7 @@ extension Server {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> EntryCapture {
         guard historyLines >= 0 else {
-            throw .invocationFailed(reason: "pane capture lookback cannot be negative")
+            throw .rejectedLocally(reason: "pane capture lookback cannot be negative")
         }
         let state = try await incrementalPaneState(for: pane)
         let bounds = state.bounds

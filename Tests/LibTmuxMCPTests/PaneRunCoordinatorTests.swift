@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("pane input reservations", .timeLimit(.minutes(1)))
+@Suite("pane input reservations", .hangLimit)
 struct PaneRunCoordinatorTests {
     private func pane(
         _ id: PaneID,
@@ -74,6 +74,57 @@ struct PaneRunCoordinatorTests {
         await coordinator.release(otherOwner)
         await coordinator.release(replacementOwner)
         await coordinator.release(owner)
+    }
+
+    @Test("release observations follow captured ownership across socket replacement")
+    func capturedReleaseSurvivesSocketReplacement() async throws {
+        let socket = socketIdentityPath()
+        let replacementSocket = socketIdentityPath()
+        defer {
+            try? FileManager.default.removeItem(atPath: socket)
+            try? FileManager.default.removeItem(atPath: replacementSocket)
+        }
+        let coordinator = PaneRunCoordinator()
+        let target = pane("%1", socketPath: socket)
+        let owner = try #require(await coordinator.reserve([target]))
+        let cancelled = try #require(await coordinator.observeRelease(of: target))
+        let observation = try #require(await coordinator.observeRelease(of: target))
+        #expect(observation.reservation == owner)
+        let waiter = Task {
+            for await _ in cancelled.events { return true }
+            return false
+        }
+        waiter.cancel()
+        #expect(await waiter.value == false)
+        #expect(await coordinator.isHeld(owner))
+
+        try FileManager.default.removeItem(atPath: socket)
+        #expect(!(await coordinator.isHeld(target)))
+        #expect(await coordinator.isHeld(owner))
+        try FileManager.default.moveItem(atPath: replacementSocket, toPath: socket)
+        let replacement = try #require(await coordinator.reserve([target]))
+        await coordinator.release(owner)
+        #expect(!(await coordinator.isHeld(owner)))
+        #expect(await coordinator.isHeld(replacement))
+
+        // Release before iteration must remain observable, exactly once.
+        let releases = await withTaskGroup(of: Int.self) { group in
+            group.addTask {
+                var count = 0
+                for await _ in observation.events { count += 1 }
+                return count
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(1))
+                return -1
+            }
+            defer { group.cancelAll() }
+            return await group.next() ?? -1
+        }
+        #expect(releases == 1)
+        await coordinator.release(replacement)
+        #expect(!(await coordinator.isHeld(replacement)))
+        #expect(await coordinator.observeRelease(of: target) == nil)
     }
 
     private func socketIdentityPath() -> String {

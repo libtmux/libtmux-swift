@@ -4,8 +4,31 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("server identity", .timeLimit(.minutes(1)))
+@Suite("server identity", .hangLimit)
 struct IdentityTests {
+    @Test("session dates preserve integer wire timestamps and daemon identity")
+    func sessionDatesPreserveWireTimestamps() throws {
+        let identity = ServerIncarnation(
+            endpoint: .socketPath("/tmp/libtmux-swift-test/date-fixture"),
+            socketPath: "/tmp/libtmux-swift-test/date-fixture",
+            processID: 7, startedAt: 9_007_199_254_740_993
+        )
+        let session = Session(
+            id: "$1", name: "dated", windowCount: 1, isAttached: false,
+            createdAt: 1_700_000_000, incarnation: identity
+        )
+        #expect(session.creationDate.timeIntervalSince1970 == 1_700_000_000)
+        let data = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(Session.self, from: data)
+        #expect(decoded.createdAt == 1_700_000_000)
+        #expect(decoded.incarnation.startedAt == 9_007_199_254_740_993)
+        #expect(decoded.incarnation == identity)
+        #expect(decoded.creationDate == session.creationDate)
+        let document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(document["creationDate"] == nil)
+        #expect(document["createdAt"] as? Int == 1_700_000_000)
+    }
+
     @Test("typed ids reject malformed decoded values and stay compact")
     func typedIDsValidateTheirWireForm() throws {
         let session: SessionID = "$42"
@@ -234,7 +257,9 @@ struct IdentityTests {
 
             try await server.connected(attachingTo: session.id.rawValue) { connected, _ in
                 await #expect(
-                    throws: TmuxError.invocationFailed(
+                    throws: TmuxError.commandFailed(
+                        command: "unlink-window",
+                        exitCode: 1,
                         reason: "window only linked to one session"
                     )
                 ) {
@@ -338,6 +363,21 @@ struct IdentityTests {
         }
     }
 
+    @Test("a killed pane fails sendKeys and capture with the same error shape")
+    func killedPaneFailsGuardedAndUnguardedReadsTheSameWay() async throws {
+        try await withTmuxServer { server in
+            let first = try #require(try await server.panes().first)
+            let second = try await server.split(first, direction: .right)
+            try await server.kill(second)
+
+            await #expect(throws: TmuxError.staleServerValue) {
+                try await server.send([.text("x")], to: second)
+            }
+            await #expect(throws: TmuxError.staleServerValue) {
+                _ = try await server.capture(second)
+            }
+        }
+    }
 }
 
 private actor InvocationCountingTransport: ProcessTransport {

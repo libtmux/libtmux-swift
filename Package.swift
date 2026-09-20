@@ -33,6 +33,8 @@ let package = Package(
     // `Workspace.decode(yaml:)` goes away.
     traits: [.default(enabledTraits: []), "YAMLWorkspaces"],
     dependencies: [
+        // The tested minor line provides process-group cancellation and
+        // bounded output collection; wider dependency graphs may conflict.
         .package(
             url: "https://github.com/swiftlang/swift-subprocess.git",
             .upToNextMinor(from: "1.0.0")
@@ -72,10 +74,11 @@ let package = Package(
         ),
         .target(
             name: "LibTmuxMCP",
-            dependencies: ["LibTmux"],
+            dependencies: ["LibTmux", "CProcessObservation"],
             exclude: ["AGENTS.md", "CLAUDE.md", "README.md"],
             resources: [.copy("minimal.conf")]
         ),
+        .target(name: "CProcessObservation"),
         .executableTarget(
             name: "libtmux-mcp",
             dependencies: ["LibTmux", "LibTmuxMCP"],
@@ -105,7 +108,10 @@ let package = Package(
         ),
         .testTarget(
             name: "LibTmuxMCPTests",
-            dependencies: ["LibTmuxMCP", "LibTmux", "TmuxFixture"]
+            dependencies: [
+                "LibTmuxMCP", "LibTmux", "TmuxFixture", "CProcessObservation",
+                .product(name: "Subprocess", package: "swift-subprocess"),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

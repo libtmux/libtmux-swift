@@ -74,6 +74,24 @@ public struct TmuxReply: Sendable, Hashable {
 
     public var isSuccess: Bool { exitCode == 0 }
 
+    /// How the tmux client ended.
+    ///
+    /// ``exitCode`` encodes a signal as its negation, so "killed by SIGTERM"
+    /// and "exited 15" are told apart by a sign a reader has to know about.
+    /// This says which happened.
+    public var termination: Termination {
+        exitCode < 0 ? .signalled(signal: -exitCode) : .exited(status: exitCode)
+    }
+
+    /// Why a tmux client stopped running.
+    public enum Termination: Sendable, Hashable {
+        /// It ran to completion and reported this status.
+        case exited(status: Int32)
+        /// A signal ended it. tmux itself reports one when a command is
+        /// cancelled, because the child's process group is killed.
+        case signalled(signal: Int32)
+    }
+
     /// Standard output decoded as UTF-8, replacing anything invalid.
     public var text: String {
         String(decoding: standardOutput, as: UTF8.self)

@@ -100,6 +100,21 @@ selected tmux executable and socket route, and isolates the command in a
 subshell so `cd`, variables, traps, syntax errors, and `exit` do not alter or
 terminate the interactive parent.
 
+An owned run stops waiting when its captured shell or daemon exits, its pane is
+removed, or that pane respawns. A result already captured before acknowledgment
+keeps its output and exit status. Moving a pane or disconnecting the observer's
+control client does not end the command. Cleanup cannot change a replacement
+shell's protocol state. Observation uses scoped control connections and native
+process-exit events. Guarded identity checks on the connection cover respawns
+that emit no notification and systems without native process handles. Command
+reads and cleanup remain bounded when a transport ignores cancellation.
+
+`wait_for_text` matches rendered screen text and discounts recognized input from
+this MCP process on a best-effort basis. Wrapped echoes can still match, and real
+output identical to input can be discounted. Wait for a new shell's prompt before
+typing and prefer output-only markers. Use `run_shell_command` to execute a
+command with a completion boundary and exit status.
+
 These are safeguards for a trusted shell, tmux daemon, and configuration, not
 universal containment for a hostile shell environment. Pane state can still
 change after the final check.

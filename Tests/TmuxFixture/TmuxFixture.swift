@@ -34,7 +34,55 @@ private let sigpipeIgnoredOnce: Void = {
 /// for `libtmux-test-…` would see each other's servers, and anything sweeping up
 /// by prefix — this fixture's own reaper included — would kill a server it never
 /// started. Scoping the root means a stray socket always says whose it is.
-private let socketRoot = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
+private let socketRoot = TmuxFixtureRoot.package.url
+
+/// Where a fixture puts the sockets it creates, and the only place its reaper
+/// will ever remove.
+///
+/// The default is this port's own root, and the suite never names another. A
+/// consumer of `TmuxFixture` needs its own, because the reaper removes what it
+/// is given: a suite writing into `/tmp/libtmux-swift-test` puts its servers in
+/// this package's namespace, where this package's reaper is also sweeping.
+///
+/// Constructing one validates the path, because the reaper's last act is
+/// `rm -rf`. A root must be absolute, must sit under the system temporary
+/// directory, and must be at least one component below it — so `/`, `/tmp`
+/// and a relative path are all refused, and a typo cannot widen the blast
+/// radius of a sweep.
+public struct TmuxFixtureRoot: Sendable, Hashable {
+    /// The validated directory.
+    public let url: URL
+
+    /// This port's own root, which the suite uses and CI expects.
+    public static let package = TmuxFixtureRoot(unchecked: "/tmp/libtmux-swift-test")
+
+    /// The scratch root for the benchmark and anything run by hand.
+    public static let development = TmuxFixtureRoot(unchecked: "/tmp/libtmux-swift-dev")
+
+    private init(unchecked path: String) {
+        self.url = URL(fileURLWithPath: path)
+    }
+
+    /// Names a root, refusing one a sweep must never be pointed at.
+    ///
+    /// - Throws: ``UnsafeReaperRoot`` when `path` is not absolute, is not
+    ///   under the system temporary directory, or is that directory itself.
+    public init(_ path: String) throws(UnsafeReaperRoot) {
+        let candidate = URL(fileURLWithPath: path)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let temporary = URL(fileURLWithPath: NSTemporaryDirectory())
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        guard path.hasPrefix("/"),
+            candidate != temporary,
+            candidate.hasPrefix("\(temporary)/") || candidate.hasPrefix("/tmp/"),
+            candidate != "/tmp",
+            URL(fileURLWithPath: candidate).pathComponents.count >= 3
+        else {
+            throw UnsafeReaperRoot()
+        }
+        self.url = URL(fileURLWithPath: candidate)
+    }
+}
 
 /// Runs `body` against a private tmux server and always kills it — including
 /// when this process is killed outright.
@@ -69,7 +117,8 @@ public func withTmuxServer<Result>(
 
         let server = try Server(
             socketPath: root.appendingPathComponent(socketFileName).path,
-            tmuxExecutable: tmuxExecutablePath()
+            tmuxExecutable: tmuxExecutablePath(),
+            configurationFile: "/dev/null"
         )
         _ = try await server.run([
             // Before the first session, so even the bootstrap pane gets it.
@@ -227,7 +276,8 @@ public func withNamedTmuxServer<Result>(
 
         let server = try Server(
             socketName: name,
-            tmuxExecutable: tmuxExecutablePath()
+            tmuxExecutable: tmuxExecutablePath(),
+            configurationFile: "/dev/null"
         )
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
@@ -269,7 +319,9 @@ public struct UnsafeReaperRoot: Error, Sendable, Hashable, CustomStringConvertib
     public init() {}
 
     public var description: String {
-        "a reaper root must be below /tmp/libtmux-swift-test or /tmp/libtmux-swift-dev"
+        "a reaper root must be an absolute path at least one component below "
+            + "the system temporary directory, and the directory swept must be "
+            + "strictly below it"
     }
 }
 
@@ -303,10 +355,17 @@ public struct UnsafeReaperRoot: Error, Sendable, Hashable, CustomStringConvertib
 ///   POSIX does not require, and a `sleep` that rejects its argument turns this
 ///   into a busy loop per server rather than a slower one. Reaping a second
 ///   later costs nothing here.
-public func reaperCommand(root: URL) throws(UnsafeReaperRoot) -> TmuxCommand {
+public func reaperCommand(
+    root: URL,
+    within base: TmuxFixtureRoot = .package
+) throws(UnsafeReaperRoot) -> TmuxCommand {
     let candidate = root.standardizedFileURL.resolvingSymlinksInPath().path
-    let allowedRoots = ["/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev"]
-    guard allowedRoots.contains(where: { candidate.hasPrefix("\($0)/") }) else {
+    // Strictly below the named root, never the root itself: a sweep of the
+    // root would take every other case's socket with it.
+    let allowed = [base, .package, .development].map {
+        $0.url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+    guard allowed.contains(where: { candidate.hasPrefix("\($0)/") }) else {
         throw UnsafeReaperRoot()
     }
     let owner = ProcessInfo.processInfo.processIdentifier

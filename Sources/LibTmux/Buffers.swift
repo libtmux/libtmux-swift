@@ -3,13 +3,12 @@ extension Server {
 
     /// The server's paste buffers, most recent first.
     public func buffers() async throws(TmuxError) -> [TmuxBuffer] {
-        let reply = try await run(
-            TmuxCommand(
-                "list-buffers",
-                ["-F", "#{buffer_name}\(FormatProjection.separator)#{buffer_size}"]
-            )
+        let command = TmuxCommand(
+            "list-buffers",
+            ["-F", "#{buffer_name}\(FormatProjection.separator)#{buffer_size}"]
         )
-        guard reply.isSuccess else { return [] }
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         let projection = FormatProjection([
             FormatField("buffer_name"), FormatField("buffer_size", .integer),
         ])
@@ -35,7 +34,11 @@ extension Server {
         try await expectSuccess(TmuxCommand("set-buffer", arguments + ["--", contents]))
     }
 
-    /// Reads a buffer's contents, or `nil` if no such buffer exists.
+    /// Reads a buffer's contents.
+    ///
+    /// - Throws: ``TmuxError/commandFailed(command:exitCode:reason:)`` when
+    ///   there is no such buffer, which tmux answers the same way as a server
+    ///   it cannot reach. Use ``buffers()`` to ask what exists.
     ///
     /// Runs in a process of its own even on a connected server, so that the
     /// answer does not depend on which mode asked. A connection reports a
@@ -48,10 +51,9 @@ extension Server {
     public func buffer(named name: String? = nil) async throws(TmuxError) -> String? {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        let reply = try await runInOwnProcess(
-            rawArguments: TmuxCommand("show-buffer", arguments).argumentVector
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand("show-buffer", arguments)
+        let reply = try await runInOwnProcess(rawArguments: command.argumentVector)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         var text = reply.text
         if text.hasSuffix("\n") { text.removeLast() }
         return text
@@ -65,7 +67,7 @@ extension Server {
     ///
     /// ``setBuffer(_:named:)`` carries the text as an argument, which caps it at
     /// whatever the platform allows in an argument vector and — over
-    /// ``connected(attachingTo:_:)`` — forbids a newline outright, because a
+    /// ``connected(attachingTo:_:)-(String,_)`` — forbids a newline outright, because a
     /// connection sends a command *line*. A path has neither problem: it is
     /// short, and tmux opens the file itself. This is the way to put many lines
     /// into a buffer from a connected server.
@@ -78,7 +80,8 @@ extension Server {
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("load-buffer", arguments + [tmuxLiteralArgument(path)]))
+        try await expectSuccess(
+            TmuxCommand("load-buffer", arguments + ["--", tmuxLiteralArgument(path)]))
     }
 
     /// Writes a buffer to a file, letting tmux do the writing.
@@ -92,7 +95,8 @@ extension Server {
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("save-buffer", arguments + [tmuxLiteralArgument(path)]))
+        try await expectSuccess(
+            TmuxCommand("save-buffer", arguments + ["--", tmuxLiteralArgument(path)]))
     }
 
     /// Pastes a buffer into a pane.

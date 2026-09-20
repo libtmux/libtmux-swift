@@ -168,7 +168,7 @@ extension Server {
     /// Moves a pane into another window, splitting it.
     ///
     /// A split that moves a pane rather than starting one, so it says where the
-    /// pane goes the same way ``Server/splitWindow(_:direction:size:startDirectory:)``
+    /// pane goes the same way ``Server/splitWindow(_:direction:size:startDirectory:running:environment:)``
     /// does — and defaults the same way, to ``PaneDirection/below``.
     public func join(
         _ pane: Pane,
@@ -297,7 +297,7 @@ extension Server {
 
     /// Loads a tmux configuration file into the running server.
     public func sourceFile(_ path: String) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("source-file", [path]))
+        try await expectSuccess(TmuxCommand("source-file", ["--", path]))
     }
 
     /// Throws unless a server is listening.
@@ -335,7 +335,7 @@ extension Server {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]
         }
         try await expectSuccess(
-            TmuxCommand("respawn-pane", arguments + command),
+            TmuxCommand("respawn-pane", arguments + ["--"] + command),
             guardedBy: [.pane(pane)]
         )
     }
@@ -348,7 +348,7 @@ extension Server {
         var arguments = ["-t", window.id.rawValue]
         if killingExisting { arguments.append("-k") }
         try await expectSuccess(
-            TmuxCommand("respawn-window", arguments + command),
+            TmuxCommand("respawn-window", arguments + ["--"] + command),
             guardedBy: [.window(window)]
         )
     }
@@ -364,7 +364,7 @@ extension Server {
         to command: String? = nil
     ) async throws(TmuxError) {
         var arguments = ["-t", pane.id.rawValue]
-        if let command { arguments.append(command) }
+        if let command { arguments += ["--", command] }
         try await expectSuccess(
             TmuxCommand("pipe-pane", arguments),
             guardedBy: [.pane(pane)]

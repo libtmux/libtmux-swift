@@ -19,6 +19,13 @@ public struct ControlNotificationStream: AsyncSequence, Sendable {
     }
 
     /// Iterates notifications with `TmuxError` as the failure type.
+    ///
+    /// Drive this with `for try await`, as ``Server/connected(attachingTo:_:)-(String,_)``'s
+    /// example does. Calling ``next()`` by hand inside `try?` or a `do`/`catch`
+    /// crashes the Swift 6.2.4 compiler (SILGen, on `emitExistentialErasure`)
+    /// for both this iterator and ``SubscriptionChangeStream``'s -- a
+    /// toolchain defect, not a contract of this type, but `for try await` is
+    /// the form that has always compiled.
     public struct Iterator: AsyncIteratorProtocol {
         private var base: Base.Iterator
 
@@ -103,7 +110,7 @@ final class NotificationBroadcast: Sendable {
     }
 
     func yield(_ notification: ControlNotification) {
-        let overflowed = withLock { () -> [ControlNotificationStream.Continuation] in
+        let observers = withLock { () -> [(Int, ControlNotificationStream.Continuation)] in
             if state.backlog != nil {
                 if state.backlog?.count ?? 0 < limit {
                     state.backlog?.append(notification)
@@ -111,14 +118,14 @@ final class NotificationBroadcast: Sendable {
                     state.backlogOverflowed = true
                 }
             }
-            var dropped: [Int] = []
-            for (id, observer) in state.observers {
-                if case .dropped = observer.yield(notification) { dropped.append(id) }
-            }
-            return dropped.compactMap { state.observers.removeValue(forKey: $0) }
+            return Array(state.observers)
         }
-        for observer in overflowed {
-            observer.finish(throwing: TmuxError.notificationBufferOverflow(limit: limit))
+        // Resuming a consumer can synchronously run its cancellation handler.
+        for (id, observer) in observers {
+            if case .dropped = observer.yield(notification) {
+                let removed = withLock { state.observers.removeValue(forKey: id) }
+                removed?.finish(throwing: TmuxError.notificationBufferOverflow(limit: limit))
+            }
         }
     }
 

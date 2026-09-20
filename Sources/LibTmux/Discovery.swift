@@ -34,7 +34,7 @@ public struct ServerDiscovery: Sendable, Hashable, Codable {
 /// tmux server is a socket on disk and nothing enumerates them.
 public enum TmuxServers {
     /// The most socket candidates one discovery probes and can return.
-    package static let maximumCandidates = 128
+    static let maximumCandidates = 128
     private static let maximumInspectedEntries = 4_096
     private static let maximumConcurrentProbes = 8
     private static let defaultProbeTimeout = Duration.seconds(2)

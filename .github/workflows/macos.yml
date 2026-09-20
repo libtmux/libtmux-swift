@@ -21,6 +21,29 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: Inspect the selected tmux lane through tmate
+        type: boolean
+        default: false
+      debug_tmux:
+        description: tmux version for the diagnostic runs
+        type: choice
+        options: ['3.2a', '3.7b']
+        default: '3.2a'
+      debug_filter:
+        description: Test filter for the bounded diagnostic runs
+        type: string
+        default: CapabilityBehaviorTests
+      debug_repetitions:
+        description: Number of diagnostic runs
+        type: choice
+        options: ['3', '20']
+        default: '3'
+      debug_protocol:
+        description: Capture verbose tmux protocol logs
+        type: boolean
+        default: false
 
 concurrency:
   group: macos-${{ github.ref }}
@@ -34,7 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tmux: ["3.2a", "3.7b"]
+        tmux: ${{ fromJSON(inputs.debug_enabled && format('["{0}"]', inputs.debug_tmux || '3.2a') || '["3.2a", "3.7b"]') }}
 
     steps:
       - uses: actions/checkout@v7
@@ -69,9 +92,11 @@ jobs:
           # told, and fails in a way that reads like a missing library.
           PATH="$(brew --prefix bison)/bin:${PATH}"
           export PATH
-          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
-          export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
-          export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+          libevent_prefix=$(brew --prefix libevent)
+          ncurses_prefix=$(brew --prefix ncurses)
+          export PKG_CONFIG_PATH="${libevent_prefix}/lib/pkgconfig:${ncurses_prefix}/lib/pkgconfig"
+          export LDFLAGS="-L${libevent_prefix}/lib -L${ncurses_prefix}/lib"
+          export CPPFLAGS="-I${libevent_prefix}/include -I${ncurses_prefix}/include"
           curl --location --fail --silent --show-error \
             "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
             --output tmux.tar.gz
@@ -109,7 +134,7 @@ jobs:
         run: xcrun swift build --force-resolved-versions
 
       - name: Test the private MCP swap tool
-        if: matrix.tmux == '3.7b'
+        if: matrix.tmux == '3.7b' && !inputs.debug_enabled
         run: xcrun swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
 
       # Every pane is a pty, the suite runs its cases in parallel, and Darwin
@@ -120,17 +145,107 @@ jobs:
           set -euo pipefail
           echo "before: $(sysctl -n kern.tty.ptmx_max)"
           sudo sysctl -w kern.tty.ptmx_max=999
+      - name: Check the tmate relay
+        id: tmate-relay
+        if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        run: |
+          python3 - <<'PY'
+          import os, socket
+          try:
+              socket.getaddrinfo("ssh.tmate.io", 22)
+              available = "true"
+          except socket.gaierror as error:
+              print(f"tmate relay DNS unavailable: {error}")
+              available = "false"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"available={available}\n")
+          PY
+      - name: Debug the macOS runner
+        id: tmate
+        if: steps.tmate-relay.outputs.available == 'true'
+        timeout-minutes: 2
+        continue-on-error: true
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3
+        with:
+          detached: true
+          limit-access-to-actor: true
+      - name: Record the debug connection
+        if: steps.tmate.outputs.ssh-address != ''
+        env:
+          TMATE_SSH_ADDRESS: ${{ steps.tmate.outputs.ssh-address }}
+        run: printf '%s\n' "$TMATE_SSH_ADDRESS" > "$RUNNER_TEMP/tmate-connection.txt"
+      - name: Upload the debug connection
+        if: steps.tmate.outputs.ssh-address != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-tmate-connection
+          path: ${{ runner.temp }}/tmate-connection.txt
+          retention-days: 1
       - name: Test
+        env:
+          DEBUG_TEST_FILTER: ${{ inputs.debug_filter }}
+          DEBUG_TEST_REPETITIONS: ${{ inputs.debug_repetitions || '3' }}
         run: |
           set -euo pipefail
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
           mkdir -p "$TMUX_TMPDIR"
-          xcrun swift test --package-path Examples --force-resolved-versions
-          # Serialized here and not on Linux. Every case drives a real tmux
-          # server, and Darwin schedules the parallel suite badly enough that
-          # cases doing sub-second work report forty seconds and the ones at
-          # the tail pass their own time limit. AGENTS.md already requires
-          # --no-parallel for real-tmux runs; this lane is where CI needs it.
-          xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+          if [[ "${{ inputs.debug_enabled }}" == 'true' ]]; then
+            if [[ "${{ inputs.debug_protocol }}" == 'true' ]]; then
+            python3 - <<'PY'
+          import os, pathlib, shlex
+          wrapper = pathlib.Path(os.environ["RUNNER_TEMP"]) / "tmux-debug"
+          command = shlex.join([os.environ["LIBTMUX_TMUX_BIN"], "-vv"])
+          wrapper.write_text(f'#!/bin/sh\nexec {command} "$@"\n')
+          wrapper.chmod(0o700)
+          PY
+              export LIBTMUX_TMUX_BIN="$RUNNER_TEMP/tmux-debug"
+            fi
+            xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
+            case "$DEBUG_TEST_REPETITIONS" in
+              3|20) ;;
+              *) exit 2 ;;
+            esac
+            for attempt in $(seq 1 "$DEBUG_TEST_REPETITIONS"); do
+              python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/attempt-$attempt" -- \
+                xcrun swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel \
+                --filter "$DEBUG_TEST_FILTER"
+            done
+            exit 0
+          fi
+          python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/examples" -- \
+            xcrun swift test --package-path Examples --force-resolved-versions --no-parallel
+          xcrun swift build --build-tests --traits YAMLWorkspaces --force-resolved-versions
+          python3 Scripts/diagnose_tests.py --output "$RUNNER_TEMP/swift-diagnostics/suite" -- \
+            xcrun swift test --skip-build --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+      - name: Upload macOS diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-test-diagnostics-${{ matrix.tmux }}
+          path: ${{ runner.temp }}/swift-diagnostics
+          retention-days: 3
+      - name: Remove environment values from tmux logs
+        id: sanitize-tmux
+        if: always() && inputs.debug_enabled
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          values = sorted(
+              ((value, key) for key, value in os.environ.items() if len(value) >= 8),
+              reverse=True, key=lambda item: len(item[0]))
+          for path in pathlib.Path.cwd().glob("tmux-*.log"):
+              text = "".join(line for line in path.read_text(errors="replace").splitlines(True)
+                             if "environ" not in line.lower())
+              for value, key in values:
+                  text = text.replace(value, f"<environment:{key}>")
+              path.write_text(text)
+          PY
+      - name: Upload tmux protocol logs
+        if: always() && steps.sanitize-tmux.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-tmux-protocol-${{ matrix.tmux }}
+          path: tmux-*.log
+          retention-days: 3

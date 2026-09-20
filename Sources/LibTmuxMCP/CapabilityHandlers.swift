@@ -218,11 +218,14 @@ extension TmuxTools {
     }
 
     func capabilityListSessions() async throws -> ToolOutcome {
-        .listing(
+        let sessions = try await server.sessions()
+        let attachedByOthers = try await server.sessionIDsAttachedByOthers()
+        return .listing(
             "sessions",
             .array(
-                try await server.sessions().map {
-                    JSONValue.encoding(SessionResult($0))
+                sessions.map {
+                    JSONValue.encoding(
+                        SessionResult($0, isAttached: attachedByOthers.contains($0.id)))
                 }))
     }
 
@@ -267,7 +270,12 @@ extension TmuxTools {
 
     func getSessionInfo(_ arguments: Arguments) async throws -> ToolOutcome {
         let session = try await capabilitySession(try arguments.string("session"))
-        return .init(structured: .object(["session": JSONValue.encoding(SessionResult(session))]))
+        let attachedByOthers = try await server.sessionIDsAttachedByOthers()
+        return .init(
+            structured: .object([
+                "session": JSONValue.encoding(
+                    SessionResult(session, isAttached: attachedByOthers.contains(session.id)))
+            ]))
     }
 
     func getWindowInfo(_ arguments: Arguments) async throws -> ToolOutcome {
@@ -600,17 +608,13 @@ extension TmuxTools {
 
     func setHistoryLimit(_ arguments: Arguments) async throws -> ToolOutcome {
         let lines = try arguments.integer("lines", or: 0)
-        let reply = try await server.setOption(
-            "history-limit", to: String(lines), scope: .globalSession)
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
+        try await server.setOption(.historyLimit, to: lines)
         return .init(structured: .object(["lines": .integer(Int64(lines))]))
     }
 
     func setMouseEnabled(_ arguments: Arguments) async throws -> ToolOutcome {
         let enabled = try arguments.bool("enabled", or: false)
-        let reply = try await server.setOption(
-            "mouse", to: enabled ? "on" : "off", scope: .globalSession)
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
+        try await server.setOption(.mouse, to: enabled)
         return .init(structured: .object(["enabled": .bool(enabled)]))
     }
 
@@ -676,9 +680,12 @@ extension TmuxTools {
         let requested = try arguments.string("paneId")
         var keys = try arguments.strings("keys")
         guard !keys.isEmpty else { throw ToolError.missingArgument("keys") }
-        if try arguments.bool("enter", or: false) { keys.append("Enter") }
+        let sendsEnter = try arguments.bool("enter", or: false)
         let force = try arguments.bool("force", or: false)
         let literal = try arguments.bool("literal", or: false)
+        // A literal run represents Enter as a key after its text operands.
+        let pressEnterSeparately = sendsEnter && literal
+        if sendsEnter, !literal { keys.append("Enter") }
         let initial = try await preflightPaneInput(
             requested,
             scope: .configuredCohort,
@@ -686,6 +693,9 @@ extension TmuxTools {
             operation: "send_keys"
         )
         let reservation = try await Self.reservePaneInput(initial, operation: "send_keys")
+        let echoTargets = Self.echoKeys(for: initial)
+        let echoDispatch: PaneEchoes.Dispatch =
+            literal ? .literal(keys, enter: pressEnterSeparately) : .keys(keys)
         let final: PaneInputResolution
         do {
             final = try await preflightPaneInput(
@@ -696,17 +706,32 @@ extension TmuxTools {
                 reservation: reservation,
                 operation: "send_keys"
             )
-            try await server.sendKeys(keys, to: final.source, literally: literal)
         } catch {
             await Self.paneRuns.release(reservation)
             throw error
         }
+        // Publish the discount before tmux can emit the corresponding echo.
+        let echoUpdate = await Self.paneEchoes.apply(echoDispatch, to: echoTargets)
+        do {
+            var input = keys.map { literal ? PaneInput.text($0) : PaneInput.key($0) }
+            if pressEnterSeparately { input.append(.key("Enter")) }
+            try await server.send(input, to: final.source)
+        } catch {
+            if Self.definitelyDidNotDispatch(error) {
+                await Self.paneEchoes.abandon(echoUpdate)
+            } else {
+                await Self.paneEchoes.commit(echoUpdate)
+            }
+            await Self.paneRuns.release(reservation)
+            throw error
+        }
+        await Self.paneEchoes.commit(echoUpdate)
         await Self.paneRuns.release(reservation)
         return .init(
             SentKeys(
                 paneRef: WireReferenceCodec.processLocal.reference(to: final.source),
                 pane: final.source.id.rawValue,
-                keys: keys,
+                keys: pressEnterSeparately ? keys + ["Enter"] : keys,
                 resolvedPaneIds: final.configuredPaneIDs.map(\.rawValue)
             ))
     }
@@ -775,12 +800,7 @@ extension TmuxTools {
     func setSynchronizePanes(_ arguments: Arguments) async throws -> ToolOutcome {
         let window = try await capabilityWindow(try arguments.string("windowId"))
         let enabled = try arguments.bool("enabled", or: false)
-        let reply = try await server.setOption(
-            "synchronize-panes",
-            to: enabled ? "on" : "off",
-            scope: .window(window)
-        )
-        guard reply.isSuccess else { throw ToolError.tmuxRejected(reply.errorText) }
+        try await server.setOption(.synchronizePanes, to: enabled, scope: .window(window))
         return .init(
             structured: .object([
                 "windowId": .string(window.id.rawValue), "enabled": .bool(enabled),

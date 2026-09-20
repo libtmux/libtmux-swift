@@ -11,6 +11,11 @@ struct PaneInputReservation: Sendable, Hashable {
     fileprivate let id: UUID
 }
 
+struct PaneRunReleaseObservation: Sendable {
+    let reservation: PaneInputReservation
+    let events: AsyncStream<Void>
+}
+
 /// Process-wide exclusion for input dispatched to one endpoint and pane.
 ///
 /// A reservation is atomic across a synchronized cohort and never queues.
@@ -24,8 +29,8 @@ actor PaneRunCoordinator {
                 var metadata = stat()
                 let result = path.withCString { stat($0, &metadata) }
                 guard result == 0 else { return nil }
-                self.device = UInt64(metadata.st_dev)
-                self.inode = UInt64(metadata.st_ino)
+                self.device = fileIdentityComponent(metadata.st_dev)
+                self.inode = fileIdentityComponent(metadata.st_ino)
             #else
                 return nil
             #endif
@@ -49,6 +54,7 @@ actor PaneRunCoordinator {
 
     private var owners: [Key: UUID] = [:]
     private var keysByOwner: [UUID: Set<Key>] = [:]
+    private var releaseObservers: [UUID: [UUID: AsyncStream<Void>.Continuation]] = [:]
 
     func reserve(_ panes: [Pane]) -> PaneInputReservation? {
         guard let keys = keys(for: panes) else { return nil }
@@ -72,11 +78,39 @@ actor PaneRunCoordinator {
     func release(_ reservation: PaneInputReservation) {
         guard let keys = keysByOwner.removeValue(forKey: reservation.id) else { return }
         for key in keys where owners[key] == reservation.id { owners[key] = nil }
+        let observers = releaseObservers.removeValue(forKey: reservation.id) ?? [:]
+        for continuation in observers.values {
+            continuation.yield(())
+            continuation.finish()
+        }
     }
 
     func isHeld(_ pane: Pane) -> Bool {
         guard let key = Key(pane) else { return false }
         return owners[key] != nil
+    }
+
+    func isHeld(_ reservation: PaneInputReservation) -> Bool {
+        keysByOwner[reservation.id] != nil
+    }
+
+    /// Captures ownership before the socket can disappear or be replaced.
+    func observeRelease(of pane: Pane) -> PaneRunReleaseObservation? {
+        guard let key = Key(pane), let owner = owners[key] else { return nil }
+        let observer = UUID()
+        let (events, continuation) = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingOldest(1))
+        releaseObservers[owner, default: [:]][observer] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeReleaseObserver(observer, owner: owner) }
+        }
+        return PaneRunReleaseObservation(
+            reservation: PaneInputReservation(id: owner), events: events)
+    }
+
+    private func removeReleaseObserver(_ observer: UUID, owner: UUID) {
+        releaseObservers[owner]?[observer] = nil
+        if releaseObservers[owner]?.isEmpty == true { releaseObservers[owner] = nil }
     }
 
     private func keys(for panes: [Pane]) -> Set<Key>? {

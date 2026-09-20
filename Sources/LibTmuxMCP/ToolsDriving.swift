@@ -5,6 +5,7 @@ extension TmuxTools {
     func pasteText(_ arguments: Arguments) async throws -> ToolOutcome {
         let requested = try arguments.string("paneId")
         let text = try arguments.string("text")
+        let sendsEnter = try arguments.bool("enter", or: false)
         let force = try arguments.bool("force", or: false)
         let initial = try await preflightPaneInput(
             requested,
@@ -12,7 +13,7 @@ extension TmuxTools {
             force: force,
             operation: "paste_text"
         )
-        let staged = text + (try arguments.bool("enter", or: false) ? "\n" : "")
+        let staged = text + (sendsEnter ? "\n" : "")
         if staged.isEmpty {
             return .init(
                 Pasted(
@@ -37,6 +38,7 @@ extension TmuxTools {
             throw primaryError
         }
         var primaryError: (any Error)?
+        var echoUpdate: PaneEchoes.Update?
         do {
             let final = try await preflightPaneInput(
                 requested,
@@ -46,9 +48,19 @@ extension TmuxTools {
                 reservation: reservation,
                 operation: "paste_text"
             )
+            echoUpdate = await Self.paneEchoes.apply(
+                .literal([text], enter: sendsEnter), to: Self.echoKeys(for: final)
+            )
             try await server.paste(buffer: buffer, into: final.source)
         } catch {
             primaryError = error
+        }
+        if let echoUpdate {
+            if let primaryError, Self.definitelyDidNotDispatch(primaryError) {
+                await Self.paneEchoes.abandon(echoUpdate)
+            } else {
+                await Self.paneEchoes.commit(echoUpdate)
+            }
         }
         await Self.paneRuns.release(reservation)
         do {

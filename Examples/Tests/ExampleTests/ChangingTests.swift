@@ -5,6 +5,23 @@ import TmuxFixture
 
 @Suite("changing", .timeLimit(.minutes(1)))
 struct ChangingTests {
+    @Test("named layouts arrange panes and custom layouts restore their positions")
+    func layoutExamplesArrangeAndRestore() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            let link = try #require(try await server.windowLinks().first)
+            _ = try await server.splitWindow(window, direction: .below)
+            try await arrangeSideBySide(server, window)
+            let panes = try await server.snapshot().panes(of: window)
+            #expect(panes.count == 2)
+            #expect(panes.allSatisfy { $0.height == window.height })
+            let saved = try #require(try await server.format("#{window_layout}", for: link))
+            try await server.selectLayout(window, .evenVertical)
+            try await restoreSavedLayout(server, window, saved)
+            #expect(try await server.format("#{window_layout}", for: link) == saved)
+        }
+    }
+
     @Test("the session the README builds is the session tmux ends up with")
     func theDocumentedSessionIsBuilt() async throws {
         try await withTmuxServer { server in
@@ -51,6 +68,30 @@ struct ChangingTests {
             for wanted in ["edit", "test", "logs"] {
                 #expect(names.contains(wanted), "window \(wanted) was not created")
             }
+        }
+    }
+}
+
+@Suite("running a program in a pane", .timeLimit(.minutes(1)))
+struct PaneProgramTests {
+    @Test("a pane's program reports how it exited")
+    func aPaneProgramReportsItsExit() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+
+            let status = try await runAProgramAndReadItsExit(server, window)
+
+            #expect(status == 42)
+        }
+    }
+
+    @Test("a typed option reads back as its type, from its own table")
+    func typedOptionsReadBackTyped() async throws {
+        try await withTmuxServer { server in
+            let scrollback = try await setOptionsWithATypeAndATable(server)
+
+            #expect(scrollback != nil)
+            #expect(try await server.option("mouse", scope: .globalSession) == "on")
         }
     }
 }

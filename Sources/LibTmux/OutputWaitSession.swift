@@ -10,6 +10,11 @@ struct OutputWaitSession: Sendable {
     let started: ContinuousClock.Instant
     let deadline: ContinuousClock.Instant
     let tailLimit: Int
+    let discounting: (@Sendable () async -> OutputWaitDiscount)?
+
+    private func currentDiscount() async -> OutputWaitDiscount {
+        await discounting?() ?? .none
+    }
 
     func run() async throws(OutputWaitError) -> OutputWait {
         let keptTail = tailLimit
@@ -54,14 +59,24 @@ struct OutputWaitSession: Sendable {
             sawNewOutput: false,
             alternateScreen: entryRead.alternateScreen
         )
+        let entryDiscount = await currentDiscount()
+        let entryRowsForMatching: [String] =
+            if discounting != nil, entryDiscount.cursorRowUnsettled,
+                entryRows.last?.isEmpty == false
+            {
+                Array(entryRows.dropLast())
+            } else {
+                entryRows
+            }
         let entryHit =
             entryRead.alternateScreen
             ? nil
             : try firstOutputWaitHit(
-                in: entryRows,
+                in: entryRowsForMatching,
                 patterns: patterns,
                 stops: stops,
-                countingAnyRow: false
+                countingAnyRow: false,
+                discount: entryDiscount
             )
         let wasAlreadyShowing = entryHit != nil
 
@@ -78,6 +93,7 @@ struct OutputWaitSession: Sendable {
             _ outcome: OutputWait.Outcome,
             matched: String? = nil,
             matchedIndex: Int? = nil,
+            line: String? = nil,
             sawNewOutput: Bool = false,
             tail: [String] = [],
             cursor: CaptureCursor? = nil
@@ -86,6 +102,7 @@ struct OutputWaitSession: Sendable {
                 outcome: outcome,
                 matched: matched,
                 matchedIndex: matchedIndex,
+                matchedLine: line,
                 sawNewOutput: sawNewOutput,
                 matchedAtEntry: wasAlreadyShowing,
                 tail: Array(tail.suffix(keptTail)),
@@ -98,21 +115,28 @@ struct OutputWaitSession: Sendable {
         // screen" and "never happened" look identical afterwards, and only one
         // of them is fixed by waiting longer.
         if let entryHit, !requireFresh {
+            // A match already on screen is reported as its own outcome: a
+            // caller that treats `matched` as "it happened" would otherwise
+            // read the echo of a command it just sent as the command's own
+            // output. A stop condition keeps its outcome, since a stop is a
+            // reason to give up either way.
             return ending(
-                entryHit.outcome,
+                entryHit.outcome == .matched ? .alreadyOnScreen : entryHit.outcome,
                 matched: entryHit.matched,
                 matchedIndex: entryHit.matchedIndex,
+                line: entryHit.line,
                 tail: entryRows,
                 cursor: entryRead.cursor
             )
         }
 
-        let answer: OutputWaitAnswer = { arrived, tail, outputEvent in
+        let answer: OutputWaitAnswer = { arrived, tail, outputEvent, discount in
             var hit = try firstOutputWaitHit(
                 in: arrived,
                 patterns: patterns,
                 stops: stops,
-                countingAnyRow: true
+                countingAnyRow: true,
+                discount: discount
             )
             // An event with no rows still counts when nothing was asked for:
             // the pane moved, which is all an unpatterned wait was told to see.
@@ -124,6 +148,7 @@ struct OutputWaitSession: Sendable {
                 hit.outcome,
                 matched: hit.matched,
                 matchedIndex: hit.matchedIndex,
+                line: hit.line,
                 sawNewOutput: true,
                 tail: tail
             )
@@ -265,7 +290,7 @@ struct OutputWaitSession: Sendable {
         }
         guard let living = try settled(race) else { return .expired }
         guard let current = living else { return .paneClosed }
-        guard current != attachment else {
+        guard !current.hasSameLocation(as: attachment) else {
             if stale { return .reattach }
             throw error
         }
@@ -316,6 +341,7 @@ struct OutputWaitSession: Sendable {
                         await doorbell.ring(.timedOut)
                     }
                     group.addTask {
+                        var processID = attachment.processID
                         while !Task.isCancelled {
                             try? await Task.sleep(for: .seconds(1))
                             guard !Task.isCancelled else { return }
@@ -328,9 +354,13 @@ struct OutputWaitSession: Sendable {
                                     await doorbell.ring(.paneClosed)
                                     return
                                 }
-                                if current != attachment {
+                                if !current.hasSameLocation(as: attachment) {
                                     await doorbell.ring(.reattach)
                                     return
+                                }
+                                if current.processID != processID {
+                                    processID = current.processID
+                                    await doorbell.ring(.scan)
                                 }
                             case let .failed(error):
                                 await doorbell.ring(.failed(waitTmuxError(error)))
@@ -400,7 +430,13 @@ struct OutputWaitSession: Sendable {
                                 switch currentRace {
                                 case .completed(nil):
                                     return .finished(.paneClosed, progress)
-                                case .completed:
+                                case let .completed(current?):
+                                    if case .tmux(.staleServerValue) = error,
+                                        current.hasSameLocation(as: attachment)
+                                    {
+                                        await doorbell.ring(.scan)
+                                        continue
+                                    }
                                     throw error
                                 case let .failed(readError):
                                     throw readError
@@ -426,7 +462,7 @@ struct OutputWaitSession: Sendable {
                             case .completed(nil):
                                 return .finished(.paneClosed, progress)
                             case let .completed(current?):
-                                guard current == attachment else {
+                                guard current.hasSameLocation(as: attachment) else {
                                     return .reattach(progress)
                                 }
                             case let .failed(error): throw error
@@ -492,22 +528,23 @@ struct OutputWaitSession: Sendable {
         guard
             let value = try await server.formatGlobal(
                 "#{session_id}\(separator)#{window_id}\(separator)#{pane_id}"
-                    + "\(separator)#{pane_dead}",
+                    + "\(separator)#{pane_dead}\(separator)#{pane_pid}",
                 for: pane
             )
         else { return nil }
         let fields = value.components(separatedBy: separator)
-        guard fields.count == 4 else {
+        guard fields.count == 5 else {
             throw .invocationFailed(reason: "tmux returned an incomplete pane attachment")
         }
         if fields[3] == "1" { return nil }
         guard fields[2] == pane.id.rawValue,
             let sessionID = SessionID(rawValue: fields[0]),
-            let windowID = WindowID(rawValue: fields[1])
+            let windowID = WindowID(rawValue: fields[1]),
+            let processID = Int32(fields[4]), processID > 0
         else {
             throw .invocationFailed(reason: "tmux returned an invalid pane attachment")
         }
-        return PaneAttachment(sessionID: sessionID, windowID: windowID)
+        return PaneAttachment(sessionID: sessionID, windowID: windowID, processID: processID)
     }
 
     private func raceOrdinaryWaitOperation<Value: Sendable>(
@@ -546,7 +583,8 @@ struct OutputWaitSession: Sendable {
                 sourceLinesPerChunk: Self.waitCaptureLines,
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
-            ) { rows in
+            ) { rows, endsOnLiveCursorRow in
+                let discount = await currentDiscount()
                 guard ContinuousClock.now < deadline else {
                     deadlineReached = true
                     return true
@@ -554,8 +592,12 @@ struct OutputWaitSession: Sendable {
                 let arrived = rows
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
+                // Pending input can still occupy the live cursor row.
+                let matchable =
+                    (endsOnLiveCursorRow && discount.cursorRowUnsettled)
+                    ? Array(arrived.dropLast()) : arrived
                 do {
-                    output = try answer(arrived, tail, false)
+                    output = try answer(matchable, tail, false, discount)
                     if output != nil {
                         let selectedAt = ContinuousClock.now
                         if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -611,17 +653,22 @@ struct OutputWaitSession: Sendable {
         case .pending: break
         }
         if offersArrivedRows(scan.reanchor), !scan.alternateScreen {
-            let arrived: [String]
+            let captured: [String]
             do {
-                arrived = try await waitLookbackRows(using: server, in: pane).filter { !$0.isEmpty }
+                captured = try await waitLookbackRows(using: server, in: pane)
             } catch {
                 throw .tmux(error)
             }
             guard ContinuousClock.now < deadline else { return timedOut() }
+            let discount = await currentDiscount()
+            let arrived = captured.filter { !$0.isEmpty }
             sawOutput = sawOutput || !arrived.isEmpty
             tail = Array((tail + arrived).suffix(tailLimit))
+            let matchable =
+                discounting != nil && discount.cursorRowUnsettled && captured.last?.isEmpty == false
+                ? Array(captured.dropLast()).filter { !$0.isEmpty } : arrived
             do {
-                output = try answer(arrived, tail, false)
+                output = try answer(matchable, tail, false, discount)
                 if output != nil {
                     let selectedAt = ContinuousClock.now
                     if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -640,7 +687,7 @@ struct OutputWaitSession: Sendable {
             sawOutput = true
             if output == nil {
                 do {
-                    output = try answer([], tail, true)
+                    output = try answer([], tail, true, .none)
                     if output != nil {
                         let selectedAt = ContinuousClock.now
                         if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -708,6 +755,11 @@ struct OutputWaitSession: Sendable {
 private struct PaneAttachment: Sendable, Hashable {
     let sessionID: SessionID
     let windowID: WindowID
+    let processID: Int32
+
+    func hasSameLocation(as other: PaneAttachment) -> Bool {
+        sessionID == other.sessionID && windowID == other.windowID
+    }
 }
 
 /// What one turn of a wait carries forward: where reading stopped, what it has
@@ -866,7 +918,7 @@ func waitScanTerminal(
 }
 
 private typealias OutputWaitAnswer =
-    @Sendable ([String], [String], Bool) throws(OutputWaitError) -> OutputWait?
+    @Sendable ([String], [String], Bool, OutputWaitDiscount) throws(OutputWaitError) -> OutputWait?
 
 private func waitTmuxError(_ error: OutputWaitError) -> TmuxError {
     switch error {
@@ -900,16 +952,19 @@ private func firstOutputWaitHit(
     patterns: [RegexPattern],
     stops: [RegexPattern],
     countingAnyRow: Bool,
+    discount: OutputWaitDiscount,
     maximumWork: Int = RegexPattern.defaultMaximumWork
 ) throws(OutputWaitError) -> OutputWaitHit? {
     for row in rows {
+        let matchable = discount.transform(row)
         if let index = try firstOutputPatternMatch(
-            in: row, patterns: stops, maximumWork: maximumWork)
+            in: matchable, patterns: stops, maximumWork: maximumWork)
         {
             return OutputWaitHit(
                 outcome: .stopped,
                 matched: stops[index].source,
-                matchedIndex: index
+                matchedIndex: index,
+                line: row
             )
         }
         guard !patterns.isEmpty else {
@@ -917,12 +972,13 @@ private func firstOutputWaitHit(
             continue
         }
         if let index = try firstOutputPatternMatch(
-            in: row, patterns: patterns, maximumWork: maximumWork)
+            in: matchable, patterns: patterns, maximumWork: maximumWork)
         {
             return OutputWaitHit(
                 outcome: .matched,
                 matched: patterns[index].source,
-                matchedIndex: index
+                matchedIndex: index,
+                line: row
             )
         }
     }
@@ -933,6 +989,7 @@ private struct OutputWaitHit {
     let outcome: OutputWait.Outcome
     var matched: String? = nil
     var matchedIndex: Int? = nil
+    var line: String? = nil
 }
 
 private func withOutputWaitErrorMapping<Result>(

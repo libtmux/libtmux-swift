@@ -13,12 +13,20 @@ struct SessionResult: Sendable, Hashable, Codable {
     let isAttached: Bool
     let createdAt: Int
 
-    init(_ session: Session, references: WireReferenceCodec = .processLocal) {
+    /// `isAttached` overrides `session.isAttached` when given: tmux's own
+    /// flag counts every attached client, including one this process opened
+    /// for its own internal use (see `Server.sessionIDsAttachedByOthers()`),
+    /// which a caller asking whether a person is watching does not want.
+    init(
+        _ session: Session,
+        references: WireReferenceCodec = .processLocal,
+        isAttached: Bool? = nil
+    ) {
         self.ref = references.reference(to: session)
         self.id = session.id.rawValue
         self.name = session.name
         self.windowCount = session.windowCount
-        self.isAttached = session.isAttached
+        self.isAttached = isAttached ?? session.isAttached
         self.createdAt = session.createdAt
     }
 }
@@ -183,14 +191,19 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
     let outcome: String
     let matched: String?
     let matchedIndex: Int?
+    /// The row the pattern fired on. `matched` names the pattern, which the
+    /// caller sent; this is the text it found, which is usually what the wait
+    /// was for — read the port or URL from here rather than re-scanning `tail`.
+    let matchedLine: String?
     /// `false` with `outcome: "timedOut"` means the pane really was quiet —
     /// suspect the command never ran, because no change of pattern fixes it.
     /// With `outcome: "expiredWhileReading"` it means nothing: the reads that
     /// would have seen output never finished.
     let sawNewOutput: Bool
-    /// The pattern was on screen before the wait started. Not a match — but it
-    /// means the thing happened and you asked afterwards, which is the opposite
-    /// problem from it never happening, and waiting longer fixes neither.
+    /// The pattern was on screen before the wait started, which answers
+    /// `outcome: "alreadyOnScreen"` rather than `"matched"`. It means the
+    /// thing happened and you asked afterwards — or that the pattern is in
+    /// the command line you just typed — and waiting longer fixes neither.
     let matchedAtEntry: Bool
     let tail: [String]
     let cursor: String?
@@ -199,7 +212,8 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
     let effectiveTimeout: Double
 
     /// Swift's synthesised encoding drops a nil optional, but this tool's
-    /// published schema declares `matched`, `matchedIndex` and `cursor` present
+    /// published schema declares `matched`, `matchedIndex`, `matchedLine` and
+    /// `cursor` present
     /// and nullable. MCP requires `structuredContent` to conform to that
     /// schema, so a wait that matched nothing has to answer null rather than
     /// leave the key out.
@@ -209,6 +223,7 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
         try container.encode(outcome, forKey: .outcome)
         try container.encode(matched, forKey: .matched)
         try container.encode(matchedIndex, forKey: .matchedIndex)
+        try container.encode(matchedLine, forKey: .matchedLine)
         try container.encode(sawNewOutput, forKey: .sawNewOutput)
         try container.encode(matchedAtEntry, forKey: .matchedAtEntry)
         try container.encode(tail, forKey: .tail)
@@ -222,6 +237,7 @@ struct OutputWaitResult: Sendable, Hashable, Codable {
         self.outcome = wait.outcome.rawValue
         self.matched = wait.matched
         self.matchedIndex = wait.matchedIndex
+        self.matchedLine = wait.matchedLine
         self.sawNewOutput = wait.sawNewOutput
         self.matchedAtEntry = wait.matchedAtEntry
         self.tail = wait.tail

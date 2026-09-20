@@ -25,11 +25,12 @@ extension TmuxTools {
         maximumUTF8Bytes: Int? = nil,
         pattern: String? = nil,
         tmuxFormatControl: TmuxFormatControl? = nil,
-        itemSchema: JSONValue? = nil
+        itemSchema: JSONValue? = nil,
+        summary: String? = nil
     ) -> ToolArgument {
         ToolArgument(
             name: name,
-            summary: "Caller-controlled \(name).",
+            summary: summary ?? "Caller-controlled \(name).",
             kind: kind,
             isRequired: required,
             allowed: allowed,
@@ -411,7 +412,12 @@ extension TmuxTools {
                 handler: { try await $0.snapshotPane($1) }
             ),
             capability(
-                .waitForText, "Wait for text", "Wait within one deadline for pane text.",
+                .waitForText, "Wait for text",
+                "Wait for pane text, discounting this MCP server's recent input. "
+                    + "Wait for a new shell's prompt before typing. Wrapped echoes can still match, "
+                    + "and output identical to input can be discounted; prefer output-only markers. "
+                    + "Use run_shell_command to execute a command with a completion boundary and exit status. "
+                    + "The returned tail contains raw captured rows, including input.",
                 toolset: .inspect, reach: .none, effects: [.observe], outputs: terminal,
                 arguments: [
                     argument("cursor", maximumLength: 16_384),
@@ -504,9 +510,21 @@ extension TmuxTools {
                 specialSinks: ["height": state, "width": state, "windowId": lookup],
                 handler: { try await $0.resizeWindow($1) }),
             capability(
-                .selectLayout, "Select layout", "Apply one named tmux layout to a window.",
+                .selectLayout, "Select layout",
+                "Apply a named tmux layout, or a window_layout string captured earlier, "
+                    + "to a window.",
                 toolset: .manage, reach: .none, effects: [.observe, .change], outputs: inspectMeta,
-                arguments: [argument("layout", required: true), windowID()],
+                arguments: [
+                    argument(
+                        "layout", required: true,
+                        summary: "even-horizontal, even-vertical, main-horizontal, "
+                            + "main-vertical, tiled, or a window_layout string this window "
+                            + "produced earlier, to restore it verbatim. This tool checks the "
+                            + "value and refuses one it does not recognize before tmux ever "
+                            + "sees it, because tmux 3.3 and 3.3a crash the daemon on an "
+                            + "unparseable layout string instead of rejecting it."),
+                    windowID(),
+                ],
                 specialSinks: ["layout": state, "windowId": lookup],
                 handler: { try await $0.capabilitySelectLayout($1) }),
             capability(
@@ -603,7 +621,8 @@ extension TmuxTools {
                 ], handler: { try await $0.createWindow($1) }),
             capability(
                 .pasteText, "Paste text",
-                "Paste literal text and an optional newline target-only after two state checks.",
+                "Paste literal text and an optional newline target-only after two state checks; "
+                    + "wait_for_text discounts this input.",
                 toolset: .execute, reach: .paneInput, effects: [.observe, .change],
                 outputs: inspectMeta,
                 arguments: [
@@ -630,7 +649,8 @@ extension TmuxTools {
                 handler: { try await $0.capabilityRespawnPane($1) }),
             capability(
                 .runShellCommand, "Run shell command",
-                "Run one command in a singular trusted POSIX shell and return bounded output.",
+                "Run one command in a singular trusted POSIX shell and return bounded output; "
+                    + "wait_for_text discounts the dispatch line.",
                 toolset: .execute, reach: .paneCommand, effects: [.observe, .change],
                 outputs: terminal,
                 arguments: [
@@ -649,12 +669,18 @@ extension TmuxTools {
                 handler: { try await $0.runShellCommand($1, $2) }),
             capability(
                 .sendKeys, "Send keys",
-                "Send keys after checking the effective synchronized-pane cohort.",
+                "Send keys after checking the effective synchronized-pane cohort; "
+                    + "wait_for_text discounts this input.",
                 toolset: .execute, reach: .paneInput, effects: [.observe, .change],
                 outputs: inspectMeta,
                 arguments: [
                     boolean("enter"), boolean("force"),
-                    argument("keys", kind: .stringArray, required: true), boolean("literal"),
+                    argument("keys", kind: .stringArray, required: true),
+                    argument(
+                        "literal", kind: .boolean,
+                        summary: "Type every string in keys as literal characters (tmux's -l) "
+                            + "instead of reading it as a key name. Applies to the whole call, "
+                            + "not per item. enter still presses Enter afterward as its own key."),
                     paneID(),
                 ],
                 specialSinks: [

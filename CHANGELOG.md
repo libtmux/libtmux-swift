@@ -11,6 +11,160 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `FilterFields` provides checked field descriptors for filter predicates.
+  (#15)
+
+- `ProcessTransport` and `SubprocessTransport` let consumers supply or wrap
+  the process transport. (#15)
+
+- `TmuxOptionKey` reads and writes options as their declared value types.
+  (#15)
+
+- `Pane` reports optional exit status, process ID, terminal, title and start
+  command. (#15)
+
+- `Server.newSession`, `newWindow`, `splitWindow` and `split` accept a program,
+  arguments and environment through `running:` and `environment:`. (#15)
+
+- `ControlNotification.event` exposes typed control notifications. (#15)
+
+- `ControlSession` exposes typed pause and resume controls for pane output.
+  (#15)
+
+- `Server.connected` accepts a `Session` value and refuses a stale session.
+  (#15)
+
+- `Server.capture` and `captureRange` can retain colour and styling. (#15)
+
+- `Server.capture` and `captureRange` accept a byte limit and reject oversized
+  replies. (#15)
+
+- `Server.withTimeout` bounds commands; `Server.wait` accepts a separate
+  timeout. Exhaustive `TmuxError` switches must handle `timedOut`. (#15)
+
+- `OutputWait.matchedLine` returns the captured row that matched. (#15)
+
+- `Workspace.decode` can reject unknown keys with `strict: true`. Lenient
+  decoding remains the default. (#15)
+
+- `TmuxFixtureRoot` gives `reaperCommand` a validated consumer cleanup root.
+  (#15)
+
+- `Server.capabilities` reports the running tmux's supported features. (#15)
+
+- `Session.creationDate` and `ServerIncarnation.startDate` expose creation
+  times as dates. (#15)
+
+- `TmuxReply.termination` distinguishes an exit status from a terminating
+  signal. (#15)
+
+- `WindowLayout` names built-in layouts and accepts saved custom layouts.
+  String calls remain available. (#15)
+
+### Changed
+
+- **Breaking.** `Server.send` replaces `sendKeys`. Use `PaneInput.text` for
+  literal text and `PaneInput.key` for key names. (#15)
+
+- **Breaking.** String-keyed `option`, `setOption` and `unsetOption` require
+  an explicit scope and throw on refusal. Typed keys retain their default
+  scope. (#15)
+
+- **Breaking.** `TmuxError` distinguishes local refusal, tmux refusal, stale
+  values and foreign-pane cursors. Update `invocationFailed` catches and
+  exhaustive switches for the specific cases. (#15)
+
+- **Breaking.** Option, hook, environment and buffer reads throw on failure
+  instead of returning empty results. Handle read errors explicitly. (#15)
+
+- **Breaking.** `Server.hasSession`, session environment and hook scopes, and
+  named connections require exact session names. Pass the full name instead of
+  a prefix or glob. (#15)
+
+- **Breaking.** Separately constructed `Server` values with the same endpoint,
+  executable and configuration compare equal. Do not use equality as
+  construction identity. (#15)
+
+- **Breaking.** Output waits report `alreadyOnScreen` for an existing match.
+  Handle that outcome separately from newly matched output. (#15)
+
+### Fixed
+
+- `SubprocessTransport` and `Server.withControlMode` avoid the extra macOS fork
+  required for a new process session. Cancellation still targets each child's
+  separate process group. (#15)
+
+- `ControlSession.notifications` avoids deadlock when cancellation races with
+  notification delivery. (#15)
+
+- Output waits rescan a respawned pane when its process ID changes, even if
+  tmux omits the output notification. (#15)
+
+- Output waits retry stale captures without reopening the control connection
+  and rerunning attachment hooks. (#15)
+
+- `Server.selectLayout` rejects unsupported or malformed layouts before
+  dispatch and accepts unambiguous preset prefixes. (#15)
+
+- Control commands preserve arguments beginning with `%`. (#15)
+
+- Output waits skip unsubmitted input and recognized MCP echoes. Wrapped
+  echoes and output identical to input remain ambiguous. (#15)
+
+- Literal pane input preserves key-like words and trailing semicolons. (#15)
+
+- MCP session listings exclude this process's own control connections when
+  reporting attachments. (#15)
+
+- `run_shell_command` keeps long or delayed command input available until the
+  shell consumes it. (#15)
+
+- `run_shell_command` preserves completed output and exit status when cleanup
+  fails. (#15)
+
+- `run_shell_command` refuses input if its captured shell exits or respawns
+  before dispatch. (#15)
+
+- `ControlSession` preserves arbitrary pane output bytes, including UTF-8
+  characters split across notifications, without closing the connection. (#15)
+
+- `run_shell_command` stops waiting and releases its reservation when the
+  original pane, shell, or daemon ends. Cleanup preserves replacement shell
+  state. (#15)
+
+- `run_shell_command` releases a timed-out pane after bounded cleanup when
+  completion cannot be confirmed. (#15)
+
+- MCP pane input no longer crashes on some macOS filesystems. (#15)
+
+- `TmuxVersion` orders tagged development builds below the corresponding
+  release. (#15)
+
+- Control connections negotiate JSON layouts when tmux supports them. (#15)
+
+- `libtmux-mcp` handles `--help` and `--version` without starting a server and
+  rejects unknown arguments. (#15)
+
+- Caller values beginning with a dash stay positional in `option`, hook,
+  environment, buffer, format and pane-operation calls. (#15)
+
+- `wait_for_text` includes pane lookup in its timeout. (#15)
+
+- `run_shell_command` bounds preflight and capture reads by its overall
+  timeout before staging input. (#15)
+
+- Existing output waits stop discounting pending input after an unrecognized
+  editing key. (#15)
+
+- Structured errors provide readable diagnostic text. (#15)
+
+- `TmuxFixture` starts servers with an empty configuration, isolating
+  consumers from ambient tmux settings. (#15)
+
+- `mcp-swap` retries temporary executable-busy launch failures. (#15)
+
 ## [0.1.0-alpha.5] - 2026-09-12
 
 ### Added

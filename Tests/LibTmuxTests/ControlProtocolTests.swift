@@ -32,6 +32,31 @@ private func parse(_ stream: String) -> [ControlEvent] {
 
 @Suite("control-mode protocol")
 struct ControlProtocolTests {
+    @Test(
+        "output notifications preserve split UTF-8 and arbitrary pane bytes",
+        arguments: ["%output %0 ", "%extended-output %0 4 : "])
+    func outputRetainsArbitraryBytes(_ prefix: String) throws {
+        var input = ControlLineInput()
+        var parser = ControlProtocolParser()
+        var received: [[UInt8]] = []
+        for payload: [UInt8] in [[0xCE], [0xBB, 0xFF, 0x5C, 0x31, 0x33, 0x34]] {
+            for event in input.append(Data(prefix.utf8) + Data(payload) + Data([10])) {
+                guard case let .line(line) = event,
+                    case let .notification(notification) = try parser.consume(line)
+                else {
+                    Issue.record("pane bytes were rejected: \(event)")
+                    continue
+                }
+                switch notification.event {
+                case .output(_, let bytes), .extendedOutput(_, _, let bytes):
+                    received.append(bytes)
+                default: Issue.record("output was not decoded")
+                }
+            }
+        }
+        #expect(received == [[0xCE], [0xBB, 0xFF, 0x5C]])
+    }
+
     @Test("reply blocks discard output beyond their finite boundary")
     func oversizedReplyBlockIsDiscarded() {
         var exact = ControlProtocolParser(maximumReplyBytes: 5)
@@ -73,12 +98,6 @@ struct ControlProtocolTests {
                 ]
         )
 
-        var invalid = ControlLineInput()
-        #expect(
-            invalid.append(Data([0xFF, 0x0A]))
-                == [.failure(.invocationFailed(reason: "control protocol line is not UTF-8"))]
-        )
-
         var incomplete = ControlLineInput()
         #expect(incomplete.append(Data("partial".utf8)).isEmpty)
         #expect(
@@ -91,6 +110,32 @@ struct ControlProtocolTests {
                     )
                 ]
         )
+    }
+
+    @Test("invalid UTF-8 is accepted only in genuine pane output payloads")
+    func invalidUTF8OutsideOutputIsRefused() {
+        for prefix in ["", "%window-renamed @0 ", "%output bogus ", "%extended-output %0 bogus : "]
+        {
+            var parser = ControlProtocolParser()
+            #expect(
+                throws: TmuxError.invocationFailed(reason: "control protocol line is not UTF-8")
+            ) {
+                try parser.consume(Data(prefix.utf8) + Data([0xFF]))
+            }
+        }
+        var parser = ControlProtocolParser()
+        _ = parser.consume("%begin 1 1 1")
+        #expect(throws: TmuxError.invocationFailed(reason: "control protocol line is not UTF-8")) {
+            try parser.consume(Data("%output %0 ".utf8) + Data([0xFF]))
+        }
+    }
+
+    @Test("valid Unicode output keeps its argument spelling")
+    func validUTF8OutputIsUnchanged() throws {
+        var parser = ControlProtocolParser()
+        #expect(
+            try parser.consume(Data("%output %0 λ雪\\134".utf8))
+                == .notification(ControlNotification(name: "output", arguments: "%0 λ雪\\134")))
     }
 
     @Test("a captured session parses into its replies, notifications, and exit")
@@ -286,5 +331,23 @@ struct ControlProtocolTests {
             """
         )
         #expect(events.compactMap { if case .reply = $0 { true } else { nil } }.count == 2)
+    }
+
+    @Test("a token starting with % is always quoted, even when otherwise safe")
+    func percentLedTokenIsAlwaysQuoted() {
+        // tmux's control-mode line parser -- stricter than its argv parser --
+        // parse-errors on a bare `%<id>:<word>` compound token (verified
+        // against a real `tmux -C attach-session`). Every character here is
+        // individually in the "safe" set; only the leading `%` forces
+        // quoting.
+        #expect(tmuxQuoted("%0:off") == "'%0:off'")
+        #expect(tmuxQuoted("%12:on") == "'%12:on'")
+        // A bare pane id alone parses either way, and quoting it changes
+        // nothing it targets.
+        #expect(tmuxQuoted("%0") == "'%0'")
+        // Unaffected: `%` elsewhere in an otherwise-safe argument, and a safe
+        // argument that does not start with `%` at all.
+        #expect(tmuxQuoted("50%") == "50%")
+        #expect(tmuxQuoted("session_name") == "session_name")
     }
 }

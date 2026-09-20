@@ -5,6 +5,16 @@ public struct OutputWait: Sendable, Hashable, Codable {
     public enum Outcome: String, Sendable, Hashable, Codable {
         /// One of `patterns` appeared in output that arrived during the wait.
         case matched
+        /// One of `patterns` was already on screen when the wait began, so it
+        /// is not evidence of anything that happened during the wait.
+        ///
+        /// Distinct from ``matched`` because the common way to reach it is
+        /// waiting for a marker a command you just sent contains: a shell
+        /// echoes the line it was given, and the marker is on screen before
+        /// the command runs. Waiting longer does not change it; pass
+        /// `requireFresh` with a cursor taken after the send, or match
+        /// something the command only prints once it has run.
+        case alreadyOnScreen
         /// One of `stops` appeared first. `matchedIndex` says which.
         case stopped
         /// Nothing matched before the deadline, in reads that finished.
@@ -37,6 +47,19 @@ public struct OutputWait: Sendable, Hashable, Codable {
     public let matched: String?
     /// Its position in whichever list it came from.
     public let matchedIndex: Int?
+    /// The row the pattern fired on, as the pane rendered it.
+    ///
+    /// ``matched`` names the pattern, which a caller already had; this is the
+    /// text it found, which is usually what the wait was for — a port, a URL,
+    /// a version. Pull the value out of this row rather than scanning ``tail``
+    /// for it again. `nil` when nothing matched, and for a wait with no
+    /// patterns, which ends on any output at all.
+    ///
+    /// The row rather than the matched span, because the bounded engine behind
+    /// ``RegexPattern`` answers whether a row matches and not where: it runs a
+    /// set of states forward without remembering which input position each one
+    /// started from, which is what keeps its work predictable.
+    public let matchedLine: String?
     /// Whether anything at all arrived. `false` with
     /// ``Outcome/timedOut`` means the pane was quiet — usually the command
     /// never ran, which no change of pattern will fix. Under
@@ -60,6 +83,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
         outcome: Outcome,
         matched: String? = nil,
         matchedIndex: Int? = nil,
+        matchedLine: String? = nil,
         sawNewOutput: Bool,
         matchedAtEntry: Bool = false,
         tail: [String],
@@ -69,6 +93,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
         self.outcome = outcome
         self.matched = matched
         self.matchedIndex = matchedIndex
+        self.matchedLine = matchedLine
         self.sawNewOutput = sawNewOutput
         self.matchedAtEntry = matchedAtEntry
         self.tail = tail
@@ -81,6 +106,7 @@ public struct OutputWait: Sendable, Hashable, Codable {
             outcome: outcome,
             matched: matched,
             matchedIndex: matchedIndex,
+            matchedLine: matchedLine,
             sawNewOutput: sawNewOutput,
             matchedAtEntry: matchedAtEntry,
             tail: tail,
@@ -94,6 +120,20 @@ public struct OutputWait: Sendable, Hashable, Codable {
 public enum OutputWaitError: Error, Sendable, Hashable {
     case tmux(TmuxError)
     case matching(RegexMatchError)
+}
+
+/// Matching policy supplied by the MCP module for its own pane input.
+package struct OutputWaitDiscount: Sendable {
+    /// Changes only matching text; returned rows retain their captured content.
+    package let transform: @Sendable (String) -> String
+    package let cursorRowUnsettled: Bool
+
+    package init(transform: @escaping @Sendable (String) -> String, cursorRowUnsettled: Bool) {
+        self.transform = transform
+        self.cursorRowUnsettled = cursorRowUnsettled
+    }
+
+    package static let none = OutputWaitDiscount(transform: { $0 }, cursorRowUnsettled: true)
 }
 
 extension Server {
@@ -115,6 +155,10 @@ extension Server {
     /// The conditions are checked before they are blocked on. A match or stop
     /// already on screen returns at once, with ``OutputWait/matchedAtEntry``
     /// set. Pass `requiringFreshOutput` when only a new occurrence counts.
+    ///
+    /// > Important: this opens a control connection of its own, so it carries
+    /// the `SIGPIPE` hazard a connection carries even though the caller never
+    /// asked for one — see <doc:PlatformSupport>.
     ///
     /// - Parameters:
     ///   - pane: the pane to watch.
@@ -140,6 +184,24 @@ extension Server {
         timeout: Duration = .seconds(30),
         tailLimit: Int = 20
     ) async throws(OutputWaitError) -> OutputWait {
+        try await waitForOutput(
+            in: pane, matching: patterns, stoppingAt: stops,
+            requiringFreshOutput: requireFresh, startingAt: cursor,
+            timeout: timeout, tailLimit: tailLimit, discounting: nil
+        )
+    }
+
+    package func waitForOutput(
+        in pane: Pane,
+        matching patterns: [RegexPattern] = [],
+        stoppingAt stops: [RegexPattern] = [],
+        requiringFreshOutput requireFresh: Bool = false,
+        startingAt cursor: CaptureCursor? = nil,
+        timeout: Duration = .seconds(30),
+        tailLimit: Int = 20,
+        discounting: (@Sendable () async -> OutputWaitDiscount)?,
+        startedAt: ContinuousClock.Instant? = nil
+    ) async throws(OutputWaitError) -> OutputWait {
         do {
             _ = try expectedIncarnation([pane.incarnation])
         } catch {
@@ -147,13 +209,13 @@ extension Server {
         }
         if let cursor {
             guard cursor.pane == pane.id.rawValue else {
-                throw .tmux(.foreignServerValue)
+                throw .tmux(.foreignPaneValue)
             }
             guard cursor.incarnation == pane.incarnation else {
                 throw .tmux(.serverRestarted)
             }
         }
-        let started = ContinuousClock.now
+        let started = startedAt ?? ContinuousClock.now
         return try await OutputWaitSession(
             server: self,
             pane: pane,
@@ -163,7 +225,8 @@ extension Server {
             startingCursor: cursor,
             started: started,
             deadline: started.advanced(by: timeout),
-            tailLimit: max(0, tailLimit)
+            tailLimit: max(0, tailLimit),
+            discounting: discounting
         ).run()
     }
 }

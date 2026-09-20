@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("capability behavior", .timeLimit(.minutes(1)))
+@Suite("capability behavior", .hangLimit)
 struct CapabilityBehaviorTests {
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(
@@ -203,8 +203,73 @@ struct CapabilityBehaviorTests {
                 )
             )
             #expect(waited.structured["matched"]?.stringValue == marker)
+            // The row it fired on, so an agent reads the value from the answer
+            // instead of re-scanning the tail for it.
+            #expect(waited.structured["matchedLine"]?.stringValue?.contains(marker) == true)
             #expect(waited.structured["matchedAtEntry"]?.boolValue == true)
             #expect(waited.structured["effectiveTimeout"]?.doubleValue == 1)
+        }
+    }
+
+    @Test("wait_for_text discounts submitted echo with or without a cursor")
+    func waitForTextDiscountsSubmittedEcho() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let surface = tools(server)
+            let marker = "echo-trap-\(UUID().uuidString.prefix(8))"
+
+            _ = try await surface.call(
+                ToolCall(
+                    name: "send_keys",
+                    arguments: .object([
+                        "keys": .array([.string("sleep 0.3; echo \(marker)"), .string("Enter")]),
+                        "paneId": .string(pane.id.rawValue),
+                    ])
+                )
+            )
+            // Taken before the sleep elapses, so it marks a point after the
+            // echo and before the real output -- the cursor a caller would
+            // thread from its own send_keys, not one contrived for this test.
+            let sinceEcho = try await surface.call(
+                ToolCall(
+                    name: "capture_since",
+                    arguments: .object(["paneId": .string(pane.id.rawValue)])
+                )
+            )
+            let cursor = try #require(sinceEcho.structured["cursor"]?.stringValue)
+
+            let withoutCursor = try await surface.call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string(marker)]),
+                        "timeoutMs": .integer(1_000),
+                    ])
+                )
+            )
+            #expect(withoutCursor.structured["outcome"]?.stringValue == "matched")
+            #expect(withoutCursor.structured["matchedAtEntry"]?.boolValue == false)
+            #expect(withoutCursor.structured["sawNewOutput"]?.boolValue == true)
+            #expect(
+                withoutCursor.structured["matchedLine"]?.stringValue?.trimmingCharacters(
+                    in: .whitespaces) == marker)
+
+            let withCursor = try await surface.call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "cursor": .string(cursor),
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string(marker)]),
+                        "timeoutMs": .integer(2_000),
+                    ])
+                )
+            )
+            // Deferred past the echo already on screen; the real output
+            // arrives afterward and is what matches.
+            #expect(withCursor.structured["outcome"]?.stringValue == "matched")
+            #expect(withCursor.structured["sawNewOutput"]?.boolValue == true)
         }
     }
 
@@ -307,6 +372,7 @@ struct CapabilityBehaviorTests {
             for (path, flags) in candidates
             where FileManager.default.isExecutableFile(atPath: path) {
                 try await server.respawn(original, running: [path] + flags)
+                try await waitForShellPrompt(on: server, within: .seconds(1))
                 // tmux names the pane's command per platform: Linux reports
                 // argv[0]'s basename, so /bin/sh reads as `sh`, while Darwin
                 // reports the executable it actually is, and Darwin's /bin/sh
@@ -315,14 +381,14 @@ struct CapabilityBehaviorTests {
                 let supported = Set([
                     "sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh",
                 ])
-                let reported = try await waitUntil {
+                let reported = try await waitUntil(within: .seconds(1)) {
                     guard
                         let command = try await server.panes()
                             .first(where: { $0.id == original.id })?.currentCommand
                     else { return false }
                     return supported.contains(command)
                 }
-                #expect(reported, Comment(rawValue: path))
+                try #require(reported, Comment(rawValue: path))
                 let shell = try #require(
                     try await server.panes().first(where: { $0.id == original.id })?
                         .currentCommand
@@ -334,8 +400,8 @@ struct CapabilityBehaviorTests {
                     + "printf(){ :; }; alias printf=:; trap ':' 0; "
                     + (shell == "bash" ? "trap ':' DEBUG; trap ':' ERR; " : "")
                     + "set -e; set -x; \(server.shellInvocation) wait-for -S \(ready)"
-                try await server.sendKeys([setup, "Enter"], to: original)
-                try await server.wait(for: ready)
+                try await server.send([.key(setup), .key("Enter")], to: original)
+                try await server.wait(for: ready, timeout: .seconds(1))
 
                 let surface = tools(server)
                 let run = try await surface.call(
@@ -392,14 +458,12 @@ struct CapabilityBehaviorTests {
                 #expect(parent.structured["exitStatus"]?.intValue == 0, Comment(rawValue: shell))
 
                 let unaliased = "libtmux-swift-frame-unalias-\(UUID().uuidString)"
-                try await server.sendKeys(
+                try await server.send(
                     [
-                        "unalias printf; \(server.shellInvocation) wait-for -S \(unaliased)",
-                        "Enter",
-                    ],
-                    to: original
-                )
-                try await server.wait(for: unaliased)
+                        .key("unalias printf; \(server.shellInvocation) wait-for -S \(unaliased)"),
+                        .key("Enter"),
+                    ], to: original)
+                try await server.wait(for: unaliased, timeout: .seconds(1))
                 let function = try await surface.call(
                     ToolCall(
                         name: "run_shell_command",
@@ -430,8 +494,8 @@ struct CapabilityBehaviorTests {
         }
     }
 
-    @Test("run_shell_command preserves inherited ERR and DEBUG traps")
-    func runPreservesInheritedShellTraps() async throws {
+    @Test("run_shell_command preserves inherited ERR and DEBUG traps", arguments: [false, true])
+    func runPreservesInheritedShellTraps(canonicalInput: Bool) async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
             var candidates: [(String, [String])] = [
@@ -443,10 +507,13 @@ struct CapabilityBehaviorTests {
             }
             for (path, flags) in candidates
             where FileManager.default.isExecutableFile(atPath: path) {
-                try await server.respawn(pane, running: [path] + flags)
                 let shell = URL(fileURLWithPath: path).lastPathComponent
-                #expect(
-                    try await waitUntil {
+                if canonicalInput && shell != "bash" { continue }
+                let arguments = flags + (canonicalInput ? ["--noediting"] : [])
+                try await server.respawn(pane, running: [path] + arguments)
+                try await waitForShellPrompt(on: server, within: .seconds(1))
+                try #require(
+                    try await waitUntil(within: .seconds(1)) {
                         try await server.panes().first(where: { $0.id == pane.id })?
                             .currentCommand == shell
                     },
@@ -458,12 +525,12 @@ struct CapabilityBehaviorTests {
                 let errorOut = "trap-error-\(shell)-\"stdout\""
                 let errorError = "trap-error-\(shell)-'stderr'"
                 let debugAction = """
-                    /usr/bin/printf '%s\\n' \(shellQuoted(debugOut))
-                    /usr/bin/printf '%s\\n' \(shellQuoted(debugError)) >&2
+                    builtin printf '%s\\n' \(shellQuoted(debugOut))
+                    builtin printf '%s\\n' \(shellQuoted(debugError)) >&2
                     """
                 let errorAction = """
-                    /usr/bin/printf '%s\\n' \(shellQuoted(errorOut))
-                    /usr/bin/printf '%s\\n' \(shellQuoted(errorError)) >&2
+                    builtin printf '%s\\n' \(shellQuoted(errorOut))
+                    builtin printf '%s\\n' \(shellQuoted(errorError)) >&2
                     """
                 let ready = "libtmux-swift-traps-\(UUID().uuidString)"
                 let setup =
@@ -471,10 +538,11 @@ struct CapabilityBehaviorTests {
                     + "\\trap \(shellQuoted(errorAction)) ERR; "
                     + "\\set -e; \\set -x; "
                     + (shell == "bash" ? "\\set -f; " : "")
+                    + (canonicalInput ? "\\set -T; " : "")
                     + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(ready)
-                try await server.sendKeys([setup, "Enter"], to: pane)
-                try await server.wait(for: ready)
+                try await server.send([.key(setup), .key("Enter")], to: pane)
+                try await server.wait(for: ready, timeout: .seconds(1))
                 let shellProcessText = try #require(
                     try await server.format("#{pane_pid}", addressing: pane.id.rawValue)
                 )
@@ -487,6 +555,8 @@ struct CapabilityBehaviorTests {
                     )
                 }
                 let resourcesBefore = try shellResources(for: shellProcessID)
+                let stagedFilesBefore = try runShellStagedFiles(
+                    forSocket: pane.incarnation.socketPath)
 
                 let surface = tools(server)
                 let run: (String) async throws -> ToolOutcome = { command in
@@ -503,16 +573,31 @@ struct CapabilityBehaviorTests {
                     )
                 }
 
-                let successMarker = "trap-success-\(shell)"
+                let successMarker = "trap-success-\(shell)-'\"-λ雪"
+                let quotedData = "quoted-first-\(shell)\nquoted-second-\(shell)"
                 let requireNoglob =
                     shell == "bash" ? "case $- in *f*) ;; *) exit 92 ;; esac; " : ""
+                let requireFunctrace =
+                    canonicalInput ? "case $- in *T*) ;; *) exit 93 ;; esac; " : ""
+                let padding = String(repeating: "x", count: 8_192)
                 let success = try await run(
-                    requireNoglob + "/usr/bin/printf '%s\\n' \(shellQuoted(successMarker))"
+                    """
+                    __libtmux_test_padding=\(shellQuoted(padding))
+                    [ "${#__libtmux_test_padding}" -eq \(padding.count) ] || exit 94
+                    \(requireNoglob)\(requireFunctrace)
+                    /usr/bin/printf '%s\\n' \(shellQuoted(successMarker))
+                    /usr/bin/printf '%s\\n' \(shellQuoted(quotedData))
+                    """
                 )
+                try #require(success.structured["timedOut"]?.boolValue == false)
                 let successLines =
                     success.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
                 #expect(success.structured["exitStatus"]?.intValue == 0)
                 #expect(successLines.contains(successMarker), Comment(rawValue: shell))
+                #expect(
+                    quotedData.split(separator: "\n").allSatisfy {
+                        successLines.contains(String($0))
+                    })
                 #expect(successLines.contains(debugOut), Comment(rawValue: shell))
                 #expect(successLines.contains(debugError), Comment(rawValue: shell))
 
@@ -537,7 +622,7 @@ struct CapabilityBehaviorTests {
                 let parent = try await run(
                     "case $- in *e*) ;; *) exit 90 ;; esac; "
                         + "case $- in *x*) ;; *) exit 91 ;; esac; "
-                        + requireNoglob
+                        + requireNoglob + requireFunctrace
                         + "/usr/bin/printf '%s\\n' \(shellQuoted(parentMarker)); false"
                 )
                 let parentLines =
@@ -558,8 +643,8 @@ struct CapabilityBehaviorTests {
                     + "\\unset __libtmux_test_trap; "
                     + "\(server.shellInvocation) wait-for -S -- "
                     + shellQuoted(oversizedReady)
-                try await server.sendKeys([oversizedSetup, "Enter"], to: pane)
-                try await server.wait(for: oversizedReady)
+                try await server.send([.key(oversizedSetup), .key("Enter")], to: pane)
+                try await server.wait(for: oversizedReady, timeout: .seconds(1))
 
                 let refusedMarker = "trap-refused-\(shell)"
                 let refused = try await run(
@@ -577,16 +662,14 @@ struct CapabilityBehaviorTests {
                 )
 
                 let restored = "libtmux-swift-restored-trap-\(UUID().uuidString)"
-                try await server.sendKeys(
+                try await server.send(
                     [
-                        "\\trap \(shellQuoted(errorAction)) ERR; "
-                            + "\(server.shellInvocation) wait-for -S -- "
-                            + shellQuoted(restored),
-                        "Enter",
-                    ],
-                    to: pane
-                )
-                try await server.wait(for: restored)
+                        .key(
+                            "\\trap \(shellQuoted(errorAction)) ERR; "
+                                + "\(server.shellInvocation) wait-for -S -- "
+                                + shellQuoted(restored)), .key("Enter"),
+                    ], to: pane)
+                try await server.wait(for: restored, timeout: .seconds(1))
                 let recoveredMarker = "trap-recovered-\(shell)"
                 let recovered = try await run(
                     "/usr/bin/printf '%s\\n' \(shellQuoted(recoveredMarker))"
@@ -603,6 +686,12 @@ struct CapabilityBehaviorTests {
                 #expect(
                     try await waitUntil {
                         try runShellTrapFiles().subtracting(trapFilesBefore).isEmpty
+                    }
+                )
+                #expect(
+                    try await waitUntil {
+                        try runShellStagedFiles(forSocket: pane.incarnation.socketPath)
+                            .subtracting(stagedFilesBefore).isEmpty
                     }
                 )
                 if let resourcesBefore {
@@ -678,9 +767,7 @@ struct CapabilityBehaviorTests {
 
             switch operand {
             case .sendKeys:
-                try await server.sendKeys(
-                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
-                )
+                try await server.send([.text("/usr/bin/printf '%s\\n' ")], to: pane)
                 _ = try await surface.call(
                     ToolCall(
                         name: "send_keys",
@@ -691,13 +778,11 @@ struct CapabilityBehaviorTests {
                         ])
                     )
                 )
-                try await server.sendKeys(["Enter"], to: pane)
+                try await server.send([.key("Enter")], to: pane)
                 #expect(try await waitUntil { try await server.capture(pane).contains(marker) })
 
             case .sendKeysBatch:
-                try await server.sendKeys(
-                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
-                )
+                try await server.send([.text("/usr/bin/printf '%s\\n' ")], to: pane)
                 let result = try await surface.call(
                     ToolCall(
                         name: "send_keys_batch",
@@ -713,13 +798,11 @@ struct CapabilityBehaviorTests {
                     )
                 )
                 #expect(result.structured["completed"]?.intValue == 1)
-                try await server.sendKeys(["Enter"], to: pane)
+                try await server.send([.key("Enter")], to: pane)
                 #expect(try await waitUntil { try await server.capture(pane).contains(marker) })
 
             case .pasteText:
-                try await server.sendKeys(
-                    ["/usr/bin/printf '%s\\n' "], to: pane, literally: true
-                )
+                try await server.send([.text("/usr/bin/printf '%s\\n' ")], to: pane)
                 _ = try await surface.call(
                     ToolCall(
                         name: "paste_text",
@@ -781,6 +864,114 @@ struct CapabilityBehaviorTests {
                 let reply = try await server.run(TmuxCommand("wait-for", ["--", marker]))
                 #expect(reply.isSuccess)
             }
+        }
+    }
+
+    @Test("list_sessions and get_session_info exclude this process's own observation client")
+    func sessionResultsExcludeOwnObservationClient() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let session = try #require(try await server.sessions().first)
+            let surface = tools(server)
+
+            // A wait that never matches keeps an internal control connection
+            // attached to `session` for as long as it runs.
+            let waiter = Task {
+                _ = try? await surface.call(
+                    ToolCall(
+                        name: "wait_for_text",
+                        arguments: .object([
+                            "paneId": .string(pane.id.rawValue),
+                            "patterns": .array([
+                                .string("never-appears-\(UUID().uuidString.prefix(8))")
+                            ]),
+                            "timeoutMs": .integer(5_000),
+                        ])
+                    )
+                )
+            }
+            defer { waiter.cancel() }
+
+            // Proves there is something to be mistaken for a person before
+            // trusting either result below.
+            let attached = try await waitUntil {
+                try await server.clients().contains { $0.sessionID == session.id }
+            }
+            #expect(attached)
+
+            let sessions = try await surface.call(
+                ToolCall(name: "list_sessions", arguments: .object([:]))
+            )
+            let listed = sessions.structured["sessions"]?.arrayValue?
+                .first { $0.objectValue?["id"]?.stringValue == session.id.rawValue }
+            #expect(listed?.objectValue?["isAttached"]?.boolValue == false)
+
+            let info = try await surface.call(
+                ToolCall(
+                    name: "get_session_info",
+                    arguments: .object(["session": .string(session.id.rawValue)])
+                )
+            )
+            #expect(info.structured["session"]?.objectValue?["isAttached"]?.boolValue == false)
+        }
+    }
+
+    @Test("send_keys and send_keys_batch press Enter rather than typing it when literal")
+    func literalSendKeysStillPressesEnter() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let surface = tools(server)
+
+            let singleMarker = "swift2-1-single-\(UUID().uuidString.prefix(8))"
+            let single = try await surface.call(
+                ToolCall(
+                    name: "send_keys",
+                    arguments: .object([
+                        "enter": .bool(true),
+                        "keys": .array([.string("echo \(singleMarker)")]),
+                        "literal": .bool(true),
+                        "paneId": .string(pane.id.rawValue),
+                    ])
+                )
+            )
+            // `echo` prints the marker alone on its own line only if the
+            // command actually ran. A literal dispatch that typed the word
+            // "Enter" instead of pressing it leaves the command sitting
+            // unsubmitted on the input line -- which also contains the
+            // marker as a substring, so the check has to require the exact
+            // output line, not merely that the marker appears somewhere.
+            #expect(
+                try await waitUntil {
+                    try await server.capture(pane).contains { $0 == singleMarker }
+                }
+            )
+            #expect(single.structured["keys"]?.arrayValue?.last?.stringValue == "Enter")
+
+            let batchMarker = "swift2-1-batch-\(UUID().uuidString.prefix(8))"
+            let batch = try await surface.call(
+                ToolCall(
+                    name: "send_keys_batch",
+                    arguments: .object([
+                        "operations": .array([
+                            .object([
+                                "enter": .bool(true),
+                                "keys": .array([.string("echo \(batchMarker)")]),
+                                "literal": .bool(true),
+                                "paneId": .string(pane.id.rawValue),
+                            ])
+                        ])
+                    ])
+                )
+            )
+            // `completed: 1` must mean the command actually ran, not merely
+            // that the handler returned without throwing.
+            #expect(batch.structured["completed"]?.intValue == 1)
+            #expect(batch.structured["failures"]?.arrayValue?.isEmpty == true)
+            #expect(
+                try await waitUntil {
+                    try await server.capture(pane).contains { $0 == batchMarker }
+                }
+            )
         }
     }
 
@@ -909,11 +1100,7 @@ struct CapabilityBehaviorTests {
             let source = try #require(try await server.panes().first)
             let peer = try await server.split(source, direction: .right)
             let peerMarker = "peer-enter-must-not-run"
-            try await server.sendKeys(
-                ["/usr/bin/printf '\(peerMarker)\\n'"],
-                to: peer,
-                literally: true
-            )
+            try await server.send([.text("/usr/bin/printf '\(peerMarker)\\n'")], to: peer)
             for pane in [source, peer] {
                 _ = try await server.run(
                     TmuxCommand(
@@ -956,6 +1143,30 @@ enum LeadingDashOperand: String, CaseIterable, CustomStringConvertible, Sendable
     case waitForChannel = "wait"
 
     var description: String { rawValue }
+}
+
+// A staged file's prefix is shared by every port's MCP that stages a run the
+// same way, and each one lives for the whole run rather than the brief window
+// a trap file does, so a concurrently running sibling port can genuinely still
+// hold a same-prefixed file when this snapshot is taken. Its payload embeds
+// this test's own socket path, though, so content -- not just the name --
+// tells this test's staged files apart from a sibling port's.
+private func runShellStagedFiles(forSocket socketPath: String) throws -> Set<String> {
+    let prefix = "libtmux-mcp-run-"
+    let names = try FileManager.default.contentsOfDirectory(atPath: "/tmp")
+        .filter { $0.hasPrefix(prefix) }
+    return Set(
+        names.filter { name in
+            // A file that vanished between listing and reading was already
+            // cleaned up, by us or by whoever staged it; either way it is not
+            // a file to report as left behind.
+            guard
+                let content = try? String(
+                    contentsOfFile: "/tmp/\(name)", encoding: .utf8)
+            else { return false }
+            return content.contains(socketPath)
+        }
+    )
 }
 
 private func runShellTrapFiles() throws -> Set<String> {

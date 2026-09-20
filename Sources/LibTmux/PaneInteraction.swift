@@ -13,6 +13,24 @@ public struct PaneCapture: Sendable, Hashable {
     }
 }
 
+/// One piece of what a pane is sent.
+///
+/// tmux decides between typing and pressing per `send-keys` call, not per
+/// argument: `-l` applies to every argument the call carries. So a sequence
+/// that mixes the two cannot be one `send-keys`, and asking a caller for a
+/// single `literally` flag makes "type this text, then press Enter" —
+/// the commonest thing anyone sends a pane — inexpressible. Saying which each
+/// piece is lets ``Server/send(_:to:)`` group them into as few calls as tmux
+/// needs while keeping them one atomic dispatch.
+public enum PaneInput: Sendable, Hashable, Codable {
+    /// Characters, sent as themselves. A piece of text that happens to spell
+    /// a key name — `Tab`, `Space`, `Up` — stays text.
+    case text(String)
+    /// A key by the name tmux knows it under: `Enter`, `C-c`, `Escape`.
+    /// Unknown names are tmux's to reject.
+    case key(String)
+}
+
 struct PaneCaptureBounds: Sendable, Hashable {
     let historySize: Int
     let historyBytes: Int
@@ -21,37 +39,87 @@ struct PaneCaptureBounds: Sendable, Hashable {
 }
 
 extension Server {
-    static let captureOutputByteLimit = defaultTmuxReplyByteLimit
+    /// The per-stream ceiling a pane read uses unless a caller lowers it.
+    public static let captureOutputByteLimit = defaultTmuxReplyByteLimit
 
     // MARK: Talking to a pane
 
-    /// Sends keys to a pane.
+    /// Sends a mixture of text and keys to a pane, in order.
     ///
-    /// - Parameters:
-    ///   - keys: what to send, one argument per key or literal string.
-    ///   - pane: the pane to send them to.
-    ///   - literally: sends the text as characters rather than letting tmux
-    ///     read names like `Enter` or `C-c` out of it. Use it for anything
-    ///     that came from a user.
-    public func sendKeys(
-        _ keys: [String],
-        to pane: Pane,
-        literally: Bool = false
+    /// Consecutive pieces of the same kind travel as one `send-keys`, and the
+    /// whole sequence is one guarded dispatch: either every piece reaches the
+    /// pane that was asked for, on the daemon that was asked for, or none
+    /// does. Sending the text and the keys as separate calls would leave a
+    /// pane holding half a command line when the second call found it gone.
+    ///
+    /// ```swift
+    /// try await server.send([.text("make -j4"), .key("Enter")], to: pane)
+    /// ```
+    public func send(
+        _ input: [PaneInput],
+        to pane: Pane
     ) async throws(TmuxError) {
-        var arguments = ["-t", pane.id.rawValue]
-        if literally { arguments.append("-l") }
-        try await expectSuccess(
-            TmuxCommand("send-keys", arguments + ["--"] + keys),
-            guardedBy: [.pane(pane)]
-        )
+        let commands = Self.sendKeysCommands(for: input, to: pane)
+        guard !commands.isEmpty else { return }
+        let reply = try await runGuarded(commands, by: [.pane(pane)])
+        guard reply.isSuccess else {
+            throw reply.failure(for: commands[0])
+        }
     }
 
-    /// Runs a shell command line in a pane, as if typed.
+    /// Groups a run of same-kind pieces into one `send-keys` each.
+    static func sendKeysCommands(
+        for input: [PaneInput],
+        to pane: Pane
+    ) -> [TmuxCommand] {
+        var commands: [TmuxCommand] = []
+        var pending: [String] = []
+        var pendingIsText = false
+
+        func flush() {
+            guard !pending.isEmpty else { return }
+            var arguments = ["-t", pane.id.rawValue]
+            if pendingIsText { arguments.append("-l") }
+            commands.append(TmuxCommand("send-keys", arguments + ["--"] + pending))
+            pending = []
+        }
+
+        for piece in input {
+            let (value, isText): (String, Bool) =
+                switch piece {
+                case let .text(text): (text, true)
+                case let .key(name): (name, false)
+                }
+            if !pending.isEmpty, isText != pendingIsText { flush() }
+            pendingIsText = isText
+            pending.append(escapingTrailingCommandSeparator(value))
+        }
+        flush()
+        return commands
+    }
+
+    /// Escapes a value's trailing `;` so tmux's own command-list splitter
+    /// reads it as data instead of as the end of this command -- `--` does
+    /// not protect against it, because the split happens before `send-keys`
+    /// ever sees its arguments. `TmuxCommandList` documents the same rule for
+    /// a command built by hand; a piece of pane input carries whatever text
+    /// or key name a caller passed, so it has to be applied here instead of
+    /// left to them.
+    private static func escapingTrailingCommandSeparator(_ value: String) -> String {
+        guard value.hasSuffix(TmuxCommandList.separator) else { return value }
+        return String(value.dropLast()) + "\\" + TmuxCommandList.separator
+    }
+
+    /// Types a shell command line into a pane and presses Enter.
+    ///
+    /// The line is sent as text, so a command whose name collides with a tmux
+    /// key name — `Tab`, or a script called `Up` — is typed rather than
+    /// pressed. Enter is a key, and travels in the same guarded dispatch.
     public func run(
         _ commandLine: String,
         in pane: Pane
     ) async throws(TmuxError) {
-        try await sendKeys([commandLine, "Enter"], to: pane)
+        try await send([.text(commandLine), .key("Enter")], to: pane)
     }
 
     /// How a command running *inside* a pane spells a tmux that reaches this
@@ -95,16 +163,36 @@ extension Server {
     }
 
     /// Reads the newest rows without collecting older rows that will be discarded.
+    ///
+    /// - Parameters:
+    ///   - pane: the pane to read.
+    ///   - includingHistory: reads the scrollback too, from its start.
+    ///   - maximumLines: how many trailing rows to keep.
+    ///   - includingAttributes: keeps the escape sequences that colour and
+    ///     style the text, as `capture-pane -e` does. Off, tmux hands back the
+    ///     characters alone, which is what a comparison or a regular
+    ///     expression wants; on, what a terminal would draw.
+    ///   - maximumBytes: the per-stream ceiling for tmux's answer. The default
+    ///     is the same 1 MiB every other read uses. Lower it when a pane's
+    ///     scrollback is larger than the caller is willing to hold; the read
+    ///     fails with ``TmuxError/outputLimitExceeded(perStreamBytes:)``
+    ///     rather than returning a truncated screen.
     public func capture(
         _ pane: Pane,
         includingHistory: Bool = false,
-        maximumLines: Int
+        maximumLines: Int,
+        includingAttributes: Bool = false,
+        maximumBytes: Int = Server.captureOutputByteLimit
     ) async throws(TmuxError) -> PaneCapture {
-        try await captureTail(
+        let bounds = try await captureBounds(for: pane)
+        return try await captureTail(
             pane,
-            includingHistory: includingHistory,
+            startingAt: includingHistory ? .start : nil,
+            endingAt: nil,
+            bounds: bounds,
             maximumLines: maximumLines,
-            perStreamOutputLimit: Self.captureOutputByteLimit
+            perStreamOutputLimit: maximumBytes,
+            includingAttributes: includingAttributes
         )
     }
 
@@ -114,7 +202,9 @@ extension Server {
         startingAt start: Int? = nil,
         endingAt end: Int? = nil,
         joiningWrappedLines: Bool = false,
-        maximumLines: Int
+        maximumLines: Int,
+        includingAttributes: Bool = false,
+        maximumBytes: Int = Server.captureOutputByteLimit
     ) async throws(TmuxError) -> PaneCapture {
         let bounds = try await captureBounds(for: pane)
         return try await captureTail(
@@ -123,7 +213,8 @@ extension Server {
             endingAt: end,
             bounds: bounds,
             maximumLines: maximumLines,
-            perStreamOutputLimit: Self.captureOutputByteLimit,
+            perStreamOutputLimit: maximumBytes,
+            includingAttributes: includingAttributes,
             joiningWrappedLines: joiningWrappedLines
         )
     }
@@ -163,13 +254,13 @@ extension Server {
         )
     }
 
-    package func captureLookbackThroughCursor(
+    func captureLookbackThroughCursor(
         _ pane: Pane,
         historyLines: Int,
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> PaneCapture {
         guard historyLines >= 0 else {
-            throw .invocationFailed(reason: "pane capture lookback cannot be negative")
+            throw .rejectedLocally(reason: "pane capture lookback cannot be negative")
         }
         let bounds = try await captureBounds(for: pane)
         let start = max(-historyLines, -bounds.historySize)
@@ -254,13 +345,14 @@ extension Server {
         bounds: PaneCaptureBounds,
         maximumLines: Int,
         perStreamOutputLimit: Int,
+        includingAttributes: Bool = false,
         joiningWrappedLines: Bool = false
     ) async throws(TmuxError) -> PaneCapture {
         guard maximumLines > 0 else {
-            throw .invocationFailed(reason: "a bounded capture needs at least one line")
+            throw .rejectedLocally(reason: "a bounded capture needs at least one line")
         }
         guard perStreamOutputLimit > 0 else {
-            throw .invocationFailed(reason: "a bounded capture needs a positive output limit")
+            throw .rejectedLocally(reason: "a bounded capture needs a positive output limit")
         }
         let oldestAvailable = -bounds.historySize
         let earliest =
@@ -271,7 +363,7 @@ extension Server {
             }
         let end = requestedEnd ?? bounds.paneHeight - 1
         guard end >= earliest, end < bounds.paneHeight else {
-            throw .invocationFailed(reason: "pane capture end is outside its contents")
+            throw .rejectedLocally(reason: "pane capture end is outside its contents")
         }
         let (boundedStart, startOverflowed) = end.subtractingReportingOverflow(
             maximumLines - 1
@@ -284,7 +376,7 @@ extension Server {
         guard acceptedRows.contains(start),
             requestedEnd.map(acceptedRows.contains) ?? true
         else {
-            throw .invocationFailed(reason: "pane capture bounds exceed tmux's row range")
+            throw .rejectedLocally(reason: "pane capture bounds exceed tmux's row range")
         }
 
         var arguments = [
@@ -292,6 +384,7 @@ extension Server {
             requestedEnd.map(String.init) ?? "-",
         ]
         if joiningWrappedLines { arguments.append("-J") }
+        if includingAttributes { arguments.append("-e") }
         let reply = try await runIsolated(
             TmuxCommand("capture-pane", arguments),
             guarding: pane,
@@ -362,8 +455,7 @@ extension Server {
         }
         let reply = try await runGuarded(
             TmuxCommand("capture-pane", arguments),
-            by: [.pane(pane)],
-            checkingTargets: false
+            by: [.pane(pane)]
         )
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
