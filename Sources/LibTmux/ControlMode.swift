@@ -172,9 +172,8 @@ extension Server {
         var platformOptions = PlatformOptions()
         platformOptions.createSession = true
 
-        let configurationArguments = configurationFilePath.map { ["-f", $0] } ?? []
         let arguments =
-            ["-u", "-C"] + configurationArguments + endpoint.addressArguments
+            clientArguments + ["-C"] + endpoint.addressArguments
             + ["attach-session", "-E", "-t", session]
 
         let outcome = try await Subprocess.run(

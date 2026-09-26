@@ -12,7 +12,7 @@ public struct Server: Sendable, Hashable {
     /// reach the ambient server by accident.
     public let endpoint: Endpoint
     let tmuxExecutablePath: String
-    let configurationFilePath: String?
+    let clientArguments: [String]
     private let runtime: ServerRuntime
     /// Where commands go, when it is not a new process each time.
     ///
@@ -68,20 +68,37 @@ public struct Server: Sendable, Hashable {
         )
     }
 
+    package init(
+        endpoint: Endpoint,
+        tmuxExecutable: String,
+        configurationFile: String?,
+        force256Colors: Bool
+    ) {
+        self.init(
+            endpoint: endpoint, tmuxExecutable: tmuxExecutable,
+            configurationFile: configurationFile, force256Colors: force256Colors,
+            transport: SubprocessTransport())
+    }
+
     init(
         endpoint: Endpoint,
         tmuxExecutable: String = "tmux",
         configurationFile: String? = nil,
+        force256Colors: Bool = false,
         transport: any ProcessTransport = SubprocessTransport()
     ) {
         let resolved = resolvedExecutable(tmuxExecutable)
         self.endpoint = endpoint
         self.tmuxExecutablePath = resolved
-        self.configurationFilePath = configurationFile
+        // `-u` keeps format bytes in UTF-8 without changing the environment a
+        // newly started daemon passes to panes.
+        self.clientArguments =
+            ["-u"] + (force256Colors ? ["-2"] : [])
+            + (configurationFile.map { ["-f", $0] } ?? [])
         self.runtime = ServerRuntime(
             endpoint: endpoint,
             tmuxExecutable: resolved,
-            configurationFile: configurationFile,
+            clientArguments: clientArguments,
             transport: transport
         )
         self.connection = nil
@@ -100,7 +117,7 @@ public struct Server: Sendable, Hashable {
     ) {
         self.endpoint = other.endpoint
         self.tmuxExecutablePath = other.tmuxExecutablePath
-        self.configurationFilePath = other.configurationFilePath
+        self.clientArguments = other.clientArguments
         self.runtime = other.runtime
         self.connection = connection
         self.attachedSession = session
@@ -130,6 +147,14 @@ public struct Server: Sendable, Hashable {
             rawArguments: command.argumentVector,
             environmentOverrides: launchEnvironment
         )
+    }
+
+    func recordedDaemonVersion() async -> TmuxVersion? {
+        await runtime.recordedDaemonVersion()
+    }
+
+    func recordDaemonVersion(_ version: TmuxVersion) async {
+        await runtime.recordDaemonVersion(version)
     }
 
     /// Runs a command in a process of its own, whatever mode this server is in.
@@ -355,14 +380,18 @@ public struct Server: Sendable, Hashable {
 
     /// Whether a session by this name or id exists.
     ///
-    /// Asks the question tmux has a command for rather than listing every
-    /// session and searching one: `has-session` answers with its exit status,
-    /// so this decodes nothing and stays correct for a name a listing would
-    /// have to be parsed to find.
+    /// Lists sessions and compares in Swift rather than asking `has-session`
+    /// to resolve the name: a plain `-t name` reads an unambiguous
+    /// abbreviation as a match, so `-t alpha` answers yes for a session
+    /// named only `alphabet`, and `-t =name` answers no for one whose real
+    /// name holds `.` or `:`. Neither target spelling is both exact and
+    /// universal; listing first and comparing by value is. Checking
+    /// ``isRunning()`` first keeps this false rather than thrown for a
+    /// server that is not there yet or just went away -- ``sessions()``
+    /// itself throws on that, unlike the `has-session` this replaces.
     public func hasSession(_ name: String) async throws(TmuxError) -> Bool {
-        try await run(
-            rawArguments: TmuxCommand("has-session", ["-t", name]).argumentVector
-        ).isSuccess
+        guard try await isRunning() else { return false }
+        return try await sessions().contains { $0.name == name || $0.id.rawValue == name }
     }
 
     /// Whether a server is listening on this endpoint.
@@ -389,20 +418,30 @@ public struct Server: Sendable, Hashable {
 actor ServerRuntime {
     private let endpoint: Endpoint
     private let tmuxExecutable: String
-    private let configurationFile: String?
+    private let clientArguments: [String]
     private let transport: any ProcessTransport
+    /// What the daemon at this endpoint answered when asked its version.
+    ///
+    /// Only a running daemon's answer is kept: a cold endpoint reports the
+    /// executable's version instead, and the daemon that starts later is the
+    /// one a layout has to be valid for.
+    private var daemonVersion: TmuxVersion?
 
     init(
         endpoint: Endpoint,
         tmuxExecutable: String,
-        configurationFile: String?,
+        clientArguments: [String],
         transport: any ProcessTransport
     ) {
         self.endpoint = endpoint
         self.tmuxExecutable = tmuxExecutable
-        self.configurationFile = configurationFile
+        self.clientArguments = clientArguments
         self.transport = transport
     }
+
+    func recordedDaemonVersion() -> TmuxVersion? { daemonVersion }
+
+    func recordDaemonVersion(_ version: TmuxVersion) { daemonVersion = version }
 
     func run(
         rawArguments: [String],
@@ -417,10 +456,7 @@ actor ServerRuntime {
         // the lifetime of a tmux process.
         let transport = self.transport
         let executable = tmuxExecutable
-        // `-u` keeps format bytes in UTF-8 without changing the environment a
-        // newly started daemon passes to panes.
-        let configurationArguments = configurationFile.map { ["-f", $0] } ?? []
-        let arguments = ["-u"] + configurationArguments + endpoint.addressArguments + rawArguments
+        let arguments = clientArguments + endpoint.addressArguments + rawArguments
         var environment = TmuxProcessEnvironment.variables()
         environment.merge(environmentOverrides) { _, override in override }
         let reply = try await transport.run(

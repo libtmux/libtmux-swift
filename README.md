@@ -62,6 +62,7 @@ unless you ask.
 | --- | --- | --- | --- |
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
+| **[`tmux-workspace`](Sources/TmuxWorkspaceCLI/)** | [`Sources/TmuxWorkspaceCLI/`](Sources/TmuxWorkspaceCLI/) | Partial native workspace CLI: list, search, convert, import, load and capture. The command guide lists remaining work. | `LibTmux`, `TmuxWorkspace`, ArgumentParser, optional Yams |
 | **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
 | **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
@@ -467,9 +468,25 @@ let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
 Building refuses rather than adopting a session that already has the name: two
-callers building the same workspace should not silently share one. A later
-failure removes the exact session this build created; a rollback failure
-reports both errors.
+callers building the same workspace should not silently share one. A later,
+ordinary failure removes the exact session this build created; a rollback
+failure reports both errors. An interruption removes nothing: the same signal
+that stopped the build could just as well stop the cleanup that would follow
+it.
+
+The builder validates every layout before creating the session. The same
+native guard protects `Server.selectLayout(_:_:)` and MCP `select_layout`.
+Custom builders can check a complete batch with desired pane counts first:
+
+```swift
+try await server.validateLayouts([("even-h", 2), ("tiled", 1)])
+```
+
+Names accept unique abbreviations for the running daemon's version. Saved
+layouts require a checksum, nonempty tree and enough cells; tmux still owns
+geometry and pruning. An empty batch performs no I/O unless cancelled. A
+version-sensitive name on an unbound cold endpoint uses the configured tmux
+client; permission, protocol and retained-connection errors propagate.
 
 JSON needs no trait, because tmuxp's keys decode straight into these types.
 Reading the YAML that tmuxp files are usually written in needs a parser, which
@@ -481,6 +498,15 @@ try Workspace.decode(yaml: text)
 
 The fixtures the suite tests against are tmuxp's own examples, decoded both ways
 and compared — a stronger claim than either parsing alone.
+
+`Workspace` is a narrower language than the `tmux-workspace` executable reads,
+and the two are separate readers of one file format. Handed the same tmuxp
+file, `Workspace.decode` drops `shell_command_before`, `suppress_history`,
+`options`, `global_options`, `window_options`, `options_after`,
+`before_script` and `workspace_builder_options`, and leaves `$VAR` unexpanded,
+where the executable reads all of them. What both do share is the builder: the
+executable creates every session through `WorkspaceBuilder`, so a layout built
+from Swift is the layout the command builds.
 
 ## tmux as MCP tools
 

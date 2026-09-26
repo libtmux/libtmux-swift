@@ -4,8 +4,9 @@ How this repository is built, tested, reviewed, and released.
 
 The package is the repository: `Package.swift` at the root, `Sources/` and
 `Tests/` beside it, because SwiftPM resolves a package from a repository root
-and cannot be pointed at a subdirectory. Five products ship from it —
-`LibTmux`, `TmuxWorkspace`, `LibTmuxMCP`, the `libtmux-mcp` executable, and
+and cannot be pointed at a subdirectory. Six products ship from it —
+`LibTmux`, `TmuxWorkspace`, `LibTmuxMCP`, the `libtmux-mcp` and
+`tmux-workspace` executables, and
 `TmuxFixture` — and `Examples/`, `Benchmarks/`, and `dev/Spikes/` are
 packages of their own, so the shipped manifest names only what ships.
 
@@ -101,6 +102,24 @@ The examples are their own package and are run separately:
 
 ```console
 $ swift test --package-path Examples --force-resolved-versions
+```
+
+CI also copies `tmux-workspace` outside `.build` and runs its terminal checks
+on every platform and tmux version. Run these after the trait-on test build;
+they create and clean up private sockets under `/tmp/libtmux-swift-dev/`:
+
+```console
+$ python3 Scripts/check_workspace_terminal.py .build/debug/tmux-workspace
+```
+
+```console
+$ python3 Scripts/check_workspace_progress.py \
+    .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
+```
+
+```console
+$ python3 Scripts/check_workspace_attach.py \
+    .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
 ```
 
 `Package.resolved` tracks a superset that includes Yams even when the trait is
@@ -366,6 +385,12 @@ rather than believed.
 and pending. Record a divergence in the table it belongs to rather than leaving
 it to read as an omission, and keep the module-wide rules off format fields —
 counting those as covered restates a curated subset as parity.
+
+`Scripts/benchmark_workspace_cli.py` compares an installed release
+`tmux-workspace` against tmuxp on startup, discovery, cold-server load and
+YAML capture. Like the mode matrix's own numbers, a live timing run is not
+part of the CI gate; the full invocation is in
+[`Sources/TmuxWorkspaceCLI/README.md`](../Sources/TmuxWorkspaceCLI/README.md).
 
 ## Pull requests
 

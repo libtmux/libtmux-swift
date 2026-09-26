@@ -42,12 +42,13 @@ extension Server {
         )
     }
 
-    /// Applies one of tmux's own layouts — `even-horizontal`, `tiled`, and the
-    /// rest — to a window.
+    /// Applies a named layout, unique abbreviation or checksummed saved layout.
+    /// Invalid syntax is refused before dispatch; tmux validates geometry.
     public func selectLayout(
         _ window: Window,
         _ layout: String
     ) async throws(TmuxError) {
+        try await validateLayouts([(layout, 1)], guarding: window)
         try await expectSuccess(
             TmuxCommand("select-layout", ["-t", window.id.rawValue, layout]),
             guardedBy: [.window(window)]

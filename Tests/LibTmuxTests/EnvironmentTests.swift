@@ -72,6 +72,16 @@ struct EnvironmentTests {
         }
     }
 
+    @Test("an individual environment value preserves embedded and trailing newlines")
+    func multilineValue() async throws {
+        try await withTmuxServer { server in
+            let value = "first\nNOT_A_VARIABLE=second\nlast=λ\n"
+            try await server.setEnvironment("MULTILINE", to: value, in: .session("bootstrap"))
+            #expect(
+                try await server.environmentValue("MULTILINE", in: .session("bootstrap")) == value)
+        }
+    }
+
     @Test("an empty value is a value, not an absence")
     func emptyValuesSurvive() async throws {
         try await withTmuxServer { server in
@@ -110,6 +120,17 @@ struct EnvironmentTests {
         }
     }
 
+    @Test("a missing environment session is an error, while an unknown variable is absent")
+    func missingSessionIsFailure() async throws {
+        try await withTmuxServer { server in
+            let unknown = try await server.environmentValue("NEVER_SET", in: .session("bootstrap"))
+            #expect(unknown == nil)
+            await #expect(throws: TmuxError.self) {
+                try await server.environmentValue("NEVER_SET", in: .session("missing-session"))
+            }
+        }
+    }
+
     @Test(
         "each line tmux prints reads back as what it means",
         arguments: [
@@ -129,6 +150,45 @@ struct EnvironmentTests {
     func malformedLinesAreDropped() {
         for line in ["", "-", "novalue"] {
             #expect(TmuxEnvironmentVariable(line: line) == nil)
+        }
+    }
+
+    @Test("a name beginning with a dash is a name in every scope")
+    func dashPrefixedNamesReachEveryScope() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "dashes")
+            try await server.setEnvironment("-GLOBAL", to: "kept")
+            #expect(try await server.environmentValue("-GLOBAL") == "kept")
+            _ = try await server.setEnvironment("-BORROWED", to: "kept", in: session)
+            #expect(
+                try await server.environmentValue(
+                    "-BORROWED", in: .session(session.id.rawValue)) == "kept")
+        }
+    }
+
+    @Test("a value ending in a separator survives being set")
+    func trailingSeparatorValuesSurvive() async throws {
+        try await withTmuxServer { server in
+            let session = try await server.newSession(named: "separators")
+            for value in ["a;", "two;;", #"slash\;"#] {
+                try await server.setEnvironment("GLOBAL_VALUE", to: value)
+                #expect(try await server.environmentValue("GLOBAL_VALUE") == value)
+                try await server.setEnvironment(
+                    "SESSION_VALUE", to: value, in: .session(session.id.rawValue))
+                #expect(
+                    try await server.environmentValue(
+                        "SESSION_VALUE", in: .session(session.id.rawValue)) == value)
+                _ = try await server.setEnvironment("BORROWED_VALUE", to: value, in: session)
+                #expect(
+                    try await server.environmentValue(
+                        "BORROWED_VALUE", in: .session(session.id.rawValue)) == value)
+                try await server.setOption("@separator", to: value)
+                #expect(try await server.option("@separator") == value)
+                try await server.using(.connected(to: "bootstrap")) {
+                    try await $0.setEnvironment("CONNECTED_VALUE", to: value)
+                }
+                #expect(try await server.environmentValue("CONNECTED_VALUE") == value)
+            }
         }
     }
 }

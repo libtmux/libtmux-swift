@@ -10,6 +10,7 @@ struct WorkspaceTests {
     @Test("the workspace the README describes is the session tmux ends up with")
     func theDocumentedWorkspaceBuilds() async throws {
         try await withTmuxServer { server in
+            try await validateLayoutsBeforeBuilding(server)
             let session = try await buildItOnAServer(server, describeAWorkspaceInSwift())
             #expect(session.name == "work")
 

@@ -451,6 +451,7 @@ private actor TransitionTransport: ProcessTransport {
             "client_width": "80",
             "client_height": "24",
             "client_control_mode": "0",
+            "client_flags": "",
             "session_id": session.id.rawValue,
             "pane_id": source.id.rawValue,
             "window_zoomed_flag": "1",

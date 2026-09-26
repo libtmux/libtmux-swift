@@ -57,6 +57,12 @@ input and output schemas, process reach, tmux effects, output classes, one
 `inputLiteralization` map, and aggregate authority. Detailed input sink tables
 remain internal validation data.
 
+`select_layout` accepts named layouts, unique abbreviations for the running
+daemon's version, and checksummed saved layouts. It checks syntax before window
+lookup, then uses the core mutation's captured-window guard on the selected
+transport. tmux owns geometry and pruning. The result's `layout` field echoes
+the accepted input.
+
 `CapabilityResources` publishes that same frozen surface at
 `tmux://capabilities`. Tool registration metadata and the resource use the same
 complete capability rows. The report also marks itself frozen and carries the

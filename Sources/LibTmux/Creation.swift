@@ -79,16 +79,36 @@ public enum WindowPlacement: Sendable, Hashable, Codable {
 /// Anything that creates an object returns it, read back through the same
 /// projection a listing uses, so the caller never has to go looking for what it
 /// just made.
+/// Builds the repeated `-e NAME=VALUE` flags `new-session`, `new-window` and
+/// `split-window` all accept, sharing the one validation the three need.
+func environmentFlags(_ environment: [String: String]) throws(TmuxError) -> [String] {
+    var flags: [String] = []
+    for (name, value) in environment.sorted(by: { $0.key < $1.key }) {
+        guard !name.isEmpty, !name.contains("="), !name.contains("\0"), !value.contains("\0")
+        else {
+            throw .invocationFailed(reason: "invalid session environment variable")
+        }
+        flags += ["-e", name + "=" + value]
+    }
+    return flags
+}
+
 extension Server {
     // MARK: Creating
 
     /// Creates a detached session.
+    ///
+    /// Environment entries are available to the first pane as it starts.
+    /// `shell`, given, replaces the pane's default shell as the command tmux
+    /// spawns — the same trailing argument `new-session` itself accepts.
     public func newSession(
         named name: String,
         startDirectory: String? = nil,
         windowName: String? = nil,
         width: Int? = nil,
-        height: Int? = nil
+        height: Int? = nil,
+        environment: [String: String] = [:],
+        shell: String? = nil
     ) async throws(TmuxError) -> Session {
         let requestedSize = width != nil || height != nil
         let projection =
@@ -100,11 +120,14 @@ extension Server {
         ]
         if let width { arguments += ["-x", String(width)] }
         if let height { arguments += ["-y", String(height)] }
+        arguments += try environmentFlags(environment)
         if let windowName { arguments += ["-n", tmuxLiteralArgument(windowName)] }
         if let startDirectory {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]
         }
-        let reply = try await run(TmuxCommand("new-session", arguments))
+        if let shell { arguments.append(shell) }
+        let reply = try await run(
+            TmuxCommand("new-session", arguments.map(tmuxArgumentData)))
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }
@@ -138,17 +161,27 @@ extension Server {
     /// Creates a window in a session and returns its exact appearance.
     ///
     /// The appearance is read from the creation reply, after the windows
-    /// already in the session when no relative placement is given.
+    /// already in the session when no index is given. An occupied index fails.
+    /// `environment` and `shell` reach only this window's first pane, the same
+    /// as tmux's own `-e` and trailing shell-command on `new-window`.
     public func newWindow(
         in session: Session,
         named name: String? = nil,
-        startDirectory: String? = nil
+        startDirectory: String? = nil,
+        at index: Int? = nil,
+        environment: [String: String] = [:],
+        shell: String? = nil
     ) async throws(TmuxError) -> WindowAppearance {
-        try await newWindow(
-            target: session.id.rawValue,
+        guard index.map({ $0 >= 0 && $0 <= Int32.max }) ?? true else {
+            throw .invocationFailed(reason: "window index is outside tmux's range")
+        }
+        return try await newWindow(
+            target: session.id.rawValue + (index.map { ":\($0)" } ?? ""),
             placement: nil,
             named: name,
             startDirectory: startDirectory,
+            environment: environment,
+            shell: shell,
             guardedBy: [.session(session)]
         )
     }
@@ -182,16 +215,20 @@ extension Server {
         placement: WindowPlacement?,
         named name: String?,
         startDirectory: String?,
+        environment: [String: String] = [:],
+        shell: String? = nil,
         guardedBy values: [GuardedValue]
     ) async throws(TmuxError) -> WindowAppearance {
         var arguments = [
             "-d", "-P", "-F", WindowAppearance.projection.template, "-t", target,
         ]
         if let placement { arguments.append(placement.flag) }
+        arguments += try environmentFlags(environment)
         if let name { arguments += ["-n", tmuxLiteralArgument(name)] }
         if let startDirectory {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]
         }
+        if let shell { arguments.append(shell) }
         return try await windowAppearance(
             from: TmuxCommand("new-window", arguments),
             guardedBy: values
@@ -214,13 +251,17 @@ extension Server {
         _ window: Window,
         direction: PaneDirection = .below,
         size: PaneSize? = nil,
-        startDirectory: String? = nil
+        startDirectory: String? = nil,
+        environment: [String: String] = [:],
+        shell: String? = nil
     ) async throws(TmuxError) -> Pane {
         try await split(
             target: window.id.rawValue,
             direction: direction,
             size: size,
             startDirectory: startDirectory,
+            environment: environment,
+            shell: shell,
             guardedBy: [.window(window)]
         )
     }
@@ -230,18 +271,24 @@ extension Server {
     /// The same call as ``splitWindow(_:direction:size:startDirectory:)`` with
     /// the ambiguity removed: a window has an active pane and tmux splits that
     /// one, which is what you want interactively and rarely what you want when
-    /// building a layout.
+    /// building a layout. `environment` and `shell` reach only this one split,
+    /// the same as tmux's own `-e` and trailing shell-command on
+    /// `split-window`.
     public func split(
         _ pane: Pane,
         direction: PaneDirection = .below,
         size: PaneSize? = nil,
-        startDirectory: String? = nil
+        startDirectory: String? = nil,
+        environment: [String: String] = [:],
+        shell: String? = nil
     ) async throws(TmuxError) -> Pane {
         try await split(
             target: pane.id.rawValue,
             direction: direction,
             size: size,
             startDirectory: startDirectory,
+            environment: environment,
+            shell: shell,
             guardedBy: [.pane(pane)]
         )
     }
@@ -251,14 +298,18 @@ extension Server {
         direction: PaneDirection,
         size: PaneSize?,
         startDirectory: String?,
+        environment: [String: String] = [:],
+        shell: String? = nil,
         guardedBy values: [GuardedValue]
     ) async throws(TmuxError) -> Pane {
         var arguments = ["-d", "-P", "-F", "#{pane_id}", "-t", target]
         arguments += direction.flags
         if let size { arguments += ["-l", size.argument] }
+        arguments += try environmentFlags(environment)
         if let startDirectory {
             arguments += ["-c", tmuxLiteralArgument(startDirectory)]
         }
+        if let shell { arguments.append(shell) }
         let id = try await identifier(
             from: TmuxCommand("split-window", arguments),
             guardedBy: values
