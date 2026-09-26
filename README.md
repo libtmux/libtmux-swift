@@ -84,7 +84,7 @@ Neither is what you want from alpha software, so name an exact release:
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.5"
+    exact: "0.1.0-alpha.6"
 )
 ```
 
@@ -108,7 +108,7 @@ with it, `Workspace.decode(yaml:)` exists:
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.5",
+    exact: "0.1.0-alpha.6",
     traits: ["YAMLWorkspaces"]
 )
 ```
