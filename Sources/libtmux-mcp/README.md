@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="../../assets/mcp.svg" type="image/svg+xml">
+    <img src="../../assets/mcp.png" width="128" height="128" alt="libtmux for Swift MCP">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # `libtmux-mcp`
 
 A [Model Context Protocol][MCP] server for tmux. It speaks JSON-RPC 2.0 over

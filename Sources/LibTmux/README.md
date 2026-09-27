@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="../../assets/library.svg" type="image/svg+xml">
+    <img src="../../assets/library.png" width="128" height="128" alt="libtmux for Swift">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # `LibTmux`
 
 The library. Servers, sessions, windows, panes and clients as values, with

@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="../../assets/workspace.svg" type="image/svg+xml">
+    <img src="../../assets/workspace.png" width="128" height="128" alt="libtmux for Swift workspace">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # tmux-workspace
 
 `tmux-workspace` provides native Swift commands for discovering, searching,
