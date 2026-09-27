@@ -1,95 +1,96 @@
 name: docs
 
-# Publishes this port's prose tree to libtmux.org under its own prefix.
+# Publishes this port's documentation to libtmux.org: trunk as
+# /en/swift/latest/, and each release tag (bare, without a `v`) as its own
+# version plus an alias, `next` for a prerelease and `stable` (the default)
+# for a release.
 #
-# The tree is built by libtmux/docs's assembly, not by anything in this repo:
-# scripts/build-site.sh renders the shared prose with this port's code fences,
-# reading THIS checkout for the examples those pages quote. That is why the job
-# checks out both repositories and points LIBTMUX_DOCS_CHECKOUT_SWIFT at this
-# one — without it the build resolves a developer's home directory, finds
-# nothing, and fails every inlined example.
-#
-# Temporary and deliberately minimal: no port has published through this
-# workflow yet. It publishes trunk to <locale>/swift/latest with is-default
-# false, so the tree is reachable and linkable but stays out of the search
-# index until the shape is proven.
+# libtmux/docs builds and publishes the tree, through two reusable workflows
+# pinned to one commit: port-docs.yml decides which versions an event builds
+# and builds each from this repository's source, and reusable-deploy.yml
+# publishes them. Bump both pins together.
+
 on:
+  pull_request:
   push:
     branches: [master]
+    tags: ['[0-9]*']
   workflow_dispatch:
-
-# Keep one publication to this prefix at a time.
-concurrency:
-  group: docs-deploy-${{ github.repository }}
-  cancel-in-progress: false
+    inputs:
+      source-ref:
+        description: Exact source ref to build
+        required: true
+        default: master
+      version:
+        description: URL version slug
+        required: true
+        default: latest
+      version-kind:
+        description: Version policy
+        required: true
+        type: choice
+        options: [trunk, tag, alias]
+        default: trunk
+      is-default:
+        description: Make this version canonical
+        required: true
+        type: boolean
+        default: false
+      resolves-to:
+        description: Immutable target for an alias
+        required: false
+        default: ''
+      publish:
+        description: Publish after the exact build passes
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  # A pull request builds `latest` without publishing; this port has no
+  # preview role.
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          path: port
+    uses: libtmux/docs/.github/workflows/port-docs.yml@d01dc2891f8687c4489efcb78d7cf981315cf37a
+    with:
+      port: swift
+      source-ref: ${{ inputs.source-ref }}
+      version: ${{ inputs.version }}
+      version-kind: ${{ inputs.version-kind }}
+      is-default: ${{ inputs.is-default == true }}
+      resolves-to: ${{ inputs.resolves-to }}
+      publish: ${{ inputs.publish == true }}
 
-      # A full-length SHA, not a tag. This repository runs that repository's
-      # build script, and a tag can be repointed — the release name is the
-      # trailing comment. Bump this and the `uses:` below together: they must
-      # name the same commit, or the build script and the publish contract
-      # drift apart.
-      - uses: actions/checkout@v7
-        with:
-          repository: libtmux/docs
-          ref: 1e459615e9b2bd072b78df46622b1988fe8f88a0
-          path: docs
-
-      # The pnpm pin lives in the docs checkout's package.json, not this repo's.
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: docs/package.json
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '26'
-          cache: pnpm
-          cache-dependency-path: docs/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-        working-directory: docs
-
-      - name: Build this port's tree
-        working-directory: docs
-        env:
-          LIBTMUX_DOCS_CHECKOUT_SWIFT: ${{ github.workspace }}/port
-        run: ./scripts/build-site.sh --ports swift --skip-refs --skip-pagefind
-
-      # The directory itself, not its parent: its contents become the contents
-      # of <locale>/swift/latest. Uploading docs/_site/en/swift would nest the
-      # tree one level deeper than the prefix already implies.
-      - uses: actions/upload-artifact@v7
-        with:
-          name: docs-dist
-          path: docs/_site/en/swift/latest
-          retention-days: 1
-
+  # One publication to this port's prefixes at a time, a tag's two legs
+  # included: both rewrite manifest/swift.json. Only publishing queues; a pull
+  # request's build never waits behind a deploy. `max`, so a queued tag is
+  # never dropped for a newer run.
   publish:
     needs: build
+    if: needs.build.outputs.should-publish == 'true'
+    concurrency:
+      group: docs-deploy-${{ github.repository }}
+      queue: max
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
     permissions:
       contents: read
       id-token: write
-    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@1e459615e9b2bd072b78df46622b1988fe8f88a0
+    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@d01dc2891f8687c4489efcb78d7cf981315cf37a
     with:
-      # Unprefixed by locale — reusable-deploy prepends <locale>/ itself when
-      # `port` is set, so this becomes en/swift/latest.
-      path-prefix: swift/latest
-      artifact: docs-dist
-      version-kind: trunk
+      # Unprefixed by locale: reusable-deploy prepends <locale>/ itself when
+      # `port` is set, so this becomes en/swift/<version>.
+      path-prefix: swift/${{ matrix.version }}
+      artifact: docs-swift-${{ matrix.version }}
+      version-kind: ${{ matrix.kind }}
       port: swift
-      version: latest
-      # False while proving the shape: it publishes and stays reachable, but
-      # robotsFor() keeps it noindex and defaultVersion stays unset, so the
-      # bare port root still falls through to the landing page.
-      is-default: false
+      version: ${{ matrix.version }}
+      label: ${{ matrix.version }}
+      is-default: ${{ matrix.isDefault }}
+      resolves-to: ${{ matrix.resolvesTo }}
       environment: docs
     secrets:
       role-arn: ${{ secrets.LIBTMUX_DOCS_ROLE_ARN }}
