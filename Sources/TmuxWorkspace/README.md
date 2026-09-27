@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="../../assets/workspace.svg" type="image/svg+xml">
+    <img src="../../assets/workspace.png" width="128" height="128" alt="libtmux for Swift workspace">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # `TmuxWorkspace`
 
 Builds a whole tmux session from a [tmuxp][] workspace — written in Swift, read

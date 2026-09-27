@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Swift">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # libtmux for Swift
 
 [![ci](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml)
