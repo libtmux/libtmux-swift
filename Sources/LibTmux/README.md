@@ -7,10 +7,14 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # `LibTmux`
 
 The library. Servers, sessions, windows, panes and clients as values, with
 options, hooks, formats, filtering, snapshots and streaming over them.
+
+</div>
 
 One dependency ([swift-subprocess][]), and the only product most callers need.
 

@@ -7,12 +7,16 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # tmux-workspace
 
 `tmux-workspace` provides native Swift commands for discovering, searching,
 converting, importing, editing, loading and capturing tmux workspaces. This
 implementation is partial. The library's existing workspace APIs remain
 available separately.
+
+</div>
 
 ## Build
 
