@@ -7,10 +7,14 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # `LibTmuxMCP`
 
 tmux as [Model Context Protocol][MCP] tools you can embed: `TmuxTools`,
 `MCPRequestHandler`, and `MCPService`, without the stdio executable.
+
+</div>
 
 To *run* one rather than embed it, use [`libtmux-mcp`](../libtmux-mcp), which is
 these tools served over stdio.

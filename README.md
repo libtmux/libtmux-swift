@@ -7,6 +7,8 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # libtmux for Swift
 
 [![ci](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml)
@@ -14,6 +16,8 @@
 
 Drive tmux from Swift. A port of [libtmux][] for Python, in the same family of
 ports and holding to what that library established about tmux.
+
+</div>
 
 With tmux already running on its default socket:
 

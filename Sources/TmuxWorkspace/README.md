@@ -7,10 +7,14 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # `TmuxWorkspace`
 
 Builds a whole tmux session from a [tmuxp][] workspace — written in Swift, read
 from JSON, or read from YAML.
+
+</div>
 
 The module is `TmuxWorkspace` and the thing that does the building is
 `WorkspaceBuilder`. Swift has no namespaces worth the name: importing a module

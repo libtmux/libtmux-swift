@@ -7,11 +7,15 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # `libtmux-mcp`
 
 A [Model Context Protocol][MCP] server for tmux. It speaks JSON-RPC 2.0 over
 stdio, one message per line, so anything that launches an MCP server can drive
 tmux through it.
+
+</div>
 
 The tools it serves are [`LibTmuxMCP`](../LibTmuxMCP); this is the executable
 that answers for them.
