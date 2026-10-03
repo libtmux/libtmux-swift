@@ -886,6 +886,19 @@ rather than an omission.
 - [libtmux-mcp][py-mcp] — the Python MCP server for tmux
 - [The Tao of tmux][tao] — the book
 
+## Attribution
+
+Please use the following BibTeX template to cite libtmux-swift in scientific discourse:
+
+```bibtex
+@misc{libtmux-swift,
+   author = {Tony Narlock},
+   year = {2026},
+   note = {https://libtmux.org/en/swift/},
+   title = {libtmux-swift: Swift wrapper for tmux}
+}
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
