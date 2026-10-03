@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "packageFile": "Examples/Standalone/Package.swift",
+  "examples": [
+    {
+      "name": "ApiServer",
+      "symbols": [
+        "Server",
+        "Server.init(socketPath:tmuxExecutable:configurationFile:)"
+      ],
+      "title": "Address an existing server by socket",
+      "description": "Construct a Server for the fixture's socket and list its sessions. Server is a value that addresses a tmux daemon; constructing it does not start or stop that daemon.",
+      "expectedOutput": [
+        "Sessions: bootstrap"
+      ],
+      "file": "Examples/Sources/ApiServer/ApiServer.swift"
+    },
+    {
+      "name": "ApiSessions",
+      "symbols": [
+        "Server.sessions()"
+      ],
+      "title": "List session snapshots",
+      "description": "Create two sessions and read the server-wide listing. Sort by name for this display; the API itself returns tmux's order. The fixture also owns a bootstrap session.",
+      "expectedOutput": [
+        "bootstrap: 1 window",
+        "build: 1 window",
+        "work: 1 window"
+      ],
+      "file": "Examples/Sources/ApiSessions/ApiSessions.swift"
+    },
+    {
+      "name": "ApiWindows",
+      "symbols": [
+        "Server.windows()",
+        "Window"
+      ],
+      "title": "List windows across the server",
+      "description": "Create editor and logs windows, then find them in the server-wide listing. Each window appears once even if linked into several sessions; use windowLinks() when session-local indexes matter.",
+      "expectedOutput": [
+        "editor: 1 pane",
+        "logs: 1 pane"
+      ],
+      "file": "Examples/Sources/ApiWindows/ApiWindows.swift"
+    },
+    {
+      "name": "ApiPanes",
+      "symbols": [
+        "Server.panes()",
+        "Pane"
+      ],
+      "title": "Find a window's panes",
+      "description": "Read all panes and select those whose windowID matches a newly created window. Pane values are snapshots; reading a property does not query tmux again.",
+      "expectedOutput": [
+        "Log panes: 1",
+        "Active: true"
+      ],
+      "file": "Examples/Sources/ApiPanes/ApiPanes.swift"
+    },
+    {
+      "name": "ApiNewSession",
+      "symbols": [
+        "Server.newSession(named:startDirectory:windowName:width:height:environment:shell:)",
+        "Session",
+        "Server.session(_:)"
+      ],
+      "title": "Create a session and refresh its snapshot",
+      "description": "Create a detached session with an editor window, add a logs window, then look up the session by its stable ID. The original Session still reports one window; the fresh snapshot reports two.",
+      "expectedOutput": [
+        "Created: work",
+        "Original windows: 1",
+        "Current windows: 2"
+      ],
+      "file": "Examples/Sources/ApiNewSession/ApiNewSession.swift"
+    },
+    {
+      "name": "ApiNewWindow",
+      "symbols": [
+        "Server.newWindow(in:named:startDirectory:at:environment:shell:)",
+        "WindowAppearance",
+        "WindowLink"
+      ],
+      "title": "Create a window at an explicit index",
+      "description": "Create a logs window at index 3. newWindow returns a WindowAppearance containing the global window and its session-local WindowLink. An occupied index fails instead of silently replacing another window.",
+      "expectedOutput": [
+        "Window: logs",
+        "Index: 3",
+        "Same session: true"
+      ],
+      "file": "Examples/Sources/ApiNewWindow/ApiNewWindow.swift"
+    },
+    {
+      "name": "ApiSplitPane",
+      "symbols": [
+        "Server.split(_:direction:size:startDirectory:environment:shell:)",
+        "PaneDirection",
+        "PaneSize"
+      ],
+      "title": "Split a specific pane",
+      "description": "Split the fixture's pane to the right and give the new pane 40 percent of its width. Address the pane itself so a different active pane cannot change the target.",
+      "expectedOutput": [
+        "Panes in window: 2",
+        "Same window: true"
+      ],
+      "file": "Examples/Sources/ApiSplitPane/ApiSplitPane.swift"
+    },
+    {
+      "name": "ApiQueryPanes",
+      "symbols": [
+        "Server.panes(where:)",
+        "FilterExpr",
+        "FilterExpr.where(_:_:)"
+      ],
+      "title": "Filter panes with a typed expression",
+      "description": "Create an inactive split and ask for active panes using a FilterExpr built from a Swift key path. The server evaluates the filter and returns matching Pane snapshots; the original pane stays active.",
+      "expectedOutput": [
+        "Active panes: 1",
+        "Original stays active: true"
+      ],
+      "file": "Examples/Sources/ApiQueryPanes/ApiQueryPanes.swift"
+    },
+    {
+      "name": "ApiCapture",
+      "symbols": [
+        "Server.sendKeys(_:to:literally:)",
+        "Server.capture(_:includingHistory:)"
+      ],
+      "title": "Send input and capture its output",
+      "description": "Type a printf command literally, send Enter as a key, and wait for its output. Compare a complete output row so terminal echo cannot satisfy the check. The five-second deadline bounds the example; the 25-millisecond pause avoids busy polling.",
+      "expectedOutput": [
+        "libtmux-swift-api"
+      ],
+      "file": "Examples/Sources/ApiCapture/ApiCapture.swift"
+    }
+  ]
+}

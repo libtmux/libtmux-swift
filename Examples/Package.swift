@@ -60,6 +60,18 @@ let package = Package(
                 .product(name: "TmuxFixture", package: "libtmux"),
             ]
         ),
-    ],
+    ]
+        + [
+            "ApiServer", "ApiSessions", "ApiWindows", "ApiPanes", "ApiNewSession",
+            "ApiNewWindow", "ApiSplitPane", "ApiQueryPanes", "ApiCapture",
+        ].map { name in
+            .executableTarget(
+                name: name,
+                dependencies: [
+                    .product(name: "LibTmux", package: "libtmux"),
+                    .product(name: "TmuxFixture", package: "libtmux"),
+                ]
+            )
+        },
     swiftLanguageModes: [.v6]
 )
