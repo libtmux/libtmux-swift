@@ -110,3 +110,44 @@ is top-level code, but its test spawns it, so it does count as executed.
 
 Every test here provisions servers through the same fixture as the main suite,
 so every socket stays under `/tmp/libtmux-swift-test/`.
+
+## Complete API programs
+
+`api-examples.json` maps API declarations to whole executable source files,
+their purpose, and their expected output. The documentation publisher reads
+those files at the cited source revision. It includes every import and the
+entry point, together with `Standalone/Package.swift` for a consumer package.
+
+The `Api*` targets use the public `TmuxFixture` product. `withTmuxServer` starts
+a private server with a `bootstrap` session under `/tmp/libtmux-swift-test/`
+and cleans it up when the body returns or throws. Ordinary application code
+uses `Server` for its own socket; `ApiServer` demonstrates that constructor.
+These examples use the fixture until their setup moves to ordinary server
+objects. A failed operation exits with a diagnostic after fixture cleanup.
+
+Run a complete program from this checkout:
+
+```console
+$ swift run --package-path Examples --jobs 5 --force-resolved-versions ApiCapture
+```
+
+The native test suite spawns the compiled entry points and checks their exact
+output against the manifest:
+
+```console
+$ swift test --package-path Examples --jobs 5 --force-resolved-versions \
+    --filter ApiExamplesTests
+```
+
+To check the same source as a standalone consumer, create a new directory,
+clone the documented libtmux revision into `libtmux-source`, and save
+`Standalone/Package.swift` as `Package.swift`. Save the selected complete
+program as `Sources/Example.swift`, then run it:
+
+```console
+$ swift run --jobs 5 ApiExample
+```
+
+Use Swift 6.2 or newer on Linux, or Xcode 26's Swift toolchain on macOS, and
+tmux 3.2a or newer. Set `LIBTMUX_TMUX_BIN` to an absolute tmux executable path
+to select a particular release.
