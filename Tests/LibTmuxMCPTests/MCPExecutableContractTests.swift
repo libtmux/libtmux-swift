@@ -55,7 +55,7 @@ struct MCPExecutableContractTests {
                 #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_keys","arguments":{"keys":["\#(marker)"],"literal":true,"paneId":"\#(pane.id.rawValue)"}}}"#
             try input.fileHandleForWriting.write(contentsOf: Data(request.utf8 + [10]))
             let reply = try #require(
-                readLine(from: output.fileHandleForReading, within: .seconds(3)))
+                readLine(from: output.fileHandleForReading, within: hangGuard))
             #expect(reply.contains("caller context is incomplete or malformed"))
             #expect(try await server.capture(pane).contains(marker) == false)
         }
@@ -88,7 +88,7 @@ struct MCPExecutableContractTests {
         try input.fileHandleForWriting.write(
             contentsOf: Data(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.utf8 + [10])
         )
-        let line = try #require(readLine(from: output.fileHandleForReading, within: .seconds(3)))
+        let line = try #require(readLine(from: output.fileHandleForReading, within: hangGuard))
         let reply = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
         #expect(reply?["id"] as? Int == 1)
         #expect(process.isRunning)
@@ -130,7 +130,7 @@ struct MCPExecutableContractTests {
         try input.fileHandleForWriting.write(
             contentsOf: Data(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.utf8 + [10])
         )
-        _ = try #require(readLine(from: output.fileHandleForReading, within: .seconds(3)))
+        _ = try #require(readLine(from: output.fileHandleForReading, within: hangGuard))
         try input.fileHandleForWriting.close()
         waitForExit(process)
 

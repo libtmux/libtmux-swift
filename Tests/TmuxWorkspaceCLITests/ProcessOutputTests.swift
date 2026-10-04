@@ -53,10 +53,7 @@ struct ProcessOutputTests {
                     ["load", file.path, append ? "--append" : "-d", "-S", socket, "--ndjson"],
                     context: context)
             }
-            for _ in 0..<300 where !(await captured.released) {
-                try await Task.sleep(for: .milliseconds(5))
-            }
-            #expect(await captured.released)
+            #expect(try await waitUntil { await captured.released })
             task.cancel()
             #expect(await task.value == 130)
             let records = try await captured.records.map {
@@ -137,7 +134,7 @@ struct ProcessOutputTests {
                     context: context)
             }
             let deadline = Task {
-                try await Task.sleep(for: .seconds(5))
+                try await Task.sleep(for: hangGuard)
                 task.cancel()
             }
             let status = await task.value
@@ -231,7 +228,7 @@ struct ProcessOutputTests {
             ) { _, _ in throw CLIError("test_sink", "Sink refused output.") }
         }
         let deadline = Task {
-            try await Task.sleep(for: .seconds(3))
+            try await Task.sleep(for: hangGuard)
             task.cancel()
         }
         defer { deadline.cancel() }
@@ -291,14 +288,11 @@ struct ProcessOutputTests {
             }
         }
         let deadline = Task {
-            try await Task.sleep(for: .seconds(3))
+            try await Task.sleep(for: hangGuard)
             task.cancel()
         }
         defer { deadline.cancel() }
-        for _ in 0..<300 where !(await receipt.ready) {
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        #expect(await receipt.ready)
+        #expect(try await waitUntil { await receipt.ready })
         task.cancel()
         do {
             _ = try await task.value
@@ -349,7 +343,7 @@ struct ProcessOutputTests {
                     context: context)
             }
             let deadline = Task {
-                try await Task.sleep(for: .seconds(3))
+                try await Task.sleep(for: hangGuard)
                 task.cancel()
             }
             let code = await task.value

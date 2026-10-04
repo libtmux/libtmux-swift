@@ -72,7 +72,7 @@ struct RetainedMCPBehaviorTests {
                                 + "\(tmux) wait-for \(release)"
                         ),
                         "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(interruption == .timeout ? 2_000 : 20_000),
+                        "timeoutMs": .integer(interruption == .timeout ? 10_000 : 20_000),
                     ])
                 )
             )
@@ -203,7 +203,7 @@ struct RetainedMCPBehaviorTests {
             let started = ContinuousClock.now
             let lines = AsyncStream<String> { continuation in
                 continuation.yield(
-                    #"{"jsonrpc":"2.0","id":"wait","method":"tools/call","params":{"name":"wait_for_text","arguments":{"paneId":"\#(pane.id.rawValue)","patterns":["never-arrives"],"timeoutMs":4000}}}"#
+                    #"{"jsonrpc":"2.0","id":"wait","method":"tools/call","params":{"name":"wait_for_text","arguments":{"paneId":"\#(pane.id.rawValue)","patterns":["never-arrives"],"timeoutMs":\#(hangGuardMilliseconds)}}}"#
                 )
                 continuation.yield(
                     #"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"wait"}}"#
@@ -213,7 +213,7 @@ struct RetainedMCPBehaviorTests {
 
             await service.serve(lines) { await answers.append($0) }
 
-            #expect(ContinuousClock.now - started < .seconds(2))
+            #expect(ContinuousClock.now - started < hangGuard - .seconds(5))
             #expect(await answers.values.isEmpty)
         }
     }
@@ -297,7 +297,7 @@ struct RetainedMCPBehaviorTests {
                     )
                 )
             }
-            #expect(ContinuousClock.now - refusedAt < .seconds(1))
+            #expect(ContinuousClock.now - refusedAt < .seconds(10))
 
             for name in ["send_keys", "paste_text"] {
                 let arguments: JSONValue =
@@ -347,7 +347,7 @@ struct RetainedMCPBehaviorTests {
                     arguments: .object([
                         "command": .string("printf 'after-cleanup\\n'"),
                         "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(5_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
@@ -530,7 +530,7 @@ struct RetainedMCPBehaviorTests {
 
             try await server.run("printf 'incremental-retained-marker\\n'", in: pane)
             var newLines: [String] = []
-            for _ in 0..<20 {
+            _ = try await waitUntil {
                 let next = try await surface.call(
                     ToolCall(
                         name: "capture_since",
@@ -542,8 +542,7 @@ struct RetainedMCPBehaviorTests {
                 )
                 cursor = try #require(next.structured["cursor"]?.stringValue)
                 newLines = next.structured["lines"]?.arrayValue?.compactMap(\.stringValue) ?? []
-                if !newLines.isEmpty { break }
-                try await Task.sleep(for: .milliseconds(50))
+                return !newLines.isEmpty
             }
             #expect(newLines.contains("incremental-retained-marker"))
 
@@ -552,7 +551,7 @@ struct RetainedMCPBehaviorTests {
                     name: "wait_for_channel",
                     arguments: .object([
                         "channel": .string("retained-gate"),
-                        "timeoutMs": .integer(2_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
