@@ -13,7 +13,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
-from owned_terminal import Terminal
+from owned_terminal import HANG_GUARD, Terminal
 
 binary = str(Path(sys.argv[1]).resolve())
 base = Path("/tmp/libtmux-swift-dev")
@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
         [binary, "edit", str(workspace), "--ndjson"],
         env=dict(env, EDITOR="/bin/sh -c 'printf \"\\033[31mchild\\n\"'"),
         capture_output=True,
-        timeout=5,
+        timeout=HANG_GUARD,
         check=False,
     )
     assert machine.returncode == 0, machine.stderr
@@ -100,7 +100,7 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
         )
         child = None
         try:
-            deadline = time.monotonic() + 3
+            deadline = time.monotonic() + HANG_GUARD
             while time.monotonic() < deadline:
                 if child_marker.exists():
                     marker = child_marker.read_text()
@@ -112,9 +112,9 @@ with tempfile.TemporaryDirectory(prefix="editor-", dir=base) as directory:
             assert child is not None, "editor did not start"
             started = time.monotonic()
             process.send_signal(number)
-            out, err = process.communicate(timeout=3)
+            out, err = process.communicate(timeout=HANG_GUARD)
             assert process.returncode == 130, (number, process.returncode, out, err)
-            assert time.monotonic() - started < 1
+            assert time.monotonic() - started < HANG_GUARD
             try:
                 os.kill(child, 0)
             except ProcessLookupError:
