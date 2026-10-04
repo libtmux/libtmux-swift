@@ -348,8 +348,9 @@ exception.
 
 ## Markdown
 
-Prose in Markdown files wraps at 80 columns. Table rows, reference-link
-definitions, and code blocks are exempt: a wrapped table row does not render.
+Prose in Markdown files wraps at 80 columns. Table rows and reference-link
+definitions are exempt: a wrapped table row does not render. Code blocks
+follow [Examples](#examples).
 Pull request and issue bodies do not wrap at all — GitHub renders a single
 newline in a comment as a hard break.
 
@@ -396,6 +397,90 @@ Bad:
 ```console
 # Show the last ten commits as a graph
 $ git log --max-count=10 --graph --oneline
+```
+
+## Examples
+
+<!-- shared:examples -->
+
+An example is code written for a reader: a program under `examples/`, code in
+a doc comment or docstring, and every fenced block in a README or docs page.
+Shell blocks also follow [Code blocks](#code-blocks).
+
+The text between the shared markers is the same in every libtmux port.
+Change it in all of them together.
+
+### Width
+
+- **Examples stay within 80 columns.** They render in fixed-width boxes that
+  scroll sideways, and 80 columns fits a libtmux.org code block in a
+  laptop-width window. Comments inside examples wrap at 80 too.
+- **The width check enforces it.** It reads the tracked files that
+  `.github/example-width.toml` names and fails on a wider line. It measures
+  the whole source line, so code in a doc comment counts its indent and
+  comment marker. It skips output (a fence tagged `text`, and what a
+  `console` block prints), hidden setup lines, and a line that is only a URL;
+  an untagged fence counts as code.
+- **A line that must stay wider is listed there with its reason.** An entry
+  that no longer matches a line fails the check, so no stale entry stays.
+- **The formatter's width is the hard limit for all other source.** Example
+  directories set their formatter to 80 where the formatter takes a width.
+
+### Reaching 80
+
+- **Change the code, not the line breaks.** A formatter rejoins any line that
+  fits its width. Name a sub-expression, use a short example name, hide setup
+  the reader does not need, or print less.
+- **Break at the outermost level when a break is still needed:** after an
+  opening parenthesis with one argument per line, one call per line in a
+  chain, one field per line in a literal.
+- **Put a comment on its own line above the code it explains.** Never trail
+  one after code in an example, unless the repository's example runner reads
+  it there, as with an assertion marker.
+- **Break a long string at a word boundary,** never inside a tmux format
+  (`#{...}`) or an escape sequence; the joined text stays the same.
+- **Continue a long command in a `console` block the way its shell does:**
+  `\` after a `$ ` prompt, a backtick after `PS> `, one flag per continuation
+  line.
+
+### What never breaks
+
+- **Output a test compares.** Wrapping it changes what the test expects.
+- **A block copied from a source file.** Fix the width in the source and run
+  the sync command; never edit the copy.
+- **Marker lines and URLs,** which tools and readers take whole.
+
+<!-- /shared:examples -->
+
+### In this repository
+
+- **Hard limit:** swift-format, configured in `.swift-format` with
+  `lineLength`; `Examples/.swift-format` copies it and lowers only that key
+  to 80 for the example directories. The width check is
+  `python3 Scripts/check_example_width.py`.
+- **Not formatted:** the code in `///` doc-comment fences and in comments,
+  and every README and DocC page; the width check holds them to 80.
+- **Runs, compiles, exempt:** an example runs when a test in
+  `Examples/Tests/` calls its function, and compiles when nothing calls it.
+  It is exempt when it is a manifest excerpt listed by name in
+  `MANIFEST_EXCERPTS` in `Scripts/check_examples.py`.
+- **Compared output and copied blocks:** output a test compares never
+  breaks. A fence is a copy of an `Examples/` function, so fix the function
+  and re-copy the block by hand; `python3 Scripts/check_examples.py` reports
+  each copy that drifted and has no `--fix`.
+
+Bad, over 80:
+
+```swift
+    /// let names = try await server.connected(attachingTo: "main") { server, _ in
+```
+
+Good, one argument per line:
+
+```swift
+    /// let names = try await server.connected(
+    ///     attachingTo: "main"
+    /// ) { server, _ in
 ```
 
 ## Slop prevention
