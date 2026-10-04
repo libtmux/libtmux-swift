@@ -61,7 +61,7 @@ struct ControlModeTests {
                         await probe.recordEntry()
                         startWitness.yield()
                         do {
-                            try await Task.sleep(for: .milliseconds(500))
+                            try await Task.sleep(for: hangGuard)
                             Issue.record("the body was not cancelled")
                         } catch is CancellationError {
                             await probe.recordCancellation()

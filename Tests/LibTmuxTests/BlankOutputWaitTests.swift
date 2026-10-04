@@ -134,7 +134,10 @@ struct BlankOutputWaitTests {
 
             #expect(result.outcome == .timedOut)
             #expect(!result.sawNewOutput)
-            #expect(try await server.windows().contains { $0.name == windowName })
+            #expect(
+                try await waitUntil {
+                    try await server.windows().contains { $0.name == windowName }
+                })
         }
     }
 }

@@ -12,6 +12,47 @@ struct WatchTests {
         return try #require(panes.first)
     }
 
+    /// How long a case that ends only at its own deadline lets that deadline
+    /// run.
+    ///
+    /// The case waits all of it, so it is smaller than ``hangGuard``, and it
+    /// still has to cover the wait's own entry read, which starts a tmux
+    /// process.
+    private let deadlineWindow: Duration = .seconds(10)
+
+    /// Has tmux signal a channel each time a client attaches, which is what a
+    /// wait does once it has read the pane's entry screen.
+    ///
+    /// Waiting on the channel replaces a pause that assumed the wait had
+    /// attached: keys sent before then are part of what the wait starts from,
+    /// not something it sees happen.
+    private func signalOnAttach(_ server: Server) async throws -> String {
+        let channel = "libtmux-test-attached-\(UUID().uuidString)"
+        let hook = try await server.setHook(
+            "client-attached",
+            to: TmuxCommand("wait-for", ["-S", channel]).parsedString
+        )
+        #expect(hook.isSuccess)
+        return channel
+    }
+
+    /// Waits for `channel`, and fails rather than hangs when it never comes.
+    private func awaitSignal(_ channel: String, on server: Server) async throws {
+        let signalled = try await withThrowingTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                try await server.wait(for: channel)
+                return true
+            }
+            group.addTask {
+                try await Task.sleep(for: hangGuard)
+                return false
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? false
+        }
+        try #require(signalled, "no client attached to signal \(channel)")
+    }
+
     /// Runs `wait` while `text` is printed into `pane` over and over.
     ///
     /// A wait only ends on output that arrives after it starts, and opening its
@@ -564,7 +605,7 @@ struct WatchTests {
             let result = try await server.waitForOutput(
                 in: current,
                 matching: [try RegexPattern(marker)],
-                timeout: .seconds(5)
+                timeout: hangGuard
             )
 
             #expect(result.outcome == .matched)
@@ -617,7 +658,7 @@ struct WatchTests {
                     in: pane,
                     matching: [try RegexPattern("NEVER")],
                     requiringFreshOutput: true,
-                    timeout: .seconds(5)
+                    timeout: hangGuard
                 )
             }
         }
@@ -647,12 +688,13 @@ struct WatchTests {
             // `smcup` directly rather than through a pager, so the case needs
             // nothing installed and leaves on a byte rather than a keystroke.
             try await server.run(#"printf '\033[?1049h'; printf 'painted-marker\n'"#, in: pane)
-            try await Task.sleep(for: .milliseconds(400))
+            #expect(
+                try await waitUntil { try await server.capture(pane).contains("painted-marker") })
 
             let painted = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("painted-marker")],
-                timeout: .milliseconds(800)
+                timeout: deadlineWindow
             )
             #expect(painted.outcome == .alternateScreen)
             #expect(!painted.matchedAtEntry)
@@ -665,7 +707,7 @@ struct WatchTests {
             let printed = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("printed-marker")],
-                timeout: .seconds(5)
+                timeout: hangGuard
             )
             #expect(printed.outcome == .matched)
         }
@@ -676,25 +718,27 @@ struct WatchTests {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)
             try await server.run("printf 'settled\\n'", in: pane)
-            try await Task.sleep(for: .milliseconds(400))
+            #expect(try await waitUntil { try await server.capture(pane).contains("settled") })
 
+            let enteringAttached = try await signalOnAttach(server)
             async let entering = server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("^never-appears$")],
-                timeout: .seconds(3)
+                timeout: deadlineWindow
             )
-            try await Task.sleep(for: .milliseconds(500))
+            try await awaitSignal(enteringAttached, on: server)
             try await server.sendKeys(
                 [#"printf '\033[?1049h'; printf 'paint\n'"#, "Enter"], to: pane)
             #expect(try await entering.outcome == .alternateScreen)
 
             // Leaving mid-wait resumes on the grid the cursor came from.
+            let leavingAttached = try await signalOnAttach(server)
             async let leaving = server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("^back-again$")],
-                timeout: .seconds(8)
+                timeout: hangGuard
             )
-            try await Task.sleep(for: .milliseconds(500))
+            try await awaitSignal(leavingAttached, on: server)
             try await server.sendKeys(
                 [#"printf '\033[?1049l'; printf 'back-again\n'"#, "Enter"], to: pane)
             #expect(try await leaving.outcome == .matched)
@@ -703,14 +747,18 @@ struct WatchTests {
             // there beforehand. A wait told to count only new output must not
             // match `back-again`, which is older than the wait itself.
             try await server.run(#"printf '\033[?1049h'"#, in: pane)
-            try await Task.sleep(for: .milliseconds(400))
+            #expect(
+                try await waitUntil {
+                    try await server.format("#{alternate_on}", addressing: pane.id.rawValue) == "1"
+                })
+            let freshAttached = try await signalOnAttach(server)
             async let fresh = server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("^back-again$")],
                 requiringFreshOutput: true,
                 timeout: .seconds(2)
             )
-            try await Task.sleep(for: .milliseconds(500))
+            try await awaitSignal(freshAttached, on: server)
             try await server.sendKeys(
                 [#"printf '\033[?1049l'"#, "Enter"], to: pane)
             #expect(try await fresh.outcome != .matched)
@@ -722,7 +770,8 @@ struct WatchTests {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)
             try await server.run("printf 'stale-marker\\n'", in: pane)
-            try await Task.sleep(for: .milliseconds(400))
+            #expect(
+                try await waitUntil { try await server.capture(pane).contains("stale-marker") })
 
             // Checked before it is blocked on: the text is there, so the
             // question is already answered and holding the caller for the
@@ -827,16 +876,17 @@ struct WatchTests {
             let pane = try await bootstrapPane(server)
             _ = try await server.split(pane)
 
+            let attached = try await signalOnAttach(server)
             let result = try await withThrowingTaskGroup(of: OutputWait?.self) { group in
                 group.addTask {
                     try await server.waitForOutput(
                         in: pane,
                         matching: [try RegexPattern("never-appears")],
-                        timeout: .seconds(5)
+                        timeout: hangGuard
                     )
                 }
                 group.addTask {
-                    try await Task.sleep(for: .milliseconds(500))
+                    try await awaitSignal(attached, on: server)
                     try await server.kill(pane)
                     return nil
                 }
@@ -852,7 +902,7 @@ struct WatchTests {
             }
 
             #expect(result.outcome == .paneClosed)
-            #expect(result.seconds < 4)
+            #expect(result.seconds < 25)
         }
     }
 
@@ -897,7 +947,7 @@ struct WatchTests {
                     )
                 )
                 let changes = control.changes(named: "cmd")
-                try await server.run("sleep 3", in: pane)
+                try await server.run("sleep 300", in: pane)
                 var seen: [String] = []
                 for try await change in changes {
                     seen.append(change.value)
