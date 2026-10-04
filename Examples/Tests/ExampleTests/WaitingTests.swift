@@ -84,10 +84,9 @@ struct WaitingTests {
             #expect(started.lines.isEmpty)
             try await server.run("printf 'watched-line\\n'", in: pane)
             var update = started
-            for _ in 0..<30 {
+            _ = try await waitUntil {
                 update = try await server.capture(pane, since: update.cursor)
-                if !update.lines.isEmpty { break }
-                try await Task.sleep(for: .milliseconds(100))
+                return !update.lines.isEmpty
             }
             #expect(update.lines.contains { $0.contains("watched-line") })
         }

@@ -470,11 +470,15 @@ private actor TransitionTransport: ProcessTransport {
     }
 
     private func waitForFormat(_ format: String, toEqual expected: String) async throws(TmuxError) {
-        for _ in 0..<100 {
+        let deadline = ContinuousClock.now.advanced(by: hangGuard)
+        while ContinuousClock.now < deadline {
             if try await fixture.format(format, addressing: source.id.rawValue) == expected {
                 return
             }
             try? await Task.sleep(for: .milliseconds(10))
+        }
+        if try await fixture.format(format, addressing: source.id.rawValue) == expected {
+            return
         }
         throw .invocationFailed(reason: "transition did not settle")
     }

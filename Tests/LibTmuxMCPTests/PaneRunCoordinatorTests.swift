@@ -170,10 +170,7 @@ struct PaneRunCoordinatorTests {
                 caller: nil
             )
             let first = Task { try await tools.call(operation.call(for: source)) }
-            for _ in 0..<200 where !(await gate.isBlocked) {
-                try await Task.sleep(for: .milliseconds(5))
-            }
-            let reachedCheckpoint = await gate.isBlocked
+            let reachedCheckpoint = try await waitUntil { await gate.isBlocked }
             if !reachedCheckpoint { await gate.open() }
 
             let competing = operation == .paste ? ReservedInput.send : .paste

@@ -278,7 +278,7 @@ struct CapabilityRegressionTests {
                         "paneId": .string(pane.id.rawValue),
                         "patterns": .array([.string("never-matches")]),
                         "stop": .array([.string("fatal-cursor-marker")]),
-                        "timeoutMs": .integer(1_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
