@@ -2,11 +2,11 @@
 
 import PackageDescription
 
-// The examples are their own package so they reach the library the way a reader
-// does — through the products, with no `@testable` and no access to anything the
-// manifest does not vend. An example that compiles here is one a consumer can
-// paste; an example that compiles inside the suite proves less, because the
-// suite can see internals a consumer cannot.
+// The examples are their own package so they reach the library the way a
+// reader does — through the products, with no `@testable` and no access to
+// anything the manifest does not vend. An example that compiles here is one
+// a consumer can paste; an example that compiles inside the suite proves
+// less, because the suite can see internals a consumer cannot.
 //
 // This is the shape the other ports already settled on: `libtmux-go` keeps
 // `examples/` as its own module with `replace … => ../`, and `libtmux-ts` keeps
@@ -43,11 +43,12 @@ let package = Package(
                 .product(name: "TmuxWorkspace", package: "libtmux"),
             ]
         ),
-        // Top-level code cannot live in a library target — `statements are not
-        // allowed at the top level` — so the one documented example written that
-        // way is an executable. A `Snippets/` directory does not work here: a
-        // snippet in a package whose library arrives through a path dependency
-        // fails to find the transitive C module `CSystem`.
+        // Top-level code cannot live in a library target — `statements are
+        // not allowed at the top level` — so the one documented example
+        // written that way is an executable. A `Snippets/` directory does
+        // not work here: a snippet in a package whose library arrives
+        // through a path dependency fails to find the transitive C module
+        // `CSystem`.
         .executableTarget(
             name: "QuickStart",
             dependencies: [.product(name: "LibTmux", package: "libtmux")]
