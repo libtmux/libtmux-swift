@@ -29,7 +29,8 @@ struct WorkspaceTests {
     func theDocumentedJSONDecodes() throws {
         let json = Data(
             """
-            {"session_name": "work", "windows": [{"window_name": "editor", "panes": [{}]}]}
+            {"session_name": "work",
+             "windows": [{"window_name": "editor", "panes": [{}]}]}
             """.utf8
         )
         let workspace = try readAWorkspaceWrittenAsJSON(json)
