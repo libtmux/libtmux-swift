@@ -13,9 +13,10 @@ public func buildASessionByHand(_ server: Server) async throws -> Pane {
     return pane
 }
 
-public func readBackWhatAPanePrinted(_ server: Server, _ pane: Pane)
-    async throws -> [String]
-{
+public func readBackWhatAPanePrinted(
+    _ server: Server,
+    _ pane: Pane
+) async throws -> [String] {
     let lines = try await server.capture(pane)
     print(lines.suffix(5).joined(separator: "\n"))
     return lines
