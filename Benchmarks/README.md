@@ -48,7 +48,9 @@ $ swift run --package-path Benchmarks libtmux-bench --markdown
 Measure a particular tmux release instead of whichever one is on `PATH`:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.4/bin/tmux swift run --package-path Benchmarks libtmux-bench
+$ LIBTMUX_TMUX_BIN=~/tmux-3.4/bin/tmux swift run \
+    --package-path Benchmarks \
+    libtmux-bench
 ```
 
 ## The tables in the documents are generated
