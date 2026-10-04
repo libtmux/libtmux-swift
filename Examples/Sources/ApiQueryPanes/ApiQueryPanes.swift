@@ -15,9 +15,8 @@ struct ApiQueryPanes {
                     \.isActive, .equals(true))
                 let active = try await server.panes(where: expression)
                 print("Active panes: \(active.count)")
-                print(
-                    "Original stays active: \(active.contains { $0.id == original.id })"
-                )
+                let stays = active.contains { $0.id == original.id }
+                print("Original stays active: \(stays)")
             }
         } catch {
             FileHandle.standardError.write(
