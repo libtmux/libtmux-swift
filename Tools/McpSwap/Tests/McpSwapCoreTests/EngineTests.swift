@@ -629,7 +629,7 @@ private func externalRecordLockIsBlocked(_ path: URL) throws -> Bool {
     process.standardOutput = output
     process.standardError = Pipe()
     try process.run()
-    process.waitUntilExit()
+    waitForExit(process)
     return String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         == "blocked\n"
 }

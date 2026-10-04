@@ -7,7 +7,14 @@ struct ControlLineInput: Sendable {
     }
 
     static let maximumBytes = 2_000_000
-    private var framer = BoundedLineFramer(maximumBytes: maximumBytes)
+    // tmux reports pane bytes as it reads them, and a read can end inside a
+    // multi-byte character, so one `%output` line is not necessarily UTF-8
+    // even though the stream is. Nothing reads those bytes as text: the line
+    // is a doorbell that says which pane wrote. Every other line stays strict.
+    private var framer = BoundedLineFramer(
+        maximumBytes: maximumBytes,
+        lossyPrefixes: ["%output ", "%extended-output "]
+    )
 
     mutating func append(_ data: Data) -> [Event] {
         map(framer.append(data))

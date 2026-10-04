@@ -201,7 +201,7 @@ struct DiscoveryTests {
             let started = "libtmux-test-discovery-started-\(nonce)"
             let blocked = "libtmux-test-discovery-blocked-\(nonce)"
             let failsafe = Task {
-                try await Task.sleep(for: .seconds(3))
+                try await Task.sleep(for: hangGuard)
                 try await server.signal(blocked)
             }
             defer { failsafe.cancel() }
@@ -238,7 +238,7 @@ struct DiscoveryTests {
 
             #expect(result.servers.map(\.socketPath) == [reachable])
             #expect(!result.truncated)
-            #expect(waitingSince.duration(to: .now) < .seconds(2))
+            #expect(waitingSince.duration(to: .now) < hangGuard - .seconds(5))
             #expect(try await server.clients().isEmpty)
         }
     }

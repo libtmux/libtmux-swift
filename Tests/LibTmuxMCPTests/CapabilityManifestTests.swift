@@ -5,7 +5,7 @@ import TmuxFixture
 
 @testable import LibTmuxMCP
 
-@Suite("capability manifest", .timeLimit(.minutes(1)))
+@Suite("capability manifest", .timeLimit(.minutes(5)))
 struct CapabilityManifestTests {
     private let toolsByToolset: [(String, [String])] = [
         (

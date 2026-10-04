@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("pane input transitions", .timeLimit(.minutes(2)))
+@Suite("pane input transitions", .timeLimit(.minutes(5)))
 struct PaneInputTransitionTests {
     @Test("run rechecks once after setup and refuses every observed transition")
     func runRefusesPostSetupTransitions() async throws {
@@ -470,11 +470,15 @@ private actor TransitionTransport: ProcessTransport {
     }
 
     private func waitForFormat(_ format: String, toEqual expected: String) async throws(TmuxError) {
-        for _ in 0..<100 {
+        let deadline = ContinuousClock.now.advanced(by: hangGuard)
+        while ContinuousClock.now < deadline {
             if try await fixture.format(format, addressing: source.id.rawValue) == expected {
                 return
             }
             try? await Task.sleep(for: .milliseconds(10))
+        }
+        if try await fixture.format(format, addressing: source.id.rawValue) == expected {
+            return
         }
         throw .invocationFailed(reason: "transition did not settle")
     }

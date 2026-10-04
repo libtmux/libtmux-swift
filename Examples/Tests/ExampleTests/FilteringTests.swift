@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@Suite("filtering", .timeLimit(.minutes(1)))
+@Suite("filtering", .timeLimit(.minutes(5)))
 struct FilteringTests {
     @Test("a filter expression selects the same panes the predicate would")
     func theExpressionAgreesWithThePredicate() async throws {

@@ -132,7 +132,7 @@ public func withTmuxServer<Result>(
 /// unrelated case depend on it.
 public func waitForShellPrompt(
     on server: Server,
-    within timeout: Duration = .seconds(20)
+    within timeout: Duration = hangGuard
 ) async throws {
     guard let pane = try await server.panes().first else {
         throw TmuxFixtureError.shellNeverPrompted
@@ -318,6 +318,18 @@ public func reaperCommand(root: URL) throws(UnsafeReaperRoot) -> TmuxCommand {
     return TmuxCommand("run-shell", ["-b", script])
 }
 
+/// How long a test lets an event that must happen take before calling it hung.
+///
+/// A guard on a hang, not a measure of speed: a case still returns the moment
+/// its event arrives, so the size only costs time when something never happens.
+/// Every wait that ends on a positive event takes this bound.
+public let hangGuard: Duration = .seconds(30)
+
+/// ``hangGuard`` in the milliseconds the MCP tools take.
+public var hangGuardMilliseconds: Int64 {
+    hangGuard.components.seconds * 1_000
+}
+
 /// Polls `condition` until it holds, and reports whether it did.
 ///
 /// Bounded in wall-clock rather than in attempts. What makes one of these polls
@@ -326,7 +338,7 @@ public func reaperCommand(root: URL) throws(UnsafeReaperRoot) -> TmuxCommand {
 /// outlives the case's time limit, and the failure reads as a timeout instead of
 /// naming the thing that never became true.
 public func waitUntil(
-    within timeout: Duration = .seconds(20),
+    within timeout: Duration = hangGuard,
     _ condition: () async throws -> Bool
 ) async throws -> Bool {
     let deadline = ContinuousClock.now.advanced(by: timeout)
@@ -341,7 +353,7 @@ public func waitUntil(
 
 /// Waits for a stopped daemon's Unix listener to close before reusing its path.
 public func waitForSocketClosure(_ path: String) async throws -> Bool {
-    try await waitUntil(within: .seconds(2)) {
+    try await waitUntil {
         #if canImport(Darwin)
             let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         #else
@@ -387,4 +399,15 @@ public func tmuxExecutablePath() -> String {
         return candidate
     }
     return "/usr/bin/tmux"
+}
+
+/// Polls `isRunning` instead of `Process.waitUntilExit()`, which can park the
+/// thread on macOS after the child is gone. Returns after `limit`; check
+/// `isRunning` before reading `terminationStatus`.
+public func waitForExit(_ process: Process, limit: Duration = .seconds(120)) {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: limit)
+    while process.isRunning && clock.now < deadline {
+        usleep(5_000)
+    }
 }

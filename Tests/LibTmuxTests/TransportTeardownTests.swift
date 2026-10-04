@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TmuxFixture
 
 @testable import LibTmux
 
@@ -97,15 +98,11 @@ private struct DescendantProbe: Sendable {
     }
 
     func waitUntilReady() async throws {
-        for _ in 0..<1_000 {
-            if FileManager.default.fileExists(atPath: ready.path),
-                (try? descendantProcessID()) != nil
-            {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(5))
+        let started = try await waitUntil {
+            FileManager.default.fileExists(atPath: self.ready.path)
+                && (try? self.descendantProcessID()) != nil
         }
-        throw ProbeFailure(operation: "wait for descendant", code: nil)
+        if !started { throw ProbeFailure(operation: "wait for descendant", code: nil) }
     }
 
     func releaseOutput() throws {
@@ -113,11 +110,7 @@ private struct DescendantProbe: Sendable {
     }
 
     func readerCloses() async throws -> Bool {
-        for _ in 0..<200 {
-            if try !hasReader() { return true }
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        return try !hasReader()
+        try await waitUntil { try !self.hasReader() }
     }
 
     func cleanUp() {

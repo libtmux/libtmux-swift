@@ -59,12 +59,7 @@ struct CancellationTests {
 
             // A child that survived its cancellation would still be holding a
             // connection open.
-            var clients = try await server.clients()
-            for _ in 0..<100 where !clients.isEmpty {
-                try await Task.sleep(for: .milliseconds(20))
-                clients = try await server.clients()
-            }
-            #expect(clients.isEmpty)
+            #expect(try await waitUntil { try await server.clients().isEmpty })
         }
     }
 
@@ -95,12 +90,7 @@ struct CancellationTests {
                 _ = try? await blocked.value
             }
 
-            var clients = try await server.clients()
-            for _ in 0..<100 where !clients.isEmpty {
-                try await Task.sleep(for: .milliseconds(20))
-                clients = try await server.clients()
-            }
-            #expect(clients.isEmpty)
+            #expect(try await waitUntil { try await server.clients().isEmpty })
 
             let running = try await server.isRunning()
             #expect(running)

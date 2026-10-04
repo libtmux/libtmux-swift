@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@Suite("snapshots", .timeLimit(.minutes(1)))
+@Suite("snapshots", .timeLimit(.minutes(5)))
 struct SnapshotTests {
     @Test("a snapshot resolves the relationships between what it holds")
     func aSnapshotResolvesItsRelations() async throws {

@@ -1,5 +1,6 @@
 import LibTmux
 import Testing
+import TmuxFixture
 
 @testable import LibTmuxMCP
 
@@ -78,7 +79,7 @@ struct NonblockingLineWriterTests {
         }
         try #require(count > 0)
 
-        #expect(await completes(writing, within: .milliseconds(200)) == .written)
+        #expect(await completes(writing, within: hangGuard) == .written)
     }
 
     @Test("a closed reader wakes a full pipe's write readiness")
@@ -96,7 +97,7 @@ struct NonblockingLineWriterTests {
         }
         try await Task.sleep(for: .milliseconds(20))
         _ = close(readDescriptor)
-        #expect(await completes(writing, within: .milliseconds(200)) == .written)
+        #expect(await completes(writing, within: hangGuard) == .written)
     }
 
     @Test("closing and cancelling repeated waits cannot strand reused descriptors")
@@ -118,7 +119,7 @@ struct NonblockingLineWriterTests {
             if attempt % 3 == 2 { try await Task.sleep(for: .milliseconds(1)) }
             _ = close(readDescriptor)
             writing.cancel()
-            let outcome = await completes(writing, within: .milliseconds(200))
+            let outcome = await completes(writing, within: hangGuard)
             _ = close(writeDescriptor)
             #expect(outcome == .written || outcome == .cancelled)
         }

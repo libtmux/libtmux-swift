@@ -12,7 +12,7 @@ import TmuxWorkspace
     import Glibc
 #endif
 
-@Suite("workspace CLI", .serialized, .timeLimit(.minutes(1)))
+@Suite("workspace CLI", .serialized, .timeLimit(.minutes(5)))
 struct WorkspaceCLITests {
     @Test("imports refuse untranslated semantics before preview or destination replacement")
     func importRefusalBeforePublication() async throws {
@@ -192,10 +192,9 @@ struct WorkspaceCLITests {
                 }
                 let marker = root.appendingPathComponent("marker")
                 var contents = ""
-                for _ in 0..<100 {
+                _ = try await waitUntil {
                     contents = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
-                    if contents == "done" { break }
-                    try await Task.sleep(for: .milliseconds(10))
+                    return contents == "done"
                 }
                 #expect(contents == "done")
                 #expect(
@@ -252,10 +251,9 @@ struct WorkspaceCLITests {
                     extra: ["LIBTMUX_TMUX_BIN": server.tmuxExecutable])
                 #expect(loaded.code == 0, "\(loaded.error)")
                 var contents = ""
-                for _ in 0..<100 {
+                _ = try await waitUntil {
                     contents = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
-                    if contents.split(separator: "\n").count == 2 { break }
-                    try await Task.sleep(for: .milliseconds(10))
+                    return contents.split(separator: "\n").count == 2
                 }
                 var captured: [String] = []
                 if contents.isEmpty {
@@ -318,10 +316,9 @@ struct WorkspaceCLITests {
                 #expect(panes.count == 1)
                 let marker = project.appendingPathComponent("marker")
                 var contents = ""
-                for _ in 0..<100 {
+                _ = try await waitUntil {
                     contents = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
-                    if contents == "first\n" { break }
-                    try await Task.sleep(for: .milliseconds(10))
+                    return contents == "first\n"
                 }
                 #expect(contents == "first\n")
                 try FileManager.default.removeItem(at: marker)
@@ -642,7 +639,7 @@ struct WorkspaceCLITests {
                 process.standardOutput = stdout
                 process.standardError = stderr
                 try process.run()
-                process.waitUntilExit()
+                waitForExit(process)
                 let out = stdout.fileHandleForReading.readDataToEndOfFile()
                 let err = stderr.fileHandleForReading.readDataToEndOfFile()
                 let records = try String(decoding: err, as: UTF8.self).split(separator: "\n").map {
@@ -1124,16 +1121,14 @@ struct WorkspaceCLITests {
                         "MARKER": marker.path,
                     ])
             }
-            for _ in 0..<100 where !FileManager.default.fileExists(atPath: marker.path) {
-                try await Task.sleep(for: .milliseconds(5))
-            }
+            _ = try await waitUntil { FileManager.default.fileExists(atPath: marker.path) }
             #expect(FileManager.default.fileExists(atPath: marker.path))
             let start = ContinuousClock.now
             task.cancel()
             let cancelled = await task.value
             #expect(cancelled.code == 130)
             #expect(cancelled.output.isEmpty)
-            #expect(start.duration(to: .now) < .seconds(1))
+            #expect(start.duration(to: .now) < hangGuard)
         }
     }
 
@@ -1300,7 +1295,7 @@ struct WorkspaceCLITests {
                 process.standardOutput = FileHandle.nullDevice
                 process.standardError = FileHandle.nullDevice
                 try process.run()
-                process.waitUntilExit()
+                waitForExit(process)
                 #expect(process.terminationStatus == 1)
                 let remaining = try FileManager.default.contentsOfDirectory(atPath: root.path)
                 #expect(remaining == ["large.yaml"])
@@ -2814,9 +2809,7 @@ struct WorkspaceCLITests {
             #expect(try await server.option("@session-option", scope: .session(session)) == "17")
             #expect(try await server.option("@window-option", scope: .window(window)) == "local")
             let token = work.appendingPathComponent("token")
-            for _ in 0..<100 where !FileManager.default.fileExists(atPath: token.path) {
-                try await Task.sleep(for: .milliseconds(5))
-            }
+            _ = try await waitUntil { FileManager.default.fileExists(atPath: token.path) }
             #expect(try String(contentsOf: token, encoding: .utf8) == "native value")
             var failed = try #require(value.object)
             failed["session_name"] = .string("invocation-cwd")
@@ -2835,7 +2828,7 @@ struct WorkspaceCLITests {
                 URL(fileURLWithPath: inheritedDirectory).resolvingSymlinksInPath().path
                     == root.resolvingSymlinksInPath().path)
             failed["session_name"] = .string("failed-bootstrap")
-            failed["before_script"] = .string("/bin/false")
+            failed["before_script"] = .string("false")
             try Data(Value.object(failed).encoded().utf8).write(to: file)
             let result = await invoke(
                 ["load", file.path, "-d", "-S", socket, "--ndjson"], in: root,

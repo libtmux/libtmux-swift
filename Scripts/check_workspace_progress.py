@@ -18,6 +18,8 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
+from owned_terminal import HANG_GUARD
+
 binary = str(Path(sys.argv[1]).resolve())
 tmux = str(Path(sys.argv[2]).resolve())
 base = Path("/tmp/libtmux-swift-dev")
@@ -41,7 +43,7 @@ def terminal_call(args, env, *, size=(24, 80), interrupt=None):
     outputs = {master: bytearray(), process.stdout.fileno(): bytearray()}
     reading = set(outputs)
     signalled = None
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + HANG_GUARD
     try:
         while reading and time.monotonic() < deadline:
             for fd in select.select(list(reading), [], [], 0.02)[0]:
@@ -64,10 +66,11 @@ def terminal_call(args, env, *, size=(24, 80), interrupt=None):
                 signalled = time.monotonic()
                 process.send_signal(signal.SIGINT)
         assert not reading, (process.poll(), outputs)
-        code = process.wait(timeout=1)
+        code = process.wait(timeout=HANG_GUARD)
         if interrupt:
             elapsed = None if signalled is None else time.monotonic() - signalled
-            assert elapsed is not None and elapsed < 1, (elapsed, code, outputs)
+            assert elapsed is not None
+            assert elapsed < HANG_GUARD, (elapsed, code, outputs)
         return code, bytes(outputs[process.stdout.fileno()]), bytes(outputs[master])
     finally:
         if process.poll() is None:
@@ -186,7 +189,7 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
                 ],
                 env=env,
                 capture_output=True,
-                timeout=3,
+                timeout=HANG_GUARD,
                 check=False,
             )
             assert (

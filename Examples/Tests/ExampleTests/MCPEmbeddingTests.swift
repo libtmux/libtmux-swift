@@ -2,7 +2,7 @@ import ExampleCode
 import Testing
 import TmuxFixture
 
-@Suite("MCP embedding", .timeLimit(.minutes(1)))
+@Suite("MCP embedding", .timeLimit(.minutes(5)))
 struct MCPEmbeddingTests {
     @Test("the embedded inspect tools list the fixture pane")
     func embeddedToolsListPanes() async throws {

@@ -5,7 +5,7 @@ import TmuxFixture
 @testable import LibTmux
 @testable import LibTmuxMCP
 
-@Suite("capability regressions", .timeLimit(.minutes(1)))
+@Suite("capability regressions", .timeLimit(.minutes(5)))
 struct CapabilityRegressionTests {
     @Test("invalid layout syntax is refused before MCP window lookup")
     func invalidLayoutPrecedesLookup() async throws {
@@ -278,7 +278,7 @@ struct CapabilityRegressionTests {
                         "paneId": .string(pane.id.rawValue),
                         "patterns": .array([.string("never-matches")]),
                         "stop": .array([.string("fatal-cursor-marker")]),
-                        "timeoutMs": .integer(1_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )

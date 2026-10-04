@@ -15,6 +15,10 @@ import signal
 import time
 from contextlib import suppress
 
+# How long a fixture waits for an event that must happen before calling it
+# hung. A hang guard, not a speed claim: waits still return when the event does.
+HANG_GUARD = 30
+
 
 class Terminal:
     """Own and reap one process with a controlling terminal."""
@@ -39,7 +43,7 @@ class Terminal:
 
     def until(self, predicate):
         """Wait for a fixture condition with bounded terminal output."""
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + HANG_GUARD
         while time.monotonic() < deadline:
             self.pump()
             if predicate():
@@ -56,7 +60,7 @@ class Terminal:
         if self.status is None:
             with suppress(ProcessLookupError):
                 os.kill(self.pid, signal.SIGTERM)
-            deadline = time.monotonic() + 1
+            deadline = time.monotonic() + HANG_GUARD
             while self.status is None and time.monotonic() < deadline:
                 self.pump()
             if self.status is None:

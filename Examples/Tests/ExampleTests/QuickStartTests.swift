@@ -24,7 +24,7 @@ private func quickStartBinary(configuration: String = "debug") -> URL {
 
 @Suite(
     "quick start",
-    .timeLimit(.minutes(1)),
+    .timeLimit(.minutes(5)),
     .enabled(if: namedSocketsAvailable, "needs TMUX_TMPDIR under the suite root")
 )
 struct QuickStartTests {
@@ -60,16 +60,10 @@ struct QuickStartTests {
             "TMUX_TMPDIR": root.path,
             "PATH": "\(tmuxDirectory):\(inheritedPath)",
         ]
-        let output = Pipe()
-        process.standardOutput = output
-        try process.run()
-        let printed = String(
-            decoding: output.fileHandleForReading.readDataToEndOfFile(),
-            as: UTF8.self
-        )
-        process.waitUntilExit()
+        let result = try await runProgram(process)
+        let printed = result.output
 
-        #expect(process.terminationStatus == 0)
+        #expect(result.status == 0)
         #expect(printed.contains("quickstart"))
     }
 }

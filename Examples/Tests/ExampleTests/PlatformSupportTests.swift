@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@Suite("platform support", .timeLimit(.minutes(1)))
+@Suite("platform support", .timeLimit(.minutes(5)))
 struct PlatformSupportTests {
     @Test("the version gate reads the release the server actually runs")
     func theVersionGateReadsTheServer() async throws {

@@ -11,6 +11,13 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Fixed
+
+- A control connection no longer ends with `control protocol line is not
+  UTF-8` when a pane prints multi-byte text. tmux 3.2a cuts `%output` inside a
+  character, so a line of it is not valid UTF-8 on its own; those lines now
+  decode with replacement characters and every other line stays strict.
+
 ## [0.1.0-alpha.6] - 2026-09-26
 
 ### Added
