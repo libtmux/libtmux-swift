@@ -25,7 +25,8 @@ private func quickStartBinary(configuration: String = "debug") -> URL {
 @Suite(
     "quick start",
     .timeLimit(.minutes(1)),
-    .enabled(if: namedSocketsAvailable, "needs TMUX_TMPDIR under the suite root")
+    .enabled(
+        if: namedSocketsAvailable, "needs TMUX_TMPDIR under the suite root")
 )
 struct QuickStartTests {
     @Test("the example a reader runs first lists the sessions on its socket")
@@ -37,7 +38,8 @@ struct QuickStartTests {
         )
 
         let root = try #require(namedSocketRoot)
-        let server = try Server(socketName: "default", tmuxExecutable: tmuxExecutablePath())
+        let server = try Server(
+            socketName: "default", tmuxExecutable: tmuxExecutablePath())
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
             TmuxCommand("new-session", ["-d", "-s", "quickstart"]),
@@ -53,7 +55,8 @@ struct QuickStartTests {
         // lane's binary has to come first: a client of a different release
         // reaches the socket, fails to talk to the server behind it, and the
         // listing comes back empty rather than erroring.
-        let inheritedPath = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        let inheritedPath =
+            ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
         let tmuxDirectory = URL(fileURLWithPath: tmuxExecutablePath())
             .deletingLastPathComponent().path
         process.environment = [

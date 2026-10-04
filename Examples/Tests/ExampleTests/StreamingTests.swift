@@ -20,7 +20,8 @@ struct StreamingTests {
             let poking = Task {
                 while !Task.isCancelled {
                     _ = try? await server.run(
-                        TmuxCommand("send-keys", ["-t", "work", "echo hello", "Enter"])
+                        TmuxCommand(
+                            "send-keys", ["-t", "work", "echo hello", "Enter"])
                     )
                     try? await Task.sleep(for: .milliseconds(50))
                 }
@@ -32,7 +33,8 @@ struct StreamingTests {
             // which one that is belongs to the shell — an echo of the command
             // can arrive before the command's own output. So this asserts that
             // the connection reported without being asked, not what it said.
-            let reported = try #require(seen, "the connection reported no output")
+            let reported = try #require(
+                seen, "the connection reported no output")
             #expect(!reported.isEmpty)
         }
     }

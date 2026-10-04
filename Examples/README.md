@@ -32,7 +32,8 @@ matches the same code nested inside a function:
 
 ```swift
 public func travelling(_ server: Server) async throws -> [Pane] {
-    let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+    let expression = try FilterExpr<Pane>.where(
+        \.currentCommand, .isIn(["nvim", "vim"]))
     let matching = try await server.panes().filter(expression)
     return matching
 }

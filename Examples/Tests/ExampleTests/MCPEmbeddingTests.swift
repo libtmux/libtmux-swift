@@ -17,7 +17,9 @@ struct MCPEmbeddingTests {
         try await withTmuxServer { server in
             let tools = useExactEmbeddedTools(on: server)
             #expect(
-                Set(tools.visibleDefinitions.map(\.name)) == ["create_window", "list_sessions"]
+                Set(tools.visibleDefinitions.map(\.name)) == [
+                    "create_window", "list_sessions",
+                ]
             )
         }
     }

@@ -31,7 +31,9 @@ public func askBeforeActing(_ server: Server) async throws {
     print("already there")
 }
 
-public func anythingTheLibraryDoesNotModel(_ server: Server) async throws -> String {
+public func anythingTheLibraryDoesNotModel(_ server: Server) async throws
+    -> String
+{
     let reply = try await server.run(
         TmuxCommand("display-message", ["-p", "#{client_termname}"])
     )

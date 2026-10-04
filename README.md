@@ -196,8 +196,10 @@ transaction.
 ## Change what is there
 
 ```swift
-let session = try await server.newSession(named: "work", windowName: "editor")
-_ = try await server.setOption("@purpose", to: "development", scope: .session(session))
+let session = try await server.newSession(
+    named: "work", windowName: "editor")
+_ = try await server.setOption(
+    "@purpose", to: "development", scope: .session(session))
 let logs = try await server.newWindow(in: session, named: "logs").window
 let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)
@@ -228,7 +230,8 @@ another process, handed to a tool. It is built from key paths, so the compiler
 rejects a text operator on a number, and it holds no closures, so it encodes:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = try FilterExpr<Pane>.where(
+    \.currentCommand, .isIn(["nvim", "vim"]))
 let matching = try await server.panes().filter(expression)
 ```
 
@@ -348,7 +351,8 @@ A connection can do one thing a process cannot, which is report what changed
 without being asked:
 
 ```swift
-let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
+let firstLine: String? = try await server.connected(attachingTo: "work") {
+    server, events in
     for try await notification in events.notifications
     where notification.name == "output" {
         return notification.arguments
@@ -425,7 +429,8 @@ small liveness check detects a pane removed while it is quiet:
 
 ```swift
 let ready = try RegexPattern("Listening on")
-let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
+let failed = try RegexPattern(
+    "EADDRINUSE|error", options: [.caseInsensitive])
 let waited = try await server.waitForOutput(
     in: pane,
     matching: [ready],

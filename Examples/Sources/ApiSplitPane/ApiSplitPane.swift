@@ -15,12 +15,15 @@ struct ApiSplitPane {
                     direction: .right,
                     size: .percentage(40)
                 )
-                let panes = try await server.panes().filter { $0.windowID == original.windowID }
+                let panes = try await server.panes().filter {
+                    $0.windowID == original.windowID
+                }
                 print("Panes in window: \(panes.count)")
                 print("Same window: \(created.windowID == original.windowID)")
             }
         } catch {
-            FileHandle.standardError.write(Data("Example failed: \(error)\n".utf8))
+            FileHandle.standardError.write(
+                Data("Example failed: \(error)\n".utf8))
             exit(EXIT_FAILURE)
         }
     }

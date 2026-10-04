@@ -27,7 +27,8 @@ struct ModeTests {
         }
     }
 
-    @Test("choosing the mode at runtime changes neither the calls nor the answer")
+    @Test(
+        "choosing the mode at runtime changes neither the calls nor the answer")
     func choosingAtRuntimeChangesNothing() async throws {
         try await withMain { server in
             let attached = try await chosenAtRuntime(server, true).map(\.name)
@@ -45,11 +46,13 @@ struct ModeTests {
         }
     }
 
-    @Test("a workspace built over a connection is the session tmux ends up with")
+    @Test(
+        "a workspace built over a connection is the session tmux ends up with")
     func aWorkspaceBuildsOverAConnection() async throws {
         try await withMain { server in
             let workspace = describeAWorkspaceInSwift()
-            let session = try await aConsumerThatNeverMentionsAMode(server, workspace)
+            let session = try await aConsumerThatNeverMentionsAMode(
+                server, workspace)
             #expect(session.name == "work")
             #expect(try await server.hasSession("work"))
         }

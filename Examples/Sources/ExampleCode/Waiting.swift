@@ -12,7 +12,9 @@ public func waitingOnAChannel(_ server: Server, pane: Pane) async throws {
     // endregion
 }
 
-public func watchingAFormat(_ server: Server, pane: Pane) async throws -> String? {
+public func watchingAFormat(_ server: Server, pane: Pane) async throws
+    -> String?
+{
     try await server.connected(attachingTo: "work") { server, control in
         try await control.watch(
             FormatSubscription(
@@ -33,7 +35,8 @@ public func waitingOnOutput(
     pane: Pane
 ) async throws -> OutputWait {
     let ready = try RegexPattern("Listening on")
-    let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
+    let failed = try RegexPattern(
+        "EADDRINUSE|error", options: [.caseInsensitive])
     let waited = try await server.waitForOutput(
         in: pane,
         matching: [ready],
