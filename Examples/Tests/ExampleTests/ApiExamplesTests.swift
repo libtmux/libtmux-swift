@@ -23,11 +23,10 @@ struct ApiExamplesTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let repository = examples.deletingLastPathComponent()
+        let file = examples.appendingPathComponent("api-examples.json")
         let manifest = try JSONDecoder().decode(
             ApiExampleManifest.self,
-            from: Data(
-                contentsOf: examples.appendingPathComponent("api-examples.json")
-            )
+            from: Data(contentsOf: file)
         )
         #expect(manifest.schemaVersion == 1)
         try #require(!manifest.examples.isEmpty)
