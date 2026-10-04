@@ -26,3 +26,16 @@ public func talkToTheServerThatLaunchedYou() async throws {
         print(here?.name ?? "not in a session")
     }
 }
+
+public func ttyThroughALink(
+    _ server: Server,
+    _ pane: Pane,
+    _ link: WindowLink
+) async throws -> String? {
+    let tty = try await server.format(
+        "#{pane_tty}",
+        for: pane,
+        through: link
+    )
+    return tty
+}

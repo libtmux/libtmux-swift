@@ -19,4 +19,19 @@ struct SnapshotTests {
             }
         }
     }
+
+    @Test("a format reads a field through a window link")
+    func aFormatReadsThroughALink() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let link = try #require(
+                try await server.windowLinks().first {
+                    $0.windowID == pane.windowID
+                }
+            )
+            let tty = try #require(
+                try await ttyThroughALink(server, pane, link))
+            #expect(tty.hasPrefix("/dev/"))
+        }
+    }
 }
