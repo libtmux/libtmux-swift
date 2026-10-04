@@ -11,7 +11,8 @@ struct WorkspaceTests {
     func theDocumentedWorkspaceBuilds() async throws {
         try await withTmuxServer { server in
             try await validateLayoutsBeforeBuilding(server)
-            let session = try await buildItOnAServer(server, describeAWorkspaceInSwift())
+            let session = try await buildItOnAServer(
+                server, describeAWorkspaceInSwift())
             #expect(session.name == "work")
 
             let snapshot = try await server.snapshot()
@@ -36,7 +37,8 @@ struct WorkspaceTests {
         #expect(workspace.windows.map(\.windowName) == ["editor"])
     }
 
-    @Test("a tmuxp file the README shows decodes into the workspace it describes")
+    @Test(
+        "a tmuxp file the README shows decodes into the workspace it describes")
     func theDocumentedTmuxpFileDecodes() throws {
         let workspace = try readATmuxpFile(
             """

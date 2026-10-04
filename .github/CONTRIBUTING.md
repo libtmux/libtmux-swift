@@ -174,7 +174,8 @@ child was written to catch.
 Each of these gates CI, and each can fail. Build and test run on every cell of
 the matrix; the tooling checks run once, on the Linux tmux 3.7b cell.
 
-Formatting, against `.swift-format` at the root — four spaces, 100 columns:
+Formatting, against `.swift-format` at the root — four spaces, 100 columns,
+and 80 under `Examples/`, whose own `.swift-format` applies there:
 
 ```console
 $ swift format lint --recursive --strict \

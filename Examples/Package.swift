@@ -26,7 +26,8 @@ let package = Package(
     name: "Examples",
     platforms: [.macOS(.v13)],
     dependencies: [
-        .package(name: "libtmux", path: "..", traits: [.defaults, "YAMLWorkspaces"])
+        .package(
+            name: "libtmux", path: "..", traits: [.defaults, "YAMLWorkspaces"])
     ],
     targets: [
         // The examples themselves, as a library rather than as snippets: a
@@ -62,7 +63,8 @@ let package = Package(
         ),
     ]
         + [
-            "ApiServer", "ApiSessions", "ApiWindows", "ApiPanes", "ApiNewSession",
+            "ApiServer", "ApiSessions", "ApiWindows", "ApiPanes",
+            "ApiNewSession",
             "ApiNewWindow", "ApiSplitPane", "ApiQueryPanes", "ApiCapture",
         ].map { name in
             .executableTarget(

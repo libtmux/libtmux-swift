@@ -15,7 +15,8 @@ struct ApiSessions {
                 }
             }
         } catch {
-            FileHandle.standardError.write(Data("Example failed: \(error)\n".utf8))
+            FileHandle.standardError.write(
+                Data("Example failed: \(error)\n".utf8))
             exit(EXIT_FAILURE)
         }
     }

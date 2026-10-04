@@ -13,9 +13,11 @@ struct ChangingTests {
             let snapshot = try await server.snapshot()
             #expect(snapshot.sessions.contains { $0.name == "work" })
 
-            let work = try #require(snapshot.sessions.first { $0.name == "work" })
+            let work = try #require(
+                snapshot.sessions.first { $0.name == "work" })
             #expect(
-                try await server.option("@purpose", scope: .session(work)) == "development"
+                try await server.option("@purpose", scope: .session(work))
+                    == "development"
             )
             let windows = snapshot.windows(of: work)
             #expect(windows.map(\.name).sorted() == ["editor", "logs"])
@@ -33,7 +35,9 @@ struct ChangingTests {
             let marker = "libtmux-capture-marker"
             let pane = try #require(try await server.panes().first)
             _ = try await server.run(
-                TmuxCommand("send-keys", ["-t", pane.id.rawValue, "echo \(marker)", "Enter"])
+                TmuxCommand(
+                    "send-keys",
+                    ["-t", pane.id.rawValue, "echo \(marker)", "Enter"])
             )
             let arrived = try await waitUntil {
                 try await readBackWhatAPanePrinted(server, pane)
@@ -49,7 +53,8 @@ struct ChangingTests {
             try await spendOneProcessOnAllOfIt(server)
             let names = try await server.windows().map(\.name)
             for wanted in ["edit", "test", "logs"] {
-                #expect(names.contains(wanted), "window \(wanted) was not created")
+                #expect(
+                    names.contains(wanted), "window \(wanted) was not created")
             }
         }
     }
