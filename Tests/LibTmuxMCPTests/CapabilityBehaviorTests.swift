@@ -715,7 +715,7 @@ struct CapabilityBehaviorTests {
             process.arguments = ["--noprofile", "--norc", "-c", script]
             process.standardError = Pipe()
             try process.run()
-            process.waitUntilExit()
+            waitForExit(process)
             #expect(process.terminationStatus == 0, Comment(rawValue: action))
         }
     }

@@ -48,7 +48,7 @@ struct MCPExecutableContractTests {
             defer {
                 try? input.fileHandleForWriting.close()
                 if process.isRunning { process.terminate() }
-                process.waitUntilExit()
+                waitForExit(process)
             }
 
             let request =
@@ -82,7 +82,7 @@ struct MCPExecutableContractTests {
         defer {
             try? input.fileHandleForWriting.close()
             if process.isRunning { process.terminate() }
-            process.waitUntilExit()
+            waitForExit(process)
         }
 
         try input.fileHandleForWriting.write(
@@ -124,7 +124,7 @@ struct MCPExecutableContractTests {
         try process.run()
         defer {
             if process.isRunning { process.terminate() }
-            process.waitUntilExit()
+            waitForExit(process)
         }
 
         try input.fileHandleForWriting.write(
@@ -132,7 +132,7 @@ struct MCPExecutableContractTests {
         )
         _ = try #require(readLine(from: output.fileHandleForReading, within: .seconds(3)))
         try input.fileHandleForWriting.close()
-        process.waitUntilExit()
+        waitForExit(process)
 
         let retained =
             try tmuxStatus(
@@ -164,7 +164,7 @@ struct MCPExecutableContractTests {
         process.standardOutput = Pipe()
         process.standardError = Pipe()
         try process.run()
-        process.waitUntilExit()
+        waitForExit(process)
         return process.terminationStatus
     }
 

@@ -388,3 +388,14 @@ public func tmuxExecutablePath() -> String {
     }
     return "/usr/bin/tmux"
 }
+
+/// Polls `isRunning` instead of `Process.waitUntilExit()`, which can park the
+/// thread on macOS after the child is gone. Returns after `limit`; check
+/// `isRunning` before reading `terminationStatus`.
+public func waitForExit(_ process: Process, limit: Duration = .seconds(120)) {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: limit)
+    while process.isRunning && clock.now < deadline {
+        usleep(5_000)
+    }
+}

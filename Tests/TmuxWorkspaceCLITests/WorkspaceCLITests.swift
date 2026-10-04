@@ -642,7 +642,7 @@ struct WorkspaceCLITests {
                 process.standardOutput = stdout
                 process.standardError = stderr
                 try process.run()
-                process.waitUntilExit()
+                waitForExit(process)
                 let out = stdout.fileHandleForReading.readDataToEndOfFile()
                 let err = stderr.fileHandleForReading.readDataToEndOfFile()
                 let records = try String(decoding: err, as: UTF8.self).split(separator: "\n").map {
@@ -1300,7 +1300,7 @@ struct WorkspaceCLITests {
                 process.standardOutput = FileHandle.nullDevice
                 process.standardError = FileHandle.nullDevice
                 try process.run()
-                process.waitUntilExit()
+                waitForExit(process)
                 #expect(process.terminationStatus == 1)
                 let remaining = try FileManager.default.contentsOfDirectory(atPath: root.path)
                 #expect(remaining == ["large.yaml"])

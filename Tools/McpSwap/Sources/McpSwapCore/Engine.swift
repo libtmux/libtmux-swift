@@ -1137,11 +1137,19 @@ func gitRemoteURL(repo: URL) throws -> String {
     do { try process.run() } catch {
         throw SwapError.message("could not inspect origin remote: \(error)")
     }
-    process.waitUntilExit()
+    waitForExit(process)
     guard process.terminationStatus == 0 else {
         throw SwapError.message("origin remote is not configured")
     }
     let data = output.fileHandleForReading.readDataToEndOfFile()
     return try strictUTF8(data, label: "origin remote").trimmingCharacters(
         in: .whitespacesAndNewlines)
+}
+
+// See `waitForExit` in TmuxFixture.
+func waitForExit(_ process: Process, limit: TimeInterval = 120) {
+    let deadline = Date().addingTimeInterval(limit)
+    while process.isRunning && Date() < deadline {
+        usleep(5_000)
+    }
 }
