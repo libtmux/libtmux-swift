@@ -117,6 +117,14 @@ jobs:
           Tools/McpSwap/Sources/McpSwapCore Tools/McpSwap/Sources/McpSwap
           Tools/McpSwap/Tests Package.swift Tools/McpSwap/Package.swift
 
+      # Examples render in fixed-width boxes. The formatter covers the Swift
+      # it reaches; this covers README and DocC fences and `///` code, which
+      # it leaves alone.
+      - name: Check example width
+        run: |
+          python3 Scripts/check_example_width.py --self-test
+          python3 Scripts/check_example_width.py
+
       - name: Test the private MCP swap tool
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
