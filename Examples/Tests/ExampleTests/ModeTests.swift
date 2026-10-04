@@ -46,6 +46,19 @@ struct ModeTests {
         }
     }
 
+    @Test("the connected and chosen-mode fences list the same sessions")
+    func theDocCommentFencesAgree() async throws {
+        try await withMain { server in
+            let expected = try await server.sessions().map(\.name).sorted()
+            let connected = try await namesOverAConnection(server)
+            #expect(connected.sorted() == expected)
+            for attach in [true, false] {
+                let chosen = try await namesInTheChosenMode(server, attach)
+                #expect(chosen.sorted() == expected)
+            }
+        }
+    }
+
     @Test(
         "a workspace built over a connection is the session tmux ends up with")
     func aWorkspaceBuildsOverAConnection() async throws {

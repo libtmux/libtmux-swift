@@ -39,3 +39,23 @@ public func aConsumerThatNeverMentionsAMode(
     }
     return session
 }
+
+public func namesOverAConnection(_ server: Server) async throws -> [String] {
+    let names = try await server.connected(
+        attachingTo: "main"
+    ) { server, _ in
+        try await server.sessions().map(\.name)
+    }
+    return names
+}
+
+public func namesInTheChosenMode(
+    _ server: Server,
+    _ attachToExisting: Bool
+) async throws -> [String] {
+    let mode: TmuxMode = attachToExisting ? .connected(to: "main") : .direct
+    let names = try await server.using(mode) { server in
+        try await server.sessions().map(\.name)
+    }
+    return names
+}

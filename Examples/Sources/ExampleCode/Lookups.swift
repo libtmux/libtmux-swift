@@ -37,3 +37,14 @@ public func typedErrorsAcrossAScope(_ server: Server) async throws -> [String] {
     }
     return try await names(server)
 }
+
+public func stillThereAndByName(
+    _ server: Server,
+    _ pane: Pane
+) async throws {
+    // Still there?
+    guard let fresh = try await server.refresh(pane) else { return }
+    // By name.
+    let work = try await server.session(named: "work")
+    print(fresh.id.rawValue, work?.name ?? "no such session")
+}
