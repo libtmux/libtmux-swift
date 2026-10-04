@@ -29,7 +29,12 @@ that use real tmux must share the repository lock and run without parallel test
 execution:
 
 ```console
-$ taskset -c 0-4 mise exec -- flock /tmp/libtmux-swift-test/.swift.lock swift test --jobs 5 --no-parallel --force-resolved-versions
+$ taskset -c 0-4 mise exec -- \
+    flock /tmp/libtmux-swift-test/.swift.lock \
+    swift test \
+    --jobs 5 \
+    --no-parallel \
+    --force-resolved-versions
 ```
 
 Keep test sockets under `/tmp/libtmux-swift-test`. Do not exercise live MCP
