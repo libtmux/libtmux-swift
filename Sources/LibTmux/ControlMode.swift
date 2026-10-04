@@ -64,7 +64,9 @@ extension Server {
     /// return types, the same errors. Only how the work reaches tmux changes.
     ///
     /// ```swift
-    /// let names = try await server.connected(attachingTo: "main") { server, _ in
+    /// let names = try await server.connected(
+    ///     attachingTo: "main"
+    /// ) { server, _ in
     ///     try await server.sessions().map(\.name)
     /// }
     /// ```
