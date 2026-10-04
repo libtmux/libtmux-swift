@@ -13,10 +13,8 @@ struct SnapshotTests {
 
             #expect(!snapshot.windows(of: session).isEmpty)
             for window in snapshot.windows(of: session) {
-                #expect(
-                    snapshot.sessions(of: window).contains {
-                        $0.id == session.id
-                    })
+                let owners = snapshot.sessions(of: window)
+                #expect(owners.contains { $0.id == session.id })
                 #expect(!snapshot.panes(of: window).isEmpty)
             }
         }
