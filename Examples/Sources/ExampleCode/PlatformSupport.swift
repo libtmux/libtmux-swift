@@ -8,9 +8,9 @@ import LibTmux
     import Glibc
 #endif
 
-public func branchOnTheReleaseTheServerRuns(_ server: Server) async throws
-    -> TmuxVersion
-{
+public func branchOnTheReleaseTheServerRuns(
+    _ server: Server
+) async throws -> TmuxVersion {
     if try await server.version() < TmuxVersion(major: 3, minor: 4) {
         print("this release predates the behaviour relied on below")
     }
