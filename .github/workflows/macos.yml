@@ -141,7 +141,10 @@ jobs:
           # cases doing sub-second work report forty seconds and the ones at
           # the tail pass their own time limit. AGENTS.md already requires
           # --no-parallel for real-tmux runs; this lane is where CI needs it.
-          xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+          package_diagnostics="${RUNNER_TEMP}/package-diagnostics"
+          python3 Scripts/diagnose_swift_test.py "$package_diagnostics" -- \
+            xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel \
+            --event-stream-output-path "$package_diagnostics/events.jsonl" --event-stream-version 0
 
       - name: Test the staged workspace CLI
         run: |
@@ -159,5 +162,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: examples-diagnostics-macos-tmux-${{ matrix.tmux }}
-          path: ${{ runner.temp }}/examples-diagnostics/
+          path: |
+            ${{ runner.temp }}/examples-diagnostics/
+            ${{ runner.temp }}/package-diagnostics/
           if-no-files-found: warn
