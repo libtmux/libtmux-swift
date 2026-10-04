@@ -10,9 +10,10 @@ public func overOneConnection(_ server: Server) async throws -> [String] {
     return names
 }
 
-public func chosenAtRuntime(_ server: Server, _ shouldAttach: Bool) async throws
-    -> [Session]
-{
+public func chosenAtRuntime(
+    _ server: Server,
+    _ shouldAttach: Bool
+) async throws -> [Session] {
     let mode: TmuxMode = shouldAttach ? .connected(to: "main") : .direct
     let sessions = try await server.using(mode) { server in
         try await server.sessions()
@@ -21,13 +22,12 @@ public func chosenAtRuntime(_ server: Server, _ shouldAttach: Bool) async throws
 }
 
 public func aPipelinedBatch(_ server: Server) async throws -> (Int, Int) {
-    let (sessions, panes) = try await server.connected(attachingTo: "main") {
-        server, _ in
+    let counts = try await server.connected(attachingTo: "main") { server, _ in
         async let sessions = server.sessions()
         async let panes = server.panes()
-        return try await (sessions, panes)
+        return try await (sessions.count, panes.count)
     }
-    return (sessions.count, panes.count)
+    return counts
 }
 
 public func aConsumerThatNeverMentionsAMode(

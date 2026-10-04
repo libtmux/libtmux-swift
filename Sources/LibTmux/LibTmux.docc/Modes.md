@@ -124,11 +124,10 @@ thing at a time over a connection — Swift's own concurrency, carrying commands
 that pipeline instead of queueing:
 
 ```swift
-let (sessions, panes) = try await server.connected(attachingTo: "main") {
-    server, _ in
+let counts = try await server.connected(attachingTo: "main") { server, _ in
     async let sessions = server.sessions()
     async let panes = server.panes()
-    return try await (sessions, panes)
+    return try await (sessions.count, panes.count)
 }
 ```
 
