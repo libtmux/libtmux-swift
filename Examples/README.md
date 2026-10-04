@@ -129,7 +129,11 @@ objects. A failed operation exits with a diagnostic after fixture cleanup.
 Run a complete program from this checkout:
 
 ```console
-$ swift run --package-path Examples --jobs 5 --force-resolved-versions ApiCapture
+$ swift run \
+    --package-path Examples \
+    --jobs 5 \
+    --force-resolved-versions \
+    ApiCapture
 ```
 
 The native test suite spawns the compiled entry points and checks their exact
