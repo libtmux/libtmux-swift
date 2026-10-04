@@ -250,6 +250,20 @@ that package:
 $ python3 Scripts/check_examples.py --min-executed 40
 ```
 
+Code a reader sees stays within 80 columns: fences in the README and DocC
+pages, `///` doc-comment code, and the example programs. The formatter covers
+the Swift it reaches; this covers the rest. `--self-test` proves the check can
+fail, and `.github/example-width.toml` lists the files and any line allowed to
+run wider:
+
+```console
+$ python3 Scripts/check_example_width.py --self-test
+```
+
+```console
+$ python3 Scripts/check_example_width.py
+```
+
 Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 
