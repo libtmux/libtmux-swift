@@ -140,7 +140,12 @@ a wrong value, and the commit touched nothing the case reads. Re-running the one
 case in a loop is cheaper than another round of CI:
 
 ```console
-$ for _ in $(seq 20); do swift test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
+$ for _ in $(seq 20); do \
+    swift test \
+      --force-resolved-versions \
+      --filter observersDoNotDivideNotifications \
+      || break; \
+  done
 ```
 
 Every suite carries `.timeLimit(.minutes(5))`, and that number is a backstop
