@@ -258,6 +258,13 @@ root. The script cannot see whether a server was *started* — nothing reaches
 the filesystem until a command runs against it — so deliberate exceptions are
 listed beside their reason.
 
+Suite time limits are backstops, as the section above explains, and this check
+refuses a suite whose limit is shorter than five minutes:
+
+```console
+$ python3 Scripts/check_time_limits.py
+```
+
 Every continuation the library suspends can be resumed by cancelling it:
 
 ```console

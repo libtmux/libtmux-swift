@@ -191,6 +191,12 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_socket_namespace.py
 
+      # A suite limit is a backstop sized against the process-wide spawn queue,
+      # not against the work a case does. A short one fails unrelated cases.
+      - name: Check every suite time limit is a backstop
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_time_limits.py
+
       # A continuation nobody resumes does not fail slowly, it never returns —
       # and a `.timeLimit` cannot end it, because the limit cancels the case
       # and then waits for it. Six hours of one lane were spent that way.

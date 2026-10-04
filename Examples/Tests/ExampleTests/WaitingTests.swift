@@ -14,7 +14,7 @@ private let makeAvailable: Bool = {
     }
 }()
 
-@Suite("waiting", .timeLimit(.minutes(2)))
+@Suite("waiting", .timeLimit(.minutes(5)))
 struct WaitingTests {
     private func onlyPane(_ server: Server) async throws -> Pane {
         try #require(try await server.panes().first)

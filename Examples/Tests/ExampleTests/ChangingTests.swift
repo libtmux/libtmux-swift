@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@Suite("changing", .timeLimit(.minutes(1)))
+@Suite("changing", .timeLimit(.minutes(5)))
 struct ChangingTests {
     @Test("the session the README builds is the session tmux ends up with")
     func theDocumentedSessionIsBuilt() async throws {

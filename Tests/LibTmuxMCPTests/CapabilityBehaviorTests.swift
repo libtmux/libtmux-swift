@@ -11,7 +11,7 @@ import TmuxFixture
     import Glibc
 #endif
 
-@Suite("capability behavior", .timeLimit(.minutes(1)))
+@Suite("capability behavior", .timeLimit(.minutes(5)))
 struct CapabilityBehaviorTests {
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(

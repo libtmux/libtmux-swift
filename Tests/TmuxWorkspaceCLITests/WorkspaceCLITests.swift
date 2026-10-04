@@ -12,7 +12,7 @@ import TmuxWorkspace
     import Glibc
 #endif
 
-@Suite("workspace CLI", .serialized, .timeLimit(.minutes(1)))
+@Suite("workspace CLI", .serialized, .timeLimit(.minutes(5)))
 struct WorkspaceCLITests {
     @Test("imports refuse untranslated semantics before preview or destination replacement")
     func importRefusalBeforePublication() async throws {

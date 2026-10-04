@@ -24,7 +24,7 @@ private func quickStartBinary(configuration: String = "debug") -> URL {
 
 @Suite(
     "quick start",
-    .timeLimit(.minutes(1)),
+    .timeLimit(.minutes(5)),
     .enabled(if: namedSocketsAvailable, "needs TMUX_TMPDIR under the suite root")
 )
 struct QuickStartTests {

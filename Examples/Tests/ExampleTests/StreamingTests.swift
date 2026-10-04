@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@Suite("streaming", .timeLimit(.minutes(1)))
+@Suite("streaming", .timeLimit(.minutes(5)))
 struct StreamingTests {
     @Test("the documented stream reports pane output as it happens")
     func theDocumentedStreamReportsOutput() async throws {

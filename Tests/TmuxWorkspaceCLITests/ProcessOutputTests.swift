@@ -11,7 +11,7 @@ import TmuxFixture
     import Glibc
 #endif
 
-@Suite("workspace process output", .serialized, .timeLimit(.minutes(1)))
+@Suite("workspace process output", .serialized, .timeLimit(.minutes(5)))
 struct ProcessOutputTests {
     @Test(
         "cancelled loads retain one terminal record on writable output", arguments: [false, true])
