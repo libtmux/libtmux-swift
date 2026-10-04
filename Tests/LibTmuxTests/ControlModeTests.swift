@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TmuxFixture
 
@@ -101,6 +102,30 @@ struct ControlModeTests {
                 // Attribution, not concatenation: the second reply carries only
                 // the second command's output, and a later block number.
                 #expect(message.number > sessions.number)
+            }
+        }
+    }
+
+    @Test("multi-byte pane output does not end the connection")
+    func multiByteOutputDoesNotEndTheConnection() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let done = "multibyte-\(UUID().uuidString.prefix(8))"
+            try await server.withControlMode(attachingTo: "bootstrap") { control in
+                // tmux reports pane bytes as it reads them, and a read can end
+                // inside a character: the `%output` line that results is not
+                // UTF-8 on its own, though the stream as a whole is.
+                try await server.run(
+                    "i=0; while [ \"$i\" -lt 20000 ]; do printf '\\342\\202\\254\\360\\237\\230\\200'; "
+                        + "i=$((i + 1)); done; printf '\\n'; "
+                        + "\(server.shellInvocation) wait-for -S \(done)",
+                    in: pane
+                )
+                try await server.wait(for: done)
+                let reply = try await control.send(
+                    TmuxCommand("display-message", ["-p", "alive"])
+                )
+                #expect(reply.lines == ["alive"])
             }
         }
     }
