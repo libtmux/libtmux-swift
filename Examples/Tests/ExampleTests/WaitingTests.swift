@@ -109,8 +109,8 @@ struct WaitingTests {
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .milliseconds(250))
                         round += 1
-                        // Numbered so each attempt is visible in a failed test's
-                        // captured tail.
+                        // Numbered so each attempt is visible in a failed
+                        // test's captured tail.
                         try? await server.run(
                             "printf '\\nListening on 80\\(round)\\n'",
                             in: pane
