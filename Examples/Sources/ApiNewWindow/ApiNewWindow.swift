@@ -13,8 +13,8 @@ struct ApiNewWindow {
                     in: session, named: "logs", at: 3)
                 print("Window: \(appearance.window.name)")
                 print("Index: \(appearance.link.index)")
-                print(
-                    "Same session: \(appearance.link.sessionID == session.id)")
+                let same = appearance.link.sessionID == session.id
+                print("Same session: \(same)")
             }
         } catch {
             FileHandle.standardError.write(
