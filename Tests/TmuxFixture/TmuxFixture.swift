@@ -341,7 +341,7 @@ public func waitUntil(
 
 /// Waits for a stopped daemon's Unix listener to close before reusing its path.
 public func waitForSocketClosure(_ path: String) async throws -> Bool {
-    try await waitUntil(within: .seconds(2)) {
+    try await waitUntil(within: .seconds(10)) {
         #if canImport(Darwin)
             let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         #else

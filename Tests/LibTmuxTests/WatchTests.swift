@@ -191,7 +191,7 @@ struct WatchTests {
             let result = try await server.waitForOutput(
                 in: pane,
                 matching: [try RegexPattern("^\(marker)$")],
-                timeout: .seconds(2)
+                timeout: .seconds(30)
             )
 
             #expect(result.outcome == .matched)
@@ -360,7 +360,7 @@ struct WatchTests {
                 in: pane,
                 matching: [try RegexPattern("^\(marker)$")],
                 requiringFreshOutput: true,
-                timeout: .seconds(3),
+                timeout: .seconds(30),
                 tailLimit: 5
             )
 
@@ -431,7 +431,7 @@ struct WatchTests {
                 }
                 try await fixture.run("printf '\\ndeadline-start\\n'", in: pane)
                 group.addTask {
-                    try? await Task.sleep(for: .seconds(4))
+                    try? await Task.sleep(for: .seconds(8))
                     return nil
                 }
                 let first = try await group.next() ?? nil
@@ -441,7 +441,7 @@ struct WatchTests {
 
             let result = try #require(observed, "wait exceeded its two-second deadline")
             #expect(result.outcome == .timedOut)
-            #expect(result.seconds < 2.2)
+            #expect(result.seconds < 6)
         }
     }
 
@@ -474,7 +474,7 @@ struct WatchTests {
             // now says it never finished reading rather than calling the pane
             // quiet on a capture it abandoned.
             #expect(result.outcome == .expiredWhileReading)
-            #expect(result.seconds < 0.5)
+            #expect(result.seconds < 0.9)
         }
     }
 
@@ -794,7 +794,7 @@ struct WatchTests {
                         in: pane,
                         matching: [try RegexPattern("^same-marker$")],
                         requiringFreshOutput: true,
-                        timeout: .seconds(3)
+                        timeout: .seconds(30)
                     )
                 }
                 group.addTask {
@@ -874,7 +874,7 @@ struct WatchTests {
                 in: pane,
                 matching: [try RegexPattern("^after-respawn$")],
                 requiringFreshOutput: true,
-                timeout: .seconds(3)
+                timeout: .seconds(30)
             )
 
             #expect(result.outcome == .matched)

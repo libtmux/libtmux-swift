@@ -15,7 +15,11 @@ struct BlankOutputWaitTests {
         on server: Server,
         in pane: Pane,
         matching patterns: [RegexPattern] = [],
-        stoppingAt stops: [RegexPattern] = []
+        stoppingAt stops: [RegexPattern] = [],
+        // An outer hang guard for the cases that end on an event. A case whose
+        // point is that nothing matches has no event to end it, so it names
+        // the wait it can afford.
+        timeout: Duration = .seconds(30)
     ) async throws -> OutputWait {
         let ready = "blank-output-ready-\(UUID().uuidString)"
         let print = "blank-output-print-\(UUID().uuidString)"
@@ -36,7 +40,7 @@ struct BlankOutputWaitTests {
             matching: patterns,
             stoppingAt: stops,
             requiringFreshOutput: true,
-            timeout: .seconds(3)
+            timeout: timeout
         )
     }
 
@@ -79,7 +83,8 @@ struct BlankOutputWaitTests {
                 producing: "printf 'VISIBLE\\n'",
                 on: server,
                 in: try await bootstrapPane(server),
-                matching: [try RegexPattern("^$")]
+                matching: [try RegexPattern("^$")],
+                timeout: .seconds(5)
             )
 
             #expect(result.outcome == .timedOut)
