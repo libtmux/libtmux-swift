@@ -12,9 +12,10 @@ public func waitingOnAChannel(_ server: Server, pane: Pane) async throws {
     // endregion
 }
 
-public func watchingAFormat(_ server: Server, pane: Pane) async throws
-    -> String?
-{
+public func watchingAFormat(
+    _ server: Server,
+    pane: Pane
+) async throws -> String? {
     try await server.connected(attachingTo: "work") { server, control in
         try await control.watch(
             FormatSubscription(
