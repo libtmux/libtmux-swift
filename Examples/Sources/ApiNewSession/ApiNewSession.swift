@@ -10,8 +10,8 @@ struct ApiNewSession {
                 let session = try await server.newSession(
                     named: "work", windowName: "editor")
                 _ = try await server.newWindow(in: session, named: "logs")
-                guard let refreshed = try await server.session(session.id)
-                else {
+                let found = try await server.session(session.id)
+                guard let refreshed = found else {
                     throw ExampleError.sessionDisappeared
                 }
                 print("Created: \(session.name)")
