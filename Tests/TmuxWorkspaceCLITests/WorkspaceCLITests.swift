@@ -2835,7 +2835,7 @@ struct WorkspaceCLITests {
                 URL(fileURLWithPath: inheritedDirectory).resolvingSymlinksInPath().path
                     == root.resolvingSymlinksInPath().path)
             failed["session_name"] = .string("failed-bootstrap")
-            failed["before_script"] = .string("/bin/false")
+            failed["before_script"] = .string("false")
             try Data(Value.object(failed).encoded().utf8).write(to: file)
             let result = await invoke(
                 ["load", file.path, "-d", "-S", socket, "--ndjson"], in: root,

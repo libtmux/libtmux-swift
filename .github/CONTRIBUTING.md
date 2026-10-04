@@ -130,6 +130,8 @@ package enforces its own `Package.resolved` and leaves the root file alone.
 
 ## Flaky, or broken?
 
+macOS: see [MACOS_CI.md](MACOS_CI.md).
+
 The suite drives real tmux, and the cases that wait on an event can be delayed
 by a loaded machine. One failure is worth re-running before it is blamed on the
 change, and worth investigating rather than shrugged at.

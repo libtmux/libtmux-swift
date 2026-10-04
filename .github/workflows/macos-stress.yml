@@ -45,18 +45,18 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/tmux-3.2a
-          key: tmux-3.2a-${{ runner.os }}-${{ runner.arch }}
+          key: tmux-3.2a-${{ runner.os }}-${{ runner.arch }}-utf8proc-jemalloc
 
       - name: Restore tmux 3.7b
         id: tmux-3-7b
         uses: actions/cache@v6
         with:
           path: ~/tmux-3.7b
-          key: tmux-3.7b-${{ runner.os }}-${{ runner.arch }}
+          key: tmux-3.7b-${{ runner.os }}-${{ runner.arch }}-utf8proc-jemalloc
 
       # Unconditional: a cached tmux still loads these at run time.
       - name: Install the libraries tmux links against
-        run: brew install libevent ncurses
+        run: brew install libevent ncurses utf8proc jemalloc
 
       - name: Build the tmux releases that were not cached
         run: |
@@ -64,9 +64,9 @@ jobs:
           brew install automake bison pkg-config
           PATH="$(brew --prefix bison)/bin:${PATH}"
           export PATH
-          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
-          export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
-          export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig:$(brew --prefix utf8proc)/lib/pkgconfig:$(brew --prefix jemalloc)/lib/pkgconfig"
+          export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib -L$(brew --prefix utf8proc)/lib -L$(brew --prefix jemalloc)/lib"
+          export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include -I$(brew --prefix utf8proc)/include -I$(brew --prefix jemalloc)/include"
           for version in 3.2a 3.7b; do
             [ -x "${HOME}/tmux-${version}/bin/tmux" ] && continue
             curl --location --fail --silent --show-error \
@@ -75,7 +75,7 @@ jobs:
             tar -xzf tmux.tar.gz
             (
               cd "tmux-${version}"
-              ./configure --prefix="${HOME}/tmux-${version}" --disable-utf8proc
+              ./configure --prefix="${HOME}/tmux-${version}" --enable-utf8proc --enable-jemalloc
               make -j"$(sysctl -n hw.ncpu)"
               make install
             )
