@@ -59,7 +59,6 @@ struct ApiExamplesTests {
                 try await Task.sleep(for: .milliseconds(25))
             }
             try #require(!process.isRunning, "\(example.name) exceeded 30 seconds")
-            process.waitUntilExit()
             let printed = String(
                 decoding: output.fileHandleForReading.readDataToEndOfFile(),
                 as: UTF8.self
