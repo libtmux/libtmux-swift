@@ -14,7 +14,7 @@ struct NamedSocketNamespaceTests {
         #expect(!isAllowedNamedSocketRoot(URL(fileURLWithPath: "\(root.path)-other")))
     }
 
-    @Test("the reaper accepts only owned descendants and shell-quotes them")
+    @Test("the reaper accepts only owned descendants and retains files until exit is observed")
     func reaperRootsAreScopedAndQuoted() throws {
         let owned = URL(
             fileURLWithPath: "/tmp/libtmux-swift-test/case's socket"
@@ -22,7 +22,8 @@ struct NamedSocketNamespaceTests {
         let command = try reaperCommand(root: owned)
         let script = try #require(command.arguments.last)
 
-        #expect(script.contains("rm -rf \(shellQuoted(owned.path));"))
+        #expect(!script.contains("rm "))
+        #expect(script.contains("kill #{pid}"))
         #expect(throws: UnsafeReaperRoot.self) {
             try reaperCommand(root: URL(fileURLWithPath: "/"))
         }

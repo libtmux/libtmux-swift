@@ -16,10 +16,10 @@ public struct TmuxContext: Sendable, Hashable, Codable {
     /// The server process, which is the one thing here that distinguishes two
     /// servers that reused a socket path.
     public let serverProcessID: Int
-    /// The session, normalised to the spelling ``Session/id`` uses.
-    public let sessionID: SessionID
+    /// The session in ``Session/id`` spelling, or `nil` for tmux's `-1` job context.
+    public let sessionID: SessionID?
 
-    public init(socketPath: String, serverProcessID: Int, sessionID: SessionID) {
+    public init(socketPath: String, serverProcessID: Int, sessionID: SessionID?) {
         self.socketPath = socketPath
         self.serverProcessID = serverProcessID
         self.sessionID = sessionID
@@ -37,28 +37,30 @@ public struct TmuxContext: Sendable, Hashable, Codable {
         guard parts.count >= 3 else { return nil }
 
         let rawProcessID = parts[parts.count - 2]
-        guard rawProcessID.first.map({ "1"..."9" ~= $0 }) == true,
-            rawProcessID.allSatisfy({ "0"..."9" ~= $0 }),
-            let processID = Int(rawProcessID)
+        guard !rawProcessID.isEmpty,
+            rawProcessID.utf8.allSatisfy({ 48...57 ~= $0 }),
+            let processID = Int(rawProcessID), processID > 0
         else { return nil }
 
-        let rawSessionID = parts[parts.count - 1]
-        guard
-            rawSessionID == "0"
-                || (rawSessionID.first.map({ "1"..."9" ~= $0 }) == true
-                    && rawSessionID.allSatisfy({ "0"..."9" ~= $0 }))
-        else { return nil }
+        var rawSessionID = parts[parts.count - 1]
+        let sessionID: SessionID?
+        if rawSessionID == "-1" {
+            sessionID = nil
+        } else {
+            if rawSessionID.first == "$" { rawSessionID = rawSessionID.dropFirst() }
+            guard !rawSessionID.isEmpty,
+                rawSessionID.utf8.allSatisfy({ 48...57 ~= $0 })
+            else { return nil }
+            let digits = rawSessionID.drop(while: { $0 == "0" })
+            guard let parsed = SessionID(rawValue: "$\(digits.isEmpty ? "0" : String(digits))")
+            else {
+                return nil
+            }
+            sessionID = parsed
+        }
 
         let path = parts[0..<(parts.count - 2)].joined(separator: ",")
-        guard path.utf8.first == 0x2f,
-            !path.utf8.contains(where: { $0 < 0x20 || $0 == 0x7f })
-        else { return nil }
-
-        guard
-            let sessionID = SessionID(
-                rawValue: "$\(rawSessionID)"
-            )
-        else { return nil }
+        guard path.hasPrefix("/"), !path.contains("\0") else { return nil }
 
         self.init(
             socketPath: path,

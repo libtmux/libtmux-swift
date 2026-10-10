@@ -420,11 +420,14 @@ struct SnapshotCaptureTests {
             try #require(await waitForSocketClosure(first.incarnation.socketPath))
             _ = try await server.run(TmuxCommand("new-session", ["-d", "-s", "second"]))
 
-            let second = try await server.snapshot()
-            // The capture that spans a restart is what `snapshot()` rejects;
-            // two whole captures either side of one legitimately differ.
-            #expect(first.serverProcessID != second.serverProcessID)
-            #expect(second.sessions.map(\.name) == ["second"])
+            let replacementOwner = try await server.adopt()
+            try await replacementOwner.withValue { _ async throws -> Void in
+                let second = try await server.snapshot()
+                // The capture that spans a restart is what `snapshot()` rejects;
+                // two whole captures either side of one legitimately differ.
+                #expect(first.serverProcessID != second.serverProcessID)
+                #expect(second.sessions.map(\.name) == ["second"])
+            }
         }
     }
 
@@ -432,7 +435,7 @@ struct SnapshotCaptureTests {
     func snapshotRejectsAReplacementThatReusesTheDaemonPID() async throws {
         let endpoint = try Endpoint(socketName: "snapshot-replacement")
         let transport = SnapshotReplacementTransport()
-        let server = Server(endpoint: endpoint, transport: transport)
+        let server = try Server(endpoint: endpoint, transport: transport)
 
         await #expect(throws: TmuxError.serverRestarted) {
             try await server.snapshot()

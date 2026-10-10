@@ -22,9 +22,10 @@ enum WorkspaceCommands {
         } else {
             throw CLIError("usage", "Select a tmux endpoint with -S or -L outside tmux.", status: 2)
         }
-        return Server(
+        return try Server(
             endpoint: endpoint, tmuxExecutable: context.environment["LIBTMUX_TMUX_BIN"] ?? "tmux",
-            configurationFile: configuration, force256Colors: colors256)
+            configurationFile: configuration, force256Colors: colors256,
+            environment: context.environment)
     }
 
     /// Mirrors tmuxp's `TMUXP_DETECT_TERMINAL_SIZE`: the size passed to

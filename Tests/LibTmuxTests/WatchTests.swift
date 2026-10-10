@@ -183,7 +183,7 @@ struct WatchTests {
                     throw TmuxError.cancelled
                 }
             }
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -351,7 +351,7 @@ struct WatchTests {
             #expect(hook.isSuccess, Comment(rawValue: hook.errorText))
 
             let transport = CaptureRecordingTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -404,7 +404,7 @@ struct WatchTests {
             #expect(hook.isSuccess, Comment(rawValue: hook.errorText))
 
             let transport = CaptureRecordingTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -457,7 +457,7 @@ struct WatchTests {
                     throw TmuxError.cancelled
                 }
             }
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -543,7 +543,7 @@ struct WatchTests {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
             let transport = CaptureRecordingTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport

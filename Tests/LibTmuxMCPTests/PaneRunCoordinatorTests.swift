@@ -159,7 +159,7 @@ struct PaneRunCoordinatorTests {
                 checkpoint: checkpoint,
                 gate: gate
             )
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport

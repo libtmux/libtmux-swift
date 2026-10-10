@@ -11,7 +11,7 @@ struct PasteTextCleanupTests {
         try await withTmuxServer { fixture in
             let pane = try #require(try await fixture.panes().first)
             let transport = FailingPasteCleanupTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -65,7 +65,7 @@ struct PasteTextCleanupTests {
     func cleanupFailureIsReported() async throws {
         try await withTmuxServer { fixture in
             let transport = FailingPasteCleanupTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -106,7 +106,7 @@ struct PasteTextCleanupTests {
     func primaryFailureWinsCleanupFailure(_ primary: PrimaryPasteFailure) async throws {
         try await withTmuxServer { fixture in
             let transport = FailingPasteCleanupTransport(primaryFailure: primary)
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -146,7 +146,7 @@ struct PasteTextCleanupTests {
             let pane = try #require(try await fixture.panes().first)
             let transport = ControlledPasteCleanupTransport(cleanup: .normal)
             let tools = TmuxTools(
-                server: Server(
+                server: try Server(
                     endpoint: fixture.endpoint,
                     tmuxExecutable: fixture.tmuxExecutable,
                     transport: transport
@@ -185,7 +185,7 @@ struct PasteTextCleanupTests {
             let transport = ControlledPasteCleanupTransport(cleanup: .waitForCancellation)
             let completion = CompletionFlag()
             let tools = TmuxTools(
-                server: Server(
+                server: try Server(
                     endpoint: fixture.endpoint,
                     tmuxExecutable: fixture.tmuxExecutable,
                     transport: transport

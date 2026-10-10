@@ -167,9 +167,9 @@ extension Server {
 
     /// Moves a pane into another window, splitting it.
     ///
-    /// A split that moves a pane rather than starting one, so it says where the
-    /// pane goes the same way ``Server/splitWindow(_:direction:size:startDirectory:)``
-    /// does — and defaults the same way, to ``PaneDirection/below``.
+    /// Uses the placement rules of
+    /// ``Server/splitWindow(_:direction:size:startDirectory:environment:shell:)``.
+    /// The default direction is ``PaneDirection/below``.
     public func join(
         _ pane: Pane,
         into window: Window,

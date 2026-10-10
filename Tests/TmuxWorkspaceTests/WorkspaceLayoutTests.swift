@@ -43,7 +43,7 @@ struct WorkspaceLayoutTests {
     @Test("layout names follow the daemon even when it has no sessions")
     func daemonVersionWins() async throws {
         let transport = LayoutVersionTransport(daemonVersion: "3.3a")
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-version/socket"),
             transport: transport)
         try await WorkspaceLayout.validate(
@@ -91,7 +91,7 @@ struct WorkspaceLayoutTests {
         ])
     func coldEndpointVersion(error: String) async throws {
         let transport = LayoutVersionTransport(daemonVersion: nil, error: error)
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-version/socket"),
             transport: transport)
         try await WorkspaceLayout.validate(
@@ -112,7 +112,7 @@ struct WorkspaceLayoutTests {
         ])
     func daemonVersionFailure(error: String) async throws {
         let transport = LayoutVersionTransport(daemonVersion: nil, error: error)
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-version/socket"),
             transport: transport)
         await #expect(
@@ -133,7 +133,7 @@ struct WorkspaceLayoutTests {
     @Test("an unreadable daemon version does not use the client version")
     func unreadableDaemonVersion() async throws {
         let transport = LayoutVersionTransport(daemonVersion: "unreadable")
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-version/socket"),
             transport: transport)
         await #expect(throws: TmuxError.self) {
@@ -152,7 +152,7 @@ struct WorkspaceLayoutTests {
     @Test("version-independent layouts do not probe tmux")
     func versionIndependentLayouts() async throws {
         let transport = LayoutVersionTransport(daemonVersion: nil)
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-version/socket"),
             transport: transport)
         try await WorkspaceLayout.validate(

@@ -101,7 +101,8 @@ struct GuardedRequest: Sendable {
     init(
         command: TmuxCommand,
         incarnation: ServerIncarnation,
-        targets: [GuardedTarget]
+        targets: [GuardedTarget],
+        generation: String? = nil
     ) {
         let nonce = Self.randomNonce()
         let trueMarker = "\(nonce)_true"
@@ -123,7 +124,12 @@ struct GuardedRequest: Sendable {
             )
         }
         guarded = Self.commandGuard(
-            condition: Self.incarnationCondition(incarnation),
+            condition: generation.map {
+                .all(
+                    .equals("pid", incarnation.processID),
+                    .equals("start_time", incarnation.startedAt),
+                    .equals("@libtmux_owner_generation", $0))
+            } ?? Self.incarnationCondition(incarnation),
             target: nil,
             success: guarded,
             failureMarker: restartedMarker

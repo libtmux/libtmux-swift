@@ -26,9 +26,9 @@ struct ContextTests {
     @Test(
         "anything that is not that shape reports nothing",
         arguments: [
-            "", "/tmp/s", "/tmp/s,1", ",1,2", "/tmp/s,x,2", "/tmp/s,1,$2",
-            "/tmp/s,0,2", "/tmp/s,-1,2", "/tmp/s,+1,2", "/tmp/s,01,2",
-            "/tmp/s,1,", "/tmp/s,1,-1", "/tmp/s,1,+1", "/tmp/s,1,01",
+            "", "/tmp/s", "/tmp/s,1", ",1,2", "/tmp/s,x,2", "/tmp/s,1,$$2",
+            "/tmp/s,0,2", "/tmp/s,-1,2", "/tmp/s,+1,2", "/tmp/s, 1,2",
+            "/tmp/s,1,", "/tmp/s,1,-2", "/tmp/s,1,+1", "/tmp/s,1, 1",
             "/tmp/s,1,٠",
         ]
     )
@@ -37,8 +37,42 @@ struct ContextTests {
     }
 
     @Test(
-        "a reported socket route is absolute and contains no ASCII controls",
-        arguments: ["relative/socket", "/tmp/socket\nname", "/tmp/socket\u{7f}name"]
+        "native no-session and decimal contexts remain valid defaults",
+        arguments: [
+            "/tmp/libtmux-swift-test/context,1,-1",
+            "/tmp/libtmux-swift-test/context,01,2",
+            "/tmp/libtmux-swift-test/context,1,01",
+            "/tmp/libtmux-swift-test/context,1,$2",
+            "/tmp/libtmux-swift-test/with,comma,1,$02",
+        ]
+    )
+    func defaultContextsRemainValid(_ value: String) {
+        #expect(TmuxContext(parsing: value) != nil)
+    }
+
+    @Test(
+        "explicit names reject non-leaf selectors",
+        arguments: [".", "..", "a/b", "a\\b", "a\u{0}b"]
+    )
+    func defaultNamesRequireALeaf(_ value: String) {
+        #expect(throws: TmuxError.self) {
+            try Endpoint(socketName: value)
+        }
+    }
+
+    @Test(
+        "explicit paths reject relative or nul-containing selectors",
+        arguments: ["relative/socket", "/tmp/libtmux-swift-test/a\u{0}b"]
+    )
+    func defaultPathsRequireAnAbsoluteAddress(_ value: String) {
+        #expect(throws: TmuxError.self) {
+            try Endpoint(socketPath: value)
+        }
+    }
+
+    @Test(
+        "a reported socket route is absolute and contains no NUL",
+        arguments: ["relative/socket", "/tmp/socket\u{0}name"]
     )
     func unsafeSocketRoutesAreRefused(_ path: String) {
         #expect(TmuxContext(parsing: "\(path),1,0") == nil)

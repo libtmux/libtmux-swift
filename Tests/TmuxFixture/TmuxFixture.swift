@@ -65,52 +65,46 @@ public func withTmuxServer<Result>(
             withIntermediateDirectories: false,
             attributes: [.posixPermissions: 0o700]
         )
-        defer { try? FileManager.default.removeItem(at: root) }
 
         let server = try Server(
             socketPath: root.appendingPathComponent(socketFileName).path,
             tmuxExecutable: tmuxExecutablePath()
         )
-        _ = try await server.run([
-            // Before the first session, so even the bootstrap pane gets it.
-            //
-            // A pane otherwise runs whoever's shell the machine is configured
-            // with, which makes a test's speed and its behaviour someone's dotfiles
-            // rather than the library's. An interactive shell with a line editor
-            // also discards input typed before it has finished starting, so a case
-            // that sends keys races that startup and loses on a busy machine. `sh`
-            // starts promptly, reads what it is given, and is on both supported
-            // systems.
-            TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
-            // `default-shell` alone is still run as a *login* shell — tmux
-            // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
-            // so it reads `/etc/profile` and the runner's own profile: exactly
-            // the dotfiles the line above exists to keep out, and enough startup
-            // to delay the first prompt past the keys a case sends. Naming the
-            // command drops the login pass. `ENV` is the remaining rc hook, and
-            // is set in the server environment rather than in front of the
-            // command, where it would become the window's name.
-            TmuxCommand("set-environment", ["-g", "ENV", ""]),
-            // Darwin's /bin/bash is 3.2 and prints a notice telling the reader
-            // that zsh is the default shell now. It is compiled in rather than
-            // read from a startup file, so --noprofile --norc does not stop it,
-            // and it lands in the pane ahead of whatever a case is reading.
-            TmuxCommand("set-environment", ["-g", "BASH_SILENCE_DEPRECATION_WARNING", "1"]),
-            // `exec` so the pane holds one process: without it tmux keeps the
-            // `-c` wrapper alive, and a case that `exec`s its own command still
-            // reports the wrapper as the pane's command.
-            TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
-            TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-            try reaperCommand(root: root),
-        ])
-        try await waitForShellPrompt(on: server)
-        do {
-            let result = try await body(server)
-            _ = try await server.run(TmuxCommand("kill-server"))
-            return result
-        } catch {
-            _ = try? await server.run(TmuxCommand("kill-server"))
-            throw error
+        let owner = try await server.newOwnedServer(
+            bootstrapSession: "bootstrap",
+            configurationCommands: [
+                // Before the first session, so even the bootstrap pane gets it.
+                //
+                // A pane otherwise runs whoever's shell the machine is configured
+                // with, which makes a test's speed and its behaviour someone's dotfiles
+                // rather than the library's. An interactive shell with a line editor
+                // also discards input typed before it has finished starting, so a case
+                // that sends keys races that startup and loses on a busy machine. `sh`
+                // starts promptly, reads what it is given, and is on both supported
+                // systems.
+                TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+                // `default-shell` alone is still run as a *login* shell — tmux
+                // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
+                // so it reads `/etc/profile` and the runner's own profile: exactly
+                // the dotfiles the line above exists to keep out, and enough startup
+                // to delay the first prompt past the keys a case sends. Naming the
+                // command drops the login pass. `ENV` is the remaining rc hook, and
+                // is set in the server environment rather than in front of the
+                // command, where it would become the window's name.
+                TmuxCommand("set-environment", ["-g", "ENV", ""]),
+                // Darwin's /bin/bash is 3.2 and prints a notice telling the reader
+                // that zsh is the default shell now. It is compiled in rather than
+                // read from a startup file, so --noprofile --norc does not stop it,
+                // and it lands in the pane ahead of whatever a case is reading.
+                TmuxCommand("set-environment", ["-g", "BASH_SILENCE_DEPRECATION_WARNING", "1"]),
+                // `exec` so the pane holds one process: without it tmux keeps the
+                // `-c` wrapper alive, and a case that `exec`s its own command still
+                // reports the wrapper as the pane's command.
+                TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
+            ], startupCommands: [try reaperCommand(root: root)])
+        return try await finishFixture(owner: owner, removing: root) {
+            try await waitForShellPrompt(on: server)
+            return try await body(server)
         }
     }
 }
@@ -220,46 +214,40 @@ public func withNamedTmuxServer<Result>(
 
         // The reaper covers a run that is killed outright; it cannot cover the
         // ordinary exit, because `kill-server` takes tmux's background jobs with
-        // it before the job can remove anything. tmux does not reliably unlink a
-        // socket on its way out, so the ordinary path is cleaned here — the same
-        // division of labour the path-addressed fixture uses for its directory.
-        defer { try? FileManager.default.removeItem(at: socket) }
+        // it before the job can verify daemon exit. tmux can leave a socket
+        // behind, so finishFixture waits for the captured process before removing
+        // the path, as it does for a path-addressed fixture's directory.
 
         let server = try Server(
             socketName: name,
             tmuxExecutable: tmuxExecutablePath()
         )
-        _ = try await server.run([
-            TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
-            // `default-shell` alone is still run as a *login* shell — tmux
-            // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
-            // so it reads `/etc/profile` and the runner's own profile: exactly
-            // the dotfiles the line above exists to keep out, and enough startup
-            // to delay the first prompt past the keys a case sends. Naming the
-            // command drops the login pass. `ENV` is the remaining rc hook, and
-            // is set in the server environment rather than in front of the
-            // command, where it would become the window's name.
-            TmuxCommand("set-environment", ["-g", "ENV", ""]),
-            // Darwin's /bin/bash is 3.2 and prints a notice telling the reader
-            // that zsh is the default shell now. It is compiled in rather than
-            // read from a startup file, so --noprofile --norc does not stop it,
-            // and it lands in the pane ahead of whatever a case is reading.
-            TmuxCommand("set-environment", ["-g", "BASH_SILENCE_DEPRECATION_WARNING", "1"]),
-            // `exec` so the pane holds one process: without it tmux keeps the
-            // `-c` wrapper alive, and a case that `exec`s its own command still
-            // reports the wrapper as the pane's command.
-            TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
-            TmuxCommand("new-session", ["-d", "-s", "bootstrap"]),
-            try reaperCommand(root: socket),
-        ])
-        try await waitForShellPrompt(on: server)
-        do {
-            let result = try await body(server)
-            _ = try await server.run(TmuxCommand("kill-server"))
-            return result
-        } catch {
-            _ = try? await server.run(TmuxCommand("kill-server"))
-            throw error
+        let owner = try await server.newOwnedServer(
+            bootstrapSession: "bootstrap",
+            configurationCommands: [
+                TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),
+                // `default-shell` alone is still run as a *login* shell — tmux
+                // prefixes its `argv[0]` with `-`, and `$0` in the pane proves it —
+                // so it reads `/etc/profile` and the runner's own profile: exactly
+                // the dotfiles the line above exists to keep out, and enough startup
+                // to delay the first prompt past the keys a case sends. Naming the
+                // command drops the login pass. `ENV` is the remaining rc hook, and
+                // is set in the server environment rather than in front of the
+                // command, where it would become the window's name.
+                TmuxCommand("set-environment", ["-g", "ENV", ""]),
+                // Darwin's /bin/bash is 3.2 and prints a notice telling the reader
+                // that zsh is the default shell now. It is compiled in rather than
+                // read from a startup file, so --noprofile --norc does not stop it,
+                // and it lands in the pane ahead of whatever a case is reading.
+                TmuxCommand("set-environment", ["-g", "BASH_SILENCE_DEPRECATION_WARNING", "1"]),
+                // `exec` so the pane holds one process: without it tmux keeps the
+                // `-c` wrapper alive, and a case that `exec`s its own command still
+                // reports the wrapper as the pane's command.
+                TmuxCommand("set-option", ["-g", "default-command", "exec sh"]),
+            ], startupCommands: [try reaperCommand(root: socket)])
+        return try await finishFixture(owner: owner, removing: socket) {
+            try await waitForShellPrompt(on: server)
+            return try await body(server)
         }
     }
 }
@@ -287,22 +275,16 @@ public struct UnsafeReaperRoot: Error, Sendable, Hashable, CustomStringConvertib
 /// tmux server it started survives with no owner and no way to reach it.
 /// Cleanup that depends on the cleaner surviving is not deterministic.
 ///
-/// So the reaper lives inside the tmux server instead, as a background job. It
-/// watches the owning process and, once that is gone, removes the directory and
-/// kills the server. Three details carry the design:
+/// The reaper runs inside tmux as a background job and watches the owning
+/// process. When that process exits, the reaper signals the captured daemon
+/// PID. It retains the directory: tmux terminates its jobs during shutdown, so
+/// that job cannot verify daemon exit before deleting files. An outer harness
+/// may remove the recorded root after observing process exit.
 ///
-/// - The directory goes first. `kill` ends the server, and tmux kills its jobs
-///   when it exits, so anything sequenced after it would not run.
-/// - The server is addressed by pid, not by socket, because the socket is
-///   inside the directory just removed.
-/// - `#{pid}` is left for tmux to expand rather than asked for first, which is
-///   what lets arming ride in the same invocation that creates the session.
-///   Sent separately, a run killed in the gap between the two leaves a server
-///   no reaper ever covered — measurably, under load, about one server in six.
-/// - The interval is whole seconds. Fractions are a GNU and BSD extension that
-///   POSIX does not require, and a `sleep` that rejects its argument turns this
-///   into a busy loop per server rather than a slower one. Reaping a second
-///   later costs nothing here.
+/// Arm the reaper in the invocation that creates the first session. `#{pid}`
+/// expands in that daemon, and a whole-second sleep avoids depending on a
+/// platform-specific fractional `sleep` implementation. The path argument
+/// still identifies the fixture root and must remain inside the port's roots.
 public func reaperCommand(root: URL) throws(UnsafeReaperRoot) -> TmuxCommand {
     let candidate = root.standardizedFileURL.resolvingSymlinksInPath().path
     let allowedRoots = ["/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev"]
@@ -312,7 +294,6 @@ public func reaperCommand(root: URL) throws(UnsafeReaperRoot) -> TmuxCommand {
     let owner = ProcessInfo.processInfo.processIdentifier
     let script = """
         while kill -0 \(owner) 2>/dev/null; do sleep 1; done; \
-        rm -rf \(shellQuoted(candidate)); \
         kill #{pid} 2>/dev/null
         """
     return TmuxCommand("run-shell", ["-b", script])
@@ -387,4 +368,40 @@ public func tmuxExecutablePath() -> String {
         return candidate
     }
     return "/usr/bin/tmux"
+}
+
+/// Fixture teardown failed; the path stays available for inspection.
+public struct FixtureCleanupFailure: Error, Sendable {
+    public let root: String
+    public let bodyError: (any Error)?
+    public let cleanupError: any Error
+}
+
+private func finishFixture<Result>(
+    owner: OwnedTmux<Server>, removing root: URL, body: () async throws -> Result
+) async throws -> Result {
+    let outcome: Swift.Result<Result, any Error>
+    do { outcome = .success(try await body()) } catch { outcome = .failure(error) }
+    // OwnedTmux.close shields its task from the body's cancellation. Files are
+    // removed only after the captured daemon has exited. A replacement daemon
+    // is left intact with its root, and the caller sees the retained path.
+    let cleanup = await Task.detached { () async -> (any Error)? in
+        do {
+            try await owner.close()
+            if try await owner.value.isRunning() {
+                throw TmuxError.serverRestarted
+            }
+            try FileManager.default.removeItem(at: root)
+            return nil
+        } catch { return error }
+    }.value
+    if let cleanup {
+        let bodyError: (any Error)?
+        switch outcome {
+        case .success: bodyError = nil
+        case let .failure(error): bodyError = error
+        }
+        throw FixtureCleanupFailure(root: root.path, bodyError: bodyError, cleanupError: cleanup)
+    }
+    return try outcome.get()
 }

@@ -70,7 +70,7 @@ struct IdentityTests {
             #expect(try JSONDecoder().decode([WindowLink].self, from: data) == linked)
 
             let transport = InvocationCountingTransport()
-            let counted = Server(
+            let counted = try Server(
                 endpoint: server.endpoint,
                 tmuxExecutable: server.tmuxExecutable,
                 transport: transport
@@ -108,7 +108,7 @@ struct IdentityTests {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
             let transport = InvocationCountingTransport()
-            let counted = Server(
+            let counted = try Server(
                 endpoint: server.endpoint,
                 tmuxExecutable: server.tmuxExecutable,
                 transport: transport
@@ -138,7 +138,7 @@ struct IdentityTests {
             let sourceLink = try #require(try await server.windowLinks().first)
             let pane = try await server.splitWindow(sourceWindow)
             let transport = InvocationCountingTransport()
-            let counted = Server(
+            let counted = try Server(
                 endpoint: server.endpoint,
                 tmuxExecutable: server.tmuxExecutable,
                 transport: transport
@@ -331,10 +331,13 @@ struct IdentityTests {
             }
             #expect(replaced)
 
-            await #expect(throws: TmuxError.serverRestarted) {
-                try await server.unlink(stale)
+            let replacementOwner = try await server.adopt()
+            try await replacementOwner.withValue { _ async throws -> Void in
+                await #expect(throws: TmuxError.serverRestarted) {
+                    try await server.unlink(stale)
+                }
+                #expect(try await server.sessions().map(\.name) == ["replacement"])
             }
-            #expect(try await server.sessions().map(\.name) == ["replacement"])
         }
     }
 

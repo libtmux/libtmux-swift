@@ -21,7 +21,7 @@ struct PaneInputTransitionTests {
                     peer: peer,
                     mutation: mutation
                 )
-                let server = Server(
+                let server = try Server(
                     endpoint: fixture.endpoint,
                     tmuxExecutable: fixture.tmuxExecutable,
                     transport: transport
@@ -98,7 +98,7 @@ struct PaneInputTransitionTests {
                 mutation: .windowLinkIndex
             )
             let tools = TmuxTools(
-                server: Server(
+                server: try Server(
                     endpoint: fixture.endpoint,
                     tmuxExecutable: fixture.tmuxExecutable,
                     transport: transport
@@ -141,7 +141,7 @@ struct PaneInputTransitionTests {
                 peer: source,
                 mutation: .none
             )
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -180,7 +180,7 @@ struct PaneInputTransitionTests {
                 peer: source,
                 mutation: .mode
             )
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -241,7 +241,7 @@ struct PaneInputTransitionTests {
                 mutation: mutation
             )
             let tools = TmuxTools(
-                server: Server(
+                server: try Server(
                     endpoint: fixture.endpoint,
                     tmuxExecutable: fixture.tmuxExecutable,
                     transport: transport
@@ -279,7 +279,7 @@ struct PaneInputTransitionTests {
                 mutation: .mode
             )
             let tools = TmuxTools(
-                server: Server(
+                server: try Server(
                     endpoint: fixture.endpoint,
                     tmuxExecutable: fixture.tmuxExecutable,
                     transport: transport

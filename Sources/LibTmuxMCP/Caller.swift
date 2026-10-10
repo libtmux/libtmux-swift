@@ -31,6 +31,7 @@ public struct CallerIdentity: Sendable, Hashable, Codable {
         }
         guard let rawTmux = environment["TMUX"],
             let context = TmuxContext(parsing: rawTmux),
+            isSafeSocketPath(context.socketPath),
             let rawPane = environment["TMUX_PANE"],
             let paneID = PaneID(rawValue: rawPane)
         else {

@@ -19,16 +19,30 @@ ports and holding to what that library established about tmux.
 
 </div>
 
-With tmux already running on its default socket:
+List sessions on the selected tmux server:
 
 ```swift
 import LibTmux
 
-let server = try Server(socketName: "default")
+let server = try Server()
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
 ```
+
+`Server()` captures the first selected endpoint: an explicit path or name,
+`LIBTMUX_SOCKET_PATH`, `LIBTMUX_SOCKET_NAME`, valid `TMUX`, then tmux's named
+default. Empty environment selectors count as absent. An invalid selected
+value throws. Named sockets use the captured `TMUX_TMPDIR` or `/tmp`; create
+that root before starting a server. Later host-environment edits do not redirect
+a handle. Pass `environment:` to supply a child environment without changing
+your process. tmux's server/session environment has separate APIs.
+
+The [ordinary session example][ordinary-example] creates a session through
+`withNewSession`, adds a window and removes its session on exit, including a
+throwing or cancelled body. `SessionScopeFailure` preserves both failures if
+body and cleanup fail. The [external harness][ordinary-harness] runs that same
+file on private endpoints and checks daemon exit and host preservation.
 
 You address a server, ask it what exists, and send it commands. Everything that
 comes back is a value — a `Session` you hold is what the server looked like when
@@ -923,3 +937,6 @@ MIT. See [LICENSE](LICENSE).
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
 [alpha3-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.3/README.md
+
+[ordinary-example]: Examples/Sources/OrdinarySession/OrdinarySession.swift
+[ordinary-harness]: Examples/Tests/ordinary_session_harness.py

@@ -12,7 +12,7 @@ struct ModelProvenanceTests {
         let local = try ProvenanceFixture(path: "local")
         let foreign = try ProvenanceFixture(path: "foreign")
         let transport = GuardProbeTransport(expected: local.values.incarnation)
-        let server = Server(endpoint: local.endpoint, transport: transport)
+        let server = try Server(endpoint: local.endpoint, transport: transport)
 
         await #expect(throws: TmuxError.foreignServerValue) {
             try await operation.call(server, foreign.values)
@@ -25,7 +25,7 @@ struct ModelProvenanceTests {
         let local = try ProvenanceFixture(path: "zero-local")
         let foreign = try ProvenanceFixture(path: "zero-foreign")
         let transport = GuardProbeTransport(expected: local.values.incarnation)
-        let server = Server(endpoint: local.endpoint, transport: transport)
+        let server = try Server(endpoint: local.endpoint, transport: transport)
 
         await #expect(throws: OutputWaitError.tmux(.foreignServerValue)) {
             try await server.waitForOutput(in: foreign.values.pane, timeout: .zero)
@@ -40,7 +40,7 @@ struct ModelProvenanceTests {
     func mutationsUseQueuedGuard(operation: ModelOperation) async throws {
         let fixture = try ProvenanceFixture(path: "guarded")
         let transport = GuardProbeTransport(expected: fixture.values.incarnation)
-        let server = Server(endpoint: fixture.endpoint, transport: transport)
+        let server = try Server(endpoint: fixture.endpoint, transport: transport)
 
         await #expect(throws: TmuxError.serverRestarted) {
             try await operation.call(server, fixture.values)
@@ -56,7 +56,7 @@ struct ModelProvenanceTests {
     func readsUseQueuedGuard(operation: ModelOperation) async throws {
         let fixture = try ProvenanceFixture(path: "read")
         let transport = GuardProbeTransport(expected: fixture.values.incarnation)
-        let server = Server(endpoint: fixture.endpoint, transport: transport)
+        let server = try Server(endpoint: fixture.endpoint, transport: transport)
 
         await #expect(throws: TmuxError.serverRestarted) {
             try await operation.call(server, fixture.values)
@@ -70,7 +70,7 @@ struct ModelProvenanceTests {
         let local = try ProvenanceFixture(path: "noop-local")
         let foreign = try ProvenanceFixture(path: "noop-foreign")
         let transport = GuardProbeTransport(expected: local.values.incarnation)
-        let server = Server(endpoint: local.endpoint, transport: transport)
+        let server = try Server(endpoint: local.endpoint, transport: transport)
 
         try await server.resize(foreign.values.pane)
 

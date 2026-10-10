@@ -11,7 +11,7 @@ struct TransportLimitTests {
             socketPath: "/tmp/libtmux-swift-test/public-transport-limit/socket"
         )
         let limit = 1_048_576
-        let server = Server(
+        let server = try Server(
             endpoint: endpoint,
             transport: FixedReplyTransport(
                 reply: TmuxReply(
@@ -53,7 +53,7 @@ struct TransportLimitTests {
         let endpoint = try Endpoint(
             socketPath: "/tmp/libtmux-swift-test/transport-limit/socket"
         )
-        let exact = Server(
+        let exact = try Server(
             endpoint: endpoint,
             transport: FixedReplyTransport(
                 reply:
@@ -71,7 +71,7 @@ struct TransportLimitTests {
         #expect(reply.standardOutput.count == 4)
         #expect(reply.standardError.count == 4)
 
-        let oversizedError = Server(
+        let oversizedError = try Server(
             endpoint: endpoint,
             transport: FixedReplyTransport(
                 reply:
@@ -101,14 +101,17 @@ struct TransportLimitTests {
                 TmuxCommand("new-session", ["-d", "-s", "replacement"])
             )
 
-            await #expect(throws: TmuxError.serverRestarted) {
-                try await server.runIsolated(
-                    TmuxCommand("set-option", ["-g", "@isolated-guard", "ran"]),
-                    expecting: stale,
-                    perStreamOutputLimit: 128
-                )
+            let replacementOwner = try await server.adopt()
+            try await replacementOwner.withValue { _ async throws -> Void in
+                await #expect(throws: TmuxError.serverRestarted) {
+                    try await server.runIsolated(
+                        TmuxCommand("set-option", ["-g", "@isolated-guard", "ran"]),
+                        expecting: stale,
+                        perStreamOutputLimit: 128
+                    )
+                }
+                #expect(try await server.option("@isolated-guard", scope: .globalSession) == nil)
             }
-            #expect(try await server.option("@isolated-guard", scope: .globalSession) == nil)
         }
     }
 
@@ -121,17 +124,20 @@ struct TransportLimitTests {
                 TmuxCommand("new-session", ["-d", "-s", "replacement"])
             )
 
-            await #expect(throws: TmuxError.serverRestarted) {
-                try await server.killServer(expecting: stale)
+            let replacementOwner = try await server.adopt()
+            try await replacementOwner.withValue { _ async throws -> Void in
+                await #expect(throws: TmuxError.serverRestarted) {
+                    try await server.killServer(expecting: stale)
+                }
+                #expect(try await server.isRunning())
             }
-            #expect(try await server.isRunning())
         }
     }
 
     @Test("a client that never starts is distinguishable from an ambiguous failure")
     func launchFailureIsDefinite() async throws {
         try await withTmuxServer { fixture in
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: "/libtmux-swift-test/missing-tmux"
             )

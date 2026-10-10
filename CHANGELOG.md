@@ -11,6 +11,37 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `OwnedTmux` scopes own servers, sessions, windows and panes through captured IDs and a reserved daemon-generation token. Creation failures retain receipts for rollback; body and cleanup failures stay inspectable, and failed cleanup remains retryable.
+- `Server.findOrCreate`, `Server.findOrCreateSession`, `Server.findOrCreateWindow` and `Server.findOrCreatePane` distinguish created owners from borrowed matches, with exact matching and process-local acquisition gates.
+- `TmuxServers.discover` accepts bounded limits and a child environment, and returns skipped/failed diagnostics with truncation.
+
+- `Server()` resolves explicit selectors, `LIBTMUX_SOCKET_PATH`,
+  `LIBTMUX_SOCKET_NAME`, valid `TMUX`, then the named default. Its
+  `environment` argument supplies a captured child environment without changing
+  the host process.
+- `Server.withNewSession(named:shell:_:)` owns a new session through an async
+  closure. Cleanup survives body cancellation and retains a body failure beside
+  a teardown failure in `SessionScopeFailure`.
+
+### Changed
+
+- `Server.endpoint` contains the captured absolute socket path, including for
+  named selectors. Direct and control clients use that path and omit inherited
+  `TMUX` and `TMUX_PANE`. Missing named roots fail before launch; libtmux creates
+  only the per-user directory under an existing root.
+- `TmuxContext.sessionID` is optional: tmux's `-1` job context has no session.
+  Decimal IDs with leading zeroes or one `$` prefix normalize to a `SessionID`.
+- `Server(endpoint:)` validates raw enum cases. Names must be leaf names, paths
+  must be absolute, and NUL is invalid in either selector. Pass one explicit
+  path or name; simultaneous selectors throw `TmuxError.invalidEndpoint`.
+
+### Fixed
+
+- `Server.withNewSession` retains a creation receipt before checking status or cancellation, so a failed acquisition can clean up its created session.
+- `TmuxFixture` shields teardown from cancellation, reports cleanup failures, and observes daemon exit before removing a root. Its crash reaper retains roots for an outer exit observer; restart tests must own the replacement they create.
+
 ## [0.1.0-alpha.6] - 2026-09-26
 
 ### Added

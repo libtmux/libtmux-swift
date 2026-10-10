@@ -282,6 +282,15 @@ enum WorkspaceCLI {
         case let .invalidEndpoint(reason):
             switch reason {
             case .empty: return "The tmux endpoint is empty."
+            case .conflictingSelectors: return "Select one socket path or name."
+            case .invalidSocketName: return "The tmux socket name must be a leaf name."
+            case .invalidSocketPath:
+                return "The tmux socket path must be absolute and contain no NUL."
+            case .invalidTemporaryDirectory:
+                return "TMUX_TMPDIR must be absolute and contain no NUL."
+            case .invalidTmuxContext:
+                return "TMUX must contain an absolute socket path, positive PID and session ID."
+
             case let .socketPathTooLong(actualBytes, maximumBytes):
                 return
                     "The socket path is \(actualBytes) bytes, over the \(maximumBytes)-byte limit."

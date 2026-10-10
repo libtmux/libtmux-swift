@@ -15,16 +15,19 @@ struct ControlModeProvenanceTests {
                 TmuxCommand("new-session", ["-d", "-s", "replacement"])
             )
 
-            let entered = EnteredBody()
-            await #expect(throws: TmuxError.serverRestarted) {
-                try await server.connected(
-                    attachingTo: stale.id,
-                    expecting: stale.incarnation
-                ) { _, _ in
-                    await entered.mark()
+            let replacementOwner = try await server.adopt()
+            try await replacementOwner.withValue { _ async throws -> Void in
+                let entered = EnteredBody()
+                await #expect(throws: TmuxError.serverRestarted) {
+                    try await server.connected(
+                        attachingTo: stale.id,
+                        expecting: stale.incarnation
+                    ) { _, _ in
+                        await entered.mark()
+                    }
                 }
+                #expect(await !entered.value)
             }
-            #expect(await !entered.value)
         }
     }
 }
