@@ -51,6 +51,32 @@ let package = Package(
             name: "QuickStart",
             dependencies: [.product(name: "LibTmux", package: "libtmux")]
         ),
+        .executableTarget(
+            name: "OrdinarySession",
+            dependencies: [.product(name: "LibTmux", package: "libtmux")]
+        ),
+        .executableTarget(
+            name: "EndpointSnapshotProbe",
+            dependencies: [.product(name: "LibTmux", package: "libtmux")],
+            path: "Tests/EndpointSnapshotProbe"
+        ),
+        .executableTarget(
+            name: "OwnedHierarchy", dependencies: [.product(name: "LibTmux", package: "libtmux")]),
+        .executableTarget(
+            name: "AdoptExisting", dependencies: [.product(name: "LibTmux", package: "libtmux")]),
+        .executableTarget(
+            name: "FindResources", dependencies: [.product(name: "LibTmux", package: "libtmux")]),
+        .executableTarget(
+            name: "DiscoverRunning", dependencies: [.product(name: "LibTmux", package: "libtmux")]),
+        .executableTarget(
+            name: "OwnDisposableServer",
+            dependencies: [.product(name: "LibTmux", package: "libtmux")]),
+        .executableTarget(
+            name: "FixtureLifecycle",
+            dependencies: [
+                .product(name: "LibTmux", package: "libtmux"),
+                .product(name: "TmuxFixture", package: "libtmux"),
+            ]),
         .testTarget(
             name: "ExampleTests",
             dependencies: [

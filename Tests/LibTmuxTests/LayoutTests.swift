@@ -51,7 +51,7 @@ struct LayoutTests {
     @Test("all static layouts and pane counts are checked before version I/O")
     func allInputsBeforeVersion() async throws {
         let transport = LayoutProbeTransport()
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-batch/socket"),
             transport: transport)
         try await server.validateLayouts([])
@@ -67,7 +67,7 @@ struct LayoutTests {
     @Test("cancelled layout validation preserves cancellation without I/O")
     func cancellationBeforeIO() async throws {
         let transport = LayoutProbeTransport()
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-cancel/socket"),
             transport: transport)
         let task = Task {
@@ -83,7 +83,7 @@ struct LayoutTests {
         let path = "/tmp/libtmux-swift-test/layout-bound/socket"
         let endpoint = try Endpoint(socketPath: path)
         let transport = LayoutProbeTransport()
-        let server = Server(endpoint: endpoint, transport: transport)
+        let server = try Server(endpoint: endpoint, transport: transport)
         let window = Window(
             id: "@1", name: "keeper", paneCount: 1, width: 80, height: 24,
             incarnation: ServerIncarnation(
@@ -104,7 +104,7 @@ struct LayoutTests {
                 version < TmuxVersion(major: 3, minor: 5)
                 ? "main-h" : "main-horizontal-mirrored"
             let transport = LayoutProbeTransport(forward: true)
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint, tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport)
             let window = try #require(try await server.windows().first)
@@ -130,7 +130,7 @@ struct LayoutTests {
                 version < TmuxVersion(major: 3, minor: 5)
                 ? "main-h" : "main-horizontal-mirrored"
             let transport = LayoutProbeTransport(forward: true)
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint, tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport)
             let closed = try await server.using(.connected(to: "bootstrap")) { connected in

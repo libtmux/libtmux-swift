@@ -69,6 +69,11 @@ public enum TmuxError: Error, Sendable, Hashable {
 
     public enum InvalidEndpoint: Sendable, Hashable {
         case empty
+        case conflictingSelectors
+        case invalidSocketName
+        case invalidSocketPath
+        case invalidTemporaryDirectory
+        case invalidTmuxContext
         case socketPathTooLong(actualBytes: Int, maximumBytes: Int)
     }
 }

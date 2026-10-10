@@ -372,7 +372,7 @@ private func nonEmpty(_ value: String?) -> String? {
 /// Why a workspace could not be built, including what happened while undoing.
 ///
 /// Building creates a session and then fills it, so a failure partway leaves
-/// something to clean up. ``rollbackFailed`` is the case where that cleanup
+/// something to clean up. ``rollbackFailed(original:cleanup:)`` is the case where that cleanup
 /// also failed: it carries both errors, because the original says what to fix
 /// and the second says what was left behind.
 public indirect enum WorkspaceBuilderError: Error {

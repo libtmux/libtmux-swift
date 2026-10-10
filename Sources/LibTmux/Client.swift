@@ -61,8 +61,8 @@ public struct Client: Sendable, Hashable, Codable, Identifiable {
         self.incarnation = incarnation
     }
 
-    /// Decodes a client, treating an absent ``flags`` as an empty set so that
-    /// a payload written before the field existed still reads back.
+    /// Decodes a client, treating an absent `flags` field as an empty set.
+    /// Accepts payloads written before that field existed.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         incarnation = try container.decode(ServerIncarnation.self, forKey: .incarnation)

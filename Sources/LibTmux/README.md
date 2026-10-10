@@ -22,12 +22,12 @@ One dependency ([swift-subprocess][]), and the only product most callers need.
 .product(name: "LibTmux", package: "libtmux-swift")
 ```
 
-With tmux already running on its default socket:
+List sessions on the selected tmux server:
 
 ```swift
 import LibTmux
 
-let server = try Server(socketName: "default")
+let server = try Server()
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }

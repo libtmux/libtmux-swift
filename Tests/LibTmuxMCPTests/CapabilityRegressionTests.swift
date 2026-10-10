@@ -10,7 +10,7 @@ struct CapabilityRegressionTests {
     @Test("invalid layout syntax is refused before MCP window lookup")
     func invalidLayoutPrecedesLookup() async throws {
         let transport = InvalidMCPLayoutProbeTransport()
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(
                 socketPath: "/tmp/libtmux-swift-test/mcp-layout-preflight/socket"),
             transport: transport)

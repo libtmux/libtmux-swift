@@ -33,7 +33,7 @@ struct RetainedMCPBehaviorTests {
     ) async throws {
         try await withTmuxServer { fixture in
             let transport = RetainedProbeFailureTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -453,6 +453,7 @@ struct RetainedMCPBehaviorTests {
                 interruption: .cancel
             )
 
+            var replacementOwner: OwnedTmux<Server>?
             switch proof {
             case .paneMissing:
                 try await server.kill(pane)
@@ -483,11 +484,16 @@ struct RetainedMCPBehaviorTests {
                         try reaperCommand(root: root),
                     ])
                 )
+                replacementOwner = try await server.adopt()
                 #expect(reply.isSuccess)
                 #expect(try await server.incarnation() != pane.incarnation)
             }
 
-            try await expectReleased(pane)
+            if let replacementOwner {
+                try await replacementOwner.withValue { _ in try await expectReleased(pane) }
+            } else {
+                try await expectReleased(pane)
+            }
         }
     }
 

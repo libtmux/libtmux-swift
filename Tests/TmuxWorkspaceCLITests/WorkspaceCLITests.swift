@@ -1782,21 +1782,25 @@ struct WorkspaceCLITests {
             _ = try await server.run(TmuxCommand("kill-server"))
             try #require(await waitForSocketClosure(socket))
             let replacement = try await server.newSession(named: "replacement")
-            let recycled = try await server.snapshot()
-            #expect(recycled.panes.first?.id == pane.id)
-            let restarted = await invoke(
-                ["load", file.path, "--append", "-S", socket, "--json"], in: root,
-                extra: environment)
-            #expect(restarted.code == 2)
-            #expect(restarted.error.joined().contains("\"code\":\"usage\""), "\(restarted.error)")
-            #expect(try await server.snapshot().windows.count == 1)
-            let old = try #require(snapshot.sessions.first)
-            await #expect(throws: TmuxError.serverRestarted) {
-                _ = try await server.setEnvironment("UNCHANGED", to: "bad", in: old)
+            let replacementOwner = try await server.adopt()
+            try await replacementOwner.withValue { _ async throws -> Void in
+                let recycled = try await server.snapshot()
+                #expect(recycled.panes.first?.id == pane.id)
+                let restarted = await invoke(
+                    ["load", file.path, "--append", "-S", socket, "--json"], in: root,
+                    extra: environment)
+                #expect(restarted.code == 2)
+                #expect(
+                    restarted.error.joined().contains("\"code\":\"usage\""), "\(restarted.error)")
+                #expect(try await server.snapshot().windows.count == 1)
+                let old = try #require(snapshot.sessions.first)
+                await #expect(throws: TmuxError.serverRestarted) {
+                    _ = try await server.setEnvironment("UNCHANGED", to: "bad", in: old)
+                }
+                #expect(
+                    try await server.environmentValue(
+                        "UNCHANGED", in: .session(replacement.id.rawValue)) == nil)
             }
-            #expect(
-                try await server.environmentValue(
-                    "UNCHANGED", in: .session(replacement.id.rawValue)) == nil)
         }
     }
 
@@ -2900,21 +2904,26 @@ struct WorkspaceCLITests {
                     + (colors256 ? ["-2"] : []), in: root,
                 extra: ["LIBTMUX_TMUX_BIN": wrapper.path])
             try #require(result.code == 0, "\(result.error)")
-            let sessions = try await server.sessions()
-            #expect(sessions.map(\.name) == ["cold"])
-            let configured = Server(
-                endpoint: server.endpoint, tmuxExecutable: wrapper.path,
-                configurationFile: "/dev/null", force256Colors: colors256)
-            let connectedNames = try await configured.using(.connected(to: "cold")) { connected in
-                try await connected.sessions().map(\.name)
+            let replacementOwner = try await server.adopt()
+            try await replacementOwner.withValue { _ async throws -> Void in
+                let sessions = try await server.sessions()
+                #expect(sessions.map(\.name) == ["cold"])
+                let configured = try Server(
+                    endpoint: server.endpoint, tmuxExecutable: wrapper.path,
+                    configurationFile: "/dev/null", force256Colors: colors256)
+                let connectedNames = try await configured.using(.connected(to: "cold")) {
+                    connected in
+                    try await connected.sessions().map(\.name)
+                }
+                #expect(connectedNames == ["cold"])
+                let prefixes = try String(contentsOf: recorded, encoding: .utf8).split(
+                    separator: "\n")
+                #expect(!prefixes.isEmpty)
+                let expected = colors256 ? "-u|-2|-f|/dev/null|" : "-u|-f|/dev/null|"
+                #expect(prefixes.allSatisfy { $0.hasPrefix(expected) })
+                #expect(prefixes.contains { $0.contains("|-C") })
+                #expect(prefixes.contains { $0.contains("|-S") })
             }
-            #expect(connectedNames == ["cold"])
-            let prefixes = try String(contentsOf: recorded, encoding: .utf8).split(separator: "\n")
-            #expect(!prefixes.isEmpty)
-            let expected = colors256 ? "-u|-2|-f|/dev/null|" : "-u|-f|/dev/null|"
-            #expect(prefixes.allSatisfy { $0.hasPrefix(expected) })
-            #expect(prefixes.contains { $0.contains("|-C") })
-            #expect(prefixes.contains { $0.contains("|-S") })
         }
     }
 

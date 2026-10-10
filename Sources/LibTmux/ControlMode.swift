@@ -169,6 +169,7 @@ extension Server {
         attachingTo session: String,
         _ body: @escaping @Sendable (ControlSession) async throws -> Result
     ) async throws -> Result {
+        try prepareEndpoint()
         var platformOptions = PlatformOptions()
         platformOptions.createSession = true
 
@@ -181,7 +182,7 @@ extension Server {
                 executable: .path(FilePath(tmuxExecutablePath)),
                 arguments: Arguments(arguments),
                 environment: .custom(
-                    TmuxProcessEnvironment.controlAttachmentVariables().reduce(into: [:]) {
+                    processEnvironment.reduce(into: [:]) {
                         keys, variable in
                         keys[Subprocess.Environment.Key(rawValue: variable.key)!] =
                             variable.value

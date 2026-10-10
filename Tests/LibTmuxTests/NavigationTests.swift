@@ -11,7 +11,7 @@ struct NavigationTests {
         let path = "/tmp/libtmux-swift-test/core-layout-preflight/socket"
         let endpoint = try Endpoint(socketPath: path)
         let transport = InvalidLayoutProbeTransport()
-        let server = Server(endpoint: endpoint, transport: transport)
+        let server = try Server(endpoint: endpoint, transport: transport)
         let window = Window(
             id: "@1", name: "keeper", paneCount: 1, width: 80, height: 24,
             incarnation: ServerIncarnation(

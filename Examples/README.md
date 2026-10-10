@@ -108,8 +108,32 @@ already chosen that disposition. `TmuxContext.current()` is only non-nil inside
 a pane, and the regular-expression filter has no example test. The quick start
 is top-level code, but its test spawns it, so it does count as executed.
 
-Every test here provisions servers through the same fixture as the main suite,
-so every socket stays under `/tmp/libtmux-swift-test/`.
+The tests keep sockets under `/tmp/libtmux-swift-test/`. Most use the shared
+fixture. `OrdinarySession` uses `Server()` and `withNewSession` with no fixture
+or socket arguments. Its external harness supplies selectors in a child
+environment, observes the created window and daemon PID, injects a body failure,
+and verifies session cleanup and daemon exit. The same harness keeps a separate
+private daemon alive to detect accidental host cleanup.
+
+Build the executable examples:
+
+```console
+$ swift build --package-path Examples --jobs 5 --force-resolved-versions
+```
+
+Run the ordinary program through its isolated harness:
+
+```console
+$ python3 Examples/Tests/ordinary_session_harness.py \
+    Examples/.build/debug/OrdinarySession \
+    --snapshot-probe Examples/.build/debug/EndpointSnapshotProbe
+```
+
+`EndpointSnapshotProbe` changes its own environment after constructing
+`Server()` and checks both subprocess and control-mode clients. The harness
+records the actual `-S` arguments and child environment. `--break-cleanup`
+replaces the cleanup command with a presence check; the harness must fail and
+then remove its captured test daemon.
 
 ## Complete API programs
 
@@ -151,3 +175,9 @@ $ swift run --jobs 5 ApiExample
 Use Swift 6.2 or newer on Linux, or Xcode 26's Swift toolchain on macOS, and
 tmux 3.2a or newer. Set `LIBTMUX_TMUX_BIN` to an absolute tmux executable path
 to select a particular release.
+
+## Lifecycle programs
+
+`OwnedHierarchy`, `AdoptExisting`, `FindResources` and `DiscoverRunning` use normal defaults. `OwnDisposableServer` demonstrates whole-server destruction on an explicit disposable name. `FixtureLifecycle` demonstrates the test-only fixture. Each includes its imports and appears unchanged in the lifecycle DocC guide.
+
+`Tests/lifecycle_harness.py` supplies child environment selectors, runs these consumer executables, checks that the keeper survives, and observes daemon exit before removing its private root. The existing ordinary-session harness covers body failure and its disabled-cleanup negative control. These checks execute Swift source programs; they do not establish Markdown, Astro, Sphinx or doctest adapters.

@@ -13,6 +13,8 @@ public struct Server: Sendable, Hashable {
     public let endpoint: Endpoint
     let tmuxExecutablePath: String
     let clientArguments: [String]
+    let processEnvironment: [String: String]
+    private let resolvedEndpoint: ResolvedEndpoint
     private let runtime: ServerRuntime
     /// Where commands go, when it is not a new process each time.
     ///
@@ -44,40 +46,54 @@ public struct Server: Sendable, Hashable {
         return .connected(to: attachedSession)
     }
 
+    /// Captures one endpoint and the environment for future tmux clients.
+    ///
+    /// Explicit path or name wins over `LIBTMUX_SOCKET_PATH`,
+    /// `LIBTMUX_SOCKET_NAME`, `TMUX`, then tmux's named default.
+    /// `environment` replaces the inherited child environment without changing
+    /// this process. Clients omit `TMUX` and `TMUX_PANE`; tmux's server/session
+    /// environment remains a separate API.
     public init(
-        socketPath: String,
+        socketPath: String? = nil,
+        socketName: String? = nil,
         tmuxExecutable: String = "tmux",
-        configurationFile: String? = nil
+        configurationFile: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws(TmuxError) {
-        self.init(
-            endpoint: try Endpoint(socketPath: socketPath),
+        try self.init(
+            endpoint: Endpoint.selected(
+                socketPath: socketPath, socketName: socketName, environment: environment),
             tmuxExecutable: tmuxExecutable,
-            configurationFile: configurationFile
+            configurationFile: configurationFile,
+            environment: environment,
+            transport: SubprocessTransport()
         )
     }
 
+    /// Validates a selector, including enum cases constructed without an initializer.
     public init(
-        socketName: String,
+        endpoint: Endpoint,
         tmuxExecutable: String = "tmux",
-        configurationFile: String? = nil
+        configurationFile: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws(TmuxError) {
-        self.init(
-            endpoint: try Endpoint(socketName: socketName),
-            tmuxExecutable: tmuxExecutable,
-            configurationFile: configurationFile
-        )
+        try self.init(
+            endpoint: endpoint, tmuxExecutable: tmuxExecutable,
+            configurationFile: configurationFile, environment: environment,
+            transport: SubprocessTransport())
     }
 
     package init(
         endpoint: Endpoint,
         tmuxExecutable: String,
         configurationFile: String?,
-        force256Colors: Bool
-    ) {
-        self.init(
+        force256Colors: Bool,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws(TmuxError) {
+        try self.init(
             endpoint: endpoint, tmuxExecutable: tmuxExecutable,
             configurationFile: configurationFile, force256Colors: force256Colors,
-            transport: SubprocessTransport())
+            environment: environment, transport: SubprocessTransport())
     }
 
     init(
@@ -85,24 +101,32 @@ public struct Server: Sendable, Hashable {
         tmuxExecutable: String = "tmux",
         configurationFile: String? = nil,
         force256Colors: Bool = false,
-        transport: any ProcessTransport = SubprocessTransport()
-    ) {
-        let resolved = resolvedExecutable(tmuxExecutable)
-        self.endpoint = endpoint
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        transport: any ProcessTransport
+    ) throws(TmuxError) {
+        let resolvedEndpoint = try endpoint.resolved(environment: environment)
+        let resolved = resolvedExecutable(tmuxExecutable, searching: environment)
+        self.endpoint = resolvedEndpoint.endpoint
+        self.resolvedEndpoint = resolvedEndpoint
+        self.processEnvironment = TmuxProcessEnvironment.variables(readingFrom: environment)
         self.tmuxExecutablePath = resolved
-        // `-u` keeps format bytes in UTF-8 without changing the environment a
-        // newly started daemon passes to panes.
+        // `-u` keeps format bytes in UTF-8 without changing pane locales.
         self.clientArguments =
             ["-u"] + (force256Colors ? ["-2"] : [])
             + (configurationFile.map { ["-f", $0] } ?? [])
         self.runtime = ServerRuntime(
-            endpoint: endpoint,
+            endpoint: resolvedEndpoint,
             tmuxExecutable: resolved,
             clientArguments: clientArguments,
+            environment: processEnvironment,
             transport: transport
         )
         self.connection = nil
         self.attachedSession = nil
+    }
+
+    func prepareEndpoint() throws(TmuxError) {
+        try resolvedEndpoint.prepare()
     }
 
     /// The same server in another mode.
@@ -116,6 +140,8 @@ public struct Server: Sendable, Hashable {
         attachedTo session: String?
     ) {
         self.endpoint = other.endpoint
+        self.resolvedEndpoint = other.resolvedEndpoint
+        self.processEnvironment = other.processEnvironment
         self.tmuxExecutablePath = other.tmuxExecutablePath
         self.clientArguments = other.clientArguments
         self.runtime = other.runtime
@@ -147,6 +173,20 @@ public struct Server: Sendable, Hashable {
             rawArguments: command.argumentVector,
             environmentOverrides: launchEnvironment
         )
+    }
+
+    func runReceipted(
+        _ commands: TmuxCommandList, environment: [String: String] = [:], noStart: Bool = true
+    ) async -> ReceiptOutcome {
+        // A lifecycle operation always has its own bounded client. Closing a
+        // caller's control-mode connection cannot discard its creation receipt.
+        let result = await Task.detached {
+            await runtime.runReceipted(
+                (noStart ? ["-N"] : []) + commands.argumentVector, overrides: environment)
+        }.value
+        return ReceiptOutcome(
+            reply: result.reply,
+            failure: result.failure ?? (Task.isCancelled ? .cancelled : nil))
     }
 
     func recordedDaemonVersion() async -> TmuxVersion? {
@@ -416,9 +456,10 @@ public struct Server: Sendable, Hashable {
 /// An actor, so that copies of one ``Server`` coordinate rather than race: the
 /// value is free to be copied because everything mutable lives behind here.
 actor ServerRuntime {
-    private let endpoint: Endpoint
+    private let endpoint: ResolvedEndpoint
     private let tmuxExecutable: String
     private let clientArguments: [String]
+    private let environment: [String: String]
     private let transport: any ProcessTransport
     /// What the daemon at this endpoint answered when asked its version.
     ///
@@ -428,15 +469,36 @@ actor ServerRuntime {
     private var daemonVersion: TmuxVersion?
 
     init(
-        endpoint: Endpoint,
+        endpoint: ResolvedEndpoint,
         tmuxExecutable: String,
         clientArguments: [String],
+        environment: [String: String],
         transport: any ProcessTransport
     ) {
         self.endpoint = endpoint
         self.tmuxExecutable = tmuxExecutable
         self.clientArguments = clientArguments
+        self.environment = environment
         self.transport = transport
+    }
+
+    func runReceipted(_ rawArguments: [String], overrides: [String: String]) async -> ReceiptOutcome
+    {
+        do {
+            try requireTmuxCommandFits(rawArguments)
+            try endpoint.prepare()
+            var child = environment
+            child.merge(overrides) { _, new in new }
+            return await transport.runReceipted(
+                executable: tmuxExecutable,
+                arguments: clientArguments + endpoint.endpoint.addressArguments + rawArguments,
+                environment: TmuxProcessEnvironment.variables(readingFrom: child),
+                perStreamOutputLimit: defaultTmuxReplyByteLimit)
+        } catch {
+            return ReceiptOutcome(
+                reply: TmuxReply(standardOutput: [], standardError: [], exitCode: -1),
+                failure: error)
+        }
     }
 
     func recordedDaemonVersion() -> TmuxVersion? { daemonVersion }
@@ -456,9 +518,11 @@ actor ServerRuntime {
         // the lifetime of a tmux process.
         let transport = self.transport
         let executable = tmuxExecutable
-        let arguments = clientArguments + endpoint.addressArguments + rawArguments
-        var environment = TmuxProcessEnvironment.variables()
+        try endpoint.prepare()
+        let arguments = clientArguments + endpoint.endpoint.addressArguments + rawArguments
+        var environment = self.environment
         environment.merge(environmentOverrides) { _, override in override }
+        environment = TmuxProcessEnvironment.variables(readingFrom: environment)
         let reply = try await transport.run(
             executable: executable,
             arguments: arguments,

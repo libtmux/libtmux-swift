@@ -5,7 +5,7 @@ import TmuxFixture
 
 @Suite("environment", .timeLimit(.minutes(5)))
 struct EnvironmentTests {
-    @Test("tmux clients inherit the caller's environment unchanged")
+    @Test("clients preserve ordinary variables and remove nested tmux identity")
     func processEnvironmentIsInherited() {
         let caller = [
             "LC_ALL": "fr_FR.UTF-8",
@@ -19,7 +19,7 @@ struct EnvironmentTests {
         var nested = caller
         nested["TMUX"] = "/tmp/libtmux-swift-test/outer,1,0"
         nested["TMUX_PANE"] = "%7"
-        #expect(TmuxProcessEnvironment.controlAttachmentVariables(readingFrom: nested) == caller)
+        #expect(TmuxProcessEnvironment.variables(readingFrom: nested) == caller)
     }
 
     @Test("opening control mode does not rewrite the session environment")

@@ -422,7 +422,7 @@ struct WorkspaceBuildingTests {
         let socketPath = "/tmp/libtmux-swift-test/workspace-rollback/socket"
         let endpoint = try Endpoint(socketPath: socketPath)
         let transport = StuckRollbackTransport()
-        let server = Server(endpoint: endpoint, transport: transport)
+        let server = try Server(endpoint: endpoint, transport: transport)
         let session = Session(
             id: "$1",
             name: "rollback",

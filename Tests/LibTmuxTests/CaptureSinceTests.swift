@@ -63,7 +63,7 @@ struct CaptureSinceTests {
     func incrementalCaptureIsSourceBounded() async throws {
         try await withTmuxServer { fixture in
             let transport = CaptureRecordingTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -82,7 +82,7 @@ struct CaptureSinceTests {
     func outputRaceIsRetried() async throws {
         try await withTmuxServer { fixture in
             let transport = CaptureRecordingTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport
@@ -115,7 +115,7 @@ struct CaptureSinceTests {
             try await fixture.wait(for: "forward-scan-ready")
             let started = try await fixture.capture(pane, since: nil)
             let transport = CaptureRecordingTransport()
-            let server = Server(
+            let server = try Server(
                 endpoint: fixture.endpoint,
                 tmuxExecutable: fixture.tmuxExecutable,
                 transport: transport

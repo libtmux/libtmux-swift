@@ -14,10 +14,12 @@ You address a server, ask it what exists, and send it commands. Everything you
 get back is a value — a `Session` you hold is what the server looked like when
 you asked, not a live handle that changes under you. Ask again for a newer view.
 
-With tmux already running on its default socket:
+List sessions on the selected tmux server:
 
 ```swift
-let server = try Server(socketName: "default")
+import LibTmux
+
+let server = try Server()
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
@@ -198,3 +200,7 @@ command explains itself on standard error — so
 
 - ``TmuxError``
 - ``FormatDecodingError``
+
+### Ownership and examples
+
+- <doc:Lifecycle>

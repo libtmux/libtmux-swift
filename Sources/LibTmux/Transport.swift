@@ -20,7 +20,19 @@ func tmuxOutputLimitError(_ limit: Int) -> TmuxError {
 /// A transport is told the limit so it can stop reading at it rather than
 /// buffering what it will then discard. ``ServerRuntime`` checks the reply
 /// against the same limit, so a transport that ignores it still fails closed.
+struct ReceiptOutcome: Sendable {
+    let reply: TmuxReply
+    let failure: TmuxError?
+}
+
 protocol ProcessTransport: Sendable {
+    func runReceipted(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async -> ReceiptOutcome
+
     func run(
         executable: String,
         arguments: [String],
@@ -137,5 +149,25 @@ func withTmuxErrorMapping<Result>(
         return try await operation()
     } catch {
         throw normalizedTmuxError(error)
+    }
+}
+
+// Test transports keep their existing boundary; the shipped transport retains
+// output itself, including bytes received before a read failure.
+extension ProcessTransport {
+    func runReceipted(
+        executable: String, arguments: [String], environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async -> ReceiptOutcome {
+        do {
+            let reply = try await run(
+                executable: executable, arguments: arguments, environment: environment,
+                perStreamOutputLimit: perStreamOutputLimit)
+            return ReceiptOutcome(reply: reply, failure: nil)
+        } catch {
+            return ReceiptOutcome(
+                reply: TmuxReply(standardOutput: [], standardError: [], exitCode: -1),
+                failure: error)
+        }
     }
 }

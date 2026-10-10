@@ -34,7 +34,7 @@ struct NewSessionTests {
         let socketPath = "/tmp/libtmux-swift-test/new-session-atomic/socket"
         let endpoint = try Endpoint(socketPath: socketPath)
         let transport = NewSessionTransport(socketPath: socketPath)
-        let server = Server(
+        let server = try Server(
             endpoint: endpoint,
             transport: transport
         )
@@ -66,7 +66,7 @@ struct NewSessionTests {
             reportedWidth: 80,
             reportedHeight: 23
         )
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: socketPath),
             transport: transport
         )
@@ -90,7 +90,7 @@ struct NewSessionTests {
             reportedWidth: 111,
             reportedHeight: 41
         )
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: socketPath),
             transport: transport
         )
@@ -110,7 +110,7 @@ struct NewSessionTests {
             reportedHeight: 23,
             rejectsResize: true
         )
-        let server = Server(
+        let server = try Server(
             endpoint: try Endpoint(socketPath: socketPath),
             transport: transport
         )
