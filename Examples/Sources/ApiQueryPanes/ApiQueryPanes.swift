@@ -11,13 +11,16 @@ struct ApiQueryPanes {
                     throw ExampleError.paneMissing
                 }
                 _ = try await server.split(original, direction: .right)
-                let expression = try FilterExpr<Pane>.where(\.isActive, .equals(true))
+                let expression = try FilterExpr<Pane>.where(
+                    \.isActive, .equals(true))
                 let active = try await server.panes(where: expression)
                 print("Active panes: \(active.count)")
-                print("Original stays active: \(active.contains { $0.id == original.id })")
+                let stays = active.contains { $0.id == original.id }
+                print("Original stays active: \(stays)")
             }
         } catch {
-            FileHandle.standardError.write(Data("Example failed: \(error)\n".utf8))
+            FileHandle.standardError.write(
+                Data("Example failed: \(error)\n".utf8))
             exit(EXIT_FAILURE)
         }
     }

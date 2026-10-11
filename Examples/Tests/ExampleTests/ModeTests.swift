@@ -27,7 +27,8 @@ struct ModeTests {
         }
     }
 
-    @Test("choosing the mode at runtime changes neither the calls nor the answer")
+    @Test(
+        "choosing the mode at runtime changes neither the calls nor the answer")
     func choosingAtRuntimeChangesNothing() async throws {
         try await withMain { server in
             let attached = try await chosenAtRuntime(server, true).map(\.name)
@@ -45,11 +46,26 @@ struct ModeTests {
         }
     }
 
-    @Test("a workspace built over a connection is the session tmux ends up with")
+    @Test("the connected and chosen-mode fences list the same sessions")
+    func theDocCommentFencesAgree() async throws {
+        try await withMain { server in
+            let expected = try await server.sessions().map(\.name).sorted()
+            let connected = try await namesOverAConnection(server)
+            #expect(connected.sorted() == expected)
+            for attach in [true, false] {
+                let chosen = try await namesInTheChosenMode(server, attach)
+                #expect(chosen.sorted() == expected)
+            }
+        }
+    }
+
+    @Test(
+        "a workspace built over a connection is the session tmux ends up with")
     func aWorkspaceBuildsOverAConnection() async throws {
         try await withMain { server in
             let workspace = describeAWorkspaceInSwift()
-            let session = try await aConsumerThatNeverMentionsAMode(server, workspace)
+            let session = try await aConsumerThatNeverMentionsAMode(
+                server, workspace)
             #expect(session.name == "work")
             #expect(try await server.hasSession("work"))
         }

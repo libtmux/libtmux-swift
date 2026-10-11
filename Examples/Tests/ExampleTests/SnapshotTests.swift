@@ -13,9 +13,25 @@ struct SnapshotTests {
 
             #expect(!snapshot.windows(of: session).isEmpty)
             for window in snapshot.windows(of: session) {
-                #expect(snapshot.sessions(of: window).contains { $0.id == session.id })
+                let owners = snapshot.sessions(of: window)
+                #expect(owners.contains { $0.id == session.id })
                 #expect(!snapshot.panes(of: window).isEmpty)
             }
+        }
+    }
+
+    @Test("a format reads a field through a window link")
+    func aFormatReadsThroughALink() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let link = try #require(
+                try await server.windowLinks().first {
+                    $0.windowID == pane.windowID
+                }
+            )
+            let tty = try #require(
+                try await ttyThroughALink(server, pane, link))
+            #expect(tty.hasPrefix("/dev/"))
         }
     }
 }

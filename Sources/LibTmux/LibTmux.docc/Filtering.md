@@ -8,7 +8,9 @@ travel.
 Filter with the standard library when the predicate is local to your code:
 
 ```swift
-let editors = try await server.panes().filter { $0.currentCommand == "nvim" }
+let editors = try await server.panes().filter {
+    $0.currentCommand == "nvim"
+}
 ```
 
 Reach for ``FilterExpr`` when the filter has to *travel* — stored in a config,
@@ -17,7 +19,8 @@ compiler rejects a text operator on a number, and it holds no closures, so it
 can be encoded:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = try FilterExpr<Pane>.where(
+    \.currentCommand, .isIn(["nvim", "vim"]))
 let matching = try await server.panes().filter(expression)
 ```
 
@@ -26,7 +29,8 @@ unchecked string:
 
 ```swift
 let editors = try RegexPattern("^(n?vim|hx)$", options: [.caseInsensitive])
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .matches(editors))
+let expression = try FilterExpr<Pane>.where(
+    \.currentCommand, .matches(editors))
 let matching = try await server.panes().filter(expression)
 ```
 

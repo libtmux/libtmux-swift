@@ -56,8 +56,10 @@ and cannot see.
 ## Which policy applies
 
 - Documentation, user-facing text, `CHANGELOG.md`, release notes, commit
-  messages, DocC, doc comments, and source comments:
-  [`.github/WRITING.md`](.github/WRITING.md)
+  messages, DocC, doc comments, source comments, and any code example (example
+  programs, DocC and doc-comment code, Markdown code blocks):
+  [`.github/WRITING.md`](.github/WRITING.md), and its
+  [Examples](.github/WRITING.md#examples) section for code a reader sees
 - Building, running the tests, the checks that must pass, pull requests,
   review, releases, and compatibility:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)

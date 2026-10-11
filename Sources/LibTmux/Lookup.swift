@@ -10,8 +10,10 @@
 /// the same question by formatting, piping and decoding every other pane too.
 ///
 /// ```swift
-/// guard let fresh = try await server.refresh(pane) else { return }  // still there
-/// let work = try await server.session(named: "work")                // by name
+/// // Still there?
+/// guard let fresh = try await server.refresh(pane) else { return }
+/// // By name.
+/// let work = try await server.session(named: "work")
 /// ```
 ///
 /// Absence is `nil` rather than an error: an object going away is ordinary, and

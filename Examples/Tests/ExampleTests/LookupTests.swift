@@ -10,9 +10,19 @@ struct LookupExampleTests {
         try await withTmuxServer { server in
             _ = try await server.newSession(named: "work")
             let pane = try #require(try await server.panes().first)
-            let (work, fresh) = try await findOneObjectWithoutListingTheRest(server, pane)
+            let (work, fresh) = try await findOneObjectWithoutListingTheRest(
+                server, pane)
             #expect(work?.name == "work")
             #expect(fresh?.id == pane.id)
+        }
+    }
+
+    @Test("the refresh-and-lookup fence runs against a live pane")
+    func refreshAndLookupRun() async throws {
+        try await withTmuxServer { server in
+            _ = try await server.newSession(named: "work")
+            let pane = try #require(try await server.panes().first)
+            try await stillThereAndByName(server, pane)
         }
     }
 

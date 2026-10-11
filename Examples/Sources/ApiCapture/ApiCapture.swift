@@ -11,13 +11,15 @@ struct ApiCapture {
                     throw ExampleError.paneMissing
                 }
                 let marker = "libtmux-swift-api"
-                try await server.sendKeys(["printf '%s\\n' \(marker)"], to: pane, literally: true)
+                try await server.sendKeys(
+                    ["printf '%s\\n' \(marker)"], to: pane, literally: true)
                 try await server.sendKeys(["Enter"], to: pane)
 
                 let clock = ContinuousClock()
                 let deadline = clock.now.advanced(by: .seconds(5))
                 while clock.now < deadline {
-                    let lines = try await server.capture(pane, includingHistory: true)
+                    let lines = try await server.capture(
+                        pane, includingHistory: true)
                     if lines.contains(marker) {
                         print(marker)
                         return
@@ -27,7 +29,8 @@ struct ApiCapture {
                 throw ExampleError.outputTimedOut
             }
         } catch {
-            FileHandle.standardError.write(Data("Example failed: \(error)\n".utf8))
+            FileHandle.standardError.write(
+                Data("Example failed: \(error)\n".utf8))
             exit(EXIT_FAILURE)
         }
     }

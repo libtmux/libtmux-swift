@@ -1,0 +1,38 @@
+# Code a reader sees in rendered documentation stays within `width` columns.
+# Enforced by Scripts/check_example_width.py; see the Examples section of
+# .github/WRITING.md.
+width = 80
+
+markdown = ["**/*.md"]
+sources = ["Examples/**/*.swift"]
+doc_comments = ["Sources/**/*.swift"]
+allow_ceiling = 2
+shared_digest = "872d3f4cb1eb2b5cd9c5b7adc9cd140a153e4bbed3cb5bd0b7400a905e6dae4d"
+checker_digest = "14cdcbb3b543a2818179511f1b9aa1086fb2c12ebe848b06809fd66b4c6f4e74"
+
+[[exclude]]
+glob = "Examples/Package.resolved"
+reason = "SwiftPM-generated lock file; nobody reads it for its code"
+
+[[exclude]]
+glob = "Examples/.swift-format"
+reason = "formatter config that [[formatter_copies]] already compares with the root copy"
+
+[[exclude]]
+glob = "Examples/api-examples.json"
+reason = "data ApiExamplesTests compares against the sources and the documented output; the examples it names are checked as sources"
+
+[[allow]]
+path = "Sources/libtmux-mcp/README.md"
+line = "    '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"shell\",\"version\":\"1\"}}}' \\"
+reason = "one JSON-RPC message per line on the wire; a break changes the request"
+
+[[allow]]
+path = ".github/WRITING.md"
+line = "    /// let names = try await server.connected(attachingTo: \"main\") { server, _ in"
+reason = "the Bad example in the port block; it shows the width problem the Good example fixes"
+
+[[formatter_copies]]
+copy = "Examples/.swift-format"
+root = ".swift-format"
+key = "lineLength"

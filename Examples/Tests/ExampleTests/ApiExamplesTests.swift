@@ -23,13 +23,15 @@ struct ApiExamplesTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let repository = examples.deletingLastPathComponent()
+        let file = examples.appendingPathComponent("api-examples.json")
         let manifest = try JSONDecoder().decode(
             ApiExampleManifest.self,
-            from: Data(contentsOf: examples.appendingPathComponent("api-examples.json"))
+            from: Data(contentsOf: file)
         )
         #expect(manifest.schemaVersion == 1)
         try #require(!manifest.examples.isEmpty)
-        #expect(Set(manifest.examples.map(\.name)).count == manifest.examples.count)
+        #expect(
+            Set(manifest.examples.map(\.name)).count == manifest.examples.count)
         #expect(
             FileManager.default.fileExists(
                 atPath:
@@ -42,7 +44,8 @@ struct ApiExamplesTests {
             let source = repository.appendingPathComponent(example.file)
             try #require(FileManager.default.fileExists(atPath: source.path))
             let process = Process()
-            process.executableURL = examples.appendingPathComponent(".build/debug/\(example.name)")
+            process.executableURL = examples.appendingPathComponent(
+                ".build/debug/\(example.name)")
             let output = Pipe()
             process.standardOutput = output
             try process.run()
@@ -58,14 +61,16 @@ struct ApiExamplesTests {
             while process.isRunning && clock.now < deadline {
                 try await Task.sleep(for: .milliseconds(25))
             }
-            try #require(!process.isRunning, "\(example.name) exceeded 30 seconds")
+            try #require(
+                !process.isRunning, "\(example.name) exceeded 30 seconds")
             let printed = String(
                 decoding: output.fileHandleForReading.readDataToEndOfFile(),
                 as: UTF8.self
             )
             #expect(process.terminationStatus == 0, "\(example.name) failed")
             #expect(
-                printed == example.expectedOutput.joined(separator: "\n") + "\n",
+                printed == example.expectedOutput.joined(separator: "\n")
+                    + "\n",
                 "\(example.name) printed a different result")
         }
     }
