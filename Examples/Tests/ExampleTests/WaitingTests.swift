@@ -6,7 +6,8 @@ import TmuxFixture
 
 /// Whether `make` is on `PATH`, which the channel example runs.
 private let makeAvailable: Bool = {
-    let paths = ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":") ?? []
+    let paths =
+        ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":") ?? []
     return paths.contains { candidate in
         FileManager.default.isExecutableFile(
             atPath: "\(candidate)/make"
@@ -29,7 +30,8 @@ struct WaitingTests {
             // Failure must still signal the channel; otherwise this wait is
             // exactly where the recipe deadlocks.
             let directory = URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("libtmux-swift-waiting-\(UUID().uuidString.prefix(8))")
+                .appendingPathComponent(
+                    "libtmux-swift-waiting-\(UUID().uuidString.prefix(8))")
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
@@ -97,7 +99,8 @@ struct WaitingTests {
     func documentedOutputWaitMatches() async throws {
         try await withTmuxServer { server in
             let pane = try await onlyPane(server)
-            let waited = try await withThrowingTaskGroup(of: OutputWait?.self) { group in
+            let waited = try await withThrowingTaskGroup(of: OutputWait?.self) {
+                group in
                 group.addTask {
                     try await waitingOnOutput(server, pane: pane)
                 }
@@ -106,8 +109,8 @@ struct WaitingTests {
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .milliseconds(250))
                         round += 1
-                        // Numbered so each attempt is visible in a failed test's
-                        // captured tail.
+                        // Numbered so each attempt is visible in a failed
+                        // test's captured tail.
                         try? await server.run(
                             "printf '\\nListening on 80\\(round)\\n'",
                             in: pane

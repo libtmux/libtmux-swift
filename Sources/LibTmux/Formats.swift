@@ -244,7 +244,11 @@ extension Server {
     /// one first:
     ///
     /// ```swift
-    /// let tty = try await server.format("#{pane_tty}", for: pane, through: link)
+    /// let tty = try await server.format(
+    ///     "#{pane_tty}",
+    ///     for: pane,
+    ///     through: link
+    /// )
     /// ```
     ///
     /// Ask for as many fields as you like in one template, separated by

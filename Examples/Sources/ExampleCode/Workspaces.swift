@@ -22,7 +22,10 @@ public func describeAWorkspaceInSwift() -> Workspace {
     return workspace
 }
 
-public func buildItOnAServer(_ server: Server, _ workspace: Workspace) async throws -> Session {
+public func buildItOnAServer(
+    _ server: Server,
+    _ workspace: Workspace
+) async throws -> Session {
     let session = try await WorkspaceBuilder.build(workspace, on: server)
     print(session.name, session.windowCount)
     return session

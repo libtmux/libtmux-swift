@@ -140,7 +140,12 @@ a wrong value, and the commit touched nothing the case reads. Re-running the one
 case in a loop is cheaper than another round of CI:
 
 ```console
-$ for _ in $(seq 20); do swift test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
+$ for _ in $(seq 20); do \
+    swift test \
+      --force-resolved-versions \
+      --filter observersDoNotDivideNotifications \
+      || break; \
+  done
 ```
 
 Every suite carries `.timeLimit(.minutes(5))`, and that number is a backstop
@@ -174,7 +179,8 @@ child was written to catch.
 Each of these gates CI, and each can fail. Build and test run on every cell of
 the matrix; the tooling checks run once, on the Linux tmux 3.7b cell.
 
-Formatting, against `.swift-format` at the root — four spaces, 100 columns:
+Formatting, against `.swift-format` at the root — four spaces, 100 columns,
+and 80 under `Examples/`, whose own `.swift-format` applies there:
 
 ```console
 $ swift format lint --recursive --strict \
@@ -242,6 +248,20 @@ that package:
 
 ```console
 $ python3 Scripts/check_examples.py --min-executed 40
+```
+
+Code a reader sees stays within 80 columns: fences in the README and DocC
+pages, `///` doc-comment code, and the example programs. The formatter covers
+the Swift it reaches; this covers the rest. `--self-test` proves the check can
+fail, and `.github/example-width.toml` lists the files and any line allowed to
+run wider:
+
+```console
+$ python3 Scripts/check_example_width.py --self-test
+```
+
+```console
+$ python3 Scripts/check_example_width.py
 ```
 
 Every socket this repository names by literal lives under one of this port's

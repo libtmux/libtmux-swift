@@ -68,7 +68,8 @@ attached to:
 
 ```swift
 let ready = try RegexPattern("Listening on")
-let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
+let failed = try RegexPattern(
+    "EADDRINUSE|error", options: [.caseInsensitive])
 let waited = try await server.waitForOutput(
     in: pane,
     matching: [ready],

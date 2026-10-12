@@ -117,7 +117,9 @@ Existing server environment values are retained. Repeated `--env` values are
 layered over them, with the explicit value winning:
 
 ```console
-$ swift run --package-path Tools/McpSwap mcp-swap use-local --env LIBTMUX_SOCKET=test-socket --env LOG_LEVEL=debug
+$ swift run --package-path Tools/McpSwap mcp-swap use-local \
+    --env LIBTMUX_SOCKET=test-socket \
+    --env LOG_LEVEL=debug
 ```
 
 `LIBTMUX_SAFETY` has been retired. The tool rejects an explicit value and
@@ -155,7 +157,9 @@ order, so every one of the 40,320 permutations of all eight names produces the
 same transaction order.
 
 ```console
-$ swift run --package-path Tools/McpSwap mcp-swap use-local --cli claude,cursor --cli antigravity
+$ swift run --package-path Tools/McpSwap mcp-swap use-local \
+    --cli claude,cursor \
+    --cli antigravity
 ```
 
 Without `--cli`, mutating commands select clients that have both their binary on
@@ -169,13 +173,17 @@ Claude's default `project` scope writes
 sees the override:
 
 ```console
-$ swift run --package-path Tools/McpSwap mcp-swap use-local --cli claude --scope project
+$ swift run --package-path Tools/McpSwap mcp-swap use-local \
+    --cli claude \
+    --scope project
 ```
 
 The `user` scope writes the top-level `mcpServers` fallback:
 
 ```console
-$ swift run --package-path Tools/McpSwap mcp-swap use-local --cli claude --scope user
+$ swift run --package-path Tools/McpSwap mcp-swap use-local \
+    --cli claude \
+    --scope user
 ```
 
 Both can coexist. They receive independent backups and sequence numbers, and a
@@ -183,7 +191,9 @@ full Claude revert unwinds them in last-in, first-out order. A scope-specific
 revert is accepted only when that layer is currently on top:
 
 ```console
-$ swift run --package-path Tools/McpSwap mcp-swap revert --cli claude --scope user
+$ swift run --package-path Tools/McpSwap mcp-swap revert \
+    --cli claude \
+    --scope user
 ```
 
 For every other client, `--scope` normalizes to `user` because the owned config
@@ -300,7 +310,11 @@ $ swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
 Run its formatting gate from the repository root:
 
 ```console
-$ swift format lint --recursive --strict Tools/McpSwap/Sources/McpSwapCore Tools/McpSwap/Sources/McpSwap Tools/McpSwap/Tests Tools/McpSwap/Package.swift
+$ swift format lint --recursive --strict \
+    Tools/McpSwap/Sources/McpSwapCore \
+    Tools/McpSwap/Sources/McpSwap \
+    Tools/McpSwap/Tests \
+    Tools/McpSwap/Package.swift
 ```
 
 The safety behavior is executable in

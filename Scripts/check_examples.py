@@ -8,8 +8,9 @@ cannot tell either from the page.
 `Examples/` is a package of its own that depends on this one, so
 `swift test --package-path Examples` compiles it the way a reader does: through
 the products, with no `@testable`. This script does not invoke Swift. It checks
-that each ```swift block in the repository README, product READMEs, and DocC
-catalogue appears there rather than being a copy that drifted away from it.
+that each ```swift block in the repository README, product READMEs, DocC
+catalogue, and `///` doc comments appears there rather than being a copy that
+drifted away from it.
 
 Every example lives in a function, so a call from `Examples/Tests/` identifies
 the examples the live suite reaches. Running that suite is what proves they
@@ -37,6 +38,7 @@ DOCUMENTS = [
     ROOT / "README.md",
     *sorted((ROOT / "Sources").glob("*/README.md")),
     *sorted((ROOT / "Sources").rglob("*.docc/*.md")),
+    *sorted((ROOT / "Sources").rglob("*.swift")),
 ]
 
 # Excerpts from a consumer's `Package.swift`. They are Swift, and they are
@@ -64,7 +66,27 @@ MANIFEST_EXCERPTS = {
 }
 
 FENCE = re.compile(r"```swift\n(.*?)```", re.DOTALL)
+DOC_FENCE = re.compile(
+    r"^[ \t]*///[ \t]?```swift\n((?:[ \t]*///.*\n)*?)[ \t]*///[ \t]?```",
+    re.MULTILINE,
+)
 FUNCTION = re.compile(r"^(?:public )?func (\w+)")
+
+
+def doc_fences(text: str) -> list[str]:
+    """Return the body of every ```swift fence inside `///` comments."""
+    return [
+        "\n".join(re.sub(r"^[ \t]*/// ?", "", ln) for ln in m.group(1).splitlines())
+        for m in DOC_FENCE.finditer(text)
+    ]
+
+
+def blocks_of(document: pathlib.Path) -> list[str]:
+    """Every swift block a document carries, whatever its comment syntax."""
+    text = document.read_text()
+    if document.suffix == ".swift":
+        return doc_fences(text)
+    return [m.group(1) for m in FENCE.finditer(text)]
 
 
 def lines_of(text: str) -> list[str]:
@@ -131,8 +153,8 @@ def main() -> int:
     missing: dict[pathlib.Path, list[list[str]]] = {}
     total = executed = 0
     for document in DOCUMENTS:
-        for match in FENCE.finditer(document.read_text()):
-            block = textwrap.dedent(match.group(1)).strip()
+        for raw in blocks_of(document):
+            block = textwrap.dedent(raw).strip()
             if block in MANIFEST_EXCERPTS:
                 continue
             total += 1

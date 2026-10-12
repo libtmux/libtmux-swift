@@ -30,7 +30,9 @@ without being passed a socket:
 ```swift
 if let context = TmuxContext.current() {
     let server = try context.server()
-    let here = try await server.sessions().first { $0.id == context.sessionID }
+    let here = try await server.sessions().first {
+        $0.id == context.sessionID
+    }
     print(here?.name ?? "not in a session")
 }
 ```

@@ -32,7 +32,8 @@ matches the same code nested inside a function:
 
 ```swift
 public func travelling(_ server: Server) async throws -> [Pane] {
-    let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+    let expression = try FilterExpr<Pane>.where(
+        \.currentCommand, .isIn(["nvim", "vim"]))
     let matching = try await server.panes().filter(expression)
     return matching
 }
@@ -128,7 +129,11 @@ objects. A failed operation exits with a diagnostic after fixture cleanup.
 Run a complete program from this checkout:
 
 ```console
-$ swift run --package-path Examples --jobs 5 --force-resolved-versions ApiCapture
+$ swift run \
+    --package-path Examples \
+    --jobs 5 \
+    --force-resolved-versions \
+    ApiCapture
 ```
 
 The native test suite spawns the compiled entry points and checks their exact
