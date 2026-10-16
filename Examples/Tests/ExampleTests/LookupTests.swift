@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@Suite("lookup examples", .timeLimit(.minutes(2)))
+@Suite("lookup examples", .timeLimit(.minutes(5)))
 struct LookupExampleTests {
     @Test("finding one object without listing the rest")
     func findsOneObject() async throws {

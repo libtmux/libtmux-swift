@@ -234,7 +234,7 @@ import Testing
         try process.run()
         defer {
             if process.isRunning { process.terminate() }
-            process.waitUntilExit()
+            waitForExit(process)
         }
         let ready = String(decoding: output.fileHandleForReading.availableData, as: UTF8.self)
         #expect(ready == "ready\n")
@@ -275,7 +275,7 @@ import Testing
         process.standardOutput = output
         process.standardError = Pipe()
         try process.run()
-        process.waitUntilExit()
+        waitForExit(process)
 
         #expect(
             String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
@@ -354,7 +354,7 @@ private func expectExternalRecordLockContenderBlocked(_ lockFile: URL) throws {
     process.standardOutput = output
     process.standardError = Pipe()
     try process.run()
-    process.waitUntilExit()
+    waitForExit(process)
     #expect(
         String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             == "blocked\n")

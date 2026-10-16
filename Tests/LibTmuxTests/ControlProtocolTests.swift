@@ -79,6 +79,14 @@ struct ControlProtocolTests {
                 == [.failure(.invocationFailed(reason: "control protocol line is not UTF-8"))]
         )
 
+        // A pane's bytes can be cut inside a character; that is not a broken
+        // stream. The same bytes on any other line still are.
+        var cut = ControlLineInput()
+        #expect(
+            cut.append(Data("%output %0 a".utf8) + Data([0xE2, 0x82, 0x0A]))
+                == [.line("%output %0 a\u{FFFD}")]
+        )
+
         var incomplete = ControlLineInput()
         #expect(incomplete.append(Data("partial".utf8)).isEmpty)
         #expect(

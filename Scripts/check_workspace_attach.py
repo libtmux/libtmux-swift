@@ -11,7 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from owned_terminal import Terminal
+from owned_terminal import HANG_GUARD, Terminal
 
 binary = str(Path(sys.argv[1]).resolve())
 tmux = str(Path(sys.argv[2]).resolve())
@@ -53,7 +53,7 @@ def check(choice):
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=3,
+                timeout=HANG_GUARD,
             )
             return result.stdout.strip()
 
@@ -406,7 +406,7 @@ def check(choice):
                     env=environment,
                     capture_output=True,
                     check=False,
-                    timeout=3,
+                    timeout=HANG_GUARD,
                 )
             for owner in terminals:
                 owner.close()

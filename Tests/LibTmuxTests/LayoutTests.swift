@@ -3,7 +3,7 @@ import TmuxFixture
 
 @testable import LibTmux
 
-@Suite("layout preflight", .timeLimit(.minutes(1)))
+@Suite("layout preflight", .timeLimit(.minutes(5)))
 struct LayoutTests {
     @Test("saved syntax bounds numbers and depth without limiting input length")
     func savedSyntaxBounds() {

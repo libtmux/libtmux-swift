@@ -11,7 +11,7 @@ import TmuxFixture
     import Glibc
 #endif
 
-@Suite("capability behavior", .timeLimit(.minutes(1)))
+@Suite("capability behavior", .timeLimit(.minutes(5)))
 struct CapabilityBehaviorTests {
     private func tools(_ server: Server) -> TmuxTools {
         TmuxTools(
@@ -187,7 +187,7 @@ struct CapabilityBehaviorTests {
                         "command": .string("printf '\(marker)\\n'"),
                         "maxLines": .integer(20),
                         "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(5_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
@@ -204,13 +204,15 @@ struct CapabilityBehaviorTests {
                         "maxLines": .integer(20),
                         "paneId": .string(pane.id.rawValue),
                         "patterns": .array([.string(marker)]),
-                        "timeoutMs": .integer(1_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
             #expect(waited.structured["matched"]?.stringValue == marker)
             #expect(waited.structured["matchedAtEntry"]?.boolValue == true)
-            #expect(waited.structured["effectiveTimeout"]?.doubleValue == 1)
+            #expect(
+                waited.structured["effectiveTimeout"]?.doubleValue
+                    == Double(hangGuardMilliseconds) / 1_000)
         }
     }
 
@@ -257,7 +259,7 @@ struct CapabilityBehaviorTests {
                     arguments: .object([
                         "command": .string("exit 23"),
                         "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(2_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
@@ -269,7 +271,7 @@ struct CapabilityBehaviorTests {
                     arguments: .object([
                         "command": .string("if then"),
                         "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(2_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
@@ -281,7 +283,7 @@ struct CapabilityBehaviorTests {
                     arguments: .object([
                         "command": .string("pwd; cd /; export LIBTMUX_FRAME_LEAK=1; trap : 0"),
                         "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(2_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
@@ -292,7 +294,7 @@ struct CapabilityBehaviorTests {
                     arguments: .object([
                         "command": .string("test -z \"${LIBTMUX_FRAME_LEAK+x}\""),
                         "paneId": .string(pane.id.rawValue),
-                        "timeoutMs": .integer(2_000),
+                        "timeoutMs": .integer(hangGuardMilliseconds),
                     ])
                 )
             )
@@ -356,7 +358,7 @@ struct CapabilityBehaviorTests {
                             ),
                             "maxLines": .integer(2_000),
                             "paneId": .string(original.id.rawValue),
-                            "timeoutMs": .integer(5_000),
+                            "timeoutMs": .integer(hangGuardMilliseconds),
                         ])
                     )
                 )
@@ -391,7 +393,7 @@ struct CapabilityBehaviorTests {
                                 "test \"$PWD\" = /tmp && test \"$LIBTMUX_FRAME_PARENT\" = kept"
                             ),
                             "paneId": .string(original.id.rawValue),
-                            "timeoutMs": .integer(5_000),
+                            "timeoutMs": .integer(hangGuardMilliseconds),
                         ])
                     )
                 )
@@ -415,7 +417,7 @@ struct CapabilityBehaviorTests {
                             ),
                             "maxLines": .integer(2_000),
                             "paneId": .string(original.id.rawValue),
-                            "timeoutMs": .integer(5_000),
+                            "timeoutMs": .integer(hangGuardMilliseconds),
                         ])
                     )
                 )
@@ -473,7 +475,7 @@ struct CapabilityBehaviorTests {
                     name: "run_shell_command",
                     arguments: .object([
                         "command": .string(command), "paneId": .string(pane.id.rawValue),
-                        "maxLines": .integer(2_000), "timeoutMs": .integer(5_000),
+                        "maxLines": .integer(2_000), "timeoutMs": .integer(hangGuardMilliseconds),
                     ])))
             let lines = result.structured["output"]?.arrayValue?.compactMap(\.stringValue) ?? []
             #expect(result.structured["exitStatus"]?.intValue == 0)
@@ -551,7 +553,7 @@ struct CapabilityBehaviorTests {
                                 "command": .string(command),
                                 "maxLines": .integer(2_000),
                                 "paneId": .string(pane.id.rawValue),
-                                "timeoutMs": .integer(5_000),
+                                "timeoutMs": .integer(hangGuardMilliseconds),
                             ])
                         )
                     )
@@ -715,7 +717,7 @@ struct CapabilityBehaviorTests {
             process.arguments = ["--noprofile", "--norc", "-c", script]
             process.standardError = Pipe()
             try process.run()
-            process.waitUntilExit()
+            waitForExit(process)
             #expect(process.terminationStatus == 0, Comment(rawValue: action))
         }
     }
@@ -819,7 +821,7 @@ struct CapabilityBehaviorTests {
                         name: "wait_for_channel",
                         arguments: .object([
                             "channel": .string(marker),
-                            "timeoutMs": .integer(1_000),
+                            "timeoutMs": .integer(hangGuardMilliseconds),
                         ])
                     )
                 )

@@ -43,27 +43,15 @@ struct ApiExamplesTests {
             try #require(FileManager.default.fileExists(atPath: source.path))
             let process = Process()
             process.executableURL = examples.appendingPathComponent(".build/debug/\(example.name)")
-            let output = Pipe()
-            process.standardOutput = output
-            try process.run()
-            defer {
-                if process.isRunning {
-                    process.terminate()
-                    process.waitUntilExit()
-                }
+            let result: ProgramResult
+            do {
+                result = try await runProgram(process, within: .seconds(120))
+            } catch is ProgramTimedOut {
+                Issue.record("\(example.name) exceeded 120 seconds")
+                continue
             }
-
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: .seconds(30))
-            while process.isRunning && clock.now < deadline {
-                try await Task.sleep(for: .milliseconds(25))
-            }
-            try #require(!process.isRunning, "\(example.name) exceeded 30 seconds")
-            let printed = String(
-                decoding: output.fileHandleForReading.readDataToEndOfFile(),
-                as: UTF8.self
-            )
-            #expect(process.terminationStatus == 0, "\(example.name) failed")
+            let printed = result.output
+            #expect(result.status == 0, "\(example.name) failed")
             #expect(
                 printed == example.expectedOutput.joined(separator: "\n") + "\n",
                 "\(example.name) printed a different result")

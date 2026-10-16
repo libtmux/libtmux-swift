@@ -204,7 +204,7 @@ private func runGit(_ arguments: [String], in directory: URL) throws {
     process.standardOutput = Pipe()
     process.standardError = Pipe()
     try process.run()
-    process.waitUntilExit()
+    waitForExit(process)
     guard process.terminationStatus == 0 else {
         throw SwapError.message("git fixture command failed")
     }

@@ -336,7 +336,7 @@ struct ControlModeConcurrencyTests {
             let pane = try #require(try await server.panes().first)
             try await server.respawn(
                 pane,
-                running: ["sh", "-c", "printf '%s\\n' '%end literal'; sleep 5"]
+                running: ["sh", "-c", "printf '%s\\n' '%end literal'; sleep 300"]
             )
             let printed = try await waitUntil {
                 try await server.capture(pane).contains("%end literal")

@@ -15,7 +15,7 @@ struct ApiCapture {
                 try await server.sendKeys(["Enter"], to: pane)
 
                 let clock = ContinuousClock()
-                let deadline = clock.now.advanced(by: .seconds(5))
+                let deadline = clock.now.advanced(by: hangGuard)
                 while clock.now < deadline {
                     let lines = try await server.capture(pane, includingHistory: true)
                     if lines.contains(marker) {

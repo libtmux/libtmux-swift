@@ -1,4 +1,5 @@
 import Testing
+import TmuxFixture
 
 @testable import LibTmuxMCP
 
@@ -18,9 +19,7 @@ struct OrderedOutboundTests {
             await result.record(accepted)
             return accepted
         }
-        for _ in 0..<100 where await result.value == nil {
-            try await Task.sleep(for: .milliseconds(1))
-        }
+        _ = try await waitUntil { await result.value != nil }
         guard let accepted = await result.value else {
             await outbound.cancel()
             _ = await optional.value

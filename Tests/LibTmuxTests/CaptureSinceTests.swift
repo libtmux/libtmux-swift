@@ -10,7 +10,7 @@ struct CaptureSinceTests {
         try #require(try await server.panes().first)
     }
 
-    /// Reads until `lines` are non-empty or the attempts run out, because a
+    /// Reads until `lines` are non-empty or the hang guard lapses, because a
     /// pane answers when its shell gets round to it.
     private func settle(
         _ server: Server,
@@ -18,10 +18,9 @@ struct CaptureSinceTests {
         from cursor: CaptureCursor
     ) async throws -> IncrementalCapture {
         var latest = IncrementalCapture(lines: [], cursor: cursor)
-        for _ in 0..<40 {
+        _ = try await waitUntil {
             latest = try await server.capture(pane, since: latest.cursor)
-            if !latest.lines.isEmpty { return latest }
-            try await Task.sleep(for: .milliseconds(100))
+            return !latest.lines.isEmpty
         }
         return latest
     }
@@ -374,10 +373,9 @@ struct CaptureSinceTests {
             )
             try await server.wait(for: ready)
             var caught = IncrementalCapture(lines: [], cursor: started.cursor)
-            for _ in 0..<40 {
+            _ = try await waitUntil {
                 caught = try await server.capture(pane, since: caught.cursor)
-                if caught.lines.contains(settled) { break }
-                try await Task.sleep(for: .milliseconds(100))
+                return caught.lines.contains(settled)
             }
             try #require(caught.lines.contains(settled))
 

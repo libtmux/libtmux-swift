@@ -49,13 +49,13 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/tmux-${{ matrix.tmux }}
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}-utf8proc-jemalloc
 
       # Unconditional, because a cached tmux still loads these at run time: it
       # links against Homebrew's copies, and a run that restored the binary
       # without installing them aborts in dyld before printing its version.
       - name: Install the libraries tmux links against
-        run: brew install libevent ncurses
+        run: brew install libevent ncurses utf8proc jemalloc
 
       - name: Install build dependencies
         if: steps.tmux-cache.outputs.cache-hit != 'true'
@@ -74,19 +74,19 @@ jobs:
           # told, and fails in a way that reads like a missing library.
           PATH="$(brew --prefix bison)/bin:${PATH}"
           export PATH
-          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
-          export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
-          export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig:$(brew --prefix utf8proc)/lib/pkgconfig:$(brew --prefix jemalloc)/lib/pkgconfig"
+          export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib -L$(brew --prefix utf8proc)/lib -L$(brew --prefix jemalloc)/lib"
+          export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include -I$(brew --prefix utf8proc)/include -I$(brew --prefix jemalloc)/include"
           curl --location --fail --silent --show-error \
             "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
             --output tmux.tar.gz
           tar -xzf tmux.tar.gz
           cd "tmux-${{ matrix.tmux }}"
-          # From 3.7, tmux's configure refuses to guess on Darwin: it warns that
-          # macOS renders complex codepoints poorly without utf8proc and exits
-          # unless told which way to go. Nothing here reads a pane for emoji, so
-          # the answer that keeps this closest to the Linux lanes is without it.
-          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" --disable-utf8proc
+          # From 3.7, tmux's configure refuses to guess on Darwin: it exits
+          # unless told whether to use utf8proc and jemalloc. Older releases
+          # warn about the options they do not know and carry on, so one
+          # spelling serves every release.
+          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" --enable-utf8proc --enable-jemalloc
           make -j"$(sysctl -n hw.ncpu)"
           make install
 
@@ -141,7 +141,10 @@ jobs:
           # cases doing sub-second work report forty seconds and the ones at
           # the tail pass their own time limit. AGENTS.md already requires
           # --no-parallel for real-tmux runs; this lane is where CI needs it.
-          xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel
+          package_diagnostics="${RUNNER_TEMP}/package-diagnostics"
+          python3 Scripts/diagnose_swift_test.py "$package_diagnostics" -- \
+            xcrun swift test --traits YAMLWorkspaces --force-resolved-versions --no-parallel \
+            --event-stream-output-path "$package_diagnostics/events.jsonl" --event-stream-version 0
 
       - name: Test the staged workspace CLI
         run: |
@@ -159,5 +162,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: examples-diagnostics-macos-tmux-${{ matrix.tmux }}
-          path: ${{ runner.temp }}/examples-diagnostics/
+          path: |
+            ${{ runner.temp }}/examples-diagnostics/
+            ${{ runner.temp }}/package-diagnostics/
           if-no-files-found: warn

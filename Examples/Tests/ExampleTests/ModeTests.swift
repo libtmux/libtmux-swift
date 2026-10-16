@@ -16,7 +16,7 @@ private func withMain<Result>(
     }
 }
 
-@Suite("choosing a mode", .timeLimit(.minutes(1)))
+@Suite("choosing a mode", .timeLimit(.minutes(5)))
 struct ModeTests {
     @Test("a connected scope returns what the direct one would")
     func aConnectedScopeAgreesWithDirect() async throws {

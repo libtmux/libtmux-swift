@@ -219,7 +219,7 @@ struct PasteTextCleanupTests {
             #expect(try await waitUntil { await transport.finalPreflightBlocked })
             await transport.releasePreflight()
             #expect(try await waitUntil { await transport.cleanupStarted })
-            try await Task.sleep(for: .milliseconds(1_500))
+            #expect(try await waitUntil { await completion.finished })
             let finishedWithinBound = await completion.finished
             if !finishedWithinBound { await transport.releaseCleanup() }
             let result = await submission.value

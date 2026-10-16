@@ -8,12 +8,18 @@ package struct BoundedLineFramer: Sendable {
     }
 
     private let maximumBytes: Int
+    private let lossyPrefixes: [[UInt8]]
     private var buffer = Data()
     private var discarding = false
 
-    package init(maximumBytes: Int) {
+    /// - Parameter lossyPrefixes: a line starting with one of these is decoded
+    ///   with replacement characters instead of being refused as invalid. For
+    ///   a stream whose lines carry raw bytes that were never cut at a
+    ///   character boundary.
+    package init(maximumBytes: Int, lossyPrefixes: [String] = []) {
         precondition(maximumBytes > 0)
         self.maximumBytes = maximumBytes
+        self.lossyPrefixes = lossyPrefixes.map { Array($0.utf8) }
     }
 
     package var bufferedBytes: Int { buffer.count }
@@ -66,6 +72,9 @@ package struct BoundedLineFramer: Sendable {
         var bytes = buffer
         if bytes.last == 0x0D { bytes.removeLast() }
         guard let line = String(data: bytes, encoding: .utf8) else {
+            if lossyPrefixes.contains(where: { bytes.starts(with: $0) }) {
+                return .line(String(decoding: bytes, as: UTF8.self))
+            }
             return .invalidUTF8
         }
         return .line(line)

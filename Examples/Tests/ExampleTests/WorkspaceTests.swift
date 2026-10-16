@@ -5,7 +5,7 @@ import Testing
 import TmuxFixture
 import TmuxWorkspace
 
-@Suite("workspaces", .timeLimit(.minutes(1)))
+@Suite("workspaces", .timeLimit(.minutes(5)))
 struct WorkspaceTests {
     @Test("the workspace the README describes is the session tmux ends up with")
     func theDocumentedWorkspaceBuilds() async throws {

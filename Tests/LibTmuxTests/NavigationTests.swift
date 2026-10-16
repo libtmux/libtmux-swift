@@ -475,12 +475,11 @@ struct PaneGeometryTests {
             try await server.respawn(pane, running: ["sleep", "43"])
 
             var command = ""
-            for _ in 0..<200 {
+            _ = try await waitUntil {
                 command =
                     try await server.snapshot().panes
                     .first { $0.id == pane.id }?.currentCommand ?? ""
-                if command == "sleep" { break }
-                try await Task.sleep(for: .milliseconds(20))
+                return command == "sleep"
             }
             #expect(command == "sleep")
         }

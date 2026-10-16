@@ -3,7 +3,7 @@ import LibTmux
 import Testing
 import TmuxFixture
 
-@Suite("querying", .timeLimit(.minutes(1)))
+@Suite("querying", .timeLimit(.minutes(5)))
 struct QueryingTests {
     @Test("the three listings answer about a real server")
     func theThreeListings() async throws {

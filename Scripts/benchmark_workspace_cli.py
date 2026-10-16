@@ -18,10 +18,12 @@ import tempfile
 import time
 from pathlib import Path
 
+from owned_terminal import HANG_GUARD
+
 
 def wait_for_shutdown(path):
     """Wait until the previous daemon no longer accepts connections."""
-    deadline = time.monotonic() + 2
+    deadline = time.monotonic() + HANG_GUARD
     while True:
         with socket.socket(socket.AF_UNIX) as connection:
             connection.settimeout(0.05)
@@ -125,7 +127,7 @@ def main():
             subprocess.run(
                 [args.tmux, "-S", str(socket), "kill-server"],
                 capture_output=True,
-                timeout=5,
+                timeout=HANG_GUARD,
                 check=False,
             )
             wait_for_shutdown(socket)
