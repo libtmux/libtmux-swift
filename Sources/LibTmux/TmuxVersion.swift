@@ -65,10 +65,20 @@ public struct TmuxVersion: Sendable, Hashable, Comparable, Codable {
         let lhsKey = (lhs.major, lhs.minor, lhs.pointRelease)
         let rhsKey = (rhs.major, rhs.minor, rhs.pointRelease)
         if lhsKey != rhsKey { return lhsKey < rhsKey }
-        // `next-X.Y` names what master will become, not a release; every
-        // other build (`rc`, `openbsd`, `master`) already happened at that
-        // number, so only this one ranks below it.
-        return lhs.build == "next" && rhs.build != "next"
+        return lhs.buildRank < rhs.buildRank
+    }
+
+    /// Where a build sits among the builds of one release number.
+    ///
+    /// `next-X.Y` names what master will become and `X.Y-rc` is a candidate for
+    /// it; neither has the release's fixes, so both rank below `X.Y` itself,
+    /// the snapshot first. Every other build (`master`, `openbsd`) already
+    /// happened at that number and ranks with the release.
+    private var buildRank: Int {
+        guard let build else { return 2 }
+        if build == "next" { return 0 }
+        if build.hasPrefix("rc") { return 1 }
+        return 2
     }
 }
 

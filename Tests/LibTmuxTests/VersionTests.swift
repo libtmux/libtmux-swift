@@ -61,12 +61,14 @@ struct VersionTests {
         let release = try #require(TmuxVersion(parsing: "3.9"))
         #expect(next < release)
         #expect(!(release < next))
-        // An rc is a tagged release candidate, not a snapshot: it ranks with
-        // the number it names, unlike `next-`.
-        let rc = try #require(TmuxVersion(parsing: "3.8-rc"))
+        // A release candidate has not got the release's fixes either, and
+        // ranks between the snapshot and the release.
+        let rc = try #require(TmuxVersion(parsing: "3.8-rc2"))
         let rcRelease = try #require(TmuxVersion(parsing: "3.8"))
-        #expect(!(rc < rcRelease))
+        let snapshot = try #require(TmuxVersion(parsing: "next-3.8"))
+        #expect(rc < rcRelease)
         #expect(!(rcRelease < rc))
+        #expect(snapshot < rc)
     }
 
     @Test("it round-trips through its own description")
