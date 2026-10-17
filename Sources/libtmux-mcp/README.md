@@ -1,10 +1,10 @@
 <!-- libtmux-logo -->
-<p align="center">
+<div align="center">
   <picture>
     <source srcset="../../assets/mcp.svg" type="image/svg+xml">
     <img src="../../assets/mcp.png" width="128" height="128" alt="libtmux for Swift MCP">
   </picture>
-</p>
+</div>
 <!-- /libtmux-logo -->
 
 <div align="center">
