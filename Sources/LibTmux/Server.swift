@@ -143,6 +143,7 @@ public struct Server: Sendable, Hashable {
         guard let connection else {
             return try await runtime.run(rawArguments: rawArguments)
         }
+        try await runtime.requireFeatures(for: rawArguments)
         return try await connection.reply(to: rawArguments)
     }
 
@@ -158,6 +159,10 @@ public struct Server: Sendable, Hashable {
 
     func versionCheck() async throws(TmuxError) -> (version: ServerVersion, live: Bool) {
         try await runtime.checkVersion()
+    }
+
+    func requireCommandFeatures(_ rawArguments: [String]) async throws(TmuxError) {
+        try await runtime.requireFeatures(for: rawArguments)
     }
 
     func executableVersion() async throws(TmuxError) -> TmuxVersion {
@@ -291,7 +296,7 @@ public struct Server: Sendable, Hashable {
         try await windowListingRows().map(\.link)
     }
 
-    private func windowListingRows() async throws(TmuxError) -> [WindowAppearance] {
+    func windowListingRows() async throws(TmuxError) -> [WindowAppearance] {
         try await list(
             TmuxCommand("list-windows", ["-a", "-F", WindowAppearance.projection.template]),
             projection: WindowAppearance.projection,
@@ -530,6 +535,7 @@ actor ServerRuntime {
                 }
             }
             let (checked, live) = try await checkVersion()
+            try TmuxCommandGuard.check(rawArguments, against: checked)
             let marker = Support.Versions.makeMarker()
             let fenced = Support.Versions.fence(rawArguments, to: checked, marker: marker)
             try requireTmuxCommandFits(fenced)
@@ -561,6 +567,12 @@ actor ServerRuntime {
     }
 
     func presumeSupported(_ daemon: ServerVersion) { daemonVersion = daemon }
+
+    /// Refuses a literal batch the checked release cannot run safely.
+    func requireFeatures(for rawArguments: [String]) async throws(TmuxError) {
+        guard checkingVersions else { return }
+        try TmuxCommandGuard.check(rawArguments, against: try await checkVersion().version)
+    }
 
     /// The release of the daemon commands are checked against, or of the
     /// executable that would start one when nothing listens.

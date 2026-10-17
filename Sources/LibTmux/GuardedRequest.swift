@@ -22,6 +22,9 @@ extension Server {
         checkingTargets: Bool = true
     ) async throws(TmuxError) -> TmuxReply {
         let expected = try expectedIncarnation(values.map(\.incarnation))
+        // The command travels inside an `if-shell` body, where a literal batch
+        // check cannot see it, so it is read here.
+        try await requireCommandFeatures(command.argumentVector)
         let request = GuardedRequest(
             command: command,
             incarnation: expected,

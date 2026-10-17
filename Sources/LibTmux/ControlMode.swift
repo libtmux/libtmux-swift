@@ -172,6 +172,10 @@ extension Server {
         // release with a process of its own, and `-N` keeps the attach from
         // starting a replacement under a client whose release was never read.
         let (checked, live) = try await versionCheck()
+        // Decided before any client attaches: a short-lived control attach can
+        // crash a server below 3.7, and a fallback after the attach has failed
+        // cannot protect the attach.
+        try TmuxFeature.controlConnection.require(checked)
         var platformOptions = PlatformOptions()
         platformOptions.createSession = true
 

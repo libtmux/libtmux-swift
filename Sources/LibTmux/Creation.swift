@@ -341,12 +341,16 @@ extension Server {
 
     func windowAppearance(
         from command: TmuxCommand,
-        guardedBy values: [GuardedValue]
+        guardedBy values: [GuardedValue],
+        whenSilent reread: (() async throws(TmuxError) -> WindowAppearance)? = nil
     ) async throws(TmuxError) -> WindowAppearance {
         let reply = try await runGuarded(command, by: values)
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
         }
+        // A command that succeeded and printed nothing, where it was asked to
+        // print the window, is the single-pane `break-pane` of 3.3a to 3.5.
+        if reply.standardOutput.isEmpty, let reread { return try await reread() }
         let rows: [FormatRow]
         do {
             rows = try WindowAppearance.projection.decode(reply.standardOutput)

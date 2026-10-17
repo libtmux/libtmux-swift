@@ -169,6 +169,14 @@ struct OutputWaitSession: Sendable {
             )
         }
 
+        // Decided once, before any control client could attach: below 3.7 the
+        // wait reads the pane on a timer instead.
+        let usesControl: Bool
+        do {
+            usesControl = try await server.supportsControl()
+        } catch {
+            throw .tmux(error)
+        }
         while ContinuousClock.now < deadline {
             let attachmentRace = await raceOrdinaryWaitOperation(until: deadline) {
                 try await self.waitAttachment(using: self.server, for: pane)
@@ -192,15 +200,25 @@ struct OutputWaitSession: Sendable {
             let remaining = ContinuousClock.now.duration(to: deadline)
             let cycle: OutputWaitCycle
             do {
-                cycle = try await waitForOutputCycle(
-                    pane: pane,
-                    attachment: attachment,
-                    progress: progress,
-                    tailLimit: keptTail,
-                    remaining: remaining,
-                    deadline: deadline,
-                    answer: answer
-                )
+                if usesControl {
+                    cycle = try await waitForOutputCycle(
+                        pane: pane,
+                        attachment: attachment,
+                        progress: progress,
+                        tailLimit: keptTail,
+                        remaining: remaining,
+                        deadline: deadline,
+                        answer: answer
+                    )
+                } else {
+                    cycle = try await pollOutputCycle(
+                        pane: pane,
+                        progress: progress,
+                        tailLimit: keptTail,
+                        deadline: deadline,
+                        answer: answer
+                    )
+                }
             } catch let error {
                 switch try await survivable(error, having: attachment, for: pane) {
                 case .reattach: continue
@@ -284,6 +302,70 @@ struct OutputWaitSession: Sendable {
         case .cancelled: throw .tmux(.cancelled)
         }
     }
+    /// The wait for a daemon that control mode is not safe on: the same scans
+    /// the control cycle runs on a wake, driven by a timer instead.
+    private func pollOutputCycle(
+        pane: Pane,
+        progress start: WaitProgress,
+        tailLimit: Int,
+        deadline: ContinuousClock.Instant,
+        answer: @escaping OutputWaitAnswer
+    ) async throws(OutputWaitError) -> OutputWaitCycle {
+        var progress = start
+        while true {
+            let cursor = progress.cursor
+            let tail = progress.tail
+            let sawOutput = progress.sawNewOutput
+            let race = await raceWaitOperation(
+                until: deadline,
+                classifyingCompletionWith: { $0.operationCompletion }
+            ) {
+                try await scanWaitOutput(
+                    using: server,
+                    in: pane,
+                    since: cursor,
+                    newest: tail,
+                    sawNewOutput: sawOutput,
+                    tailLimit: tailLimit,
+                    outputEvent: false,
+                    deadline: deadline,
+                    answer: answer
+                )
+            }
+            switch race {
+            case let .completed(scan):
+                progress.cursor = scan.cursor
+                progress.sawNewOutput = scan.sawNewOutput
+                progress.tail = scan.tail
+                progress.alternateScreen = progress.alternateScreen || scan.alternateScreen
+                if scan.deadlineReached { return .finished(.timedOut, progress) }
+                if let output = scan.output { return .answered(output) }
+            case let .failed(error):
+                if case .matching = error { throw error }
+                let current = await raceOrdinaryWaitOperation(until: deadline) {
+                    try await waitAttachment(using: server, for: pane)
+                }
+                switch current {
+                case .completed(nil): return .finished(.paneClosed, progress)
+                case .completed: throw error
+                case let .failed(readError): throw readError
+                case .timedOut: return .finished(.timedOut, progress)
+                case .cancelled: throw OutputWaitError.tmux(.cancelled)
+                }
+            case .timedOut:
+                return .finished(.timedOut, progress)
+            case .cancelled:
+                throw OutputWaitError.tmux(.cancelled)
+            }
+            guard ContinuousClock.now < deadline else { return .finished(.timedOut, progress) }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                throw OutputWaitError.tmux(.cancelled)
+            }
+        }
+    }
+
     private func waitForOutputCycle(
         pane: Pane,
         attachment: PaneAttachment,

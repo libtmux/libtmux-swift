@@ -16,6 +16,11 @@ notification stream is free while nothing is happening. `waitForOutput` also
 checks its target once per quiet second so removing a silent pane ends the
 wait instead of looking like a timeout.
 
+Below tmux 3.7 no control connection is opened. `waitForOutput` reads the pane
+on a timer instead and answers the same questions from the rows it finds, so
+output that changes no row, such as a line of only blanks, is not seen as an
+event. See <doc:PlatformSupport>.
+
 ## Pick the cheapest one that answers the question
 
 **You wrote the command: signal it.** Compose a channel into the command and
