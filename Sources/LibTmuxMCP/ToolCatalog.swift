@@ -711,6 +711,9 @@ public enum ToolError: Error, Sendable, Hashable, CustomStringConvertible {
             reason
         case let .tmuxRejected(reason):
             "tmux refused the command: \(reason)"
+        case let .tmux(.unsupportedTmuxVersion(reported, required, operation)):
+            TmuxError.unsupportedVersionMessage(
+                reported: reported, required: required, operation: operation)
         case let .tmux(error):
             String(describing: error)
         case let .internalFailure(reason):

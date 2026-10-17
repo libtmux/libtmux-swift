@@ -254,10 +254,12 @@ color.
 ## Error codes
 
 Every machine failure carries a `code`. A failure about the workspace operation
-itself uses one of the ten the sibling ports share: `workspace_not_found`,
+itself uses one of the codes the sibling ports share: `workspace_not_found`,
 `invalid_workspace`, `unsupported_key`, `session_not_found`, `session_mismatch`,
-`tmux_unavailable`, `tmux_failed`, `script_failed`, `destination_exists` and
-`usage`.
+`tmux_unavailable`, `tmux_unsupported`, `tmux_failed`, `script_failed`,
+`destination_exists` and `usage`. `tmux_unsupported` is a tmux older than 3.3a;
+its message says to upgrade tmux and restart the server, and that nothing was
+sent.
 
 A document handed to `import` that cannot be read — an untranslated field,
 unexpanded ERB — is `invalid_workspace` too: the defect is in the document, not

@@ -91,18 +91,14 @@ extension TmuxVersion: CustomStringConvertible {
 }
 
 extension Server {
-    /// Which tmux this server runs.
+    /// Which tmux executable this server runs.
     ///
     /// Read from the binary rather than from a running daemon, so it answers
-    /// before anything is started. A build this library cannot parse throws
-    /// rather than reporting a version it guessed.
+    /// before anything is started, and answers for a release too old to serve
+    /// commands: a diagnostic, not a version check. A build this library cannot
+    /// parse throws rather than reporting a version it guessed. Commands are
+    /// checked against the daemon instead; see ``Server/run(_:)-(TmuxCommand)``.
     public func version() async throws(TmuxError) -> TmuxVersion {
-        let reply = try await run(rawArguments: ["-V"])
-        guard let version = TmuxVersion(parsing: reply.text) else {
-            throw .invocationFailed(
-                reason: "could not read a tmux version from \(reply.text.debugDescription)"
-            )
-        }
-        return version
+        try await executableVersion()
     }
 }

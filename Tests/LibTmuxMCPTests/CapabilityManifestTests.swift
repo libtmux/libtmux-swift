@@ -520,6 +520,11 @@ struct CapabilityManifestTests {
         #expect(instructions.contains("one MCP response, not one atomic read"))
         #expect(instructions.contains("opaque cursor"))
         #expect(instructions.contains("Pane modes are human-owned"))
+        #expect(instructions.contains("Requires tmux 3.3a or newer"))
+        let refusal = ToolError.tmux(
+            .unsupportedTmuxVersion(
+                reported: "3.2a", required: "3.3a", operation: "any command"))
+        #expect(refusal.description.contains("Upgrade tmux and restart the server"))
 
         let executeInstructions = Instructions.text(
             authority: ToolAuthority(toolsets: [.inspect, .execute]),

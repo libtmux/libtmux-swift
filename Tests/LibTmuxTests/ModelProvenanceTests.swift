@@ -311,9 +311,13 @@ private actor GuardProbeTransport: ProcessTransport {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         invocationCount += 1
+        if let identity = scriptedIdentityReply(
+            to: arguments, socketPath: expected.socketPath, processID: expected.processID,
+            startedAt: expected.startedAt)
+        {
+            return identity
+        }
         switch arguments.dropFirst(3).first {
-        case "display-message":
-            return incarnationReply()
         case "list-windows":
             return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
         case "list-clients":
@@ -333,12 +337,6 @@ private actor GuardProbeTransport: ProcessTransport {
             unguardedMutationCount += 1
             throw .invocationFailed(reason: "model operation was sent without a queue guard")
         }
-    }
-
-    private func incarnationReply() -> TmuxReply {
-        reply([
-            expected.socketPath, String(expected.processID), String(expected.startedAt),
-        ])
     }
 
     private func clientReply() -> TmuxReply {

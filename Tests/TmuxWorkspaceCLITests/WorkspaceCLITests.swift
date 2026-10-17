@@ -2374,6 +2374,18 @@ struct WorkspaceCLITests {
         }
     }
 
+    @Test("the terminal handoff passes -N so it cannot start a server of its own")
+    func attachHandoffPassesNoStart() throws {
+        let arguments = WorkspaceCommands.attachArguments(
+            executable: "/usr/bin/tmux", colors256: true,
+            endpoint: .socketPath("/tmp/s/socket"), session: "$1")
+        #expect(
+            arguments == [
+                "/usr/bin/tmux", "-N", "-u", "-2", "-S", "/tmp/s/socket", "attach-session", "-t",
+                "$1",
+            ])
+    }
+
     @Test("freeze never writes a session name load would refuse")
     func freezeRefusesUnaddressableName() async throws {
         try await withTmuxServer { server in
@@ -2995,5 +3007,22 @@ private struct Outcome: Sendable {
 
     func json() throws -> [String: Any] {
         try JSONSerialization.jsonObject(with: Data(output.joined().utf8)) as? [String: Any] ?? [:]
+    }
+}
+
+@Suite("workspace CLI version refusal")
+struct WorkspaceCLIVersionRefusalTests {
+    @Test("a tmux below the floor is tmux_unsupported with the remedy, not tmux_failed")
+    func refusalHasItsOwnCode() {
+        let error = TmuxError.unsupportedTmuxVersion(
+            reported: "older than 3.2", required: "3.3a", operation: "any command")
+        #expect(WorkspaceCLI.canonicalCode(for: error) == "tmux_unsupported")
+        let builder = WorkspaceBuilderError.tmux(error)
+        #expect(WorkspaceCLI.canonicalCode(for: builder) == "tmux_unsupported")
+        let message = WorkspaceCLI.message(for: builder)
+        #expect(message.contains("Upgrade tmux and restart the server"))
+        #expect(message.contains("3.3a"))
+        // Other tmux failures keep their code.
+        #expect(WorkspaceCLI.canonicalCode(for: TmuxError.cancelled) == "tmux_failed")
     }
 }

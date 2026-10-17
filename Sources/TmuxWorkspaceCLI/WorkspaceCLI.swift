@@ -235,6 +235,8 @@ enum WorkspaceCLI {
         // tmux itself could not be reached: no such executable, or the
         // socket/endpoint it names is unusable.
         case .processLaunchFailed, .invalidEndpoint: return "tmux_unavailable"
+        // The remedy is in the message: upgrade tmux, or pin the older release.
+        case .unsupportedTmuxVersion: return "tmux_unsupported"
         default: return "tmux_failed"
         }
     }
@@ -295,6 +297,9 @@ enum WorkspaceCLI {
             case let .invalidValue(rowIndex, field, raw):
                 return "tmux row \(rowIndex) field \(field) had an invalid value: \(raw)"
             }
+        case let .unsupportedTmuxVersion(reported, required, operation):
+            return TmuxError.unsupportedVersionMessage(
+                reported: reported, required: required, operation: operation)
         case .serverRestarted:
             return "The tmux server restarted while the request was in flight."
         case .foreignServerValue:

@@ -106,6 +106,12 @@ if !configuration.errors.isEmpty {
 let pin: StartupPin
 do {
     pin = try await configuration.pinForStartup()
+} catch TmuxError.unsupportedTmuxVersion(let reported, let required, let operation) {
+    note(
+        "cannot start: "
+            + TmuxError.unsupportedVersionMessage(
+                reported: reported, required: required, operation: operation))
+    exit(1)
 } catch {
     note("cannot pin tmux server provenance: \(error)")
     exit(1)

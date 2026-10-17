@@ -28,6 +28,14 @@ public enum TmuxError: Error, Sendable, Hashable {
     /// A reply exceeded its finite per-stream memory boundary.
     case outputLimitExceeded(perStreamBytes: Int)
 
+    /// The tmux release behind the endpoint cannot serve the requested
+    /// operation. Raised before the operation has any effect.
+    ///
+    /// `reported` is the release as the daemon (or, for an endpoint with no
+    /// daemon yet, the executable that would start one) spelled it, and
+    /// `required` is the oldest release that serves `operation`.
+    case unsupportedTmuxVersion(reported: String, required: String, operation: String)
+
     /// The endpoint is not addressable. A UNIX socket path has a hard length
     /// limit far shorter than the filesystem's, and exceeding it fails at bind
     /// time rather than at construction.
@@ -87,4 +95,18 @@ public enum FormatDecodingError: Error, Sendable, Hashable {
 public enum CardinalityError: Error, Sendable, Hashable {
     case noMatch
     case multipleMatches(count: Int)
+}
+
+extension TmuxError {
+    /// What to tell a person whose tmux is older than the supported floor.
+    ///
+    /// The refusal happens before the command is sent, so nothing was sent.
+    /// The remedy is the same for every caller: upgrade tmux and restart the
+    /// server, or pin the previous libtmux release.
+    public static func unsupportedVersionMessage(
+        reported: String, required: String, operation: String
+    ) -> String {
+        "tmux \(reported) cannot serve \(operation); libtmux requires tmux \(required) or newer. "
+            + "Nothing was sent. Upgrade tmux and restart the server, or pin the previous libtmux release."
+    }
 }
