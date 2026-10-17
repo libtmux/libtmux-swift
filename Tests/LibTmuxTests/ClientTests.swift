@@ -34,6 +34,11 @@ struct ClientTests {
                     await #expect(throws: TmuxError.staleServerValue) {
                         try await server.switchClient(first, to: destination)
                     }
+                    // tmux 3.8 removed the `active-pane` client flag, so the
+                    // flag change this step relies on exists only before it.
+                    guard try await server.version() < TmuxVersion(major: 3, minor: 8) else {
+                        return
+                    }
                     let reply = try await server.run(
                         TmuxCommand(
                             "refresh-client", ["-t", second.name, "-f", "active-pane"]))
