@@ -71,6 +71,20 @@ struct CommandGuardTests {
         #expect(refused("3.4", ["split-window", "-p", "30"]))
     }
 
+    @Test("a typed session or window name with '.' or ':' is refused on 3.7 before it is sent")
+    func typedNamesOnThreeSeven() async throws {
+        let script = VersionScript(daemon: "3.7", executable: "3.7")
+        let server = Server(
+            endpoint: try Endpoint(
+                socketPath: "/tmp/libtmux-swift-test/names-\(UUID().uuidString.prefix(8))/s"),
+            tmuxExecutable: "/usr/bin/tmux", transport: script, checkingVersions: true)
+        await #expect(throws: TmuxError.self) { _ = try await server.newSession(named: "a.b") }
+        await #expect(throws: TmuxError.self) {
+            _ = try await server.newSession(named: "ok", windowName: "x:y")
+        }
+        #expect(await script.ran("new-session") == false)
+    }
+
     @Test("split-window -p is broken on 3.4 only")
     func percentSplit() {
         #expect(refused("3.4", ["split-window", "-p", "30"]))
