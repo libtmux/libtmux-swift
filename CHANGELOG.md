@@ -30,6 +30,13 @@ version number says only which alpha you have. Pin an exact one.
 - Panes built over a connection match panes built directly, heights included,
   on every supported release; the 3.2a exception is gone. (#43)
 
+### Fixed
+
+- `Server.validateLayouts(_:)`, `Server.selectLayout(_:_:)` and the MCP
+  `select_layout` tool accept the JSON layout documents tmux 3.8 reports in
+  `#{window_layout}`, so a layout read from a 3.8 window can be applied again,
+  including `tmux-workspace freeze` followed by `load`. (#43)
+
 ## [0.1.0-alpha.6] - 2026-09-26
 
 ### Added
