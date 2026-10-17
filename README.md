@@ -824,11 +824,13 @@ The trait is off by default and six tests come with it, so the gate names it.
 Point the suite at a particular release to test against that one:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
+$ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux swift test
 ```
 
-CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
-3.7a, and 3.7b, each built from its own release tarball.
+CI runs the suite on Linux against each of tmux 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a,
+3.7b, 3.8 and master, each built from its own release tarball or, for master,
+from the tip of the repository. It also builds 3.2a and the unpatched 3.3 and
+checks that both are refused.
 
 ## Repository layout
 

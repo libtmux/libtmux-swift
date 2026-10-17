@@ -445,7 +445,7 @@ $ gh workflow run release --ref master -f dry_run=true
 | --- | --- |
 | Swift | 6.2, language mode 6, strict concurrency, no unsafe flags |
 | Platforms | Linux and macOS; `Package.swift` declares `macOS(.v13)` |
-| tmux | 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a, 3.7b |
+| tmux | 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a, 3.7b, 3.8, master |
 
 CI builds each of those tmux releases from its own release tarball and runs the
 suite against it on Linux. macOS runs the ends of the range only — 3.3a and

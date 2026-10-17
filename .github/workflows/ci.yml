@@ -69,6 +69,10 @@ jobs:
           swift-version: "6.2"
 
       - name: Test the refusal
+        env:
+          # The refusal cases are skipped on a supported release, so the run
+          # names what it must have exercised and fails when it did not.
+          LIBTMUX_EXPECT_REFUSAL: "1"
         run: |
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
@@ -92,8 +96,9 @@ jobs:
         # The releases the library claims to support. Building each from its
         # own tag is what makes a compatibility claim evidence rather than an
         # assertion: behaviour differs between 3.3a, 3.4 and 3.7 on one machine.
-        # Releases below the floor are the `refusal` job's.
-        tmux: ["3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b"]
+        # Releases below the floor are the `refusal` job's. `master` is built
+        # from the tip of tmux's repository, which reports itself as next-X.Y.
+        tmux: ["3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.8", "master"]
         # No macOS lane: swift-subprocess calls macOS 26 API with no
         # availability guard, and SwiftPM compiles a dependency at that
         # dependency's own declared minimum, so no deployment target set here
@@ -111,14 +116,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/tmux-${{ matrix.tmux }}
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+          # A branch tip changes under its name, so master is rebuilt every run.
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}${{ matrix.tmux == 'master' && format('-{0}', github.run_id) || '' }}
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.tmux-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            bison libevent-dev libncurses-dev pkg-config
+            automake autoconf bison libevent-dev libncurses-dev pkg-config
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS' && steps.tmux-cache.outputs.cache-hit != 'true'
@@ -148,11 +154,17 @@ jobs:
             # is to build without it.
             configure_flags="--disable-utf8proc"
           fi
-          curl --location --fail --silent --show-error \
-            "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
-            --output tmux.tar.gz
-          tar -xzf tmux.tar.gz
-          cd "tmux-${{ matrix.tmux }}"
+          if [ "${{ matrix.tmux }}" = master ]; then
+            git clone --depth 1 https://github.com/tmux/tmux.git "tmux-master"
+            cd "tmux-master"
+            sh autogen.sh
+          else
+            curl --location --fail --silent --show-error \
+              "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
+              --output tmux.tar.gz
+            tar -xzf tmux.tar.gz
+            cd "tmux-${{ matrix.tmux }}"
+          fi
           # shellcheck disable=SC2086 — empty on Linux, one flag on Darwin.
           ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" $configure_flags
           make -j"$(getconf _NPROCESSORS_ONLN)"
