@@ -170,7 +170,9 @@ struct PaneInputTransitionTests {
         }
     }
 
-    @Test("paste rechecks after staging and removes its private buffer on refusal")
+    @Test(
+        "paste rechecks after staging and removes its private buffer on refusal",
+        .enabled(if: laneSupportsNamedBufferEditing, "named-buffer deletion needs tmux 3.4"))
     func pasteTransitionCleansBuffer() async throws {
         try await withTmuxServer { fixture in
             let source = try #require(try await fixture.panes().first)

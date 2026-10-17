@@ -5,7 +5,9 @@ import TmuxFixture
 
 @Suite("streaming", .timeLimit(.minutes(1)))
 struct StreamingTests {
-    @Test("the documented stream reports pane output as it happens")
+    @Test(
+        "the documented stream reports pane output as it happens",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func theDocumentedStreamReportsOutput() async throws {
         try await withTmuxServer { server in
             _ = try await server.newSession(named: "work")

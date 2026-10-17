@@ -18,7 +18,9 @@ private func withMain<Result>(
 
 @Suite("choosing a mode", .timeLimit(.minutes(1)))
 struct ModeTests {
-    @Test("a connected scope returns what the direct one would")
+    @Test(
+        "a connected scope returns what the direct one would",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func aConnectedScopeAgreesWithDirect() async throws {
         try await withMain { server in
             let overConnection = try await overOneConnection(server)
@@ -27,7 +29,9 @@ struct ModeTests {
         }
     }
 
-    @Test("choosing the mode at runtime changes neither the calls nor the answer")
+    @Test(
+        "choosing the mode at runtime changes neither the calls nor the answer",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func choosingAtRuntimeChangesNothing() async throws {
         try await withMain { server in
             let attached = try await chosenAtRuntime(server, true).map(\.name)
@@ -36,7 +40,9 @@ struct ModeTests {
         }
     }
 
-    @Test("two listings pipelined over one connection both answer")
+    @Test(
+        "two listings pipelined over one connection both answer",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func aPipelinedBatchAnswersBoth() async throws {
         try await withMain { server in
             let (sessions, panes) = try await aPipelinedBatch(server)
@@ -45,7 +51,9 @@ struct ModeTests {
         }
     }
 
-    @Test("a workspace built over a connection is the session tmux ends up with")
+    @Test(
+        "a workspace built over a connection is the session tmux ends up with",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func aWorkspaceBuildsOverAConnection() async throws {
         try await withMain { server in
             let workspace = describeAWorkspaceInSwift()

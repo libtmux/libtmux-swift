@@ -22,7 +22,9 @@ struct EnvironmentTests {
         #expect(TmuxProcessEnvironment.controlAttachmentVariables(readingFrom: nested) == caller)
     }
 
-    @Test("opening control mode does not rewrite the session environment")
+    @Test(
+        "opening control mode does not rewrite the session environment",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func controlAttachmentPreservesSessionEnvironment() async throws {
         try await withTmuxServer { server in
             let scope = EnvironmentScope.session("bootstrap")
@@ -166,7 +168,9 @@ struct EnvironmentTests {
         }
     }
 
-    @Test("a value ending in a separator survives being set")
+    @Test(
+        "a value ending in a separator survives being set",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func trailingSeparatorValuesSurvive() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "separators")

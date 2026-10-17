@@ -55,7 +55,9 @@ struct WaitingTests {
         }
     }
 
-    @Test("the documented format watch returns on the value it names")
+    @Test(
+        "the documented format watch returns on the value it names",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func documentedFormatWatchReturns() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "work")

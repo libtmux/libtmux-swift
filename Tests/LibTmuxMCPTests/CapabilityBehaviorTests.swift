@@ -722,6 +722,7 @@ struct CapabilityBehaviorTests {
 
     @Test(
         "leading-dash MCP operands remain literal",
+        .enabled(if: laneSupportsNamedBufferEditing, "named-buffer deletion needs tmux 3.4"),
         arguments: LeadingDashOperand.allCases
     )
     func leadingDashMCPOperandsRemainLiteral(_ operand: LeadingDashOperand) async throws {
@@ -957,7 +958,9 @@ struct CapabilityBehaviorTests {
         }
     }
 
-    @Test("paste_text keeps text and Enter target-only in one private buffer")
+    @Test(
+        "paste_text keeps text and Enter target-only in one private buffer",
+        .enabled(if: laneSupportsNamedBufferEditing, "named-buffer deletion needs tmux 3.4"))
     func pasteTextKeepsEnterTargetOnly() async throws {
         try await withTmuxServer { server in
             let source = try #require(try await server.panes().first)

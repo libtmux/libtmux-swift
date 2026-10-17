@@ -14,7 +14,9 @@ import TmuxFixture
 /// server reports about itself, and only there.
 @Suite("dispatch over a connection", .timeLimit(.minutes(5)))
 struct ModeProbeTests {
-    @Test("the same query answers the same over either mode")
+    @Test(
+        "the same query answers the same over either mode",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func sameQueryAnswersTheSame() async throws {
         try await withTmuxServer { server in
             _ = try await server.newSession(named: "alpha")
@@ -37,7 +39,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a mutation over the connection is the same mutation")
+    @Test(
+        "a mutation over the connection is the same mutation",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func mutationsCarryOverTheConnection() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "work")
@@ -56,7 +60,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a local option reaches the same session over either mode")
+    @Test(
+        "a local option reaches the same session over either mode",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func localOptionTargetsCarryOverTheConnection() async throws {
         try await withTmuxServer { server in
             // Distinct activity times make a missing `-t` fail deterministically.
@@ -103,7 +109,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a rejected command is still a reply, not a thrown error")
+    @Test(
+        "a rejected command is still a reply, not a thrown error",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func rejectionKeepsItsShape() async throws {
         try await withTmuxServer { server in
             let reply = try await server.connected(attachingTo: "bootstrap") { server, _ in
@@ -114,7 +122,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("concurrent calls over one connection pipeline, and stay attributed")
+    @Test(
+        "concurrent calls over one connection pipeline, and stay attributed",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func concurrentCallsPipelineOverOneConnection() async throws {
         try await withTmuxServer { server in
             _ = try await server.newSession(named: "alpha")
@@ -141,7 +151,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a command list does the same work over either mode")
+    @Test(
+        "a command list does the same work over either mode",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func commandListsCarryOverTheConnection() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
@@ -170,7 +182,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a format reads the same field over either mode")
+    @Test(
+        "a format reads the same field over either mode",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func formatsCarryOverTheConnection() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)
@@ -217,7 +231,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a file reaches a buffer over a connection that its text could not")
+    @Test(
+        "a file reaches a buffer over a connection that its text could not",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func loadBufferCarriesWhatACommandLineCannot() async throws {
         try await withTmuxServer { server in
             let directory = FileManager.default.temporaryDirectory
@@ -245,7 +261,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a buffer reads the same over either mode, newline-terminated or not")
+    @Test(
+        "a buffer reads the same over either mode, newline-terminated or not",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func bufferReadsTheSameOverEitherMode() async throws {
         try await withTmuxServer { server in
             let directory = FileManager.default.temporaryDirectory
@@ -285,7 +303,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("the same work reads the same whichever mode is passed as a value")
+    @Test(
+        "the same work reads the same whichever mode is passed as a value",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func usingCarriesTheModeAsData() async throws {
         try await withTmuxServer { server in
             _ = try await server.newSession(named: "alpha")
@@ -306,7 +326,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a server says which mode it is in, and the innermost one wins")
+    @Test(
+        "a server says which mode it is in, and the innermost one wins",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func modeIsReadableAndNests() async throws {
         try await withTmuxServer { server in
             // Rule 2: a server nobody put in a mode is direct.
@@ -337,7 +359,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("a hook written over the connection is the same hook")
+    @Test(
+        "a hook written over the connection is the same hook",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func hooksCarryOverTheConnection() async throws {
         try await withTmuxServer { server in
             try await server.connected(attachingTo: "bootstrap") { server, _ in
@@ -350,7 +374,9 @@ struct ModeProbeTests {
         }
     }
 
-    @Test("one connection serves many calls")
+    @Test(
+        "one connection serves many calls",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func oneConnectionServesManyCalls() async throws {
         try await withTmuxServer { server in
             let counts = try await server.connected(attachingTo: "bootstrap") { server, _ in

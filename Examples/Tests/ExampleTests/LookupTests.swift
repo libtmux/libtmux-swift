@@ -29,7 +29,9 @@ struct LookupExampleTests {
         }
     }
 
-    @Test("a typed error survives a connected scope")
+    @Test(
+        "a typed error survives a connected scope",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func typedErrorSurvives() async throws {
         try await withTmuxServer { server in
             _ = try await server.newSession(named: "main")
