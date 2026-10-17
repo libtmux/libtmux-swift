@@ -8,28 +8,39 @@ import TmuxFixture
 
 @Suite("tmux version check rules")
 struct VersionCheckRuleTests {
+    /// Every version string tmux has reported, as the shared vector table
+    /// lists them, against the 3.3a floor.
     @Test(
-        "the floor is a whole release, patch letter included",
+        "the version grammar accepts what tmux reports at or above the floor",
         arguments: [
-            ("3.1c", false), ("3.2a", false), ("3.3", false), ("3.3a", true),
-            ("3.4", true), ("3.7b", true), ("3.10", true), ("4.0", true),
-            // A snapshot or candidate ranks below the release it names.
-            ("next-3.3a", false), ("3.3a-rc", false), ("next-3.4", true),
-            ("3.8-rc2", true), ("next-3.9", true),
-            ("3.4-master", true), ("3.3-master", false),
-            // A build this library cannot rank is refused, not read as a
-            // release: `openbsd` numbers by its own release, not tmux's.
-            ("3.4-openbsd", false), ("3.4-custom", false),
+            "3.3a", "3.4", "3.7d", "3.8", "3.10", "4.0", "3.4-rc", "3.8-rc", "3.8-rc2",
+            "next-3.4", "next-3.9",
         ]
     )
-    func floorIsAWholeRelease(_ token: String, _ checked: Bool) throws {
-        let version = try #require(TmuxVersion(parsing: token))
-        #expect(version.isCoreSupported == checked)
-        if checked {
-            _ = try Support.Versions.requireCore(token)
-        } else {
-            #expect(throws: TmuxError.self) { try Support.Versions.requireCore(token) }
-        }
+    func acceptsReportedVersions(_ token: String) throws {
+        #expect(try Support.Versions.requireCore(token).token == token)
+    }
+
+    @Test(
+        "the version grammar refuses a release below the floor",
+        arguments: ["3.3", "3.2a", "3.3-rc", "3.2-rc5", "next-3.3"]
+    )
+    func refusesBelowTheFloor(_ token: String) {
+        #expect(
+            throws: TmuxError.unsupportedTmuxVersion(
+                reported: token, required: "3.3a", operation: "ordinary tmux operations")
+        ) { try Support.Versions.requireCore(token) }
+    }
+
+    @Test(
+        "the version grammar refuses what tmux never reports",
+        arguments: [
+            "master", "openbsd-7.6", "", "3", "garbage", "3.3a garbage", "3.3a-master",
+            "3.3a-dev", "next-3.3a", "next-3.9-master", "3.4-master", "3.4-rcx",
+        ]
+    )
+    func refusesUnreportedForms(_ token: String) {
+        #expect(throws: TmuxError.self) { try Support.Versions.requireCore(token) }
     }
 
     @Test("a refusal names the release it saw and the one it wants")

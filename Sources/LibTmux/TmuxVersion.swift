@@ -70,15 +70,16 @@ public struct TmuxVersion: Sendable, Hashable, Comparable, Codable {
 
     /// Where a build sits among the builds of one release number.
     ///
-    /// `next-X.Y` names what master will become and `X.Y-rc` is a candidate for
-    /// it; neither has the release's fixes, so both rank below `X.Y` itself,
-    /// the snapshot first. Every other build (`master`, `openbsd`) already
-    /// happened at that number and ranks with the release.
-    private var buildRank: Int {
-        guard let build else { return 2 }
-        if build == "next" { return 0 }
-        if build.hasPrefix("rc") { return 1 }
-        return 2
+    /// `next-X.Y` is master before the release branch is cut, `X.Y-rc` and
+    /// `X.Y-rcN` are candidates cut from it, and the release follows them:
+    /// `next-3.7` < `3.7-rc` < `3.7-rc2` < `3.7` < `3.7a`. Neither has the
+    /// release's fixes. Every other build (`openbsd`, an old `master`) ranks
+    /// with the release.
+    private var buildRank: (Int, Int) {
+        guard let build else { return (2, 0) }
+        if build == "next" { return (0, 0) }
+        if build.hasPrefix("rc") { return (1, Int(build.dropFirst(2)) ?? 0) }
+        return (2, 0)
     }
 }
 

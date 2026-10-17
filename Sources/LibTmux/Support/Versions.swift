@@ -16,12 +16,14 @@ extension TmuxVersion {
     /// Whether ordinary operations accept this build.
     ///
     /// A snapshot (`next-X.Y`) or release candidate ranks below the release it
-    /// names, so `next-3.3a` is refused and `next-3.9` is not. A build suffix
-    /// this library has no ranking for is refused rather than treated as a
-    /// release: `openbsd` reports OpenBSD's own numbering, which says nothing
+    /// names, so `3.3-rc` is refused and `next-3.9` and `3.8-rc` are not. A
+    /// build suffix tmux has not reported is refused rather than treated as a
+    /// release: `openbsd` carries OpenBSD's own numbering, which says nothing
     /// about the tmux release underneath it.
     var isCoreSupported: Bool {
-        if let build, !Support.Versions.recognizedBuild(build) { return false }
+        if let build, !Support.Versions.recognizedBuild(build, pointRelease: pointRelease) {
+            return false
+        }
         return self >= .coreMinimum
     }
 }
@@ -52,19 +54,16 @@ extension Support {
             return ServerVersion(token: token, version: version)
         }
 
-    static func recognizedBuild(_ build: String) -> Bool {
-        build == "next" || build == "master" || build == "dev" || build.hasPrefix("rc")
-    }
-
-    /// A token is embedded in a format condition, so only the characters a
-    /// release is spelled with may reach one.
-    private static func isFormatSafe(_ token: String) -> Bool {
-        !token.isEmpty
-            && token.unicodeScalars.allSatisfy {
-                ($0.value < 128)
-                    && (CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-")
-            }
-    }
+        /// The builds tmux has reported: a development snapshot (`next-X.Y`,
+        /// never with a patch letter) and a release candidate (`X.Y-rc`,
+        /// `X.Y-rcN`). Wrappers have spelled others, such as `X.Y-master`; tmux
+        /// has not, and one is refused rather than ranked.
+        static func recognizedBuild(_ build: String, pointRelease: String) -> Bool {
+            if build == "next" { return pointRelease.isEmpty }
+            guard build.hasPrefix("rc") else { return false }
+            let number = build.dropFirst(2)
+            return number.isEmpty || (number.allSatisfy(\.isNumber) && Int(number) != nil)
+        }
 
         /// A token is embedded in a format condition, so only the characters a
         /// release is spelled with may reach one.
