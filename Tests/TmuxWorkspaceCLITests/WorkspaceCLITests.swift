@@ -2374,7 +2374,7 @@ struct WorkspaceCLITests {
         }
     }
 
-    @Test("freeze never writes a session name load would refuse")
+    @Test("freeze never writes a session name load would refuse", .enabled(if: !laneIsExactly(3, 7), "tmux 3.7 refuses '.' and ':' in names"))
     func freezeRefusesUnaddressableName() async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }
@@ -2873,7 +2873,10 @@ struct WorkspaceCLITests {
         }
     }
 
-    @Test("load starts an absent server with its requested color mode", arguments: [false, true])
+    @Test(
+        "load starts an absent server with its requested color mode",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"),
+        arguments: [false, true])
     func coldLoad(_ colors256: Bool) async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }

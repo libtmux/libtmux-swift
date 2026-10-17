@@ -24,6 +24,28 @@ between refuses the command instead of running it. Where nothing listens yet,
 the executable that would start the daemon is held to the same floor. The
 question is asked in a way that fires none of a configuration's hooks.
 
+## Features that need a newer release
+
+A feature that needs more than 3.3a says so by itself and refuses before it
+does anything; none of them raises the floor for the rest of the library. The
+refusal is ``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``,
+decided from the daemon's release.
+
+| Feature | Needs | Below that | State |
+| --- | --- | --- | --- |
+| ``Server/connected(attachingTo:_:)``, ``Server/using(_:_:)`` with ``TmuxMode/connected(to:)``, ``Server/withControlMode(attachingTo:_:)`` and everything on a ``ControlSession`` | 3.7 | refused before any client attaches | Qualified on 3.7 and newer in the suites run; refused below |
+| ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)`` | any | reads the pane on a timer instead of streaming | Operative with synchronization: output that changes no row, such as blank-only output, is not seen |
+| ``Server/deleteBuffer(named:)`` and the MCP `paste_text` staging buffer | 3.4 | refused; `paste_text` refuses before it stages a buffer | Qualified from 3.4; refused below |
+| `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7; ``Server/breakPane(_:from:named:)`` supplies a name there | Qualified on 3.7 and 3.7a |
+| `split-window -p` | 3.5 | refused on exactly 3.4; the typed splits send `-l N%` | Qualified |
+| `select-layout` with a layout tmux cannot parse | 3.4 | refused before it is sent, because 3.3a crashes on one | Qualified on 3.3a |
+
+Tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
+quickly, which is why the release is checked before attaching and not after. A
+literal batch is read for these commands when it is sent as arguments; a shell
+command, an `if-shell` body or a configured alias is the caller's own program
+and is not read.
+
 ``Server/version()`` reports which tmux executable a server runs, and answers
 for any release because it is a diagnostic rather than a version check.
 ``TmuxVersion`` orders releases the way tmux issues them — including the point release's

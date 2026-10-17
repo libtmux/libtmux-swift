@@ -146,6 +146,13 @@ _ = try await server.run(plan)
 Both work in either mode. Combined with a connection, a list costs one process
 for any number of commands.
 
+A connection is a control client, and attaching one is safe from tmux 3.7. On
+an older daemon ``TmuxMode/connected(to:)`` and
+``Server/connected(attachingTo:_:)`` throw
+``TmuxError/unsupportedTmuxVersion(reported:required:operation:)`` before
+anything attaches; ``TmuxMode/direct`` serves every supported release. See
+<doc:PlatformSupport>.
+
 ## What each mode costs
 
 Measured by `swift run --package-path Benchmarks libtmux-bench`, which runs each scenario under each mode

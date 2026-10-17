@@ -30,7 +30,32 @@ version number says only which alpha you have. Pin an exact one.
 - Panes built over a connection match panes built directly, heights included,
   on every supported release; the 3.2a exception is gone. (#43)
 
+- `Server.connected(attachingTo:_:)`, `Server.using(_:_:)` with a connected
+  mode and `Server.withControlMode(attachingTo:_:)` need a 3.7 daemon, decided
+  before any client attaches, and throw
+  `TmuxError.unsupportedTmuxVersion(reported:required:operation:)` below it.
+  tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
+  quickly. Direct mode, `Server.snapshot()` and the workspace builder keep
+  working on every supported release. (#44)
+
+- `Server.waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)`
+  reads the pane on a timer below 3.7 instead of attaching a control client;
+  output that changes no row, such as a line of only blanks, is not seen as an
+  event there. (#44)
+
+- `Server.deleteBuffer(named:)` and the MCP `paste_text` tool need tmux 3.4:
+  earlier releases can delete or rename an unrelated buffer when the named one
+  is missing. `paste_text` refuses before it stages a buffer. (#44)
+
+- A literal command batch is refused before dispatch when its release cannot
+  run it safely: `break-pane` without `-n` on exactly 3.7, a window or session
+  name holding `:` or `.` on exactly 3.7, `split-window -p` on exactly 3.4, and
+  a `select-layout` argument tmux 3.3a cannot parse. (#44)
+
 ### Fixed
+
+- `Server.breakPane(_:from:named:)` returns the window of a pane that was alone
+  in it on tmux 3.3a through 3.5, which print no id for that case. (#44)
 
 - `Server.validateLayouts(_:)`, `Server.selectLayout(_:_:)` and the MCP
   `select_layout` tool accept the JSON layout documents tmux 3.8 reports in

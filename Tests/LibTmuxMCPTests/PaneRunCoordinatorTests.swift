@@ -122,6 +122,7 @@ struct PaneRunCoordinatorTests {
 
     @Test(
         "send, batch, and paste reserve their dispatch",
+        .enabled(if: laneSupportsNamedBufferEditing, "named-buffer deletion needs tmux 3.4"),
         arguments: ReservedInput.allCases
     )
     func toolsReserveDispatch(_ operation: ReservedInput) async throws {
@@ -130,6 +131,7 @@ struct PaneRunCoordinatorTests {
 
     @Test(
         "pane writers reserve before setup and through final preflight",
+        .enabled(if: laneSupportsNamedBufferEditing, "named-buffer deletion needs tmux 3.4"),
         arguments: ReservedInput.allCases
     )
     func toolsReserveBeforeDispatch(_ operation: ReservedInput) async throws {

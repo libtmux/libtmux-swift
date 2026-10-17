@@ -49,7 +49,9 @@ struct WaitTests {
         }
     }
 
-    @Test("a wait does not stall the calls beside it on a connection")
+    @Test(
+        "a wait does not stall the calls beside it on a connection",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func waitDoesNotStallAConnection() async throws {
         try await withTmuxServer { server in
             try await server.connected(attachingTo: "bootstrap") { server, _ in

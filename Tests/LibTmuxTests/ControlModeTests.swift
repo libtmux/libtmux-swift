@@ -18,7 +18,9 @@ private actor ControlBodyProbe {
 
 @Suite("control mode", .timeLimit(.minutes(5)))
 struct ControlModeTests {
-    @Test("a rejected attachment never enters the body")
+    @Test(
+        "a rejected attachment never enters the body",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func rejectedAttachmentNeverEntersBody() async throws {
         try await withTmuxServer { server in
             let probe = ControlBodyProbe()
@@ -45,7 +47,7 @@ struct ControlModeTests {
         }
     }
 
-    @Test("losing the output stream cancels a sleeping body")
+    @Test("losing the output stream cancels a sleeping body", .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func outputLossCancelsSleepingBody() async throws {
         try await withTmuxServer { server in
             let probe = ControlBodyProbe()
@@ -84,7 +86,9 @@ struct ControlModeTests {
         }
     }
 
-    @Test("a reply belongs to the command that produced it")
+    @Test(
+        "a reply belongs to the command that produced it",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func replyBelongsToItsCommand() async throws {
         try await withTmuxServer { server in
             try await server.withControlMode(attachingTo: "bootstrap") { control in
@@ -105,7 +109,9 @@ struct ControlModeTests {
         }
     }
 
-    @Test("a rejected command closes its block with an error, not the connection")
+    @Test(
+        "a rejected command closes its block with an error, not the connection",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func rejectedCommandDoesNotCloseTheConnection() async throws {
         try await withTmuxServer { server in
             try await server.withControlMode(attachingTo: "bootstrap") { control in
@@ -123,7 +129,9 @@ struct ControlModeTests {
         }
     }
 
-    @Test("a command that prints nothing yields an empty reply")
+    @Test(
+        "a command that prints nothing yields an empty reply",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func silentCommandYieldsAnEmptyReply() async throws {
         try await withTmuxServer { server in
             try await server.withControlMode(attachingTo: "bootstrap") { control in
@@ -136,7 +144,9 @@ struct ControlModeTests {
         }
     }
 
-    @Test("two observers each see every notification, rather than half each")
+    @Test(
+        "two observers each see every notification, rather than half each",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func observersDoNotDivideNotifications() async throws {
         try await withTmuxServer { server in
             let counts = try await server.withControlMode(attachingTo: "bootstrap") {
@@ -169,7 +179,9 @@ struct ControlModeTests {
         return false
     }
 
-    @Test("pane output arrives as it happens, not by polling")
+    @Test(
+        "pane output arrives as it happens, not by polling",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func paneOutputArrivesAsItHappens() async throws {
         try await withTmuxServer { server in
             let marker = "libtmux-stream-marker"
@@ -194,7 +206,9 @@ struct ControlModeTests {
         }
     }
 
-    @Test("the server volunteers what changed without being asked")
+    @Test(
+        "the server volunteers what changed without being asked",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func serverVolunteersWhatChanged() async throws {
         try await withTmuxServer { server in
             let names = try await server.withControlMode(attachingTo: "bootstrap") {
@@ -215,7 +229,7 @@ struct ControlModeTests {
         }
     }
 
-    @Test("work done through control mode is visible to ordinary commands")
+    @Test("work done through control mode is visible to ordinary commands", .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func controlModeWorkIsVisibleOutside() async throws {
         try await withTmuxServer { server in
             try await server.withControlMode(attachingTo: "bootstrap") { control in
@@ -228,7 +242,9 @@ struct ControlModeTests {
         }
     }
 
-    @Test("the connection closes when its scope ends")
+    @Test(
+        "the connection closes when its scope ends",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func connectionClosesWithItsScope() async throws {
         try await withTmuxServer { server in
             try await server.withControlMode(attachingTo: "bootstrap") { control in

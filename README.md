@@ -779,7 +779,7 @@ under a dependency you do not.
 | --- | --- |
 | Swift | 6.2 or later |
 | Platforms | Linux and macOS — see [Platform notes](#platform-notes) |
-| tmux | 3.3a through 3.7b; older daemons are refused before any command runs |
+| tmux | 3.3a through 3.7b; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release in the DocC platform page |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 ## Documentation

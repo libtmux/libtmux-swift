@@ -16,7 +16,9 @@ struct CommandListTests {
         )
     }
 
-    @Test("an escaped separator stays data over a connection")
+    @Test(
+        "an escaped separator stays data over a connection",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func escapedSeparatorStaysDataOverAConnection() async throws {
         try await withTmuxServer { server in
             let command = TmuxCommand("display-message", ["-p", #"\;"#])
@@ -83,7 +85,9 @@ struct CommandListTests {
         }
     }
 
-    @Test("a list answers the same over a connection as it does in a process")
+    @Test(
+        "a list answers the same over a connection as it does in a process",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func listAnswersTheSameInEitherMode() async throws {
         try await withTmuxServer { server in
             // tmux answers a `;` list with one block per command, where a
@@ -113,7 +117,9 @@ struct CommandListTests {
         }
     }
 
-    @Test("a failing list is a failure over a connection too")
+    @Test(
+        "a failing list is a failure over a connection too",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func failingListIsAFailureOverAConnection() async throws {
         try await withTmuxServer { server in
             let list = TmuxCommandList()
@@ -131,7 +137,9 @@ struct CommandListTests {
         }
     }
 
-    @Test("a list leaves nothing behind for the next command to collect")
+    @Test(
+        "a list leaves nothing behind for the next command to collect",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func listLeavesNothingForTheNextCommand() async throws {
         try await withTmuxServer { server in
             try await server.using(.connected(to: "bootstrap")) { server in

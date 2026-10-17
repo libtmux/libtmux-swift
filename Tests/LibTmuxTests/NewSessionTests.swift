@@ -5,7 +5,9 @@ import TmuxFixture
 
 @Suite("new session")
 struct NewSessionTests {
-    @Test("creation preserves trailing separators in environment and names")
+    @Test(
+        "creation preserves trailing separators in environment and names",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func literalCreationValues() async throws {
         try await withTmuxServer { server in
             for (index, value) in ["literal;", "two;;", #"slash\;"#, "#{session_name}"].enumerated()
