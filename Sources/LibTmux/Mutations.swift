@@ -48,7 +48,7 @@ extension Server {
         _ window: Window,
         _ layout: String
     ) async throws(TmuxError) {
-        try await validateLayouts([(layout, 1)], guarding: window)
+        try await validateLayouts([(layout, 1)])
         try await expectSuccess(
             TmuxCommand("select-layout", ["-t", window.id.rawValue, layout]),
             guardedBy: [.window(window)]

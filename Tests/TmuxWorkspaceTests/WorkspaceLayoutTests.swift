@@ -9,7 +9,7 @@ import TmuxFixture
 struct WorkspaceLayoutTests {
     @Test(
         "layout preflight delegates geometry from the tmux corpus",
-        arguments: ["3.2a", "3.3a", "3.7c"])
+        arguments: ["3.3a", "3.7c"])
     func observedLayouts(version: String) throws {
         let url = try #require(
             Bundle.module.url(
@@ -54,8 +54,8 @@ struct WorkspaceLayoutTests {
             ], on: server)
         let calls = await transport.arguments
         #expect(calls.count == 1)
-        #expect(calls.first?.contains("display-message") == true)
-        #expect(await transport.locales == ["C"])
+        #expect(calls.first?.contains("run-shell") == true)
+        #expect(!calls.contains { $0.contains("display-message") })
     }
 
     @Test("layout version probes handle real cold and empty endpoints")
@@ -115,9 +115,7 @@ struct WorkspaceLayoutTests {
         let server = Server(
             endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/layout-version/socket"),
             transport: transport)
-        await #expect(
-            throws: TmuxError.commandFailed(command: "display-message", exitCode: 1, reason: error)
-        ) {
+        await #expect(throws: TmuxError.invocationFailed(reason: error)) {
             try await WorkspaceLayout.validate(
                 [
                     Workspace(
@@ -190,7 +188,6 @@ private actor LayoutVersionTransport: ProcessTransport {
     let daemonVersion: String?
     let error: String
     private(set) var arguments: [[String]] = []
-    private(set) var locales: [String] = []
 
     init(
         daemonVersion: String?,
@@ -205,13 +202,12 @@ private actor LayoutVersionTransport: ProcessTransport {
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         self.arguments.append(arguments)
-        if let locale = environment["LC_ALL"] { locales.append(locale) }
-        if arguments.contains("list-sessions"), daemonVersion != nil {
-            return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
-        }
-        if arguments.contains("display-message"), let daemonVersion {
+        if let probe = arguments.firstIndex(of: "-C"), let daemonVersion {
+            let marker = arguments[probe + 1].replacingOccurrences(
+                of: "#{version}", with: daemonVersion)
             return TmuxReply(
-                standardOutput: Array("\(daemonVersion)\n".utf8), standardError: [], exitCode: 0)
+                standardOutput: [], standardError: Array("unknown command: \(marker)\n".utf8),
+                exitCode: 1)
         }
         if arguments.contains("-V") {
             return TmuxReply(

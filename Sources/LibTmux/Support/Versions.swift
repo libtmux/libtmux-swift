@@ -1,0 +1,161 @@
+import Foundation
+
+/// The tmux release a daemon or executable reported, kept with the exact token
+/// it reported so a fence can ask the daemon for the same string back.
+struct ServerVersion: Sendable, Hashable {
+    let token: String
+    let version: TmuxVersion
+}
+
+extension TmuxVersion {
+    /// The oldest release ordinary operations accept.
+    ///
+    /// Compared as a whole release, patch letter included: 3.3 sits below it.
+    static let coreMinimum = TmuxVersion(major: 3, minor: 3, pointRelease: "a")
+
+    /// Whether ordinary operations accept this build.
+    ///
+    /// A snapshot (`next-X.Y`) or release candidate ranks below the release it
+    /// names, so `next-3.3a` is refused and `next-3.9` is not. A build suffix
+    /// this library has no ranking for is refused rather than treated as a
+    /// release: `openbsd` reports OpenBSD's own numbering, which says nothing
+    /// about the tmux release underneath it.
+    var isCoreSupported: Bool {
+        if let build, !Support.Versions.recognizedBuild(build) { return false }
+        return self >= .coreMinimum
+    }
+}
+
+/// The tmux versions this library supports. `Support` means tmux version and
+/// feature support, not helper code.
+enum Support {}
+
+extension Support {
+    /// How a daemon or executable is checked, and how a command is held to the
+    /// version that check read. Pure functions, so every rule is testable
+    /// without a process.
+    enum Versions {
+        /// Reads the version off a reported token and refuses an unsupported one.
+        static func requireCore(_ token: String) throws(TmuxError) -> ServerVersion {
+            guard isFormatSafe(token), let version = TmuxVersion(parsing: token) else {
+                throw .invocationFailed(
+                    reason: "could not read a tmux version from \(token.debugDescription)"
+                )
+            }
+            guard version.isCoreSupported else {
+                throw .unsupportedTmuxVersion(
+                    reported: token,
+                    required: "\(TmuxVersion.coreMinimum)",
+                    operation: "ordinary tmux operations"
+                )
+            }
+            return ServerVersion(token: token, version: version)
+        }
+
+    static func recognizedBuild(_ build: String) -> Bool {
+        build == "next" || build == "master" || build == "dev" || build.hasPrefix("rc")
+    }
+
+    /// A token is embedded in a format condition, so only the characters a
+    /// release is spelled with may reach one.
+    private static func isFormatSafe(_ token: String) -> Bool {
+        !token.isEmpty
+            && token.unicodeScalars.allSatisfy {
+                ($0.value < 128)
+                    && (CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-")
+            }
+    }
+
+        /// A token is embedded in a format condition, so only the characters a
+        /// release is spelled with may reach one.
+        private static func isFormatSafe(_ token: String) -> Bool {
+            !token.isEmpty
+                && token.unicodeScalars.allSatisfy {
+                    ($0.value < 128)
+                        && (CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-")
+                }
+        }
+
+        // MARK: Probe
+
+        /// A command name no tmux knows, unique to one dispatch.
+        static func makeMarker() -> String {
+            "libtmux-version-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        }
+
+        /// The probe asks the daemon for its version without running a command
+        /// that fires hooks.
+        ///
+        /// `run-shell -C` expands the format and parses the result as a command
+        /// after the command that asked has returned, so the parse error is the
+        /// answer: `unknown command: <marker><version>`. `run-shell` carries no
+        /// after-command hook, and tmux inserts no `command-error` for a command
+        /// that has already returned. `display-message` would fire
+        /// `after-display-message` in a user's configuration before any refusal.
+        static func probeArguments(marker: String) -> [String] {
+            ["-N", "run-shell", "-C", "\(marker)-#{version}"]
+        }
+
+        enum Probe: Equatable {
+            case version(String)
+            case absent
+            case failed(String)
+        }
+
+        static func interpret(probe reply: TmuxReply, marker: String) -> Probe {
+            let prefix = "unknown command: \(marker)-"
+            let lines = reply.errorText.split(separator: "\n", omittingEmptySubsequences: true)
+            if reply.exitCode == 1, let line = lines.first(where: { $0.hasPrefix(prefix) }) {
+                return .version(String(line.dropFirst(prefix.count)))
+            }
+            if isAbsentEndpoint(reply) { return .absent }
+            let detail = reply.errorText.isEmpty ? reply.text : reply.errorText
+            return .failed(detail.isEmpty ? "exit status \(reply.exitCode)" : detail)
+        }
+
+        /// What tmux says when nothing listens at the socket.
+        static func isAbsentEndpoint(_ reply: TmuxReply) -> Bool {
+            guard reply.exitCode != 0 else { return false }
+            let text = reply.errorText
+            if text.contains("no server running") { return true }
+            return text.contains("error connecting to")
+                && (text.contains("No such file or directory") || text.contains("Connection refused"))
+        }
+
+        /// The executable's banner: tmux prints `tmux 3.4`, but 3.3a prints the
+        /// name it was started as, so `tmux-3.3a 3.3a` is the same answer.
+        static func executableToken(banner: String, executable: String) -> String? {
+            let text = banner.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = URL(fileURLWithPath: executable).lastPathComponent
+            for prefix in ["tmux ", name + " "] where text.hasPrefix(prefix) {
+                let token = String(text.dropFirst(prefix.count))
+                return token.contains("\n") ? nil : token
+            }
+            return nil
+        }
+
+        // MARK: Fence
+
+        /// Holds a batch to the release that was checked.
+        ///
+        /// The condition is false only on a daemon that is not the checked
+        /// release, and then the marker runs as a command, which tmux rejects and
+        /// which ends the list before anything after it runs.
+        static func fence(_ arguments: [String], to checked: ServerVersion, marker: String)
+            -> [String]
+        {
+            fenceCommand(to: checked, marker: marker) + [";"]
+                + (arguments.isEmpty ? ["new-session"] : arguments)
+        }
+
+        /// The fence alone, for a channel that already carries one command at a
+        /// time.
+        static func fenceCommand(to checked: ServerVersion, marker: String) -> [String] {
+            ["if-shell", "-F", "#{==:#{version},\(checked.token)}", "", marker]
+        }
+
+        static func isRefusal(_ reply: TmuxReply, marker: String) -> Bool {
+            reply.errorText.split(separator: "\n").contains("unknown command: \(marker)")
+        }
+    }
+}

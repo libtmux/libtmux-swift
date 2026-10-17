@@ -78,8 +78,8 @@ struct LayoutTests {
         #expect(await transport.arguments.isEmpty)
     }
 
-    @Test("a captured window never falls back to a cold client version")
-    func capturedWindowRefusesColdFallback() async throws {
+    @Test("a layout for a captured window is refused when no version can be read")
+    func capturedWindowWithoutVersionIsRefused() async throws {
         let path = "/tmp/libtmux-swift-test/layout-bound/socket"
         let endpoint = try Endpoint(socketPath: path)
         let transport = LayoutProbeTransport()
@@ -92,8 +92,8 @@ struct LayoutTests {
             try await server.selectLayout(window, "main-horizontal-mirrored")
         }
         let calls = await transport.arguments
-        #expect(calls.count == 1)
-        #expect(!calls.contains { $0.contains("-V") })
+        #expect(!calls.isEmpty)
+        #expect(!calls.contains { $0.contains("select-layout") })
     }
 
     @Test("a running daemon is asked its version once per endpoint")
@@ -142,9 +142,10 @@ struct LayoutTests {
                 return connected
             }
             let before = await transport.arguments.count
-            await #expect(throws: TmuxError.self) {
-                try await closed.validateLayouts([(layout, 1)])
-            }
+            // The release was read before the connection opened and is kept
+            // for the endpoint, so a closed connection neither answers
+            // differently nor spawns a process to find out.
+            try await closed.validateLayouts([(layout, 1)])
             #expect(await transport.arguments.count == before)
             #expect(try await fixture.incarnation() == identity)
         }

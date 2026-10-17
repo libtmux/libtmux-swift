@@ -169,11 +169,15 @@ extension Server {
         attachingTo session: String,
         _ body: @escaping @Sendable (ControlSession) async throws -> Result
     ) async throws -> Result {
+        // Decided before any client attaches: the version check reads the daemon's
+        // release with a process of its own, and `-N` keeps the attach from
+        // starting a replacement under a client whose release was never read.
+        let (checked, live) = try await versionCheck()
         var platformOptions = PlatformOptions()
         platformOptions.createSession = true
 
         let arguments =
-            clientArguments + ["-C"] + endpoint.addressArguments
+            clientArguments + ["-C"] + (live ? ["-N"] : []) + endpoint.addressArguments
             + ["attach-session", "-E", "-t", session]
 
         let outcome = try await Subprocess.run(
@@ -216,6 +220,7 @@ extension Server {
                     return .streamEnded
                 }
                 try await control.waitUntilAttached()
+                try await Self.requireCheckedDaemon(checked, over: control)
                 group.addTask {
                     defer { Task { await control.finish() } }
                     return .body(try await body(control))
@@ -237,6 +242,24 @@ extension Server {
             }
         }
         return outcome.closureResult
+    }
+}
+
+extension Server {
+    /// Holds the attached daemon to the release that was checked.
+    ///
+    /// A process batch carries this check in front of its commands. A
+    /// connection cannot, because the attach has already happened, so the check
+    /// is the first command sent over it.
+    fileprivate static func requireCheckedDaemon(
+        _ checked: ServerVersion,
+        over control: ControlSession
+    ) async throws(TmuxError) {
+        let marker = Support.Versions.makeMarker()
+        let reply = try await control.reply(
+            to: Support.Versions.fenceCommand(to: checked, marker: marker)
+        )
+        if Support.Versions.isRefusal(reply, marker: marker) { throw .serverRestarted }
     }
 }
 
