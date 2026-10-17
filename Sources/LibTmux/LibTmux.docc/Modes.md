@@ -216,10 +216,9 @@ A workspace built this way is the same workspace: the same windows, the same
 panes, split the same way. The same holds for the MCP tools — same request, same
 JSON.
 
-Pane *heights* are the exception, and they are tmux's call rather than this
-library's: attaching is how tmux decides how tall a session is, so panes built
-over a connection can differ by the status line's row. On tmux 3.2a they do;
-from 3.3a on they do not.
+Pane sizes are tmux's call rather than this library's, and on every supported
+release they come out the same: panes built over a connection match panes built
+directly, heights included.
 
 ## The one argument a connection will not take
 

@@ -8,13 +8,11 @@ import TmuxFixture
 /// The mode switch has to read the same from a consumer as it does from the
 /// library, and produce the same workspace either way.
 ///
-/// The workspace has to match: the windows, the panes, and how wide they are.
+/// The workspace has to match: the windows, the panes, and their sizes.
 ///
-/// Heights are tmux's own business — attaching a client is how it decides how
-/// tall a session is, and a connection *is* a client. On 3.2a that shows: panes
-/// built over a connection come back a row taller. From 3.3a they do not. Both
-/// are asserted rather than one being excused, so a release that changes its
-/// mind here is caught instead of quietly widening the exception.
+/// A connection is a client, and attaching a client is how tmux decides how
+/// tall a session is. From 3.3a that no longer changes pane heights, so every
+/// supported release is held to the same answer rather than excused a row.
 @Suite("building under either mode", .timeLimit(.minutes(5)))
 struct ModeParityTests {
     static let workspace = Workspace(
@@ -57,17 +55,6 @@ struct ModeParityTests {
         #expect(direct.0 == ["editor", "shell"])
         #expect(direct.1.count == 3)
 
-        // Widths always agree: the split happened the same way either mode.
-        let widths: ([String]) -> [Substring] = { $0.map { $0.split(separator: "x")[0] } }
-        #expect(widths(direct.1) == widths(connected.1))
-
-        let version = try await withTmuxServer { try await $0.version() }
-        if version < TmuxVersion(major: 3, minor: 3) {
-            // 3.2a sizes a session to the client that attached, and a
-            // connection is one. 3.3a onward do not.
-            #expect(direct.1 != connected.1)
-        } else {
-            #expect(direct.1 == connected.1)
-        }
+        #expect(direct.1 == connected.1)
     }
 }
