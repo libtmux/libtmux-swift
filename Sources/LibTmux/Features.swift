@@ -153,11 +153,13 @@ enum TmuxCommandGuard {
             operation: "a name containing ':' or '.'")
     }
 
-    /// Exactly the release `major.minor`, with no patch letter or build: the
-    /// one release a defect shipped in.
+    /// Whether `version` ranks within the release `major.minor` itself: at or
+    /// above it and below its first patch letter. `next-3.7` and `3.7-rc2`
+    /// rank below 3.7 and so are outside it, by the same ordering version check
+    /// uses.
     private static func isExactly(_ version: TmuxVersion, _ major: Int, _ minor: Int) -> Bool {
-        version.major == major && version.minor == minor && version.pointRelease.isEmpty
-            && version.build == nil
+        version >= TmuxVersion(major: major, minor: minor)
+            && version < TmuxVersion(major: major, minor: minor, pointRelease: "a")
     }
 
     private static func canonicalName(_ name: String) -> String {

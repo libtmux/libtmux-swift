@@ -58,6 +58,19 @@ struct CommandGuardTests {
         }
     }
 
+    @Test("the exact-release checks follow the strict ranking")
+    func exactReleasesUseTheRanking() {
+        // next-3.7 and 3.7-rc2 rank below 3.7, 3.7a ranks above it.
+        for release in ["next-3.7", "3.7-rc", "3.7-rc2", "3.7a", "3.7d"] {
+            #expect(!refused(release, ["break-pane", "-s", "%1"]), Comment(rawValue: release))
+        }
+        #expect(refused("3.7", ["break-pane", "-s", "%1"]))
+        for release in ["next-3.4", "3.4-rc", "3.4-rc2"] {
+            #expect(!refused(release, ["split-window", "-p", "30"]), Comment(rawValue: release))
+        }
+        #expect(refused("3.4", ["split-window", "-p", "30"]))
+    }
+
     @Test("split-window -p is broken on 3.4 only")
     func percentSplit() {
         #expect(refused("3.4", ["split-window", "-p", "30"]))
