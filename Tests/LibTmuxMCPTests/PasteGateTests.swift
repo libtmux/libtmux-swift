@@ -44,6 +44,28 @@ struct PasteGateTests {
     }
 
     @Test(
+        "wait_for_text polls with capture-pane below 3.7 and attaches no control client",
+        .enabled(if: laneIsSupportedForFeatures && !laneSupportsControl, "needs 3.3a to 3.6")
+    )
+    func waitForTextPollsBelowThreeSeven() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            try await server.run("sleep 1; echo mcp-poll-$((20+22))", in: pane)
+            let result = try await tools(server).call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string("mcp-poll-42")]),
+                        "timeoutMs": .integer(15_000),
+                    ])))
+            #expect(result.structured["outcome"]?.stringValue == "matched")
+            let clients = try await server.clients()
+            #expect(clients.allSatisfy { !$0.isControlMode })
+        }
+    }
+
+    @Test(
         "paste_text stages, pastes and deletes its private buffer from 3.4",
         .enabled(if: laneSupportsNamedBufferEditing, "needs 3.4 or newer")
     )
