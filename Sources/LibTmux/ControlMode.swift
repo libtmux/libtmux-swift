@@ -34,10 +34,9 @@ extension Server {
         do {
             return try await connected(attachingTo: sessionID.rawValue) { server, control in
                 let request = GuardedRequest(
-                    command: TmuxCommand(
-                        "display-message",
-                        ["-p", "-t", sessionID.rawValue, "#{session_id}"]
-                    ),
+                    // The guards decide the outcome; the command only has to be
+                    // harmless. `display-message` would fire its after-hook.
+                    command: TmuxCommand("list-commands", ["-F", "attach", "display-message"]),
                     incarnation: expected,
                     targets: [
                         GuardedTarget(

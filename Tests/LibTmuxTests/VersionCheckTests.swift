@@ -484,6 +484,13 @@ struct VersionCheckLaneTests {
             let server = try daemon.server
             _ = try await server.daemonVersion()
             _ = try await server.run(TmuxCommand("list-sessions"))
+            // The identity read is library-owned too, and over a connection.
+            let identity = try await server.incarnation()
+            #expect(identity.socketPath == daemon.socket)
+            _ = try await server.connected(attachingTo: "anchor") { connected, _ in
+                try await connected.incarnation()
+            }
+
             // Controls: an ordinary display-message fires its hook, and on
             // 3.5 and later an ordinary failing command fires the error hook.
             try await daemon.tmux(["display-message", "-p", "control"])
@@ -521,4 +528,21 @@ struct VersionCheckLaneTests {
             #expect(try await daemon.sessionNames().contains("viaclient"))
         }
     }
+}
+
+/// What tmux answers an identity read with: the expansion, as the first word
+/// of a command it cannot parse. Nil when `arguments` is not an identity read.
+func scriptedIdentityReply(
+    to arguments: [String], socketPath: String, processID: Int, startedAt: Int
+) -> TmuxReply? {
+    guard let index = arguments.firstIndex(of: "-C"), arguments.indices.contains(index + 1),
+        arguments[index + 1].hasSuffix("#{pid},#{start_time},#{q:socket_path}")
+    else { return nil }
+    let marker = arguments[index + 1].replacingOccurrences(
+        of: "#{pid},#{start_time},#{q:socket_path}", with: "")
+    return TmuxReply(
+        standardOutput: [],
+        standardError: Array(
+            "unknown command: \(marker)\(processID),\(startedAt),\(socketPath)\n".utf8),
+        exitCode: 1)
 }

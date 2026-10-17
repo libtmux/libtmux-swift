@@ -365,22 +365,35 @@ public struct Server: Sendable, Hashable {
     /// Use ``isRunning()`` for a Boolean probe. This read throws when tmux
     /// cannot answer so absence cannot look like an empty identity.
     public func incarnation() async throws(TmuxError) -> ServerIncarnation {
-        let projection = FormatProjection(ServerIncarnation.projectionFields)
-        let command = TmuxCommand("display-message", ["-p", projection.template])
-        let reply = try await run(
-            rawArguments: command.argumentVector
-        )
-        guard reply.isSuccess else { throw reply.failure(for: command) }
-        let rows: [FormatRow]
-        do {
-            rows = try projection.decode(reply.standardOutput)
-        } catch {
-            throw .decodingFailed(error)
+        // `display-message` would fire a configured `after-display-message`
+        // hook on every identity read. `run-shell -C` expands the format and
+        // parses the result as a command, so tmux reports the expansion in its
+        // error for the first word. The fields are joined into one word:
+        // `q:` backslash-escapes what would split a word, and the path comes
+        // last because it may hold commas.
+        let marker = Support.Versions.makeMarker() + "-"
+        let command = TmuxCommand(
+            "run-shell", ["-C", marker + "#{pid},#{start_time},#{q:socket_path}"])
+        // A process of its own even over a connection: a control client
+        // prints this error outside any reply block, where it cannot be read.
+        let reply = try await runInOwnProcess(rawArguments: command.argumentVector)
+        let prefix = "unknown command: \(marker)"
+        let lines = reply.errorText.split(separator: "\n", omittingEmptySubsequences: false)
+        guard reply.exitCode == 1, lines.count == 1, lines[0].hasPrefix(prefix) else {
+            if reply.exitCode == 1, lines.first?.hasPrefix(prefix) == true {
+                throw .invocationFailed(reason: "tmux reported a multi-line server identity")
+            }
+            throw reply.failure(for: command)
         }
-        guard let row = rows.first else {
+        let fields = lines[0].dropFirst(prefix.count).split(
+            separator: ",", maxSplits: 2, omittingEmptySubsequences: false)
+        guard fields.count == 3, let processID = Int(fields[0]), let startedAt = Int(fields[1])
+        else {
             throw .invocationFailed(reason: "tmux returned no server identity")
         }
-        return ServerIncarnation(row: row, endpoint: endpoint)
+        return ServerIncarnation(
+            endpoint: endpoint, socketPath: String(fields[2]),
+            processID: processID, startedAt: startedAt)
     }
 
     /// Runs a listing and decodes it.
