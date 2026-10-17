@@ -469,6 +469,7 @@ actor ServerRuntime {
     private var daemonVersion: ServerVersion?
     /// What the executable reports, read once an endpoint has no daemon.
     private var executableVersion: ServerVersion?
+    private var probing: Task<ServerVersion?, any Error>?
 
     init(
         endpoint: Endpoint,
@@ -590,7 +591,27 @@ actor ServerRuntime {
     }
 
     /// Asks the daemon, and only a daemon that is already there.
+    ///
+    /// Callers that arrive while a probe is in flight share its answer, so
+    /// the first batch of concurrent commands spends one process on the version
+    /// check rather than one each.
     private func probeDaemon() async throws(TmuxError) -> ServerVersion? {
+        let task: Task<ServerVersion?, any Error>
+        if let probing {
+            task = probing
+        } else {
+            task = Task { try await self.probeDaemonOnce() }
+            probing = task
+        }
+        defer { if probing == task { probing = nil } }
+        do {
+            return try await task.value
+        } catch {
+            throw normalizedTmuxError(error)
+        }
+    }
+
+    private func probeDaemonOnce() async throws(TmuxError) -> ServerVersion? {
         let marker = Support.Versions.makeMarker()
         let reply = try await send(
             Support.Versions.probeArguments(marker: marker),
