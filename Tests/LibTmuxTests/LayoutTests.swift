@@ -153,7 +153,9 @@ struct LayoutTests {
         }
     }
 
-    @Test("versioned layouts remain on the selected control connection")
+    @Test(
+        "versioned layouts remain on the selected control connection",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func controlRouteAndClosedConnection() async throws {
         try await withTmuxServer { fixture in
             let identity = try await fixture.incarnation()

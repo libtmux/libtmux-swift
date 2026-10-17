@@ -307,91 +307,8 @@ actor VersionScript: ProcessTransport {
 
 // MARK: - Version check against real tmux
 
-/// Runs `executable` and captures what it prints, without this library.
-///
-/// `posix_spawn` rather than `Process` or `popen`: this runs while the runner
-/// plans tests on several threads, and a fork from a multithreaded process can
-/// deadlock in the child before it execs, leaving its pipes open forever.
-private func spawnCapturing(
-    _ executable: String, _ arguments: [String]
-) -> (output: String, error: String, status: Int32)? {
-    var out: [Int32] = [0, 0]
-    var err: [Int32] = [0, 0]
-    guard pipe(&out) == 0 else { return nil }
-    guard pipe(&err) == 0 else {
-        close(out[0])
-        close(out[1])
-        return nil
-    }
-    #if canImport(Darwin)
-        var actions: posix_spawn_file_actions_t?
-    #else
-        var actions = posix_spawn_file_actions_t()
-    #endif
-    posix_spawn_file_actions_init(&actions)
-    defer { posix_spawn_file_actions_destroy(&actions) }
-    posix_spawn_file_actions_adddup2(&actions, out[1], STDOUT_FILENO)
-    posix_spawn_file_actions_adddup2(&actions, err[1], STDERR_FILENO)
-    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
-    for descriptor in out + err { posix_spawn_file_actions_addclose(&actions, descriptor) }
-    var child: pid_t = 0
-    let argv = ([executable] + arguments).map { strdup($0) } + [nil]
-    defer { argv.forEach { free($0) } }
-    let environment =
-        ProcessInfo.processInfo.environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
-    defer { environment.forEach { free($0) } }
-    let status = posix_spawn(&child, executable, &actions, nil, argv, environment)
-    close(out[1])
-    close(err[1])
-    guard status == 0 else {
-        close(out[0])
-        close(err[0])
-        return nil
-    }
-    // A daemon this client started can keep these pipes open after the client
-    // is gone, so read what is there until the client exits instead of
-    // waiting for end of file.
-    for descriptor in [out[0], err[0]] {
-        _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK)
-    }
-    var captured = [Data(), Data()]
-    var buffer = [UInt8](repeating: 0, count: 4096)
-    func collect() {
-        for (index, descriptor) in [out[0], err[0]].enumerated() {
-            while true {
-                let count = read(descriptor, &buffer, buffer.count)
-                if count <= 0 { break }
-                captured[index].append(contentsOf: buffer[..<count])
-            }
-        }
-    }
-    var wait: Int32 = 0
-    while true {
-        collect()
-        let reaped = waitpid(child, &wait, WNOHANG)
-        if reaped == child || reaped < 0 { break }
-        usleep(2_000)
-    }
-    collect()
-    close(out[0])
-    close(err[0])
-    return (
-        String(decoding: captured[0], as: UTF8.self),
-        String(decoding: captured[1], as: UTF8.self), (wait >> 8) & 0xff
-    )
-}
-
-/// The release of the lane's tmux executable.
-private func laneRelease() -> TmuxVersion? {
-    let executable = tmuxExecutablePath()
-    guard let result = spawnCapturing(executable, ["-V"]),
-        let token = Support.Versions.executableToken(banner: result.output, executable: executable)
-    else { return nil }
-    return TmuxVersion(parsing: token)
-}
-
-private let laneIsBelowFloor = laneRelease().map { !$0.isCoreSupported } ?? false
-private let laneIsSupported = laneRelease().map(\.isCoreSupported) ?? false
+let laneIsBelowFloor = tmuxLaneRelease().map { !$0.isCoreSupported } ?? false
+let laneIsSupported = tmuxLaneRelease().map(\.isCoreSupported) ?? false
 
 /// A daemon started by the lane's tmux directly, so a release this library
 /// refuses can still be stood up and watched from outside.
@@ -531,7 +448,7 @@ struct VersionCheckLaneTests {
             let stopped = try await server.run(TmuxCommand("kill-server"))
             #expect(!stopped.isSuccess)
             // Diagnostics still answer below the floor.
-            #expect(try await server.version() == laneRelease())
+            #expect(try await server.version() == tmuxLaneRelease())
         }
     }
 
@@ -559,7 +476,7 @@ struct VersionCheckLaneTests {
         try await withNativeDaemon { daemon in
             let server = try daemon.server
             // Any other supported release makes the first fence refuse.
-            let other = laneRelease() == TmuxVersion(parsing: "3.3a") ? "3.4" : "3.3a"
+            let other = tmuxLaneRelease() == TmuxVersion(parsing: "3.3a") ? "3.4" : "3.3a"
             await server.presumeSupported(try Support.Versions.requireCore(other))
             _ = try await server.run(TmuxCommand("new-session", ["-d", "-s", "marker"]))
             #expect(try await daemon.sessionNames().sorted() == ["anchor", "marker"])
@@ -588,8 +505,10 @@ struct VersionCheckLaneTests {
             // The identity read is library-owned too, and over a connection.
             let identity = try await server.incarnation()
             #expect(identity.socketPath == daemon.socket)
-            _ = try await server.connected(attachingTo: "anchor") { connected, _ in
-                try await connected.incarnation()
+            if laneSupportsControl {
+                _ = try await server.connected(attachingTo: "anchor") { connected, _ in
+                    try await connected.incarnation()
+                }
             }
 
             // Controls: an ordinary display-message fires its hook, and on
@@ -624,7 +543,7 @@ struct VersionCheckLaneTests {
                 ProcessInfo.processInfo.environment["LIBTMUX_TMUX_CLIENT_BIN"])
             let server = try Server(socketPath: daemon.socket, tmuxExecutable: client)
             let reported = try await server.daemonVersion()
-            #expect(reported == laneRelease())
+            #expect(reported == tmuxLaneRelease())
             _ = try await server.run(TmuxCommand("new-session", ["-d", "-s", "viaclient"]))
             #expect(try await daemon.sessionNames().contains("viaclient"))
         }

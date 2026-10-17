@@ -79,7 +79,9 @@ struct ControlModeConcurrencyTests {
         #expect(try await next.value.lines == ["ok"])
     }
 
-    @Test("concurrent sends each receive their own reply")
+    @Test(
+        "concurrent sends each receive their own reply",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func concurrentSendsAreAttributedCorrectly() async throws {
         try await withTmuxServer { server in
             try await server.withControlMode(attachingTo: "bootstrap") { control in
@@ -298,7 +300,9 @@ struct ControlModeConcurrencyTests {
         await second.value
     }
 
-    @Test("hook replies do not answer the next command")
+    @Test(
+        "hook replies do not answer the next command",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func hookRepliesAreDrained() async throws {
         try await withTmuxServer { server in
             let started = "control-hook-started"
@@ -330,7 +334,9 @@ struct ControlModeConcurrencyTests {
         }
     }
 
-    @Test("protocol-looking command output stays in its reply")
+    @Test(
+        "protocol-looking command output stays in its reply",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func protocolLookingOutputStaysInItsReply() async throws {
         try await withTmuxServer { server in
             let pane = try #require(try await server.panes().first)

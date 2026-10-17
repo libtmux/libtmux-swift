@@ -27,7 +27,9 @@ struct ModeParityTests {
         ]
     )
 
-    @Test("a workspace built over a connection matches one built directly")
+    @Test(
+        "a workspace built over a connection matches one built directly",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func buildsMatchAcrossModes() async throws {
         // The mode is a parameter, so this branches on data rather than on two
         // shapes of call — which is the property the switch is for, and the one

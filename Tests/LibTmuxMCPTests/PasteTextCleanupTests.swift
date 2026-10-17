@@ -61,7 +61,9 @@ struct PasteTextCleanupTests {
         }
     }
 
-    @Test("a private staging-buffer cleanup failure is reported")
+    @Test(
+        "a private staging-buffer cleanup failure is reported",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func cleanupFailureIsReported() async throws {
         try await withTmuxServer { fixture in
             let transport = FailingPasteCleanupTransport()
@@ -101,6 +103,7 @@ struct PasteTextCleanupTests {
 
     @Test(
         "cleanup failure does not replace the primary paste operation failure",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"),
         arguments: PrimaryPasteFailure.allCases
     )
     func primaryFailureWinsCleanupFailure(_ primary: PrimaryPasteFailure) async throws {
@@ -140,7 +143,9 @@ struct PasteTextCleanupTests {
         }
     }
 
-    @Test("cancellation cannot cancel private-buffer cleanup")
+    @Test(
+        "cancellation cannot cancel private-buffer cleanup",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func cancellationStillCleansBuffer() async throws {
         try await withTmuxServer { fixture in
             let pane = try #require(try await fixture.panes().first)
@@ -178,7 +183,9 @@ struct PasteTextCleanupTests {
         }
     }
 
-    @Test("private-buffer cleanup has a wall-clock bound")
+    @Test(
+        "private-buffer cleanup has a wall-clock bound",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func cleanupIsBounded() async throws {
         try await withTmuxServer { fixture in
             let pane = try #require(try await fixture.panes().first)

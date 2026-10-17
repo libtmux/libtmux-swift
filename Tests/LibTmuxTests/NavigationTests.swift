@@ -157,7 +157,9 @@ struct NavigationTests {
         }
     }
 
-    @Test("a buffer round-trips through the server")
+    @Test(
+        "a buffer round-trips through the server",
+        .enabled(if: laneSupportsNamedBufferEditing, "named-buffer deletion needs tmux 3.4"))
     func bufferRoundTrips() async throws {
         try await withTmuxServer { server in
             try await server.setBuffer("held text", named: "mine")
