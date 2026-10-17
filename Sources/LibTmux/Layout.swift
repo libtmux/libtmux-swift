@@ -1,3 +1,5 @@
+import Foundation
+
 extension Server {
     /// Checks layouts and their required pane counts before changing tmux.
     ///
@@ -22,10 +24,13 @@ extension Server {
                 item.layout, version: beforeMirrors, panes: item.paneCount)
             let after = LayoutSyntax.accepts(
                 item.layout, version: withMirrors, panes: item.paneCount)
-            guard before || after else {
+            let document = LayoutSyntax.accepts(
+                item.layout, version: .jsonLayouts, panes: item.paneCount)
+            guard before || after || document else {
                 throw .invocationFailed(reason: "Invalid window layout or pane count.")
             }
-            if before != after { sensitive.append(item) }
+            // A layout only some releases take has to be put to the daemon's.
+            if before != after || (document && !before) { sensitive.append(item) }
         }
         if Task.isCancelled { throw .cancelled }
         guard !sensitive.isEmpty else { return }
@@ -47,14 +52,25 @@ extension Server {
 /// wrong wherever it is loaded, while one only some releases accept still has
 /// to be put to the running daemon.
 package func acceptsLayoutSyntax(_ layout: String, panes: Int) -> Bool {
-    LayoutSyntax.accepts(layout, version: TmuxVersion(major: 3, minor: 4), panes: panes)
-        || LayoutSyntax.accepts(layout, version: TmuxVersion(major: 3, minor: 5), panes: panes)
+    [TmuxVersion(major: 3, minor: 4), TmuxVersion(major: 3, minor: 5), .jsonLayouts]
+        .contains { LayoutSyntax.accepts(layout, version: $0, panes: panes) }
+}
+
+extension TmuxVersion {
+    /// The earliest build measured to report `#{window_layout}` as JSON, a
+    /// release candidate that ranks just below the 3.8 release itself.
+    static let jsonLayouts = TmuxVersion(major: 3, minor: 8, build: "rc2")
 }
 
 // Native saved-layout syntax; tmux retains geometry correction and pruning.
 enum LayoutSyntax {
     static func accepts(_ layout: String, version: TmuxVersion, panes: Int) -> Bool {
         guard !layout.isEmpty, panes > 0 else { return false }
+        // From 3.8 a window's layout is a JSON document, and `select-layout`
+        // takes the same document back. The geometry stays tmux's to judge.
+        if layout.hasPrefix("{") {
+            return version >= .jsonLayouts && acceptsJSON(layout, panes: panes)
+        }
         var names = [
             "even-horizontal", "even-vertical", "main-horizontal", "main-vertical", "tiled",
         ]
@@ -79,6 +95,33 @@ enum LayoutSyntax {
         guard checksum == expected else { return false }
         var parser = LayoutParser(bytes: body)
         return parser.cell(depth: 0) && parser.offset == body.count && parser.leaves >= panes
+    }
+}
+
+extension LayoutSyntax {
+    private static func acceptsJSON(_ layout: String, panes: Int) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: Data(layout.utf8)),
+            let document = root as? [String: Any],
+            document["V"] as? Int == 2,
+            let tree = document["L"] as? [String: Any]
+        else { return false }
+        var leaves = 0
+        func accepts(_ node: [String: Any], depth: Int) -> Bool {
+            guard depth <= 256, let kind = node["t"] as? String else { return false }
+            switch kind {
+            case "p":
+                leaves += 1
+                return true
+            case "v", "h":
+                guard let children = node["c"] as? [[String: Any]], !children.isEmpty else {
+                    return false
+                }
+                return children.allSatisfy { accepts($0, depth: depth + 1) }
+            default:
+                return false
+            }
+        }
+        return accepts(tree, depth: 0) && leaves >= panes
     }
 }
 
