@@ -32,6 +32,51 @@ same refusal (reported as "older than 3.2"). A report that names no release,
 such as `master`, `openbsd-7.6` or `3.3a-dev`, is refused as unrecognized, not
 as a release below the floor.
 
+## Features that need a newer release
+
+A feature that needs more than 3.3a says so by itself and refuses before it
+does anything; none of them raises the floor for the rest of the library. The
+refusal is ``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``,
+decided from the daemon's release.
+
+| Feature | Needs | Below that | State |
+| --- | --- | --- | --- |
+| ``Server/connected(attachingTo:_:)``, ``Server/using(_:_:)`` with ``TmuxMode/connected(to:)``, ``Server/withControlMode(attachingTo:_:)`` and everything on a ``ControlSession`` | 3.7 | refused before any client attaches | Qualified on 3.7 and newer in the suites run; refused below |
+| ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)`` | any | reads the pane on a timer instead of streaming | Operative with synchronization: output that changes no row, such as blank-only output, is not seen |
+| ``Server/deleteBuffer(named:)`` and the MCP `paste_text` staging buffer | 3.4 | refused; `paste_text` refuses before it stages a buffer | Qualified from 3.4; refused below |
+| `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7; ``Server/breakPane(_:from:named:)`` supplies a name there | Qualified on 3.7 and 3.7a |
+| `split-window -p` | 3.5 | refused on exactly 3.4; the typed splits send `-l N%` | Qualified |
+| `select-layout` with a layout tmux cannot parse | 3.4 | refused before it is sent, because 3.3a crashes on one | Qualified on 3.3a |
+| `refresh-client -l`, the clipboard query | 3.4 | refused before it is sent, because a 3.3a server with a client attached exits | Qualified on 3.3a |
+
+Tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
+quickly, which is why the release is checked before attaching and not after.
+
+### Which commands are read
+
+A command sent as arguments is read before it is sent, on every path that
+takes one: ``Server/run(_:)-(TmuxCommand)``, a ``TmuxCommandList`` run on a server, a server
+handed out by ``Server/connected(attachingTo:_:)`` or ``Server/using(_:_:)``,
+the typed methods that wrap a command in a guard, and
+``ControlSession/send(_:)``.
+
+The name is resolved the way tmux resolves it, so `break-pane`, its alias
+`breakp`, and any unique prefix such as `break-p` or `br` are the same command.
+The default `command-alias` spellings of `split-window`, `split-pane` and
+`splitp`, are read too. A name that tmux rejects as unknown or ambiguous, such
+as `b`, is left for tmux to reject. A `;`-separated list is read command by
+command, and flags are read the way tmux reads them: bundled, with the value
+joined or in the next argument, up to the first operand.
+
+Nested tmux command strings are outside this guard. Any command that takes tmux
+commands as text is in this group. For example, the body of `if-shell`,
+`run-shell -C` and `confirm-before`, the template of `command-prompt`,
+`display-menu` and the `choose-*` commands, a file named to `source-file`, a
+brace block, the command of a hook (``Server/setHook(_:to:at:in:)``) or a key
+binding, and a `command-alias` the caller sets. They reach the daemon unread, so
+do not nest a command that the table above refuses. A shell command is the
+caller's own program, and is not read either.
+
 ``Server/version()`` reports which tmux executable a server runs, and answers
 for any release because it is a diagnostic rather than a version check.
 ``TmuxVersion`` orders releases the way tmux issues them, including the point

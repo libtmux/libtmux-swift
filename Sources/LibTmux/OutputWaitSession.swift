@@ -20,7 +20,8 @@ struct OutputWaitSession: Sendable {
         let entryRace: WaitDeadlineRace<EntryCapture>
         if let startingCursor {
             entryRace = .completed(
-                EntryCapture(rows: [], cursor: startingCursor, alternateScreen: false)
+                EntryCapture(
+                    rows: [], wrap: nil, cursor: startingCursor, alternateScreen: false)
             )
         } else {
             entryRace = await raceOrdinaryWaitOperation(until: deadline) {
@@ -54,7 +55,7 @@ struct OutputWaitSession: Sendable {
             sawNewOutput: false,
             alternateScreen: entryRead.alternateScreen
         )
-        let entryHit =
+        var entryHit =
             entryRead.alternateScreen
             ? nil
             : try firstOutputWaitHit(
@@ -63,6 +64,37 @@ struct OutputWaitSession: Sendable {
                 stops: stops,
                 countingAnyRow: false
             )
+        // A match may span the rows of a wrapped line, which only reading them
+        // joined shows. That costs reads, so it is spent only when the rows
+        // alone found nothing.
+        if entryHit == nil, !entryRead.alternateScreen, entryRead.wrap != nil {
+            let joinedRace = await raceOrdinaryWaitOperation(until: deadline) {
+                try await self.retryingStaleOutputRead(until: deadline) {
+                    try await withOutputWaitErrorMapping {
+                        try await self.server.entryLines(
+                            of: entryRead,
+                            in: pane,
+                            perStreamOutputLimit: Self.waitCaptureOutputLimit
+                        )
+                    }
+                }
+            }
+            guard let entryLines = try settled(joinedRace) else {
+                return OutputWait(
+                    outcome: .expiredWhileReading,
+                    sawNewOutput: false,
+                    matchedAtEntry: false,
+                    tail: [],
+                    seconds: Self.elapsed(since: started)
+                )
+            }
+            entryHit = try firstOutputWaitHit(
+                in: entryLines,
+                patterns: patterns,
+                stops: stops,
+                countingAnyRow: false
+            )
+        }
         let wasAlreadyShowing = entryHit != nil
 
         // A deadline that spent any of itself on the alternate screen says
@@ -169,7 +201,17 @@ struct OutputWaitSession: Sendable {
             )
         }
 
+        // Decided once, before any control client could attach: below 3.7 the
+        // wait reads the pane on a timer instead.
+        let usesControl: Bool
+        do {
+            usesControl = try await server.supportsControl()
+        } catch {
+            throw .tmux(error)
+        }
+        let latest = WaitProgressBox(progress)
         while ContinuousClock.now < deadline {
+            latest.value = progress
             let attachmentRace = await raceOrdinaryWaitOperation(until: deadline) {
                 try await self.waitAttachment(using: self.server, for: pane)
             }
@@ -192,16 +234,29 @@ struct OutputWaitSession: Sendable {
             let remaining = ContinuousClock.now.duration(to: deadline)
             let cycle: OutputWaitCycle
             do {
-                cycle = try await waitForOutputCycle(
-                    pane: pane,
-                    attachment: attachment,
-                    progress: progress,
-                    tailLimit: keptTail,
-                    remaining: remaining,
-                    deadline: deadline,
-                    answer: answer
-                )
+                if usesControl {
+                    cycle = try await waitForOutputCycle(
+                        pane: pane,
+                        attachment: attachment,
+                        progress: progress,
+                        latest: latest,
+                        tailLimit: keptTail,
+                        remaining: remaining,
+                        deadline: deadline,
+                        answer: answer
+                    )
+                } else {
+                    cycle = try await pollOutputCycle(
+                        pane: pane,
+                        progress: progress,
+                        latest: latest,
+                        tailLimit: keptTail,
+                        deadline: deadline,
+                        answer: answer
+                    )
+                }
             } catch let error {
+                progress = latest.value
                 switch try await survivable(error, having: attachment, for: pane) {
                 case .reattach: continue
                 case .paneClosed:
@@ -284,10 +339,77 @@ struct OutputWaitSession: Sendable {
         case .cancelled: throw .tmux(.cancelled)
         }
     }
+    /// The wait for a daemon that control mode is not safe on: the same scans
+    /// the control cycle runs on a wake, driven by a timer instead.
+    private func pollOutputCycle(
+        pane: Pane,
+        progress start: WaitProgress,
+        latest: WaitProgressBox,
+        tailLimit: Int,
+        deadline: ContinuousClock.Instant,
+        answer: @escaping OutputWaitAnswer
+    ) async throws(OutputWaitError) -> OutputWaitCycle {
+        var progress = start
+        while true {
+            let cursor = progress.cursor
+            let tail = progress.tail
+            let sawOutput = progress.sawNewOutput
+            let race = await raceWaitOperation(
+                until: deadline,
+                classifyingCompletionWith: { $0.operationCompletion }
+            ) {
+                try await scanWaitOutput(
+                    using: server,
+                    in: pane,
+                    since: cursor,
+                    newest: tail,
+                    sawNewOutput: sawOutput,
+                    tailLimit: tailLimit,
+                    outputEvent: false,
+                    deadline: deadline,
+                    answer: answer
+                )
+            }
+            switch race {
+            case let .completed(scan):
+                progress.cursor = scan.cursor
+                progress.sawNewOutput = scan.sawNewOutput
+                progress.tail = scan.tail
+                progress.alternateScreen = progress.alternateScreen || scan.alternateScreen
+                latest.value = progress
+                if scan.deadlineReached { return .finished(.timedOut, progress) }
+                if let output = scan.output { return .answered(output) }
+            case let .failed(error):
+                if case .matching = error { throw error }
+                let current = await raceOrdinaryWaitOperation(until: deadline) {
+                    try await waitAttachment(using: server, for: pane)
+                }
+                switch current {
+                case .completed(nil): return .finished(.paneClosed, progress)
+                case .completed: throw error
+                case let .failed(readError): throw readError
+                case .timedOut: return .finished(.timedOut, progress)
+                case .cancelled: throw OutputWaitError.tmux(.cancelled)
+                }
+            case .timedOut:
+                return .finished(.timedOut, progress)
+            case .cancelled:
+                throw OutputWaitError.tmux(.cancelled)
+            }
+            guard ContinuousClock.now < deadline else { return .finished(.timedOut, progress) }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                throw OutputWaitError.tmux(.cancelled)
+            }
+        }
+    }
+
     private func waitForOutputCycle(
         pane: Pane,
         attachment: PaneAttachment,
         progress: WaitProgress,
+        latest: WaitProgressBox,
         tailLimit: Int,
         remaining: Duration,
         deadline: ContinuousClock.Instant,
@@ -389,6 +511,7 @@ struct OutputWaitSession: Sendable {
                                 progress.tail = scan.tail
                                 progress.alternateScreen =
                                     progress.alternateScreen || scan.alternateScreen
+                                latest.value = progress
                                 if scan.deadlineReached {
                                     return .finished(.timedOut, progress)
                                 }
@@ -496,13 +619,21 @@ struct OutputWaitSession: Sendable {
         for pane: Pane
     ) async throws(TmuxError) -> PaneAttachment? {
         let separator = String(FormatProjection.separator)
-        guard
-            let value = try await server.formatGlobal(
+        let value: String?
+        do {
+            value = try await server.formatGlobal(
                 "#{session_id}\(separator)#{window_id}\(separator)#{pane_id}"
                     + "\(separator)#{pane_dead}",
                 for: pane
             )
-        else { return nil }
+        } catch {
+            // A daemon that is gone took its panes with it, which is the
+            // answer a dead pane gives. Which transport error it surfaced as
+            // depends on whether another client was holding the daemon up.
+            if await server.hasLostDaemon() { return nil }
+            throw error
+        }
+        guard let value else { return nil }
         let fields = value.components(separatedBy: separator)
         guard fields.count == 4 else {
             throw .invocationFailed(reason: "tmux returned an incomplete pane attachment")
@@ -547,13 +678,13 @@ struct OutputWaitSession: Sendable {
         var deadlineReached = false
         let scan: ForwardCaptureResult
         do {
-            scan = try await server.scanForward(
+            scan = try await server.scanForwardLines(
                 pane,
                 since: cursor,
                 sourceLinesPerChunk: Self.waitCaptureLines,
                 maximumChunks: Self.waitCaptureChunksPerTurn,
                 perStreamOutputLimit: Self.waitCaptureOutputLimit
-            ) { rows in
+            ) { rows, lines in
                 guard ContinuousClock.now < deadline else {
                     deadlineReached = true
                     return true
@@ -562,7 +693,7 @@ struct OutputWaitSession: Sendable {
                 sawOutput = sawOutput || !arrived.isEmpty
                 tail = Array((tail + arrived).suffix(tailLimit))
                 do {
-                    output = try answer(arrived, tail, false)
+                    output = try answer(lines, tail, false)
                     if output != nil {
                         let selectedAt = ContinuousClock.now
                         if selectedAt < deadline { answerSelectedAt = selectedAt }
@@ -692,11 +823,11 @@ struct OutputWaitSession: Sendable {
         using server: Server,
         in pane: Pane
     ) async throws(TmuxError) -> [String] {
-        try await server.captureLookbackThroughCursor(
+        try await server.captureLookbackLinesThroughCursor(
             pane,
             historyLines: Self.waitHistoryLines,
             perStreamOutputLimit: Self.waitCaptureOutputLimit
-        ).lines
+        )
     }
 
     /// How far above the visible region entry and restart checks read.
@@ -724,6 +855,23 @@ private struct WaitProgress: Sendable {
     var tail: [String]
     var sawNewOutput: Bool
     var alternateScreen: Bool
+}
+
+/// The newest progress of the cycle that is running.
+///
+/// A cycle that fails throws away the progress it made, and a lost connection
+/// or a vanished daemon fails it at once. The wait reads this instead, so it
+/// still reports the output that arrived before the failure.
+private final class WaitProgressBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: WaitProgress
+
+    init(_ progress: WaitProgress) { stored = progress }
+
+    var value: WaitProgress {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
 }
 
 private enum SurvivedCycle: Sendable {
