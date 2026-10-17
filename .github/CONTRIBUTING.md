@@ -462,7 +462,7 @@ $ gh workflow run release --ref master -f dry_run=true
 | --- | --- |
 | Swift | 6.2, language mode 6, strict concurrency, no unsafe flags |
 | Platforms | Linux and macOS; `Package.swift` declares `macOS(.v13)` |
-| tmux | 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a, 3.7b |
+| tmux | 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a, 3.7b, 3.8, master |
 
 CI builds each of those tmux releases from its own release tarball and runs the
 suite against it on Linux. macOS runs the ends of the range only — 3.3a and
@@ -473,9 +473,14 @@ enough that the lane raises it before the suite.
 
 3.3a is the floor, and the daemon's release decides:
 every command is refused before it has an effect when the daemon it would reach
-is older, whatever the client executable reports. A feature that needs a newer
-release says so where it is described and refuses by itself; none of them
-raises this floor.
+is older, whatever the client executable reports. 3.0a, 3.1c, 3.2a and the
+unpatched 3.3 are built too, as refusal lanes: they run only the version check
+suites, which assert the refusal and that nothing it refused happened. 3.0a and
+3.1c keep the client's stdout open from the daemon, so their lanes run behind a
+3.3a client named in `LIBTMUX_TMUX_CLIENT_BIN`; the test job sets the same
+variable to a second tmux, so a client that reports another release than its
+daemon is exercised too. A feature that needs a newer release says so where it
+is described and refuses by itself; none of them raises this floor.
 
 The package is alpha. The public API can change in any release with no
 deprecation first, so semantic versioning starts describing this package at

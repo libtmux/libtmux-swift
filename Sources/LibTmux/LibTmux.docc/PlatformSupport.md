@@ -5,8 +5,8 @@ What has been exercised, and what has not.
 ## Overview
 
 The package builds and runs its real-server suite on Linux and macOS. It
-supports tmux releases 3.3a through 3.7b. A daemon older than 3.3a is
-refused before the command that reached it has any effect.
+supports tmux releases 3.3a through 3.8, and master. A daemon older than
+3.3a is refused before the command that reached it has any effect.
 
 The test suite runs against real tmux, one private server and socket per case.
 Every supported release is exercised on Linux, individually and concurrently.

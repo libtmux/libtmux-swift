@@ -1081,9 +1081,9 @@ under a dependency you do not.
 
 ### Platform notes
 
-- **Linux, including WSL.** CI runs Ubuntu against each of the eight supported
-  tmux releases, in parallel.
-- **macOS.** CI runs tmux 3.3a and 3.7b, the ends of the range CI covers on macOS.
+- **Linux, including WSL.** CI runs Ubuntu against each supported tmux
+  release, in parallel.
+- **macOS.** CI runs tmux 3.3a and 3.7b.
 - **Darwin handling.** None of it varies by tmux release: the `TMPDIR` a socket
   path cannot afford, keg-only libevent and ncurses, and `F_SETNOSIGPIPE`.
 - **On Darwin, build with Xcode 26's toolchain.** [swift-subprocess][] needs
@@ -1158,6 +1158,9 @@ $ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux swift test
 CI runs the suite on Linux against each of tmux 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a,
 3.7b, 3.8 and master, each built from its own release tarball or, for master,
 from a pinned commit.
+
+It also builds 3.0a, 3.1c, 3.2a and the unpatched 3.3 and checks that each is
+refused; 3.0a and 3.1c also behind a 3.3a client.
 
 ## Repository layout
 

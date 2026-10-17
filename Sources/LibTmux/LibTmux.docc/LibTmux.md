@@ -5,8 +5,8 @@ Drive tmux from Swift.
 > Important: This package is alpha. The public API can change in any release,
 > with no deprecation first and no major version to announce it — pin an exact
 > version rather than a range. What it claims about tmux is tested against
-> releases 3.3a through 3.7b on every push; what has not settled is the Swift
-> surface around that.
+> releases 3.3a through 3.8, and master, on every push; what has not settled
+> is the Swift surface around that.
 
 ## Overview
 
