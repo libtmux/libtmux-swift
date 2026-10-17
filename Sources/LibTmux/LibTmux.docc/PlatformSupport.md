@@ -5,17 +5,38 @@ What has been exercised, and what has not.
 ## Overview
 
 The package builds and runs its real-server suite on Linux and macOS. It
-supports tmux releases 3.2a through 3.7b.
+supports tmux releases 3.3a through 3.7b. A daemon older than 3.3a is
+refused before the command that reached it has any effect.
 
 The test suite runs against real tmux, one private server and socket per case.
 Every supported release is exercised on Linux, individually and concurrently.
-The macOS lane exercises both ends of the supported range, 3.2a and 3.7b, with
-Xcode's toolchain and Homebrew's keg-only libraries.
+The macOS lane exercises 3.3a and 3.7b with
+Xcode's toolchain and Homebrew's keg-only libraries. Releases below the floor
+are built too, to show they are refused.
 
-``Server/version()`` reports which tmux a server runs, and ``TmuxVersion``
-orders releases the way tmux issues them — including the point release's
-letter, because `3.7` and `3.7a` differ in behaviour and comparing on the
-numbers alone would call them equal:
+## Which release decides
+
+The release that decides is the daemon's, not the client's. Before a server
+sends anything it asks the daemon at its endpoint which release it is, refuses
+one older than 3.3a with
+``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``, and holds
+every command it sends to that release, so a daemon replaced in between refuses
+the command instead of running it. Where nothing listens yet, the executable
+that would start the daemon is held to the same floor. The question is asked in
+a way that fires none of a configuration's hooks.
+
+A refusal means nothing was sent. The remedy is to upgrade tmux and restart the
+server, or to pin the previous libtmux release. A daemon older than 3.2 has no
+`run-shell -C`, so the question itself fails there; that failure is read as the
+same refusal (reported as "older than 3.2"). A report that names no release,
+such as `master`, `openbsd-7.6` or `3.3a-dev`, is refused as unrecognized, not
+as a release below the floor.
+
+``Server/version()`` reports which tmux executable a server runs, and answers
+for any release because it is a diagnostic rather than a version check.
+``TmuxVersion`` orders releases the way tmux issues them, including the point
+release's letter, because `3.7` and `3.7a` differ in behaviour and comparing on
+the numbers alone would call them equal:
 
 ```swift
 if try await server.version() < TmuxVersion(major: 3, minor: 4) {

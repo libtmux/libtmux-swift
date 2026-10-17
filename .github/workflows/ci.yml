@@ -28,8 +28,8 @@ jobs:
         os: [ubuntu-latest]
         # The releases the library claims to support. Building each from its
         # own tag is what makes a compatibility claim evidence rather than an
-        # assertion: behaviour differs between 3.2a, 3.4 and 3.7 on one machine.
-        tmux: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b"]
+        # assertion: behaviour differs between 3.3a, 3.4 and 3.7 on one machine.
+        tmux: ["3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b"]
         # No macOS lane: swift-subprocess calls macOS 26 API with no
         # availability guard, and SwiftPM compiles a dependency at that
         # dependency's own declared minimum, so no deployment target set here

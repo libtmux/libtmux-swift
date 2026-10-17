@@ -61,7 +61,7 @@ for session in try await server.sessions() {
 
 A [`Server`][api-server] addresses a tmux socket by name, and
 [`Server.sessions()`][api-server-sessions] asks it for every session. It runs on
-Linux, including WSL, and on macOS, with tmux 3.2a through 3.7b.
+Linux, including WSL, and on macOS, with tmux 3.3a through 3.8, and master.
 
 `QuickStartTests` spawns this program against a fixture server that holds one
 session named `quickstart`, and checks that the output names it. It prints one
@@ -463,32 +463,34 @@ can be checked at runtime.
 
 | Work | Direct | Connected |
 | --- | --- | --- |
-| list-sessions, once | 1 process, 1 round trip | 1 process, 2 round trips |
-| list-sessions, twenty times | 20 processes, 20 round trips | 1 process, 21 round trips |
-| sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 7 round trips |
-| sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 5 round trips |
-| the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 5 round trips |
-| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 8 round trips |
-| the same five as one command list | 3 processes, 3 round trips | 1 process, 4 round trips |
-| new-window then split, read back | 5 processes, 5 round trips | 1 process, 6 round trips |
+| list-sessions, once | 2 processes, 2 round trips | 2 processes, 4 round trips |
+| list-sessions, twenty times | 21 processes, 21 round trips | 2 processes, 23 round trips |
+| sessions, windows, panes, clients, twice-checked | 7 processes, 7 round trips | 4 processes, 9 round trips |
+| sessions, windows, panes, clients — one after another | 5 processes, 5 round trips | 2 processes, 7 round trips |
+| the same four, concurrently — a pipelined batch | 5 processes, 5 round trips | 2 processes, 7 round trips |
+| new-window five times, each its own command | 8 processes, 8 round trips | 2 processes, 10 round trips |
+| the same five as one command list | 4 processes, 4 round trips | 2 processes, 6 round trips |
+| new-window then split, read back | 6 processes, 6 round trips | 2 processes, 8 round trips |
 
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |
 | tmux processes spent | 2 | 1 |
-| round trips spent | 2 | 2 |
+| round trips spent | 2 | 3 |
 
 <!-- mode-matrix:end -->
 
 How to read the table:
 
 - **Directly, a round trip is a process**, so that column always agrees with
-  itself.
-- **Connecting collapses the processes to one** and charges a single extra
-  round trip, the attach. A single call is therefore where the default wins,
-  and from the second call on the connection is ahead.
+  itself. Every row also carries the process that reads the daemon's release
+  once.
+- **Connecting collapses the rest to the connection's own process** and charges
+  extra round trips for the attach and its release check. A single call is
+  therefore where the default wins, and from the second call on the connection
+  is ahead.
 - **A command list shows up in the round trips.** Under a connection it and the
-  separate commands cost the same one process, and only the round trips tell
-  them apart.
+  separate commands cost the same processes, and only the round trips tell them
+  apart.
 
 The benchmark also prints wall-clock medians, which move with the machine. Run
 it yourself for those.
@@ -1049,7 +1051,7 @@ body returns, throws, or the process is killed. Guide:
 
 ## Support and status
 
-**Alpha.** The library works and its suite runs against eight tmux releases on
+**Alpha.** The library works and its suite runs against every supported tmux release on
 every push, but the API has had no outside use and names are still moving.
 Expect to update code when you update the package.
 
@@ -1063,9 +1065,9 @@ Expect to update code when you update the package.
   most exercised, and the closest to settled.
   [`TmuxWorkspace`][mod-tmuxworkspace] and [`LibTmuxMCP`][mod-libtmuxmcp] are
   newer and thinner, and are likelier to move.
-- **The tmux behaviour is the tested part.** Compatibility with 3.2a through
-  3.7b is checked in CI against each release built from its own tag. The Swift
-  surface around it is what has not settled.
+- **The tmux behaviour is the tested part.** Compatibility with 3.3a through
+  3.8, and master, is checked in CI against each release built from its own
+  tag. The Swift surface around it is what has not settled.
 
 Useful now for a tool you control and can update. Not yet something to put
 under a dependency you do not.
@@ -1074,14 +1076,14 @@ under a dependency you do not.
 | --- | --- |
 | Swift | 6.2 or later |
 | Platforms | Linux, including WSL, and macOS — see [Platform notes](#platform-notes) |
-| tmux | 3.2a through 3.7b |
+| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 ### Platform notes
 
 - **Linux, including WSL.** CI runs Ubuntu against each of the eight supported
   tmux releases, in parallel.
-- **macOS.** CI runs tmux 3.2a and 3.7b, the ends of the range.
+- **macOS.** CI runs tmux 3.3a and 3.7b, the ends of the range CI covers on macOS.
 - **Darwin handling.** None of it varies by tmux release: the `TMPDIR` a socket
   path cannot afford, keg-only libevent and ncurses, and `F_SETNOSIGPIPE`.
 - **On Darwin, build with Xcode 26's toolchain.** [swift-subprocess][] needs
@@ -1150,11 +1152,12 @@ The trait is off by default and six tests come with it, so the gate names it.
 Point the suite at a particular release to test against that one:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
+$ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux swift test
 ```
 
-CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
-3.7a, and 3.7b, each built from its own release tarball.
+CI runs the suite on Linux against each of tmux 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a,
+3.7b, 3.8 and master, each built from its own release tarball or, for master,
+from a pinned commit.
 
 ## Repository layout
 

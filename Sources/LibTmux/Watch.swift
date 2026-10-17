@@ -8,7 +8,7 @@ import Foundation
 /// sent — so "has the foreground command changed?" costs no commands, no
 /// captures, and no scrollback at all.
 ///
-/// Requires a control connection, which needs tmux 3.3a or later here.
+/// Requires tmux 3.3a or later, which is this package's floor.
 public struct FormatSubscription: Sendable, Hashable {
     /// What tmux evaluates the format against.
     public enum Scope: Sendable, Hashable {
