@@ -763,7 +763,7 @@ What that means concretely:
 - **`LibTmux` is the part to build on.** It is the largest, the most exercised,
   and the closest to settled. `TmuxWorkspace` and `LibTmuxMCP` are newer and
   thinner, and are likelier to move.
-- **The tmux behaviour is the tested part.** Compatibility with 3.2a through
+- **The tmux behaviour is the tested part.** Compatibility with 3.3a through
   3.7b is checked in CI against each release built from its own tag, so what
   the library claims about tmux is evidence rather than intent. The Swift
   surface around it is what has not settled.
@@ -777,7 +777,7 @@ under a dependency you do not.
 | --- | --- |
 | Swift | 6.2 or later |
 | Platforms | Linux and macOS — see [Platform notes](#platform-notes) |
-| tmux | 3.2a through 3.7b |
+| tmux | 3.3a through 3.7b; older daemons are refused before any command runs |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 ## Documentation

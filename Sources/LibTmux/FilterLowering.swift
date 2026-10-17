@@ -88,7 +88,7 @@ enum FilterLowering {
 
     /// Negation, spelled so it works at the supported floor.
     ///
-    /// `#{!:...}` does not exist in tmux 3.2a — it expands to nothing rather
+    /// `#{!:...}` does not exist in tmux 3.3a — it expands to nothing rather
     /// than to a boolean. Comparing against `0` is the same question and is
     /// understood by every supported version.
     static func negated(_ predicate: String) -> String {

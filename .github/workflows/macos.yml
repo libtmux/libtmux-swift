@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tmux: ["3.2a", "3.7b"]
+        tmux: ["3.3a", "3.7b"]
 
     steps:
       - uses: actions/checkout@v7
