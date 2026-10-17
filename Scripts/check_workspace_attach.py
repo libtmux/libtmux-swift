@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -17,6 +18,44 @@ binary = str(Path(sys.argv[1]).resolve())
 tmux = str(Path(sys.argv[2]).resolve())
 base = Path("/tmp/libtmux-swift-dev")
 base.mkdir(exist_ok=True)
+
+
+def release_key(token):
+    """Order a tmux version the way the library does.
+
+    `next-X.Y` ranks below `X.Y-rc`, which ranks below `X.Y-rcN`, which
+    ranks below `X.Y`; the point-release letter orders last.
+    """
+    build = None
+    if token.startswith("next-"):
+        build, token = "next", token[len("next-") :]
+    elif "-" in token:
+        token, build = token.split("-", 1)
+    match = re.fullmatch(r"(\d+)\.(\d+)([a-z]*)", token)
+    if match is None:
+        print(f"cannot read a tmux version from {token!r}", file=sys.stderr)
+        sys.exit(1)
+    if build == "next":
+        rank = (0, 0)
+    elif build is not None and build.startswith("rc"):
+        rank = (1, int(build[2:] or 0))
+    else:
+        rank = (2, 0)
+    return (int(match.group(1)), int(match.group(2)), match.group(3), rank)
+
+
+# tmux 3.8 removed the `active-pane` client flag, and its release candidates
+# from 3.8-rc2 already lack it, so a client cannot be made independent there.
+HAS_ACTIVE_PANE_FLAG = release_key(
+    subprocess.check_output([tmux, "-V"], text=True).split()[-1]
+) < release_key("3.8-rc2")
+NEEDS_ACTIVE_PANE_FLAG = {
+    "independent-yes",
+    "independent-detached",
+    "independent-append",
+    "independent-other-window",
+    "gained-independent",
+}
 
 
 def check(choice):
@@ -437,6 +476,12 @@ for choice in sys.argv[3:] or [
     "gained-independent",
     "session-fallback",
 ]:
+    if choice in NEEDS_ACTIVE_PANE_FLAG and not HAS_ACTIVE_PANE_FLAG:
+        print(
+            f"{choice}: skipped, this tmux has no active-pane flag",
+            file=sys.stderr,
+        )
+        continue
     check(choice)
     checks.append(choice)
 
