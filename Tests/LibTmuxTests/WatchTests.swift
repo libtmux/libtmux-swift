@@ -326,7 +326,7 @@ struct WatchTests {
         }
     }
 
-    @Test("a bounded forward scan finds an early line in a large burst")
+    @Test("a bounded forward scan finds an early line in a large burst", .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func earlyBurstMatchSurvivesBoundedCapture() async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
@@ -380,7 +380,7 @@ struct WatchTests {
         }
     }
 
-    @Test("sustained output cannot move a wait past its deadline")
+    @Test("sustained output cannot move a wait past its deadline", .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func sustainedOutputCannotMoveTheDeadline() async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)

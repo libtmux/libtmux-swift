@@ -47,7 +47,7 @@ struct ControlModeTests {
         }
     }
 
-    @Test("losing the output stream cancels a sleeping body")
+    @Test("losing the output stream cancels a sleeping body", .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func outputLossCancelsSleepingBody() async throws {
         try await withTmuxServer { server in
             let probe = ControlBodyProbe()
@@ -229,7 +229,7 @@ struct ControlModeTests {
         }
     }
 
-    @Test("work done through control mode is visible to ordinary commands")
+    @Test("work done through control mode is visible to ordinary commands", .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func controlModeWorkIsVisibleOutside() async throws {
         try await withTmuxServer { server in
             try await server.withControlMode(attachingTo: "bootstrap") { control in
