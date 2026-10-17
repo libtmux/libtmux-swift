@@ -2374,7 +2374,7 @@ struct WorkspaceCLITests {
         }
     }
 
-    @Test("freeze never writes a session name load would refuse")
+    @Test("freeze never writes a session name load would refuse", .enabled(if: !laneIsExactly(3, 7), "tmux 3.7 refuses '.' and ':' in names"))
     func freezeRefusesUnaddressableName() async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(socket) = server.endpoint else { return }

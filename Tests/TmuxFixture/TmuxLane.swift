@@ -101,3 +101,9 @@ public let laneSupportsControl = laneAtLeast(3, 7)
 
 /// Exact named-buffer deletion and rename need 3.4.
 public let laneSupportsNamedBufferEditing = laneAtLeast(3, 4)
+
+/// Whether the lane is exactly the release `major.minor`, with no patch letter.
+public func laneIsExactly(_ major: Int, _ minor: Int) -> Bool {
+    guard let release = tmuxLaneRelease() else { return false }
+    return release == TmuxVersion(major: major, minor: minor)
+}

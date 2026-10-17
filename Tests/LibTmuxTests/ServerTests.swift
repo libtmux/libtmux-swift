@@ -272,7 +272,7 @@ struct RealTmuxTests {
         }
     }
 
-    @Test("a session name tmux would otherwise split still answers exists")
+    @Test("a session name tmux would otherwise split still answers exists", .enabled(if: !laneIsExactly(3, 7), "tmux 3.7 refuses '.' and ':' in names"))
     func hasSessionAnswersASeparatorBearingName() async throws {
         try await withTmuxServer { server in
             // Whatever this release did with the request -- kept it, or
