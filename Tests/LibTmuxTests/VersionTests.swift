@@ -61,12 +61,33 @@ struct VersionTests {
         let release = try #require(TmuxVersion(parsing: "3.9"))
         #expect(next < release)
         #expect(!(release < next))
-        // An rc is a tagged release candidate, not a snapshot: it ranks with
-        // the number it names, unlike `next-`.
-        let rc = try #require(TmuxVersion(parsing: "3.8-rc"))
+        // A release candidate has not got the release's fixes either, and
+        // ranks between the snapshot and the release.
+        let rc = try #require(TmuxVersion(parsing: "3.8-rc2"))
         let rcRelease = try #require(TmuxVersion(parsing: "3.8"))
-        #expect(!(rc < rcRelease))
+        let snapshot = try #require(TmuxVersion(parsing: "next-3.8"))
+        #expect(rc < rcRelease)
         #expect(!(rcRelease < rc))
+        #expect(snapshot < rc)
+    }
+
+    @Test("snapshots and candidates order between the last release and the next")
+    func buildsOrderBelowTheirRelease() throws {
+        let ordered = ["next-3.7", "3.7-rc", "3.7-rc3", "3.7", "3.7a"].map {
+            TmuxVersion(parsing: $0)!
+        }
+        #expect(ordered == ordered.sorted())
+        for pair in zip(ordered, ordered.dropFirst()) { #expect(pair.0 < pair.1) }
+        let chain = ["next-3.4", "3.4-rc", "3.4"].map { TmuxVersion(parsing: $0)! }
+        for pair in zip(chain, chain.dropFirst()) { #expect(pair.0 < pair.1) }
+        // What control acquisition needs: a build at or above 3.7 itself.
+        let seven = TmuxVersion(major: 3, minor: 7)
+        for token in ["3.8-rc2", "next-3.8", "3.7", "3.7a"] {
+            #expect(TmuxVersion(parsing: token)! >= seven, Comment(rawValue: token))
+        }
+        for token in ["next-3.7", "3.7-rc2"] {
+            #expect(TmuxVersion(parsing: token)! < seven, Comment(rawValue: token))
+        }
     }
 
     @Test("it round-trips through its own description")
