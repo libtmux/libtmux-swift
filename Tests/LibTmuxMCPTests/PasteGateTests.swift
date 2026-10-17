@@ -44,6 +44,83 @@ struct PasteGateTests {
     }
 
     @Test(
+        "wait_for_text polls with capture-pane below 3.7 and attaches no control client",
+        .enabled(if: laneIsSupportedForFeatures && !laneSupportsControl, "needs 3.3a to 3.6")
+    )
+    func waitForTextPollsBelowThreeSeven() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            try await server.run("sleep 1; echo mcp-poll-$((20+22))", in: pane)
+            let result = try await tools(server).call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string("mcp-poll-42")]),
+                        "timeoutMs": .integer(15_000),
+                    ])))
+            #expect(result.structured["outcome"]?.stringValue == "matched")
+            let clients = try await server.clients()
+            #expect(clients.allSatisfy { !$0.isControlMode })
+        }
+    }
+
+    private func waitForText(
+        _ pane: Pane, pattern: String, with tools: TmuxTools
+    ) -> Task<ToolOutcome, any Error> {
+        Task {
+            try await tools.call(
+                ToolCall(
+                    name: "wait_for_text",
+                    arguments: .object([
+                        "paneId": .string(pane.id.rawValue),
+                        "patterns": .array([.string(pattern)]),
+                        "timeoutMs": .integer(15_000),
+                    ])))
+        }
+    }
+
+    @Test(
+        "wait_for_text finds a match split across a wrapped row",
+        .enabled(if: laneIsSupportedForFeatures, "needs a supported tmux")
+    )
+    func waitForTextJoinsWrappedRows() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let wait = waitForText(pane, pattern: "0WRAPNEEDLE", with: tools(server))
+            try await Task.sleep(for: .milliseconds(500))
+            // 78 digits and then the word, so the 80-column pane wraps inside it.
+            try await server.run(
+                "printf '%s%s\\n' \"$(printf '%078d' 0)\" WRAP\"\"NEEDLE", in: pane)
+            let result = try await wait.value
+            #expect(result.structured["outcome"]?.stringValue == "matched")
+        }
+    }
+
+    @Test(
+        "wait_for_text reports a killed server as a closed pane, with the output so far",
+        .enabled(if: laneIsSupportedForFeatures, "needs a supported tmux")
+    )
+    func waitForTextReportsAKilledServer() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            let wait = waitForText(pane, pattern: "never-appears-anywhere", with: tools(server))
+            try await Task.sleep(for: .milliseconds(500))
+            try await server.run("echo mcp-before-kill; sleep 60", in: pane)
+            let seen = try await waitUntil(within: .seconds(15)) {
+                try await server.capture(pane).contains { $0.contains("mcp-before-kill") }
+            }
+            try #require(seen)
+            try await Task.sleep(for: .seconds(2))
+            _ = try await server.run(TmuxCommand("kill-server"))
+            let result = try await wait.value
+            #expect(result.structured["outcome"]?.stringValue == "paneClosed")
+            let tail = result.structured["tail"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            #expect(tail.contains { $0.contains("mcp-before-kill") })
+        }
+    }
+
+    @Test(
         "paste_text stages, pastes and deletes its private buffer from 3.4",
         .enabled(if: laneSupportsNamedBufferEditing, "needs 3.4 or newer")
     )
