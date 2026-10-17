@@ -295,6 +295,9 @@ enum WorkspaceCLI {
             case let .invalidValue(rowIndex, field, raw):
                 return "tmux row \(rowIndex) field \(field) had an invalid value: \(raw)"
             }
+        case let .unsupportedTmuxVersion(reported, required, operation):
+            return
+                "tmux \(reported) cannot serve \(operation); it needs tmux \(required) or newer. Nothing was changed."
         case .serverRestarted:
             return "The tmux server restarted while the request was in flight."
         case .foreignServerValue:

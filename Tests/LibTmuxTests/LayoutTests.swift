@@ -30,6 +30,36 @@ struct LayoutTests {
         #expect(!LayoutSyntax.accepts(saved("80x24,0,0,4294967296"), version: version, panes: 1))
     }
 
+    @Test("a 3.8 layout document is judged by structure, and only from its candidates")
+    func jsonLayoutsStartAtThreeEight() {
+        func pane(_ id: Int) -> String { #"{"t":"p","w":40,"h":24,"x":0,"y":0,"i":\#(id)}"# }
+        let split =
+            #"{"V":2,"L":{"t":"v","w":80,"h":24,"x":0,"y":0,"c":["#
+            + pane(0) + "," + pane(1) + "]}}"
+        let single = #"{"V":2,"L":"# + pane(0) + "}"
+        let release = TmuxVersion(major: 3, minor: 8)
+        #expect(LayoutSyntax.accepts(split, version: release, panes: 2))
+        #expect(LayoutSyntax.accepts(single, version: release, panes: 1))
+        // Not enough cells, wrong version of the document, a container with
+        // no children, an unknown node kind and plain malformed text.
+        #expect(!LayoutSyntax.accepts(single, version: release, panes: 2))
+        #expect(
+            !LayoutSyntax.accepts(
+                split.replacingOccurrences(of: #""V":2"#, with: #""V":1"#), version: release,
+                panes: 2))
+        #expect(!LayoutSyntax.accepts(#"{"V":2,"L":{"t":"v","c":[]}}"#, version: release, panes: 1))
+        #expect(!LayoutSyntax.accepts(#"{"V":2,"L":{"t":"x"}}"#, version: release, panes: 1))
+        #expect(!LayoutSyntax.accepts("{not json", version: release, panes: 1))
+        // Earlier releases refuse the document; the candidates and later builds
+        // of 3.8 take it.
+        #expect(!LayoutSyntax.accepts(split, version: TmuxVersion(major: 3, minor: 7), panes: 2))
+        #expect(!LayoutSyntax.accepts(split, version: TmuxVersion(parsing: "next-3.8")!, panes: 2))
+        #expect(LayoutSyntax.accepts(split, version: TmuxVersion(parsing: "3.8-rc2")!, panes: 2))
+        #expect(LayoutSyntax.accepts(split, version: TmuxVersion(parsing: "next-3.9")!, panes: 2))
+        #expect(acceptsLayoutSyntax(split, panes: 2))
+        #expect(!acceptsLayoutSyntax(split, panes: 3))
+    }
+
     @Test("saved layouts do not treat captured pane counts as live capacity")
     func capturedPaneCountIsNotLive() async throws {
         try await withTmuxServer { server in
@@ -41,7 +71,9 @@ struct LayoutTests {
             try await server.kill(extra)
             let link = try #require(try await server.windowLinks().first)
             let layout = try #require(try await server.format("#{window_layout}", for: link))
-            let uppercase = layout.prefix(4).uppercased() + layout.dropFirst(4)
+            // A 3.8 document has no checksum to respell.
+            let uppercase =
+                layout.hasPrefix("{") ? layout : layout.prefix(4).uppercased() + layout.dropFirst(4)
             try await server.selectLayout(captured, uppercase)
             #expect(try await server.window(first.id)?.paneCount == 1)
             #expect(try await server.incarnation() == identity)
@@ -78,8 +110,8 @@ struct LayoutTests {
         #expect(await transport.arguments.isEmpty)
     }
 
-    @Test("a captured window never falls back to a cold client version")
-    func capturedWindowRefusesColdFallback() async throws {
+    @Test("a layout for a captured window is refused when no version can be read")
+    func capturedWindowWithoutVersionIsRefused() async throws {
         let path = "/tmp/libtmux-swift-test/layout-bound/socket"
         let endpoint = try Endpoint(socketPath: path)
         let transport = LayoutProbeTransport()
@@ -92,8 +124,8 @@ struct LayoutTests {
             try await server.selectLayout(window, "main-horizontal-mirrored")
         }
         let calls = await transport.arguments
-        #expect(calls.count == 1)
-        #expect(!calls.contains { $0.contains("-V") })
+        #expect(!calls.isEmpty)
+        #expect(!calls.contains { $0.contains("select-layout") })
     }
 
     @Test("a running daemon is asked its version once per endpoint")
@@ -142,9 +174,10 @@ struct LayoutTests {
                 return connected
             }
             let before = await transport.arguments.count
-            await #expect(throws: TmuxError.self) {
-                try await closed.validateLayouts([(layout, 1)])
-            }
+            // The release was read before the connection opened and is kept
+            // for the endpoint, so a closed connection neither answers
+            // differently nor spawns a process to find out.
+            try await closed.validateLayouts([(layout, 1)])
             #expect(await transport.arguments.count == before)
             #expect(try await fixture.incarnation() == identity)
         }

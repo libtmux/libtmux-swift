@@ -11,6 +11,32 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Changed
+
+- `Server` supports tmux 3.3a and newer, judged by the daemon the endpoint
+  reaches rather than the client executable: it reads the daemon's release
+  before it sends anything, refuses an older one with
+  `TmuxError.unsupportedTmuxVersion(reported:required:operation:)` before the
+  command has any effect, and holds every batch to the release it read, so a
+  daemon replaced in between refuses the batch instead of running it. Where
+  nothing listens yet, the executable that would start the daemon is held to
+  the same floor. The release is read without running a command that fires a
+  configured hook. (#43)
+
+- `TmuxVersion` ranks a release candidate (`3.8-rc2`) below the release it
+  names, like a `next-` snapshot, and `Server.version()` accepts the banner
+  tmux 3.3a prints when the executable is not named `tmux`. (#43)
+
+- Panes built over a connection match panes built directly, heights included,
+  on every supported release; the 3.2a exception is gone. (#43)
+
+### Fixed
+
+- `Server.validateLayouts(_:)`, `Server.selectLayout(_:_:)` and the MCP
+  `select_layout` tool accept the JSON layout documents tmux 3.8 reports in
+  `#{window_layout}`, so a layout read from a 3.8 window can be applied again,
+  including `tmux-workspace freeze` followed by `load`. (#43)
+
 ## [0.1.0-alpha.6] - 2026-09-26
 
 ### Added

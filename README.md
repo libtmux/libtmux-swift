@@ -316,28 +316,30 @@ that check.
 
 | Work | Direct | Connected |
 | --- | --- | --- |
-| list-sessions, once | 1 process, 1 round trip | 1 process, 2 round trips |
-| list-sessions, twenty times | 20 processes, 20 round trips | 1 process, 21 round trips |
-| sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 7 round trips |
-| sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 5 round trips |
-| the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 5 round trips |
-| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 8 round trips |
-| the same five as one command list | 3 processes, 3 round trips | 1 process, 4 round trips |
-| new-window then split, read back | 5 processes, 5 round trips | 1 process, 6 round trips |
+| list-sessions, once | 2 processes, 2 round trips | 2 processes, 4 round trips |
+| list-sessions, twenty times | 21 processes, 21 round trips | 2 processes, 23 round trips |
+| sessions, windows, panes, clients, twice-checked | 7 processes, 7 round trips | 4 processes, 9 round trips |
+| sessions, windows, panes, clients — one after another | 5 processes, 5 round trips | 2 processes, 7 round trips |
+| the same four, concurrently — a pipelined batch | 5 processes, 5 round trips | 2 processes, 7 round trips |
+| new-window five times, each its own command | 8 processes, 8 round trips | 2 processes, 10 round trips |
+| the same five as one command list | 4 processes, 4 round trips | 2 processes, 6 round trips |
+| new-window then split, read back | 6 processes, 6 round trips | 2 processes, 8 round trips |
 
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |
 | tmux processes spent | 2 | 1 |
-| round trips spent | 2 | 2 |
+| round trips spent | 2 | 3 |
 
 <!-- mode-matrix:end -->
 
 Directly, a round trip is a process, so that column always agrees with itself.
-Connecting collapses the processes to one and charges a single extra round trip,
-the attach — which is why a single call is the row where the default wins, and
-why from the second call onward the connection is ahead. Round trips are also
-where a command list shows up: under a connection it and the separate commands
-cost the same one process, and only the round trips tell them apart.
+Every row also carries the process that reads the daemon's release once.
+Connecting collapses the rest to the connection's own process and charges extra
+round trips for the attach and its release check — which is why a single call is
+the row where the default wins, and why from the second call onward the
+connection is ahead. Round trips are also where a command list shows up: under
+a connection it and the separate commands cost the same processes, and only the
+round trips tell them apart.
 
 The benchmark also prints wall-clock medians, which move with the machine — run
 it yourself for those.
@@ -763,7 +765,7 @@ What that means concretely:
 - **`LibTmux` is the part to build on.** It is the largest, the most exercised,
   and the closest to settled. `TmuxWorkspace` and `LibTmuxMCP` are newer and
   thinner, and are likelier to move.
-- **The tmux behaviour is the tested part.** Compatibility with 3.2a through
+- **The tmux behaviour is the tested part.** Compatibility with 3.3a through
   3.7b is checked in CI against each release built from its own tag, so what
   the library claims about tmux is evidence rather than intent. The Swift
   surface around it is what has not settled.
@@ -777,7 +779,7 @@ under a dependency you do not.
 | --- | --- |
 | Swift | 6.2 or later |
 | Platforms | Linux and macOS — see [Platform notes](#platform-notes) |
-| tmux | 3.2a through 3.7b |
+| tmux | 3.3a through 3.7b; older daemons are refused before any command runs |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 ## Documentation
@@ -822,11 +824,13 @@ The trait is off by default and six tests come with it, so the gate names it.
 Point the suite at a particular release to test against that one:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.2a/bin/tmux swift test
+$ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux swift test
 ```
 
-CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
-3.7a, and 3.7b, each built from its own release tarball.
+CI runs the suite on Linux against each of tmux 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a,
+3.7b, 3.8 and master, each built from its own release tarball or, for master,
+from the tip of the repository. It also builds 3.2a and the unpatched 3.3 and
+checks that both are refused.
 
 ## Repository layout
 

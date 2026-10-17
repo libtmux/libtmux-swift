@@ -122,9 +122,9 @@ extension Server {
     ///
     /// Presence comes from the table listing and the value from
     /// `show-options -v`, because neither answers both portably: the listing
-    /// quotes a value containing spaces, while `-v` reports "not set" as exit 0
-    /// with empty output on 3.2a and exit 1 on 3.7 — and reading emptiness as
-    /// absence would erase the difference between an option nobody set and one
+    /// quotes a value containing spaces, while `-v` answers a name that is known but
+    /// unset in this table with empty output — and reading emptiness as absence
+    /// would erase the difference between an option nobody set and one
     /// deliberately set to "".
     public func option(
         _ name: String,

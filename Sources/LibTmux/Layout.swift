@@ -1,3 +1,5 @@
+import Foundation
+
 extension Server {
     /// Checks layouts and their required pane counts before changing tmux.
     ///
@@ -5,17 +7,12 @@ extension Server {
     /// cells. Geometry and pruning remain tmux's responsibility. Empty batches
     /// perform no I/O unless cancelled; each supplied layout must be nonempty.
     ///
-    /// Unique named abbreviations follow the running daemon. Only an unbound
-    /// direct endpoint with no daemon uses the configured client's version.
-    /// Transport, decode and cancellation failures are preserved.
+    /// Unique named abbreviations follow the running daemon. Only an endpoint
+    /// with no daemon uses the configured executable's version. A release
+    /// below the supported floor, like transport and cancellation failures,
+    /// is thrown.
     public func validateLayouts(
         _ layouts: [(layout: String, paneCount: Int)]
-    ) async throws(TmuxError) {
-        try await validateLayouts(layouts, guarding: nil)
-    }
-
-    func validateLayouts(
-        _ layouts: [(layout: String, paneCount: Int)], guarding window: Window?
     ) async throws(TmuxError) {
         if Task.isCancelled { throw .cancelled }
         let beforeMirrors = TmuxVersion(major: 3, minor: 4)
@@ -27,63 +24,23 @@ extension Server {
                 item.layout, version: beforeMirrors, panes: item.paneCount)
             let after = LayoutSyntax.accepts(
                 item.layout, version: withMirrors, panes: item.paneCount)
-            guard before || after else {
+            let document = LayoutSyntax.accepts(
+                item.layout, version: .jsonLayouts, panes: item.paneCount)
+            guard before || after || document else {
                 throw .invocationFailed(reason: "Invalid window layout or pane count.")
             }
-            if before != after { sensitive.append(item) }
+            // A layout only some releases take has to be put to the daemon's.
+            if before != after || (document && !before) { sensitive.append(item) }
         }
         if Task.isCancelled { throw .cancelled }
         guard !sensitive.isEmpty else { return }
-        let version = try await layoutVersion(guarding: window)
+        let version = try await daemonVersion()
         for item in sensitive {
             if Task.isCancelled { throw .cancelled }
             guard LayoutSyntax.accepts(item.layout, version: version, panes: item.paneCount) else {
                 throw .invocationFailed(reason: "Invalid window layout for tmux \(version).")
             }
         }
-    }
-
-    private func layoutVersion(guarding window: Window?) async throws(TmuxError) -> TmuxVersion {
-        // A load asks here at the command, at the builder and once per window,
-        // and the daemon's answer does not change under one endpoint. Over a
-        // connection the probe is also what shows the connection is still there.
-        if connection == nil, let recorded = await recordedDaemonVersion() { return recorded }
-        let command = TmuxCommand("display-message", ["-p", "#{version}"])
-        let reply: TmuxReply
-        if let window {
-            reply = try await runGuarded(command, by: [.window(window)])
-        } else if connection != nil {
-            reply = try await run(command)
-        } else {
-            reply = try await run(command, launchEnvironment: ["LC_ALL": "C"])
-        }
-        if reply.isSuccess && reply.standardError.isEmpty {
-            guard let version = TmuxVersion(parsing: reply.text) else {
-                throw .invocationFailed(reason: "Could not read the running tmux version.")
-            }
-            if connection == nil { await recordDaemonVersion(version) }
-            return version
-        }
-        guard window == nil, connection == nil, isColdLayoutEndpoint(reply) else {
-            throw .commandFailed(
-                command: command.name, exitCode: reply.exitCode, reason: reply.errorText)
-        }
-        return try await version()
-    }
-
-    private func isColdLayoutEndpoint(_ reply: TmuxReply) -> Bool {
-        guard reply.exitCode == 1, reply.standardOutput.isEmpty else { return false }
-        let reason = reply.errorText
-        guard !reason.contains("\n") else { return false }
-        if case let .socketPath(path) = endpoint {
-            return reason == "no server running on \(path)"
-                || reason == "error connecting to \(path) (No such file or directory)"
-                || reason == "error connecting to \(path) (Connection refused)"
-        }
-        return reason.hasPrefix("no server running on /")
-            || (reason.hasPrefix("error connecting to /")
-                && (reason.hasSuffix(" (No such file or directory)")
-                    || reason.hasSuffix(" (Connection refused)")))
     }
 }
 
@@ -95,14 +52,25 @@ extension Server {
 /// wrong wherever it is loaded, while one only some releases accept still has
 /// to be put to the running daemon.
 package func acceptsLayoutSyntax(_ layout: String, panes: Int) -> Bool {
-    LayoutSyntax.accepts(layout, version: TmuxVersion(major: 3, minor: 4), panes: panes)
-        || LayoutSyntax.accepts(layout, version: TmuxVersion(major: 3, minor: 5), panes: panes)
+    [TmuxVersion(major: 3, minor: 4), TmuxVersion(major: 3, minor: 5), .jsonLayouts]
+        .contains { LayoutSyntax.accepts(layout, version: $0, panes: panes) }
+}
+
+extension TmuxVersion {
+    /// The first build that reports `#{window_layout}` as JSON: the 3.8
+    /// release candidates, which rank just below the release itself.
+    static let jsonLayouts = TmuxVersion(major: 3, minor: 8, build: "rc")
 }
 
 // Native saved-layout syntax; tmux retains geometry correction and pruning.
 enum LayoutSyntax {
     static func accepts(_ layout: String, version: TmuxVersion, panes: Int) -> Bool {
         guard !layout.isEmpty, panes > 0 else { return false }
+        // From 3.8 a window's layout is a JSON document, and `select-layout`
+        // takes the same document back. The geometry stays tmux's to judge.
+        if layout.hasPrefix("{") {
+            return version >= .jsonLayouts && acceptsJSON(layout, panes: panes)
+        }
         var names = [
             "even-horizontal", "even-vertical", "main-horizontal", "main-vertical", "tiled",
         ]
@@ -127,6 +95,33 @@ enum LayoutSyntax {
         guard checksum == expected else { return false }
         var parser = LayoutParser(bytes: body)
         return parser.cell(depth: 0) && parser.offset == body.count && parser.leaves >= panes
+    }
+}
+
+extension LayoutSyntax {
+    private static func acceptsJSON(_ layout: String, panes: Int) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: Data(layout.utf8)),
+            let document = root as? [String: Any],
+            document["V"] as? Int == 2,
+            let tree = document["L"] as? [String: Any]
+        else { return false }
+        var leaves = 0
+        func accepts(_ node: [String: Any], depth: Int) -> Bool {
+            guard depth <= 256, let kind = node["t"] as? String else { return false }
+            switch kind {
+            case "p":
+                leaves += 1
+                return true
+            case "v", "h":
+                guard let children = node["c"] as? [[String: Any]], !children.isEmpty else {
+                    return false
+                }
+                return children.allSatisfy { accepts($0, depth: depth + 1) }
+            default:
+                return false
+            }
+        }
+        return accepts(tree, depth: 0) && leaves >= panes
     }
 }
 

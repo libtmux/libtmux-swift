@@ -575,7 +575,7 @@ enum RetainedProbeFailure: String, CaseIterable, Sendable {
     var error: TmuxError {
         switch self {
         case .commandFailed:
-            .commandFailed(command: "display-message", exitCode: 1, reason: "ambiguous probe")
+            .commandFailed(command: "run-shell", exitCode: 1, reason: "ambiguous probe")
         case .invocationFailed:
             .invocationFailed(reason: "ambiguous probe")
         }
@@ -637,9 +637,9 @@ private actor RetainedProbeFailureTransport: ProcessTransport {
             }
         }
         if let failure = armedFailure,
-            arguments.contains("display-message"),
+            arguments.contains("run-shell"),
             arguments.contains(where: {
-                $0.contains("#{socket_path}") && $0.contains("#{start_time}")
+                $0.contains("socket_path}") && $0.contains("#{start_time}")
             })
         {
             armedFailure = nil
