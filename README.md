@@ -336,7 +336,9 @@ try await server.connected(attachingTo: "work") { server, control in
 ```
 
 `WaitingTests` asserts the watch returns the value it names. The format
-`#{pane_current_command}` answers "is my command done?" exactly.
+`#{pane_current_command}` answers "is my command done?" exactly. This needs a
+connection, which needs tmux 3.7; an older daemon refuses it before anything
+attaches.
 
 ### [`Server.waitForOutput`][api-server-waitforoutput-in-matching-stoppingat-requiringfreshoutput-startingat-timeout-taillimit]: you did not write the command
 
@@ -394,6 +396,8 @@ settings, [`TmuxMode.direct`][api-tmuxmode-direct] and
 | --- | --- | --- |
 | `.direct` | A tmux process per call | One call, or calls far apart. The default |
 | `.connected(to:)` | One live connection for the whole scope | More than one call, and being told what changed |
+
+`.connected(to:)` needs tmux 3.7 and `.direct` serves every supported release.
 
 The default needs no word at all:
 
@@ -497,7 +501,8 @@ it yourself for those.
 ### [`Server.connected(attachingTo:_:)`][api-server-connected-attachingto]: hear changes as they happen
 
 A connection can do one thing a process cannot, which is report what changed
-without being asked:
+without being asked. It needs tmux 3.7; an older daemon refuses it before
+anything attaches:
 
 ```swift
 let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
@@ -1075,7 +1080,7 @@ under a dependency you do not.
 | --- | --- |
 | Swift | 6.2 or later |
 | Platforms | Linux, including WSL, and macOS — see [Platform notes](#platform-notes) |
-| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs |
+| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release in the DocC platform page |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 ### Platform notes
