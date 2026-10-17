@@ -463,10 +463,24 @@ actor ServerRuntime {
     private let checkingVersions: Bool
     /// What the daemon at this endpoint answered when asked its version.
     ///
-    /// Only a running daemon's answer is kept. It is a claim about one daemon,
+    /// Only a running daemon's answer is kept, once per endpoint and shared by
+    /// every ``Server`` value that reaches it. It is a claim about one daemon,
     /// so a refused fence or a vanished endpoint drops it, and the next command
     /// asks again.
-    private var daemonVersion: ServerVersion?
+    private var localDaemon: ServerVersion?
+    private var daemonVersion: ServerVersion? {
+        get { checkingVersions ? VersionCache.shared.daemon(for: registryKey) : localDaemon }
+        set {
+            if checkingVersions {
+                VersionCache.shared.record(newValue, for: registryKey)
+            } else {
+                localDaemon = newValue
+            }
+        }
+    }
+    private var registryKey: VersionCache.Key {
+        VersionCache.Key(endpoint: endpoint, executable: tmuxExecutable)
+    }
     /// What the executable reports, read once an endpoint has no daemon.
     private var executableVersion: ServerVersion?
     private var probing: Task<ServerVersion?, any Error>?

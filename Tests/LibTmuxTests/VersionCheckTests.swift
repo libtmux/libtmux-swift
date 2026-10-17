@@ -146,7 +146,10 @@ struct VersionCheckRuleTests {
 struct VersionCheckDispatchTests {
     private func server(_ transport: VersionScript) throws -> Server {
         Server(
-            endpoint: try Endpoint(socketPath: "/tmp/libtmux-swift-test/version-script/socket"),
+            endpoint: try Endpoint(
+                socketPath:
+                    "/tmp/libtmux-swift-test/version-script-\(UUID().uuidString.prefix(8))/socket"
+            ),
             tmuxExecutable: "/usr/bin/tmux", transport: transport, checkingVersions: true)
     }
 
@@ -447,6 +450,17 @@ struct VersionCheckLaneTests {
         return false
     }
 
+    @Test("a CI run names its tmux, and the refusal job runs on a refused release")
+    func ciNamesItsLane() {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["CI"] != nil {
+            #expect(environment["LIBTMUX_TMUX_BIN"]?.isEmpty == false, "CI must select its tmux")
+        }
+        if environment["LIBTMUX_EXPECT_REFUSAL"]?.isEmpty == false {
+            #expect(laneIsBelowFloor, "the refusal job ran on a supported tmux")
+        }
+    }
+
     @Test(
         "a daemon below the floor is refused by every entry point with no effect",
         .enabled(if: laneIsBelowFloor, "needs a tmux older than the floor")
@@ -454,6 +468,9 @@ struct VersionCheckLaneTests {
     func oldDaemonIsRefusedEverywhere() async throws {
         try await withNativeDaemon { daemon in
             let server = try daemon.server
+            // Sentinels the refused calls must leave exactly as they found them.
+            try await daemon.tmux(["set-option", "-g", "@sentinel", "kept"])
+            try await daemon.tmux(["set-buffer", "-b", "sentinel", "kept"])
             func refused<T: Sendable>(_ operation: () async throws -> T) async -> Bool {
                 do {
                     _ = try await operation()
@@ -478,6 +495,8 @@ struct VersionCheckLaneTests {
                 })
             #expect(await refused { try await server.newSession(named: "sentinel") })
             #expect(await refused { try await server.setBuffer("x", named: "sentinel") })
+            #expect(await refused { try await server.setOption("@sentinel", to: "changed") })
+            #expect(await refused { try await server.deleteBuffer(named: "sentinel") })
             // Lenient listings propagate the refusal instead of reading as empty.
             #expect(await refused { try await server.buffers() })
             #expect(await refused { try await server.sessions() })
@@ -488,7 +507,11 @@ struct VersionCheckLaneTests {
                 await refused { try await server.connected(attachingTo: "anchor") { _, _ in 0 } })
             // The raw native view shows nothing was done.
             #expect(try await daemon.sessionNames() == ["anchor"])
-            #expect(try await daemon.tmux(["show-buffer", "-b", "sentinel"]).isSuccess == false)
+            #expect(try await daemon.tmux(["show-options", "-gv", "@sentinel"]).text == "kept\n")
+            #expect(try await daemon.tmux(["show-buffer", "-b", "sentinel"]).text == "kept")
+            #expect(
+                try await daemon.tmux(["list-buffers", "-F", "#{buffer_name}"]).text == "sentinel\n"
+            )
             #expect(try await daemon.tmux(["list-clients"]).text.isEmpty)
         }
     }

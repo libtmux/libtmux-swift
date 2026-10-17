@@ -158,3 +158,31 @@ extension Support {
         }
     }
 }
+
+/// The release read for each endpoint, shared by every server value that
+/// reaches it so a second handle does not spend a probe on a daemon the first
+/// already read. A claim, not a lease: the fence on every batch is what
+/// invalidates it.
+final class VersionCache: @unchecked Sendable {
+    struct Key: Hashable {
+        let endpoint: Endpoint
+        let executable: String
+    }
+
+    static let shared = VersionCache()
+
+    private let lock = NSLock()
+    private var daemons: [Key: ServerVersion] = [:]
+
+    func daemon(for key: Key) -> ServerVersion? {
+        lock.lock()
+        defer { lock.unlock() }
+        return daemons[key]
+    }
+
+    func record(_ version: ServerVersion?, for key: Key) {
+        lock.lock()
+        defer { lock.unlock() }
+        daemons[key] = version
+    }
+}
