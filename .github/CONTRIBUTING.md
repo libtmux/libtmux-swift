@@ -244,9 +244,10 @@ that package:
 $ python3 Scripts/check_examples.py --min-executed 40
 ```
 
-Every link in a README that points into this repository or at a libtmux.org
-API page names something that exists. The check reads the tree rather than the
-network, so it passes before the documentation publishes:
+Every link in a README or under `docs/` that points into this repository or at
+a libtmux.org API page names something that exists, and no prose block in a
+product README runs past 240 characters. The check reads the tree rather than
+the network, so it passes before the documentation publishes:
 
 ```console
 $ python3 Scripts/check_readme_links.py
