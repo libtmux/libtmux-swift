@@ -143,11 +143,6 @@ jobs:
         # as next-X.Y; move the pin deliberately, so an upstream break does
         # not red an unrelated change.
         tmux: ["3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.8", "master"]
-        # No macOS lane: swift-subprocess calls macOS 26 API with no
-        # availability guard, and SwiftPM compiles a dependency at that
-        # dependency's own declared minimum, so no deployment target set here
-        # reaches it. Add one once a release annotates that overload or raises
-        # its own macOS minimum.
 
     steps:
       - uses: actions/checkout@v7
@@ -170,34 +165,10 @@ jobs:
           sudo apt-get install --yes --no-install-recommends \
             automake autoconf bison libevent-dev libncurses-dev pkg-config
 
-      - name: Install build dependencies (macOS)
-        if: runner.os == 'macOS' && steps.tmux-cache.outputs.cache-hit != 'true'
-        run: brew install automake bison libevent ncurses pkg-config
-
       - name: Build tmux ${{ matrix.tmux }}
         if: steps.tmux-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          configure_flags=""
-          # Exported here rather than into the environment every later step
-          # inherits: these point at Homebrew's copies of libevent and ncurses,
-          # and nothing but tmux's configure should be reading them.
-          if [ "${RUNNER_OS}" = "macOS" ]; then
-            # Keg-only formulae, so Homebrew leaves them off PATH and out of
-            # pkg-config's search. tmux's configure finds neither without being
-            # told, and fails in a way that reads like a missing library.
-            PATH="$(brew --prefix bison)/bin:${PATH}"
-            export PATH
-            export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig"
-            export LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
-            export CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
-            # From 3.7, tmux's configure refuses to guess on Darwin: it warns
-            # that macOS renders complex codepoints poorly without utf8proc and
-            # exits unless told which way to go. Nothing here reads a pane for
-            # emoji, so the answer that keeps the lane closest to the Linux one
-            # is to build without it.
-            configure_flags="--disable-utf8proc"
-          fi
           if [ "${{ matrix.tmux }}" = master ]; then
             git init --quiet "tmux-master"
             cd "tmux-master"
@@ -211,8 +182,7 @@ jobs:
             tar -xzf tmux.tar.gz
             cd "tmux-${{ matrix.tmux }}"
           fi
-          # shellcheck disable=SC2086 — empty on Linux, one flag on Darwin.
-          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" $configure_flags
+          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}"
           make -j"$(getconf _NPROCESSORS_ONLN)"
           make install
 
