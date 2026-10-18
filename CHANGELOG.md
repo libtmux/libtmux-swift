@@ -11,6 +11,8 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.7] - 2026-10-18
+
 ### Changed
 
 - `Server` supports tmux 3.3a and newer, judged by the daemon the endpoint

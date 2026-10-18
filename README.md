@@ -80,7 +80,7 @@ none:
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.6"
+    exact: "0.1.0-alpha.7"
 )
 ```
 
@@ -106,7 +106,7 @@ pulls one in. Without it nothing here resolves Yams; with it,
 ```swift
 .package(
     url: "https://github.com/libtmux/libtmux-swift.git",
-    exact: "0.1.0-alpha.6",
+    exact: "0.1.0-alpha.7",
     traits: ["YAMLWorkspaces"]
 )
 ```
