@@ -33,7 +33,9 @@ struct CapabilityRegressionTests {
             let window = try #require(try await server.windows().first)
             let link = try #require(try await server.windowLinks().first)
             let saved = try #require(try await server.format("#{window_layout}", for: link))
-            let uppercase = saved.prefix(4).uppercased() + saved.dropFirst(4)
+            // A 3.8 document has no checksum to respell.
+            let uppercase =
+                saved.hasPrefix("{") ? saved : saved.prefix(4).uppercased() + saved.dropFirst(4)
             let version = try await server.version()
             let beforeMirrors = version < TmuxVersion(major: 3, minor: 5)
             let versioned = beforeMirrors ? "main-h" : "main-horizontal-mirrored"

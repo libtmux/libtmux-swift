@@ -434,13 +434,9 @@ enum WorkspaceCommands {
                     throw CLIError(
                         "attach_context", "The workspace's tmux server changed before attachment.")
                 }
-                var arguments = [server.tmuxExecutable, "-N", "-u"]
-                if command.colors256 { arguments.append("-2") }
-                switch server.endpoint {
-                case let .socketPath(path): arguments += ["-S", path]
-                case let .socketName(name): arguments += ["-L", name]
-                }
-                arguments += ["attach-session", "-t", session.id.rawValue]
+                let arguments = Self.attachArguments(
+                    executable: server.tmuxExecutable, colors256: command.colors256,
+                    endpoint: server.endpoint, session: session.id.rawValue)
                 let result = try await ProcessCommands.run(
                     arguments, context: context, terminal: true)
                 guard result.code == 0 else {
@@ -450,6 +446,20 @@ enum WorkspaceCommands {
                 }
             }
         }
+    }
+
+    /// The terminal handoff. `-N` keeps tmux from starting a server of its own
+    /// if the checked daemon has gone, which would skip the version check.
+    static func attachArguments(
+        executable: String, colors256: Bool, endpoint: Endpoint, session: String
+    ) -> [String] {
+        var arguments = [executable, "-N", "-u"]
+        if colors256 { arguments.append("-2") }
+        switch endpoint {
+        case let .socketPath(path): arguments += ["-S", path]
+        case let .socketName(name): arguments += ["-L", name]
+        }
+        return arguments + ["attach-session", "-t", session]
     }
 
     private enum LoadTarget {

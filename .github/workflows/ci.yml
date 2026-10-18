@@ -13,6 +13,110 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The releases the library refuses. Each is built from its own tag and run
+  # against only the version check suites: the claim is that a daemon below the
+  # floor is refused before any command has an effect, which the rest of the
+  # suite cannot say because it would be refused too.
+  refusal:
+    name: ubuntu-latest / tmux ${{ matrix.tmux }} (refused)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tmux: ["3.0a", "3.1c", "3.2a", "3.3"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # tmux 3.0a and 3.1c link the full libevent, which the runner image does
+      # not carry, and a cached build installs nothing else.
+      - name: Install the libevent runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libevent-2.1-7t64
+
+      - name: Restore tmux ${{ matrix.tmux }}
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/tmux-${{ matrix.tmux }}
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install build dependencies
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bison libevent-dev libncurses-dev pkg-config
+
+      - name: Build tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl --location --fail --silent --show-error \
+            "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
+            --output tmux.tar.gz
+          tar -xzf tmux.tar.gz
+          cd "tmux-${{ matrix.tmux }}"
+          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}"
+          make -j"$(getconf _NPROCESSORS_ONLN)"
+          make install
+
+      # tmux 3.0a and 3.1c keep the client's stdout open from the daemon, so
+      # the refusal also runs with a client that is at the floor: the old
+      # binary as its own client only exercises the client rejecting -N.
+      - name: Restore the tmux 3.3a client
+        id: client-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/tmux-3.3a
+          key: tmux-3.3a-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build the tmux 3.3a client
+        if: steps.client-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bison libevent-dev libncurses-dev pkg-config
+          curl --location --fail --silent --show-error \
+            "https://github.com/tmux/tmux/releases/download/3.3a/tmux-3.3a.tar.gz" \
+            --output client.tar.gz
+          tar -xzf client.tar.gz
+          cd tmux-3.3a
+          ./configure --prefix="${HOME}/tmux-3.3a"
+          make -j"$(getconf _NPROCESSORS_ONLN)"
+          make install
+
+      - name: Restore the SwiftPM cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/org.swift.swiftpm
+          key: swiftpm-linux-${{ hashFiles('Package.resolved', 'Examples/Package.resolved', 'Tools/McpSwap/Package.resolved') }}
+          restore-keys: swiftpm-linux-
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+
+      - name: Test the refusal
+        env:
+          # The refusal cases are skipped on a supported release, so the run
+          # names what it must have exercised and fails when it did not.
+          LIBTMUX_EXPECT_REFUSAL: "1"
+        run: |
+          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-3.3a/bin/tmux"
+          "$LIBTMUX_TMUX_BIN" -V
+          "$LIBTMUX_TMUX_CLIENT_BIN" -V
+          export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
+          mkdir -p "$TMUX_TMPDIR"
+          swift test --force-resolved-versions --filter VersionCheck
+
   test:
     name: ${{ matrix.os }} / tmux ${{ matrix.tmux }}
     runs-on: ${{ matrix.os }}
@@ -22,14 +126,23 @@ jobs:
     # cold one adds the tarball build; 30 leaves room for both and still turns
     # a hang into a failure with logs rather than six hours of silence.
     timeout-minutes: 30
+    env:
+      # tmux clients and daemons speak one protocol only within a range: a
+      # 3.3a client cannot talk to a 3.6 or newer daemon.
+      CLIENT_TMUX: ${{ contains(fromJSON('["3.3a", "3.4", "3.5"]'), matrix.tmux) && '3.3a' || '3.6' }}
+      TMUX_MASTER_COMMIT: e1b55d504cab5c11e8e7d432b1b52dd94cc6d1f0
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
         # The releases the library claims to support. Building each from its
         # own tag is what makes a compatibility claim evidence rather than an
-        # assertion: behaviour differs between 3.2a, 3.4 and 3.7 on one machine.
-        tmux: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b"]
+        # assertion: behaviour differs between 3.3a, 3.4 and 3.7 on one machine.
+        # Releases below the floor are the `refusal` job's. `master` is built
+        # from the commit pinned in TMUX_MASTER_COMMIT, which reports itself
+        # as next-X.Y; move the pin deliberately, so an upstream break does
+        # not red an unrelated change.
+        tmux: ["3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.8", "master"]
         # No macOS lane: swift-subprocess calls macOS 26 API with no
         # availability guard, and SwiftPM compiles a dependency at that
         # dependency's own declared minimum, so no deployment target set here
@@ -47,14 +160,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/tmux-${{ matrix.tmux }}
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+          # master is a pinned commit, so its key names the commit.
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}${{ matrix.tmux == 'master' && format('-{0}', env.TMUX_MASTER_COMMIT) || '' }}
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.tmux-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            bison libevent-dev libncurses-dev pkg-config
+            automake autoconf bison libevent-dev libncurses-dev pkg-config
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS' && steps.tmux-cache.outputs.cache-hit != 'true'
@@ -84,13 +198,44 @@ jobs:
             # is to build without it.
             configure_flags="--disable-utf8proc"
           fi
-          curl --location --fail --silent --show-error \
-            "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
-            --output tmux.tar.gz
-          tar -xzf tmux.tar.gz
-          cd "tmux-${{ matrix.tmux }}"
+          if [ "${{ matrix.tmux }}" = master ]; then
+            git init --quiet "tmux-master"
+            cd "tmux-master"
+            git fetch --quiet --depth 1 https://github.com/tmux/tmux.git "$TMUX_MASTER_COMMIT"
+            git checkout --quiet FETCH_HEAD
+            sh autogen.sh
+          else
+            curl --location --fail --silent --show-error \
+              "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
+              --output tmux.tar.gz
+            tar -xzf tmux.tar.gz
+            cd "tmux-${{ matrix.tmux }}"
+          fi
           # shellcheck disable=SC2086 — empty on Linux, one flag on Darwin.
           ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}" $configure_flags
+          make -j"$(getconf _NPROCESSORS_ONLN)"
+          make install
+
+      # A second, older tmux as the client, so the suite also runs a client
+      # that reports another release than the daemon it talks to.
+      - name: Restore the tmux ${{ env.CLIENT_TMUX }} client
+        id: client-cache
+        if: matrix.tmux != env.CLIENT_TMUX
+        uses: actions/cache@v6
+        with:
+          path: ~/tmux-${{ env.CLIENT_TMUX }}
+          key: tmux-${{ env.CLIENT_TMUX }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build the tmux ${{ env.CLIENT_TMUX }} client
+        if: matrix.tmux != env.CLIENT_TMUX && steps.client-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl --location --fail --silent --show-error \
+            "https://github.com/tmux/tmux/releases/download/${CLIENT_TMUX}/tmux-${CLIENT_TMUX}.tar.gz" \
+            --output client.tar.gz
+          tar -xzf client.tar.gz
+          cd "tmux-${CLIENT_TMUX}"
+          ./configure --prefix="${HOME}/tmux-${CLIENT_TMUX}"
           make -j"$(getconf _NPROCESSORS_ONLN)"
           make install
 
@@ -260,6 +405,7 @@ jobs:
           # against the release being exercised rather than whatever the runner
           # happens to ship.
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-${CLIENT_TMUX}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
           # tmux resolves a socket *name* inside this, and its default is
           # shared with every other tmux on the machine. Naming it here rather

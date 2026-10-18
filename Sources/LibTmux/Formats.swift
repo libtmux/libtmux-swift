@@ -96,7 +96,7 @@ struct FormatCondition: Sendable, Hashable {
     /// Every condition at once, nested two at a time.
     ///
     /// tmux gained an n-ary `#{&&:}` in 3.6; below that it is binary, so the
-    /// nesting is what reaches the 3.2a floor. It finds the comma by skipping
+    /// nesting is what reaches the 3.3a floor. It finds the comma by skipping
     /// balanced `#{}`, so an operand that is itself a condition needs no
     /// further quoting.
     static func all(_ first: Self, _ rest: Self...) -> Self {

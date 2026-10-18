@@ -215,22 +215,28 @@ public struct Server: Sendable, Hashable {
 
     package init(
         endpoint: Endpoint,
-        tmuxExecutable: String,
-        configurationFile: String?,
-        force256Colors: Bool
+        tmuxExecutable: String = "tmux",
+        configurationFile: String? = nil,
+        force256Colors: Bool = false
     ) {
         self.init(
             endpoint: endpoint, tmuxExecutable: tmuxExecutable,
             configurationFile: configurationFile, force256Colors: force256Colors,
-            transport: SubprocessTransport())
+            transport: SubprocessTransport(), checkingVersions: true)
     }
 
+    /// A server over a process boundary the caller supplies.
+    ///
+    /// The version check is off unless asked for: a scripted transport answers
+    /// the commands a test writes, and a version probe or fence in front of
+    /// them would change what it sees. The shipped initializers always enforce it.
     init(
         endpoint: Endpoint,
         tmuxExecutable: String = "tmux",
         configurationFile: String? = nil,
         force256Colors: Bool = false,
-        transport: any ProcessTransport = SubprocessTransport()
+        transport: any ProcessTransport,
+        checkingVersions: Bool = false
     ) {
         let resolved = resolvedExecutable(tmuxExecutable)
         self.endpoint = endpoint
@@ -244,7 +250,8 @@ public struct Server: Sendable, Hashable {
             endpoint: endpoint,
             tmuxExecutable: resolved,
             clientArguments: clientArguments,
-            transport: transport
+            transport: transport,
+            checkingVersions: checkingVersions
         )
         self.connection = nil
         self.attachedSession = nil
@@ -294,12 +301,27 @@ public struct Server: Sendable, Hashable {
         )
     }
 
-    func recordedDaemonVersion() async -> TmuxVersion? {
-        await runtime.recordedDaemonVersion()
+    func versionCheck() async throws(TmuxError) -> (version: ServerVersion, live: Bool) {
+        try await runtime.checkVersion()
     }
 
-    func recordDaemonVersion(_ version: TmuxVersion) async {
-        await runtime.recordDaemonVersion(version)
+    func executableVersion() async throws(TmuxError) -> TmuxVersion {
+        try await runtime.executableVersion()
+    }
+
+    /// Makes the next command believe a daemon of this release was checked,
+    /// which is what a daemon replaced behind the endpoint looks like to it.
+    func presumeSupported(_ daemon: ServerVersion) async {
+        await runtime.presumeSupported(daemon)
+    }
+
+    /// The release every command is checked against: the running daemon's,
+    /// or the executable's when nothing listens yet.
+    ///
+    /// Throws for a release below the supported floor, which is what lets a
+    /// caller decide before it sends anything.
+    package func daemonVersion() async throws(TmuxError) -> TmuxVersion {
+        try await runtime.serverVersion().version
     }
 
     /// Runs a command in a process of its own, whatever mode this server is in.
@@ -488,22 +510,35 @@ public struct Server: Sendable, Hashable {
     /// Use ``isRunning()`` for a Boolean probe. This read throws when tmux
     /// cannot answer so absence cannot look like an empty identity.
     public func incarnation() async throws(TmuxError) -> ServerIncarnation {
-        let projection = FormatProjection(ServerIncarnation.projectionFields)
-        let command = TmuxCommand("display-message", ["-p", projection.template])
-        let reply = try await run(
-            rawArguments: command.argumentVector
-        )
-        guard reply.isSuccess else { throw reply.failure(for: command) }
-        let rows: [FormatRow]
-        do {
-            rows = try projection.decode(reply.standardOutput)
-        } catch {
-            throw .decodingFailed(error)
+        // `display-message` would fire a configured `after-display-message`
+        // hook on every identity read. `run-shell -C` expands the format and
+        // parses the result as a command, so tmux reports the expansion in its
+        // error for the first word. The fields are joined into one word:
+        // `q:` backslash-escapes what would split a word, and the path comes
+        // last because it may hold commas.
+        let marker = Support.Versions.makeMarker() + "-"
+        let command = TmuxCommand(
+            "run-shell", ["-C", marker + "#{pid},#{start_time},#{q:socket_path}"])
+        // A process of its own even over a connection: a control client
+        // prints this error outside any reply block, where it cannot be read.
+        let reply = try await runInOwnProcess(rawArguments: command.argumentVector)
+        let prefix = "unknown command: \(marker)"
+        let lines = reply.errorText.split(separator: "\n", omittingEmptySubsequences: false)
+        guard reply.exitCode == 1, lines.count == 1, lines[0].hasPrefix(prefix) else {
+            if reply.exitCode == 1, lines.first?.hasPrefix(prefix) == true {
+                throw .invocationFailed(reason: "tmux reported a multi-line server identity")
+            }
+            throw reply.failure(for: command)
         }
-        guard let row = rows.first else {
+        let fields = lines[0].dropFirst(prefix.count).split(
+            separator: ",", maxSplits: 2, omittingEmptySubsequences: false)
+        guard fields.count == 3, let processID = Int(fields[0]), let startedAt = Int(fields[1])
+        else {
             throw .invocationFailed(reason: "tmux returned no server identity")
         }
-        return ServerIncarnation(row: row, endpoint: endpoint)
+        return ServerIncarnation(
+            endpoint: endpoint, socketPath: String(fields[2]),
+            processID: processID, startedAt: startedAt)
     }
 
     /// Runs a listing and decodes it.
@@ -560,33 +595,54 @@ public struct Server: Sendable, Hashable {
 ///
 /// An actor, so that copies of one ``Server`` coordinate rather than race: the
 /// value is free to be copied because everything mutable lives behind here.
+///
+/// Every command a server sends as a process passes through ``run``, which is
+/// where the version check happens: the daemon's release is read, refused if it
+/// is below the supported floor, and each batch is fenced to that release so a
+/// daemon replaced in between refuses it instead of running it.
 actor ServerRuntime {
     private let endpoint: Endpoint
     private let tmuxExecutable: String
     private let clientArguments: [String]
     private let transport: any ProcessTransport
+    private let checkingVersions: Bool
     /// What the daemon at this endpoint answered when asked its version.
     ///
-    /// Only a running daemon's answer is kept: a cold endpoint reports the
-    /// executable's version instead, and the daemon that starts later is the
-    /// one a layout has to be valid for.
-    private var daemonVersion: TmuxVersion?
+    /// Only a running daemon's answer is kept, once per endpoint and shared by
+    /// every ``Server`` value that reaches it. It is a claim about one daemon,
+    /// so a refused fence or a vanished endpoint drops it, and the next command
+    /// asks again.
+    private var localDaemon: ServerVersion?
+    private var daemonVersion: ServerVersion? {
+        get { checkingVersions ? VersionCache.shared.daemon(for: registryKey) : localDaemon }
+        set {
+            if checkingVersions {
+                VersionCache.shared.record(newValue, for: registryKey)
+            } else {
+                localDaemon = newValue
+            }
+        }
+    }
+    private var registryKey: VersionCache.Key {
+        VersionCache.Key(endpoint: endpoint, executable: tmuxExecutable)
+    }
+    /// What the executable reports, read once an endpoint has no daemon.
+    private var executableVersion: ServerVersion?
+    private var probing: Task<ServerVersion?, any Error>?
 
     init(
         endpoint: Endpoint,
         tmuxExecutable: String,
         clientArguments: [String],
-        transport: any ProcessTransport
+        transport: any ProcessTransport,
+        checkingVersions: Bool = false
     ) {
         self.endpoint = endpoint
         self.tmuxExecutable = tmuxExecutable
         self.clientArguments = clientArguments
         self.transport = transport
+        self.checkingVersions = checkingVersions
     }
-
-    func recordedDaemonVersion() -> TmuxVersion? { daemonVersion }
-
-    func recordDaemonVersion(_ version: TmuxVersion) { daemonVersion = version }
 
     func run(
         rawArguments: [String],
@@ -597,6 +653,145 @@ actor ServerRuntime {
             throw .invocationFailed(reason: "output limit cannot be negative")
         }
         try requireTmuxCommandFits(rawArguments)
+        guard checkingVersions else {
+            return try await send(
+                rawArguments,
+                perStreamOutputLimit: perStreamOutputLimit,
+                environmentOverrides: environmentOverrides
+            )
+        }
+        var retried = false
+        while true {
+            if rawArguments == ["kill-server"], daemonVersion == nil {
+                if let daemon = try await probeDaemon() {
+                    daemonVersion = daemon
+                } else {
+                    // Nothing listens, so there is nothing to stop and nothing
+                    // for a release floor to protect. `-N` keeps the client
+                    // from starting the server it was asked to stop.
+                    return try await send(
+                        ["-N"] + rawArguments, perStreamOutputLimit: perStreamOutputLimit,
+                        environmentOverrides: environmentOverrides)
+                }
+            }
+            let (checked, live) = try await checkVersion()
+            let marker = Support.Versions.makeMarker()
+            let fenced = Support.Versions.fence(rawArguments, to: checked, marker: marker)
+            try requireTmuxCommandFits(fenced)
+            let reply = try await send(
+                // A daemon that vanished after the check must not be restarted
+                // by a client whose release was never checked.
+                (live ? ["-N"] : []) + fenced,
+                perStreamOutputLimit: perStreamOutputLimit,
+                environmentOverrides: environmentOverrides
+            )
+            if Support.Versions.isRefusal(reply, marker: marker) {
+                // Nothing ran. The daemon is not the one that was checked,
+                // so ask the endpoint again; a replacement that is too old
+                // is refused there, and one that keeps changing is reported.
+                daemonVersion = nil
+                guard !retried else { throw .serverRestarted }
+                retried = true
+                continue
+            }
+            if live, !retried, Support.Versions.isAbsentEndpoint(reply) {
+                // The checked daemon exited. Nothing ran; check what is
+                // there now (or the executable that would start a daemon).
+                daemonVersion = nil
+                retried = true
+                continue
+            }
+            return reply
+        }
+    }
+
+    func presumeSupported(_ daemon: ServerVersion) { daemonVersion = daemon }
+
+    /// The release of the daemon commands are checked against, or of the
+    /// executable that would start one when nothing listens.
+    func serverVersion() async throws(TmuxError) -> ServerVersion {
+        try await checkVersion().version
+    }
+
+    /// The executable's own report, with no daemon involved.
+    func executableVersion() async throws(TmuxError) -> TmuxVersion {
+        let token = try await executableToken()
+        guard let version = TmuxVersion(parsing: token) else {
+            throw .invocationFailed(
+                reason: "could not read a tmux version from \(token.debugDescription)"
+            )
+        }
+        return version
+    }
+
+    private func executableToken() async throws(TmuxError) -> String {
+        let reply = try await send(["-V"], perStreamOutputLimit: defaultTmuxReplyByteLimit)
+        guard reply.isSuccess,
+            let token = Support.Versions.executableToken(
+                banner: reply.text, executable: tmuxExecutable)
+        else {
+            throw .invocationFailed(
+                reason: "could not read a tmux version from \(reply.text.debugDescription)"
+            )
+        }
+        return token
+    }
+
+    func checkVersion() async throws(TmuxError) -> (version: ServerVersion, live: Bool) {
+        if let daemonVersion { return (daemonVersion, true) }
+        if let daemon = try await probeDaemon() {
+            daemonVersion = daemon
+            return (daemon, true)
+        }
+        if let executableVersion { return (executableVersion, false) }
+        let executable = try Support.Versions.requireCore(try await executableToken())
+        executableVersion = executable
+        return (executable, false)
+    }
+
+    /// Asks the daemon, and only a daemon that is already there.
+    ///
+    /// Callers that arrive while a probe is in flight share its answer, so
+    /// the first batch of concurrent commands spends one process on the version
+    /// check rather than one each.
+    private func probeDaemon() async throws(TmuxError) -> ServerVersion? {
+        let task: Task<ServerVersion?, any Error>
+        if let probing {
+            task = probing
+        } else {
+            task = Task { try await self.probeDaemonOnce() }
+            probing = task
+        }
+        defer { if probing == task { probing = nil } }
+        do {
+            return try await task.value
+        } catch {
+            throw normalizedTmuxError(error)
+        }
+    }
+
+    private func probeDaemonOnce() async throws(TmuxError) -> ServerVersion? {
+        let marker = Support.Versions.makeMarker()
+        let reply = try await send(
+            Support.Versions.probeArguments(marker: marker),
+            perStreamOutputLimit: defaultTmuxReplyByteLimit
+        )
+        switch Support.Versions.interpret(probe: reply, marker: marker) {
+        case let .version(token): return try Support.Versions.requireCore(token)
+        case .predatesProbe:
+            throw .unsupportedTmuxVersion(
+                reported: "older than 3.2", required: "\(TmuxVersion.coreMinimum)",
+                operation: "any command")
+        case .absent, .clientRejectsFlag: return nil
+        case let .failed(reason): throw .invocationFailed(reason: reason)
+        }
+    }
+
+    private func send(
+        _ rawArguments: [String],
+        perStreamOutputLimit: Int,
+        environmentOverrides: [String: String] = [:]
+    ) async throws(TmuxError) -> TmuxReply {
         // Copied out of isolation before the await so the actor is not held for
         // the lifetime of a tmux process.
         let transport = self.transport

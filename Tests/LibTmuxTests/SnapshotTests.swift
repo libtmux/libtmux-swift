@@ -464,12 +464,19 @@ private actor SnapshotReplacementTransport: ProcessTransport {
         environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
+        if arguments.contains("-C") {
+            incarnationProbeCount += 1
+            let second = incarnationProbeCount == 2
+            return scriptedIdentityReply(
+                to: arguments,
+                socketPath: "/tmp/libtmux-swift-test/snapshot-replacement/"
+                    + (second ? "second" : "first") + "/socket",
+                processID: 700, startedAt: second ? 901 : 900)
+                ?? TmuxReply(standardOutput: [], standardError: [], exitCode: 1)
+        }
         guard
             let command = arguments.first(where: {
-                [
-                    "display-message", "list-sessions", "list-windows", "list-panes",
-                    "list-clients",
-                ].contains($0)
+                ["list-sessions", "list-windows", "list-panes", "list-clients"].contains($0)
             })
         else {
             throw .invocationFailed(reason: "unexpected snapshot command")
@@ -494,14 +501,6 @@ private actor SnapshotReplacementTransport: ProcessTransport {
             "pane_current_path": "/tmp", "pane_at_top": "1", "pane_at_bottom": "1",
             "pane_at_left": "1", "pane_at_right": "1",
         ]
-        if command == "display-message" {
-            incarnationProbeCount += 1
-            if incarnationProbeCount == 2 {
-                values["socket_path"] =
-                    "/tmp/libtmux-swift-test/snapshot-replacement/second/socket"
-                values["start_time"] = "901"
-            }
-        }
         return try Self.projectedReply(to: arguments, values: values)
     }
 

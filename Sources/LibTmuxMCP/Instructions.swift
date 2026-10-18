@@ -47,7 +47,9 @@ enum Instructions {
         var sections = [
             """
             tmux via libtmux for Swift. Server > Session > Window > Pane. \
-            Tool refs are process-local; refresh them after MCP restart.
+            Tool refs are process-local; refresh them after MCP restart. \
+            Requires tmux 3.3a or newer on the server's daemon; an older one is \
+            refused before anything is sent.
             """,
             """
             TRIGGERS: tmux panes, windows, sessions; 'this terminal', 'send keys', \

@@ -44,6 +44,10 @@ enum ProcessCommands {
                 "Python shell requires tmuxp 1.74.0 and libtmux Server tmux_bin support; set TMUX_WORKSPACE_PYTHON to its Python executable."
             )
         }
+        // The bridge hands the executable to Python's own libtmux, so the
+        // daemon is checked after the runtime probe and before anything is
+        // started on tmux.
+        _ = try await server.daemonVersion()
         var arguments = [
             python, "-u", "-c",
             """

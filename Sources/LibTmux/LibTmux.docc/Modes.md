@@ -37,7 +37,8 @@ spawns processes side by side, without either being a setting.
 Only the third dial needs a live connection. ``ControlSession`` is handed out
 inside the scope that opened one; retaining it does not keep the process alive,
 and later calls fail. The other two combine freely: a command list over a
-connection costs one process for any number of commands.
+connection costs one process for any number of commands, beside the one that
+reads the daemon's release.
 
 ## The modes
 
@@ -165,33 +166,37 @@ machine; run it yourself for those.
 
 | Work | Direct | Connected |
 | --- | --- | --- |
-| list-sessions, once | 1 process, 1 round trip | 1 process, 2 round trips |
-| list-sessions, twenty times | 20 processes, 20 round trips | 1 process, 21 round trips |
-| sessions, windows, panes, clients, twice-checked | 6 processes, 6 round trips | 1 process, 7 round trips |
-| sessions, windows, panes, clients — one after another | 4 processes, 4 round trips | 1 process, 5 round trips |
-| the same four, concurrently — a pipelined batch | 4 processes, 4 round trips | 1 process, 5 round trips |
-| new-window five times, each its own command | 7 processes, 7 round trips | 1 process, 8 round trips |
-| the same five as one command list | 3 processes, 3 round trips | 1 process, 4 round trips |
-| new-window then split, read back | 5 processes, 5 round trips | 1 process, 6 round trips |
+| list-sessions, once | 2 processes, 2 round trips | 2 processes, 4 round trips |
+| list-sessions, twenty times | 21 processes, 21 round trips | 2 processes, 23 round trips |
+| sessions, windows, panes, clients, twice-checked | 7 processes, 7 round trips | 4 processes, 9 round trips |
+| sessions, windows, panes, clients — one after another | 5 processes, 5 round trips | 2 processes, 7 round trips |
+| the same four, concurrently — a pipelined batch | 5 processes, 5 round trips | 2 processes, 7 round trips |
+| new-window five times, each its own command | 8 processes, 8 round trips | 2 processes, 10 round trips |
+| the same five as one command list | 4 processes, 4 round trips | 2 processes, 6 round trips |
+| new-window then split, read back | 6 processes, 6 round trips | 2 processes, 8 round trips |
 
 | Noticing a pane printed a line | Polling | Streaming |
 | --- | --- | --- |
 | tmux processes spent | 2 | 1 |
-| round trips spent | 2 | 2 |
+| round trips spent | 2 | 3 |
 
 <!-- mode-matrix:end -->
 
-Read down the two columns and the trade is exact. Directly, a round trip *is* a
-process, so the numbers in that column always agree. Connecting collapses the
-processes to one and charges a single extra round trip, the attach — every
-connected row is its direct row plus one. So a single call is the row where the
-default wins, since that one round trip buys nothing back, and from the second
-call onward the connection is ahead by every process it did not start.
+Read down the two columns and the trade holds. Directly, a round trip *is* a
+process, so the numbers in that column always agree. Every row also carries the
+process that reads the daemon's release the first time a server sends anything;
+it is asked once and shared by the calls that follow. Connecting collapses the
+rest to the connection's own process and charges extra round trips for the
+attach and for the check that the attached daemon is the one whose version was
+read. So a single call is the row where the default wins, and from the second
+call onward the connection is ahead by every process it did not start. A
+snapshot still spends a process of its own on each identity read, because tmux
+reports that read outside a connection's reply blocks.
 
 Round trips are also the only place the chaining dial is visible. Under a
 connection, five separate `new-window` commands and one command list carrying
-the same five both cost one process — compare those two rows and it is the round
-trips that tell them apart.
+the same five cost the same two processes — compare those two rows and it is the
+round trips that tell them apart.
 
 The same benchmark measures being told against asking, which is the other half
 of the choice — see <doc:Streaming>. Those two rows are polling's best case: the
@@ -216,10 +221,9 @@ A workspace built this way is the same workspace: the same windows, the same
 panes, split the same way. The same holds for the MCP tools — same request, same
 JSON.
 
-Pane *heights* are the exception, and they are tmux's call rather than this
-library's: attaching is how tmux decides how tall a session is, so panes built
-over a connection can differ by the status line's row. On tmux 3.2a they do;
-from 3.3a on they do not.
+Pane sizes are tmux's call rather than this library's, and on every supported
+release they come out the same: panes built over a connection match panes built
+directly, heights included.
 
 ## The one argument a connection will not take
 
