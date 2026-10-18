@@ -207,7 +207,7 @@ extension Server {
         )
     }
 
-    /// Clears a pane's visible screen and its scrollback.
+    /// Clears a pane's scrollback; the visible screen stays as it is.
     public func clearHistory(_ pane: Pane) async throws(TmuxError) {
         try await expectSuccess(
             TmuxCommand("clear-history", ["-t", pane.id.rawValue]),
