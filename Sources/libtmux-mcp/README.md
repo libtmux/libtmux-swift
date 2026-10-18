@@ -60,22 +60,22 @@ When stdio ends, the process removes only a default daemon whose launch nonce
 and incarnation still match; existing and replacement daemons remain.
 
 The configured default exposes 41 of the 45 tools. An authenticated default
-daemon adds the four `teardown` tools; [`TmuxTools(server:)`][api-tmuxtools] remains the
-18-tool inspect-only embedding default.
+daemon adds the four `teardown` tools; [`TmuxTools(server:)`][api-tmuxtools]
+remains the 18-tool inspect-only embedding default.
 
 Use `LIBTMUX_TOOLSETS=inspect LIBTMUX_TOOLS=create_window` to expose the read
-surface plus one named execute tool, [`create_window`]. Empty tokens and unknown tool or toolset
-names fail startup before tmux opens. The retired `LIBTMUX_SAFETY` and
-`LIBTMUX_MCP_TOOLS` names also fail with migration guidance.
-Replace an old exact allowlist with `LIBTMUX_TOOLSETS=` and the same names in
-`LIBTMUX_TOOLS`; without the empty toolset, named tools add to the default
-surface.
+surface plus one named execute tool, [`create_window`]. Empty tokens and unknown
+tool or toolset names fail startup before tmux opens. The retired
+`LIBTMUX_SAFETY` and `LIBTMUX_MCP_TOOLS` names also fail with migration
+guidance. Replace an old exact allowlist with `LIBTMUX_TOOLSETS=` and the same
+names in `LIBTMUX_TOOLS`; without the empty toolset, named tools add to the
+default surface.
 
 Tool filtering is interface shaping, not authorization. Execute tools act with
 the tmux user's authority, and a selected socket limits tmux object lookup
 rather than operating-system access. The static
-[`tmux://capabilities`][ref-capabilities] resource reports the startup-frozen socket provenance, common boundary fields, and
-effective capability rows.
+[`tmux://capabilities`][ref-capabilities] resource reports the startup-frozen
+socket provenance, common boundary fields, and effective capability rows.
 
 ## Register it with a client
 
@@ -116,7 +116,10 @@ $ claude mcp add tmux \
     -- /path/to/.build/debug/libtmux-mcp
 ```
 
-The [client guide][ref-guide] walks through a private tmux server end to end.
+The test suite parses every `LIBTMUX_` setting in these commands and in the JSON
+configurations through the same code the executable runs at startup, so a
+renamed variable or an unknown tool name fails there. The
+[client guide][ref-guide] walks through a private tmux server end to end.
 
 ## Toolsets
 

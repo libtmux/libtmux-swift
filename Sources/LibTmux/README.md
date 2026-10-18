@@ -34,14 +34,14 @@ for session in try await server.sessions() {
 ```
 
 Everything that comes back is a value. A [`Session`][api-session] you hold is
-what the server looked like when you asked, not a live handle that changes under you — ask again
-for a newer view. Every type crossing your API is `Sendable` and `Codable`, and
-the mutable part (the process boundary, the live connection) sits behind an
-actor the value shares.
+what the server looked like when you asked, not a live handle that changes under
+you — ask again for a newer view. Every type crossing your API is `Sendable` and
+`Codable`, and the mutable part (the process boundary, the live connection) sits
+behind an actor the value shares.
 
-[`Pane`][api-pane] also projects the input-relevant state tmux reports: `isDead`, the exact
-`modeCount`, and effective `isSynchronized`. Missing or malformed values fail
-decoding instead of being treated as writable defaults.
+[`Pane`][api-pane] also projects the input-relevant state tmux reports:
+`isDead`, the exact `modeCount`, and effective `isSynchronized`. Missing or
+malformed values fail decoding instead of being treated as writable defaults.
 
 ## What is in here
 
@@ -151,8 +151,9 @@ body returns, throws, or the process is killed. Guide:
 [Testing with libtmux][ref-testing].
 
 [`withTmuxServer`][api-withtmuxserver] hands the body a server with one
-`bootstrap` session on a socket under `/tmp/libtmux-swift-test/`. After `import TmuxFixture`, this
-prints `bootstrap: 1 window`, `build: 1 window`, and `work: 1 window`:
+`bootstrap` session on a socket under `/tmp/libtmux-swift-test/`. After
+`import TmuxFixture`, this prints `bootstrap: 1 window`, `build: 1 window`, and
+`work: 1 window`:
 
 ```swift
 try await withTmuxServer { @Sendable server in

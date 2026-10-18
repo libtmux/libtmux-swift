@@ -42,8 +42,8 @@ public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
 
 `TmuxTools(server:)` exposes the `inspect` toolset. Pass an explicit
 [`ToolAuthority`][api-authority] to add the independent `manage`, `execute`, or
-`teardown` groups. Toolsets shape the callable interface; they do not authorize commands
-or confine the tmux user.
+`teardown` groups. Toolsets shape the callable interface; they do not authorize
+commands or confine the tmux user.
 
 The default constructor exposes 18 inspect tools. The complete registry has 45:
 18 `inspect`, 14 `manage`, nine `execute`, and four `teardown`.
@@ -78,9 +78,10 @@ transport. tmux owns geometry and pruning. The result's `layout` field echoes
 the accepted input.
 
 `CapabilityResources` publishes that same frozen surface at
-[`tmux://capabilities`][ref-capabilities]. Tool registration metadata and the resource use the same
-complete capability rows. The report also marks itself frozen and carries the
-common execution boundary and connection-provenance objects.
+[`tmux://capabilities`][ref-capabilities]. Tool registration metadata and the
+resource use the same complete capability rows. The report also marks itself
+frozen and carries the common execution boundary and connection-provenance
+objects.
 
 Hierarchy rows carry opaque references for follow-up reads. They bind the row
 to the current tmux daemon and expire when the MCP process restarts; re-list to
@@ -91,11 +92,11 @@ replace one that has expired. Exact window occurrences carry both a global
 mentions a mode, so it works the same directly or over a connection.
 
 That boundary is deliberate. Use [`capture_pane`] ranges for bounded history,
-[`search_panes`] for discovery, [`snapshot_pane`] for metadata and content in one
-MCP response, and an opaque [`capture_since`] cursor for subsequent output.
+[`search_panes`] for discovery, [`snapshot_pane`] for metadata and content in
+one MCP response, and an opaque [`capture_since`] cursor for subsequent output.
 `snapshot_pane` performs separate reads; it does not promise atomicity. Read
-`pane_in_mode` or `pane_mode` with [`get_tmux_variables`] when mode state matters,
-then report the human-owned state without entering or cancelling it.
+`pane_in_mode` or `pane_mode` with [`get_tmux_variables`] when mode state
+matters, then report the human-owned state without entering or cancelling it.
 
 Pane-input tools read fresh typed pane state and refuse dead panes, nonzero mode
 stacks, incomplete or malformed caller context, and terminal-attended panes. A

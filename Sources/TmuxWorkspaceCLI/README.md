@@ -115,7 +115,9 @@ switches to it. Outside tmux, `load` needs an endpoint, so it refuses without
 
 ## Command examples
 
-The [command manual][ref-cli] has one page per command.
+Each command below is parsed by the test suite against the real command tree,
+so a renamed subcommand or flag fails there. The [command manual][ref-cli] has
+one page per command.
 
 Outside tmux, [`load`][ref-cli-load] builds `example.yaml` on a socket named
 `project` and leaves the session detached:

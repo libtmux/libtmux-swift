@@ -176,8 +176,9 @@ body returns, throws, or the process is killed. Guide:
 [Testing with libtmux][ref-testing].
 
 [`withTmuxServer`][api-withtmuxserver] hands the body a server with one
-`bootstrap` session on a socket under `/tmp/libtmux-swift-test/`. After `import TmuxFixture`, this
-prints `bootstrap: 1 window`, `build: 1 window`, and `work: 1 window`:
+`bootstrap` session on a socket under `/tmp/libtmux-swift-test/`. After
+`import TmuxFixture`, this prints `bootstrap: 1 window`, `build: 1 window`, and
+`work: 1 window`:
 
 ```swift
 try await withTmuxServer { @Sendable server in
@@ -328,9 +329,10 @@ _ = try await server.run(plan)
 ## Filters that travel
 
 Filter with the standard library when the predicate is local to your code.
-[`FilterExpr`][api-filterexpr] is for when the filter has to leave it — stored in a config, sent to
-another process, handed to a tool. It is built from key paths, so the compiler
-rejects a text operator on a number, and it holds no closures, so it encodes:
+[`FilterExpr`][api-filterexpr] is for when the filter has to leave it — stored
+in a config, sent to another process, handed to a tool. It is built from key
+paths, so the compiler rejects a text operator on a number, and it holds no
+closures, so it encodes:
 
 ```swift
 let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
@@ -357,9 +359,9 @@ which fields carry which type — is in [`Filtering.md`][filtering].
 
 ## One switch changes how work reaches tmux
 
-…and never what you get back. [`TmuxMode`][api-tmuxmode] is the dial, and it has two settings:
-(One caveat, in [typed errors](#typed-errors-across-a-scope): a scope takes a
-closure, so it widens the thrown type.)
+…and never what you get back. [`TmuxMode`][api-tmuxmode] is the dial, and it has
+two settings: (One caveat, in [typed errors](#typed-errors-across-a-scope): a
+scope takes a closure, so it widens the thrown type.)
 
 | Mode | How work travels | Where it wins |
 | --- | --- | --- |
@@ -593,10 +595,10 @@ failure reports both errors. An interruption removes nothing: the same signal
 that stopped the build could just as well stop the cleanup that would follow
 it.
 
-The builder validates every layout before creating the session. The same
-native guard protects [`Server.selectLayout(_:_:)`][api-server-selectlayout] and MCP
-[`select_layout`].
-Custom builders can check a complete batch with desired pane counts first:
+The builder validates every layout before creating the session. The same native
+guard protects [`Server.selectLayout(_:_:)`][api-server-selectlayout] and MCP
+[`select_layout`]. Custom builders can check a complete batch with desired pane
+counts first:
 
 ```swift
 try await server.validateLayouts([("even-h", 2), ("tiled", 1)])
@@ -751,8 +753,8 @@ death, shell, or target-count checks.
 Every tool declares native input and output schemas and carries its complete
 capability row under `_meta["com.git-pull.libtmux-mcp/capability"]`. The same
 immutable registry drives registration, dispatch, descriptions, filtering, and
-the [`tmux://capabilities`][ref-mcp-capabilities] report. That static report is the only MCP resource;
-the server exposes no prompts or dynamic templates.
+the [`tmux://capabilities`][ref-mcp-capabilities] report. That static report is
+the only MCP resource; the server exposes no prompts or dynamic templates.
 
 Every answer travels as both `structuredContent` and JSON text, so clients that
 read either representation receive the same typed result.

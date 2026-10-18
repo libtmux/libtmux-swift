@@ -372,6 +372,14 @@ Edit the example, never the block on the page, then run the check:
 $ python3 Scripts/check_examples.py
 ```
 
+Console commands in the Markdown are held to the code the same way. The suite
+parses every `$ tmux-workspace ...` command against the executable's command
+tree (`DocumentedCommandsTests`), and passes every MCP client configuration —
+the JSON `env` blocks and the `-e` settings of `claude mcp add` — through
+`ServerConfiguration`, the parse `libtmux-mcp` runs at startup
+(`ReadmeDocumentationTests`). The same file holds each tool name in the
+Markdown to its libtmux.org page.
+
 [`Examples/README.md`](../Examples/README.md) is the reference for the rest —
 how a fence is matched to an example, what the check cannot see, and the three
 ways an example fails quietly. Read it before adding or moving one.

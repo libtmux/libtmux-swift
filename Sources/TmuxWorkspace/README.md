@@ -17,11 +17,12 @@ from JSON, or read from YAML.
 </div>
 
 The module is `TmuxWorkspace` and the thing that does the building is
-[`WorkspaceBuilder`][api-workspacebuilder]. Swift has no namespaces worth the name: importing a module
-puts its types straight into your file, so the module carries the prefix that
-says which `Workspace` this is, and the type keeps the verb. The rest of the
-family names it the same way — [`tmux-workspace`][rs], [`@libtmux/workspace`][ts],
-[`libtmux-workspace`][java], [`LibTmux.Workspace`][cs].
+[`WorkspaceBuilder`][api-workspacebuilder]. Swift has no namespaces worth the
+name: importing a module puts its types straight into your file, so the module
+carries the prefix that says which `Workspace` this is, and the type keeps the
+verb. The rest of the family names it the same way — [`tmux-workspace`][rs],
+[`@libtmux/workspace`][ts], [`libtmux-workspace`][java],
+[`LibTmux.Workspace`][cs].
 
 ```swift
 .product(name: "TmuxWorkspace", package: "libtmux-swift")
@@ -68,7 +69,8 @@ pruning remain tmux's responsibility.
 
 A workspace described in Swift or read from JSON needs no parser, so none is
 pulled in by default. [`Workspace.decode(yaml:)`][api-decode-yaml] — and the
-[Yams][] dependency behind it — appears only when the `YAMLWorkspaces` trait is enabled:
+[Yams][] dependency behind it — appears only when the `YAMLWorkspaces` trait is
+enabled:
 
 ```swift
 .package(
