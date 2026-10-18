@@ -17,15 +17,15 @@ tmux as [Model Context Protocol][MCP] tools you can embed:
 
 </div>
 
-To *run* one rather than embed it, use [`libtmux-mcp`][r-libtmux-mcp], which is
-these tools served over stdio.
+[`libtmux-mcp`][r-libtmux-mcp] serves these tools over stdio, for an MCP client
+to launch.
 
 ```swift
 .product(name: "LibTmuxMCP", package: "libtmux-swift")
 ```
 
 **Contents** — [Quick start](#quick-start) · [The tools](#the-tools) ·
-[Pane safety](#pane-safety) · [Adding a tool](#adding-a-tool) ·
+[Pane input](#pane-input-checks) · [Adding a tool](#adding-a-tool) ·
 [Reference](#reference)
 
 ## Quick start
@@ -57,8 +57,8 @@ fixture's one pane. It prints each tool's name and summary.
 - **Default.** `TmuxTools(server:)` exposes the 18 `inspect` tools.
 - **The registry** has 45: 18 `inspect`, 14 `manage`, nine `execute`, and four
   `teardown`.
-- **Not authorization.** Toolsets shape the callable interface; they do not
-  authorize commands or confine the tmux user.
+- **No authorization.** Toolsets choose which tools a client can call. Every
+  call still runs as the tmux user.
 
 ### [`ToolAuthority`][api-toolauthority]: grant more, or less
 
@@ -104,17 +104,17 @@ them by intent:
 
 - **History.** Use `capture_pane` ranges, [`search_panes`] for discovery,
   and [`snapshot_pane`] for metadata and content in one response. The
-  snapshot is separate reads, not an atomic one.
+  snapshot is several reads, so a pane can change between them.
 - **Following.** An opaque [`capture_since`] cursor returns the output
   that came after.
 - **Pane modes.** Read `pane_in_mode` or `pane_mode` with
   [`get_tmux_variables`], then report the human-owned state without
   entering or cancelling it.
 
-### [`tmux://capabilities`][ref-capabilities]: the frozen surface
+### [`tmux://capabilities`][ref-capabilities]: the report of what is served
 
-- **One report.** `CapabilityResources` publishes the frozen surface, and tool
-  registration metadata carries the same capability rows.
+- **One report.** `CapabilityResources` publishes the surface fixed at startup,
+  and tool registration metadata carries the same capability rows.
 - **Common objects.** The report also carries the execution boundary and the
   connection provenance.
 - **References.** Hierarchy rows carry opaque references for follow-up reads.
@@ -124,7 +124,7 @@ them by intent:
 [`TmuxTools`][api-tmuxtools] is written against [`Server`][api-server] and never
 mentions a mode, so it works the same directly or over a connection.
 
-## Pane safety
+## Pane input checks
 
 ### [`send_keys`]: the checks before input
 
@@ -137,18 +137,19 @@ mentions a mode, so it works the same directly or over a connection.
 - **`force=true`** bypasses only an exact caller-pane match.
 - **Synchronized panes.** `send_keys` reserves every configured member through
   dispatch, and [`send_keys_batch`] checks each row on its own. The returned
-  `resolvedPaneIds` are the checked configuration, not proof of delivery.
+  `resolvedPaneIds` lists the members that were checked; it does not confirm
+  delivery.
 
 ### [`paste_text`] and [`run_shell_command`]: one buffer, one subshell
 
 - **`paste_text`** checks its target before staging and again before its one
   paste dispatch, in a private buffer it removes on success or failure.
-- **`run_shell_command`** checks before setup and before dispatch, and a second
-  run refuses instead of waiting. It needs one target running a recognized POSIX
-  shell, and runs the command in a subshell.
-- **Trusted shells only.** These are safeguards for a trusted shell, tmux
-  daemon, and configuration, not containment of a hostile one. Pane state can
-  still change after the final check.
+- **`run_shell_command`** checks before setup and before dispatch, and refuses a
+  second run. It needs one target running a recognized POSIX shell, and runs the
+  command in a subshell.
+- **Trusted shells.** The guards assume a trusted shell, tmux daemon, and
+  configuration; a hostile shell can get around them. Pane state can still
+  change after the final check.
 
 The full text of each guard is in
 [`docs/mcp-contract.md`][r-docs-mcp-contract-md-pane-input].

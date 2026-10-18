@@ -130,7 +130,8 @@ Unknown keys are ignored. tmuxp's plugins, before/after hooks, environment
 inheritance, and other runtime behavior are not modelled.
 
 The suite compares JSON and YAML forms of selected upstream examples. The
-fixtures cover representative data shapes, not tmuxp's full feature set; see
+fixtures cover representative data shapes and leave the rest of tmuxp's
+features untested; see
 [their notice][r-tests-tmuxworkspacetests-fixtures-notice-md].
 
 ## From a shell

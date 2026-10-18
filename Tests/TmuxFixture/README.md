@@ -43,7 +43,7 @@ holds one session, `bootstrap`, and `CancellationTests` makes this assertion.
 
 ## Choose the tmux
 
-This product drives tmux rather than mocking it. The selected executable comes
+This product starts a real tmux and mocks nothing. The selected executable comes
 from `LIBTMUX_TMUX_BIN`, then the usual installed locations.
 [`tmuxExecutablePath`][api-tmuxexecutablepath] reports the one a run resolved.
 

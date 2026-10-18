@@ -115,8 +115,8 @@ $ install -dm755 "$HOME/.local/bin"
 $ install -m755 .build/release/tmux-workspace "$HOME/.local/bin/tmux-workspace"
 ```
 
-The installed binary needs the Swift runtime libraries from the toolchain on
-Linux. This is not a standalone distribution.
+On Linux the installed binary needs the Swift runtime libraries from the
+toolchain, so it runs only where that toolchain is installed.
 
 ### [`--generate-completion-script`][ref-cli-completion]: shell completion
 
@@ -174,7 +174,7 @@ and on the command's page.
 ### `load --append`: add windows to the session you are in
 
 Inside tmux, `--append` adds the file's windows to the current pane's session
-instead of creating one:
+and creates no new session:
 
 ```console
 $ tmux-workspace load \
@@ -434,16 +434,17 @@ $ python3 Scripts/benchmark_workspace_cli.py \
 - **What it measures.** Private sockets, with topology and directories checked
   outside the timed subprocess, and every sample kept with its median and
   spread.
-- **What it does not.** Its three blank panes exercise creation, not command
-  execution, interactive behavior, or full capture fidelity.
+- **What it leaves unmeasured.** Its three blank panes exercise pane creation
+  only; command execution, interactive behavior, and full capture fidelity are
+  not covered.
 
 ## What it leaves out
 
 - **Plugins and some execution settings.** An unsupported execution key fails
   before anything is created; prefix a key with `x-` to have it ignored.
 - **Complete capture.** [`freeze`][ref-cli-freeze] keeps commands, directories,
-  layouts, indexes, focus, and local options, not original arguments, scripts,
-  or global settings.
+  layouts, indexes, focus, and local options. It drops original command
+  arguments, scripts, and global settings.
 - **Generated manuals and a portable build.** The installed binary needs the
   toolchain's Swift runtime on Linux.
 - **The whole tmuxp command surface.** Only the commands above exist.
@@ -451,7 +452,9 @@ $ python3 Scripts/benchmark_workspace_cli.py \
 
 ## Support and status
 
-- **Swift 6.2**, and tmux **3.2a through 3.7b**, on Linux and macOS.
+- **Swift 6.2**, and tmux **3.2a through 3.7b**, on Linux, including WSL, and
+  macOS. CI runs Ubuntu on every release in the range and macOS on 3.2a and
+  3.7b.
 - **tmuxp 1.74.0** only for [`shell`][ref-cli-shell] and the benchmark.
 - **Alpha.** Any release may change the command surface; pin an exact version.
 

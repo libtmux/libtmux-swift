@@ -23,7 +23,7 @@ One dependency ([swift-subprocess][]), and the only product most callers need.
 ```
 
 **Contents** — [Quick start](#quick-start) ·
-[Values, not handles](#values-not-handles) ·
+[Values you hold](#values-you-hold) ·
 [Find things](#find-sessions-windows-and-panes) ·
 [What is in here](#what-is-in-here) · [Products](#products) ·
 [Documentation](#documentation)
@@ -45,11 +45,11 @@ A [`Server`][api-server] addresses a tmux socket by name, and
 [`Server.sessions()`][api-server-sessions] asks it for every session. It prints
 one line per session: the name, then the window count.
 
-## Values, not handles
+## Values you hold
 
 Everything that comes back is a value. A [`Session`][api-session] you hold is
-what the server looked like when you asked, not a live handle that changes under
-you. Ask again for a newer view.
+what the server reported when you asked, and it stays that way when tmux
+changes. Ask again for a newer view.
 
 - **Sendable and Codable.** Every type crossing your API is `Sendable` and
   `Codable`.
@@ -59,8 +59,8 @@ you. Ask again for a newer view.
   [`Pane.isDead`][api-pane-isdead], the exact
   [`Pane.modeCount`][api-pane-modecount], and effective
   [`Pane.isSynchronized`][api-pane-issynchronized].
-- **Malformed fails.** Missing or malformed values fail decoding instead of
-  being treated as writable defaults.
+- **Malformed fails.** A missing or malformed value fails decoding; none
+  becomes a writable default.
 
 ## Find sessions, windows, and panes
 

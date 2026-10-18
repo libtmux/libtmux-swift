@@ -149,9 +149,9 @@ $ claude mcp add tmux \
 - **Retired names.** `LIBTMUX_SAFETY` and `LIBTMUX_MCP_TOOLS` also fail, with
   migration guidance. Replace an old allowlist with `LIBTMUX_TOOLSETS=` and the
   same names in `LIBTMUX_TOOLS`.
-- **Not authorization.** Filtering shapes the interface. Execute tools act with
-  the tmux user's authority, and a selected socket limits tmux object lookup,
-  not operating-system access.
+- **No authorization.** Filtering chooses which tools a client sees. Execute
+  tools act with the tmux user's authority, and a selected socket limits tmux
+  object lookup only; operating-system access is unchanged.
 
 The static [`tmux://capabilities`][ref-capabilities] resource reports the
 startup-frozen socket provenance, common boundary fields, and effective
