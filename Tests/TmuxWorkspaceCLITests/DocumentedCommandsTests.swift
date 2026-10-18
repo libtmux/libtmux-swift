@@ -11,24 +11,31 @@ import Testing
 /// starts, so a renamed subcommand, a dropped flag or a missing argument fails
 /// here instead of in a reader's shell. Running the command is left to the
 /// suites that load, freeze and import against real tmux.
+///
+/// Reading and parsing the repository takes a second or two on a busy runner.
+/// Each case does that on a dispatch thread and records its expectations
+/// afterwards, because the suite runs hundreds of cases at once on a pool of
+/// as many threads as the machine has cores, and a case that holds one of them
+/// delays the cases that wait on a deadline of their own.
 @Suite("documented commands", .timeLimit(.minutes(1)))
 struct DocumentedCommandsTests {
-    private struct Command {
+    private struct Command: Sendable {
         var file: String
         var text: String
         var arguments: [String]
     }
 
     @Test("every command the documentation shows parses against the real command tree")
-    func documentedCommandsParse() throws {
-        let documents = try Self.markdownDocuments()
-        #expect(!documents.isEmpty)
-        var commands: [Command] = []
-        for (file, markdown) in documents {
-            commands += Self.commands(in: markdown, file: file)
+    func documentedCommandsParse() async throws {
+        let (documents, commands, failures) = try await offThePool {
+            let documents = try Self.markdownDocuments()
+            var commands: [Command] = []
+            for (file, markdown) in documents where markdown.contains("tmux-workspace") {
+                commands += Self.commands(in: markdown, file: file)
+            }
+            return (documents.count, commands, Self.failures(of: commands))
         }
-
-        let failures = Self.failures(of: commands)
+        #expect(documents > 0)
         #expect(failures.isEmpty, Comment(rawValue: failures.joined(separator: "\n")))
 
         // An extractor that finds nothing passes every command it never saw.
@@ -41,7 +48,7 @@ struct DocumentedCommandsTests {
     }
 
     @Test("a command with a bad flag, subcommand or missing argument is reported")
-    func badCommandsAreReported() {
+    func badCommandsAreReported() async throws {
         let markdown = """
             ```console
             $ tmux-workspace load --no-such-flag project.yaml
@@ -53,11 +60,12 @@ struct DocumentedCommandsTests {
             """
         let commands = Self.commands(in: markdown, file: "sample.md")
         #expect(commands.count == 5)
-        #expect(Self.failures(of: commands).count == 5)
+        let failures = try await offThePool { Self.failures(of: commands) }
+        #expect(failures.count == 5)
     }
 
     @Test("a command that parses is not reported, however it is written")
-    func goodCommandsAreNotReported() {
+    func goodCommandsAreNotReported() async throws {
         let markdown = """
             Prose such as $ tmux-workspace nonsense is not a command.
 
@@ -83,7 +91,8 @@ struct DocumentedCommandsTests {
                 ["ls", "--json"],
             ]
         )
-        #expect(Self.failures(of: commands).isEmpty)
+        let failures = try await offThePool { Self.failures(of: commands) }
+        #expect(failures.isEmpty)
     }
 
     private static func failures(of commands: [Command]) -> [String] {
@@ -184,13 +193,13 @@ struct DocumentedCommandsTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let enumerator = try #require(
-            FileManager.default.enumerator(
+        guard
+            let enumerator = FileManager.default.enumerator(
                 at: root,
                 includingPropertiesForKeys: nil,
                 options: [.skipsHiddenFiles]
             )
-        )
+        else { throw CocoaError(.fileReadUnknown) }
         var documents: [(String, String)] = []
         for case let url as URL in enumerator
         where url.pathExtension == "md" && url.lastPathComponent != "CHANGELOG.md" {
@@ -198,5 +207,17 @@ struct DocumentedCommandsTests {
             documents.append((relative, try String(contentsOf: url, encoding: .utf8)))
         }
         return documents.sorted { $0.0 < $1.0 }
+    }
+}
+
+/// Runs `work` on a dispatch thread and resumes with its result, so the
+/// cooperative pool is not held while it runs.
+private func offThePool<T: Sendable>(
+    _ work: @escaping @Sendable () throws -> T
+) async throws -> T {
+    try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.global(qos: .utility).async {
+            continuation.resume(with: Swift.Result { try work() })
+        }
     }
 }
