@@ -14,6 +14,9 @@ against the tree, with no network, so it can run on every push:
 - A reference-style link has a definition.
 - The root README and the core README link every product directory from a
   heading, and the root README links the types a reader meets first.
+- No prose block in a product README runs past `WALL_LIMIT` rendered characters.
+  Detail a caller does not need to run the package belongs in `docs/` or on
+  libtmux.org, linked from a short bullet.
 
 That the page answers 200 once published is a separate fact: the documentation
 workflow publishes after a merge, so this gate cannot wait on it.
@@ -56,6 +59,10 @@ REQUIRED_API = {
 
 # READMEs whose product headings must each link a product directory.
 HEADING_READMES = ("README.md", "Sources/LibTmux/README.md")
+
+# A paragraph, list item, or quote longer than this, once its link syntax and
+# code ticks are removed, is a wall: roughly three lines at 80 columns.
+WALL_LIMIT = 240
 
 FENCE = re.compile(r"^```")
 INLINE = re.compile(r"\]\(<?([^)\s>]+)>?\)")
@@ -142,10 +149,11 @@ def tool_names(root: pathlib.Path) -> set[str]:
 
 
 def readmes(root: pathlib.Path) -> list[pathlib.Path]:
-    """List every README outside hidden directories such as `.build`."""
+    """List every README, and every page under `docs/`, outside hidden directories."""
+    found = list(root.rglob("README.md")) + list((root / "docs").glob("*.md"))
     return sorted(
         path
-        for path in root.rglob("README.md")
+        for path in found
         if not any(part.startswith(".") for part in path.relative_to(root).parts)
     )
 
@@ -212,6 +220,44 @@ def check_site(
     return []
 
 
+def rendered(text: str) -> str:
+    """Return `text` as a reader sees it: link text and code, without markup."""
+    text = re.sub(r"\[([^\]]*)\]\[[^\]]*\]", r"\1", text)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"\[(`[^`]+`)\]", r"\1", text)
+    return " ".join(text.replace("`", "").split())
+
+
+def walls(lines: list[str]) -> list[str]:
+    """Return the start of every prose block longer than `WALL_LIMIT`.
+
+    A block is a paragraph, a list item, or a quote. Tables, headings, HTML,
+    reference definitions, and the `**Contents**` index line are not prose.
+    """
+    found: list[str] = []
+    block: list[str] = []
+
+    def flush() -> None:
+        text = rendered(" ".join(block))
+        if len(text) > WALL_LIMIT:
+            found.append(text[:60])
+        block.clear()
+
+    for line in lines:
+        skip = (
+            not line.strip()
+            or line.lstrip().startswith(("|", "<", "#"))
+            or line.startswith("**Contents**")
+            or DEFINITION.match(line)
+        )
+        if skip or re.match(r"\s*(?:[-*]|\d+\.)\s", line):
+            flush()
+        if not skip:
+            block.append(line)
+    flush()
+    return found
+
+
 def check_headings(
     root: pathlib.Path,
     relative: str,
@@ -250,6 +296,7 @@ def check(
         for section, directories in API_SECTIONS.items()
     }
     tools = tool_names(root)
+    wall_checked = {"README.md"} | {f"{d}/README.md" for d in product_directories(root)}
     problems: list[str] = []
     for page in readmes(root):
         relative = page.relative_to(root).as_posix()
@@ -267,6 +314,11 @@ def check(
             ]
         if relative in HEADING_READMES:
             problems += check_headings(root, relative, lines, defined)
+        if relative in wall_checked:
+            problems += [
+                f"{relative}: a block over {WALL_LIMIT} characters starts {start!r}"
+                for start in walls(lines)
+            ]
         if relative == "README.md":
             linked = set(targets(lines, {}))
             linked |= {

@@ -19,7 +19,36 @@ ports and holding to what that library established about tmux.
 
 </div>
 
-With tmux already running on its default socket:
+Ask a [`Server`][api-server] what it holds and get [`Session`][api-session],
+[`Window`][api-window], [`Pane`][api-pane], and [`Client`][api-client] values
+back. Every call reports [`TmuxError`][api-tmuxerror] explicitly.
+
+It suits tools that drive tmux: a session manager, a test harness, a dashboard,
+an agent that needs somewhere to run things.
+
+Everything that comes back is a value. A `Session` you hold is what the server
+reported when you asked, and it stays that way when tmux changes. Ask again for
+a newer view.
+
+> [!WARNING]
+> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
+> settled, and any release may change or remove exported identifiers without a
+> deprecation period. Pin an exact version. Not recommended for production.
+
+**Contents** — [Quick start](#quick-start) · [Install](#install) ·
+[Asking](#find-sessions-windows-and-panes) ·
+[Changing](#change-what-tmux-holds) ·
+[Waiting](#type-into-a-pane-and-wait) ·
+[Modes](#choosing-how-to-reach-tmux) ·
+[Workspaces](#workspaces-from-a-file-or-from-swift) ·
+[MCP](#tmux-as-mcp-tools) · [Testing](#testing-your-own-code) ·
+[Products](#products) · [Leaves out](#what-it-leaves-out) ·
+[Status](#support-and-status) · [Docs](#documentation) · [Tests](#tests)
+
+## Quick start
+
+With tmux already running on its default socket, list its sessions. This is the
+whole program:
 
 ```swift
 import LibTmux
@@ -30,174 +59,23 @@ for session in try await server.sessions() {
 }
 ```
 
-You address a server, ask it what exists, and send it commands. Everything that
-comes back is a value — a [`Session`][api-session] you hold is what the server
-looked like when you asked, not a live handle that changes under you. Ask again
-for a newer view.
+A [`Server`][api-server] addresses a tmux socket by name, and
+[`Server.sessions()`][api-server-sessions] asks it for every session. It runs on
+Linux, including WSL, and on macOS, with tmux 3.2a through 3.7b.
 
-> [!WARNING]
-> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
-> settled, and any release may change or remove exported identifiers without a
-> deprecation period. Pin an exact version. Not recommended for production.
-> See [Project status](#project-status).
-
-**Contents** — [Is this for you?](#is-this-for-you) ·
-[Products](#products) · [Install](#install) · [Asking](#ask-what-is-there) ·
-[Changing](#change-what-is-there) · [Filtering](#filters-that-travel) ·
-[Modes](#one-switch-changes-how-work-reaches-tmux) ·
-[Workspaces](#workspaces-from-a-file-or-from-swift) ·
-[MCP](#tmux-as-mcp-tools) · [Status](#project-status) ·
-[Docs](#documentation) · [Tests](#tests)
-
-## Is this for you?
-
-**Yes, if** you are writing a tool that drives tmux — a session manager, a test
-harness, a dashboard, an agent that needs somewhere to run things — and you want
-tmux's own vocabulary rather than a wrapper around shelling out.
-
-**Yes, if** you care that `Session`, [`Window`][api-window], [`Pane`][api-pane],
-and [`Client`][api-client] are `Sendable` and `Codable` values, that core tmux
-I/O reports [`TmuxError`][api-tmuxerror] explicitly, and that the package
-builds under Swift 6 language mode with complete strict concurrency and no
-unsafe flags.
-
-**Not yet, if** you need a stable API. Every release so far is an alpha and
-names are still moving — see [Project status](#project-status).
-
-**No, if** you want to render or emulate a terminal. This talks to tmux; it does
-not draw one.
-
-## Products
-
-Five things ship from this one package. Take only what you need — the core has
-one dependency, and the YAML reader is behind a trait so you do not pay for it
-unless you ask.
-
-| Product | Source | What it is for | Depends on |
-| --- | --- | --- | --- |
-| **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
-| **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
-| **[`tmux-workspace`](Sources/TmuxWorkspaceCLI/)** | [`Sources/TmuxWorkspaceCLI/`](Sources/TmuxWorkspaceCLI/) | Partial native workspace CLI: list, search, convert, import, load and capture. The command guide lists remaining work. | `LibTmux`, `TmuxWorkspace`, ArgumentParser, optional Yams |
-| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
-| **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
-| **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
-
-Each has its own README with an install snippet, a usage example, and what it
-does and does not cover.
-
-`TmuxWorkspace` and `LibTmuxMCP` are both written against [`Server`][api-server]
-and neither mentions a mode, which is how the mode switch below is kept honest.
-
-### [`LibTmux`][dir-libtmux]: the library
-
-Servers, sessions, windows, panes, and clients as values, with options, hooks,
-filtering, snapshots, and streaming over them. Reference: the
-[API pages][ref-libtmux] on libtmux.org and [Swift Package Index][spi-libtmux].
-
-A [`Server`][api-server] lists the [`Session`][api-session],
-[`Window`][api-window], and [`Pane`][api-pane] values it holds. A pane knows
-what is running in it and where:
-
-```swift
-for pane in try await server.panes() {
-    print(pane.id, pane.currentCommand, pane.currentPath)
-}
-```
-
-### [`TmuxWorkspace`][dir-workspace]: workspaces from Swift
-
-Builds a session from a [tmuxp][] workspace written in Swift, JSON, or YAML.
-Reference: the [API pages][ref-workspace] on libtmux.org and
-[Swift Package Index][spi-workspace].
-
-[`WorkspaceBuilder`][api-workspacebuilder] creates the session for a
-[`Workspace`][api-workspace] value, such as the one under
-[Workspaces](#workspaces-from-a-file-or-from-swift):
-
-```swift
-let session = try await WorkspaceBuilder.build(workspace, on: server)
-```
-
-### [`tmux-workspace`][dir-cli]: the command
-
-Loads, lists, searches, converts, imports, and captures workspaces from a
-shell. It is partial; the [command guide][ref-cli] lists what remains.
-Reference: the [`load`][ref-cli-load] and [`freeze`][ref-cli-freeze] pages.
-
-With a [workspace file][ref-workspace-config] saved as `project.yaml`, `load`
-builds it on a tmux socket named `project` without attaching to it:
-
-```console
-$ tmux-workspace load \
-    -L project \
-    -d \
-    project.yaml
-```
-
-### [`LibTmuxMCP`][dir-mcp]: tmux tools to embed
-
-The tools `libtmux-mcp` serves, as a library for a server of your own.
-Reference: the [API pages][ref-mcp-reference] on libtmux.org,
-[Swift Package Index][spi-mcp], and one page per [tool][ref-mcp-tools].
-
-[`TmuxTools`][api-tmuxtools] exposes the `inspect` toolset, which reads bounded
-state, unless a [`ToolAuthority`][api-toolauthority] says otherwise. This one
-exposes [`create_window`] and [`list_sessions`] and nothing else:
-
-```swift
-let authority = ToolAuthority(
-    toolsets: [],
-    includedTools: ["create_window", "list_sessions"]
-)
-let tools = TmuxTools(server: server, authority: authority)
-```
-
-### [`libtmux-mcp`][dir-mcp-server]: the MCP server
-
-A [Model Context Protocol][MCP] server over stdio, started by an MCP client.
-Reference: the [overview][ref-mcp], the [client guide][ref-mcp-guide], and one
-page per [tool][ref-mcp-tools].
-
-Register a built binary with Claude Code, limited to the `inspect` toolset:
-
-```console
-$ claude mcp add tmux \
-    -e LIBTMUX_TOOLSETS=inspect \
-    -- /path/to/.build/debug/libtmux-mcp
-```
-
-Other clients take the JSON configuration under
-[tmux as MCP tools](#tmux-as-mcp-tools).
-
-### [`TmuxFixture`][dir-fixture]: a real tmux for tests
-
-Provisions a private tmux server for a test or benchmark and reaps it when the
-body returns, throws, or the process is killed. Guide:
-[Testing with libtmux][ref-testing].
-
-[`withTmuxServer`][api-withtmuxserver] hands the body a server with one
-`bootstrap` session on a socket under `/tmp/libtmux-swift-test/`. After
-`import TmuxFixture`, this prints `bootstrap: 1 window`, `build: 1 window`, and
-`work: 1 window`:
-
-```swift
-try await withTmuxServer { @Sendable server in
-    _ = try await server.newSession(named: "work")
-    _ = try await server.newSession(named: "build")
-    let sessions = try await server.sessions()
-    for session in sessions.sorted(by: { $0.name < $1.name }) {
-        print("\(session.name): \(session.windowCount) window")
-    }
-}
-```
+`QuickStartTests` spawns this program against a fixture server that holds one
+session named `quickstart`, and checks that the output names it. It prints one
+line per session: the name, then the window count.
 
 ## Install
 
-Every tag until `0.1.0` is a prerelease, and a prerelease has to be named
-exactly. `from: "0.1.0"` matches none of them — SwiftPM keeps prereleases out
-of a range whose bound has none — and `from: "0.1.0-alpha.3"` errs the other
-way, resolving forward into `0.2.0-alpha.1` and every prerelease after it.
-Neither is what you want from alpha software, so name an exact release:
+Name an exact release. SwiftPM keeps prereleases out of a range whose bound has
+none:
+
+- **Every tag until `0.1.0` is a prerelease.** `from: "0.1.0"` matches none of
+  them.
+- **A prerelease bound resolves forward.** `from: "0.1.0-alpha.3"` resolves
+  into `0.2.0-alpha.1` and every prerelease after it.
 
 ```swift
 .package(
@@ -219,9 +97,11 @@ Neither is what you want from alpha software, so name an exact release:
 .package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
 ```
 
-Reading a workspace from YAML needs a YAML parser, and asking for it is what
-pulls one in. Without the `YAMLWorkspaces` trait nothing here resolves Yams;
-with it, [`Workspace.decode(yaml:)`][api-workspace-decode-yaml] exists:
+### `YAMLWorkspaces`: read YAML
+
+Reading a workspace from YAML needs a parser, and asking for the trait is what
+pulls one in. Without it nothing here resolves Yams; with it,
+[`Workspace.decode(yaml:)`][api-workspace-decode-yaml] exists:
 
 ```swift
 .package(
@@ -231,9 +111,13 @@ with it, [`Workspace.decode(yaml:)`][api-workspace-decode-yaml] exists:
 )
 ```
 
-## Ask what is there
+## Find sessions, windows, and panes
 
-Three listings, each returning plain arrays of values:
+### [`Server.sessions()`][api-server-sessions]: what tmux has now
+
+One call asks tmux for every session. [`Server.windows()`][api-server-windows]
+and [`Server.panes()`][api-server-panes] are its siblings, and each returns a
+plain array of values:
 
 ```swift
 let sessions = try await server.sessions()
@@ -241,7 +125,13 @@ let windows = try await server.windows()
 let panes = try await server.panes()
 ```
 
-A pane knows what is running in it and where:
+`QueryingTests` runs this on a fixture server and asserts one session, one
+window, and one pane.
+
+### [`Pane`][api-pane]: what is running in it
+
+A pane knows its [`Pane.currentCommand`][api-pane-currentcommand] and
+[`Pane.currentPath`][api-pane-currentpath]:
 
 ```swift
 for pane in try await server.panes() {
@@ -249,16 +139,24 @@ for pane in try await server.panes() {
 }
 ```
 
-Questions tmux answers with an exit code are answered here with a `Bool`:
+`QueryingTests` asserts the command is not empty and the path is absolute. It
+prints one line per pane: the id, the command, and the path.
+
+### [`Server.hasSession(_:)`][api-server-hassession]: a yes-or-no question
+
+Questions tmux answers with an exit code come back as a `Bool`:
 
 ```swift
 guard try await server.hasSession("work") else { return }
 ```
 
-And anything this library does not model is one step away, in either mode. A
-tmux command that runs and reports a nonzero status is a *reply*, not an error —
-`has-session` answers a question that way, so `run(_:)` hands back both rather
-than throwing:
+`QueryingTests` runs both branches against a fixture server.
+
+### [`Server.run(_:)`][api-server-run]: anything the library does not model
+
+A tmux command that runs and reports a nonzero status gives a reply:
+`has-session` answers a question that way. `run(_:)` returns the status and the
+text without throwing, and [`TmuxCommand`][api-tmuxcommand] builds the command:
 
 ```swift
 let reply = try await server.run(
@@ -267,25 +165,29 @@ let reply = try await server.run(
 print(reply.isSuccess ? reply.text : reply.errorText)
 ```
 
-### Finding one object
+`QueryingTests` runs it and asserts tmux did not answer `unknown command`. It
+prints the client's terminal name, or tmux's error text when the command failed.
 
-Holding a value and wanting a newer view of it is the common case, and it does
-not need a whole listing:
+### [`Server.session(named:)`][api-server-session-named]: one object, refreshed
+
+Holding a value and wanting a newer view of it does not need a whole listing.
+[`Server.refresh(_:)`][api-server-refresh] re-reads a value you hold:
 
 ```swift
 let work = try await server.session(named: "work")
 let fresh = try await server.refresh(pane)
 ```
 
-Absence is `nil`, not an error — an object going away is ordinary. A re-read
-also refuses a value from a different daemon, because tmux restarts its ids at
-zero and a same-numbered pane on a replacement server is not the one you had.
+`LookupTests` asserts the session is found by name and the pane by id.
 
-### Snapshots
+A missing object is `nil`, because objects go away all the time. A re-read
+also refuses a value from a different daemon: tmux restarts its ids at zero, so
+a same-numbered pane on a replacement server is a different pane.
 
-[`snapshot()`][api-server-snapshot] collects sessions, windows, panes, and
-clients into one value. The relationships resolve inside that value rather than
-by matching ids yourself:
+### [`Server.snapshot()`][api-server-snapshot]: sessions, windows, panes, and clients at once
+
+A [`Snapshot`][api-snapshot] collects all four into one value and resolves the
+relationships inside it, so you do not match ids yourself:
 
 ```swift
 let snapshot = try await server.snapshot()
@@ -294,12 +196,60 @@ for window in snapshot.windows(of: session) {
 }
 ```
 
-The listings are separate tmux commands. `snapshot()` checks the daemon
-incarnation before and after them and reports a replacement, but another client
-can still mutate the same daemon between listings. The result is not a tmux
-transaction.
+`SnapshotTests` asserts every window of a session resolves back to it and has
+panes. It prints each window's name and its pane count.
 
-## Change what is there
+The listings are separate tmux commands. `snapshot()` checks the daemon
+incarnation before and after them and reports a replacement. Another client can
+still change the same daemon between listings, so the four lists can disagree.
+
+### [`FilterExpr`][api-filterexpr]: a filter that travels
+
+Filter with the standard library when the predicate is local to your code.
+`FilterExpr` is for a filter that has to leave it: stored in a config, sent to
+another process, handed to a tool.
+
+It is built from key paths, so the compiler rejects a text operator on a
+number, and it holds no closures, so it encodes:
+
+```swift
+let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let matching = try await server.panes().filter(expression)
+```
+
+`FilteringTests` asserts the expression selects the same panes the predicate
+would. [`Server.panes(where:)`][api-server-panes-where] sends the same
+expression to tmux, so the rows that would have been discarded never cross the
+process boundary:
+
+```swift
+let matching = try await server.panes(where: expression)
+```
+
+`LookupTests` asserts it selects the pane the predicate would. The two give
+the same answer:
+
+- **The first** formats, pipes, and decodes every row before discarding most of
+  them.
+- **The second** sends the filter to tmux, so only matching rows come back.
+- **A regular expression** cannot run in tmux. The predicate sent to tmux is
+  widened, and this package's bounded regex engine decides the rest here.
+
+The full vocabulary of operators, aliases, and field types is in
+[`Filtering.md`][filtering] and on the [queries page][ref-concept-queries]. The
+[MCP tools](#tmux-as-mcp-tools) offer the same filtering to a client that does
+not speak Swift.
+
+## Change what tmux holds
+
+### [`Server.newSession(named:windowName:)`][api-server-newsession-named-startdirectory-windowname-width-height]: create and arrange
+
+[`Server.newSession`][api-server-newsession-named-startdirectory-windowname-width-height]
+makes a session.
+[`Server.newWindow(in:named:startDirectory:)`][api-server-newwindow-in-named-startdirectory],
+{{Server.splitWindow}), and [`Server.setOption`][api-server-setoption-to-scope]
+shape it, and [`Server.run(_:in:)`][api-server-run-in] sends a command to a
+pane:
 
 ```swift
 let session = try await server.newSession(named: "work", windowName: "editor")
@@ -309,14 +259,23 @@ let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)
 ```
 
+`ChangingTests` asserts tmux ends up with a `work` session holding `editor` and
+`logs` windows, and two panes in `logs`.
+
+### [`Server.capture(_:)`][api-server-capture-includinghistory]: read a pane back
+
 Read a pane back the way a person would:
 
 ```swift
 let lines = try await server.capture(pane)
 ```
 
-When several changes belong together, a command list spends one tmux invocation
-on all of them instead of one each:
+`ChangingTests` prints a marker into a pane and asserts the capture holds it.
+
+### [`TmuxCommandList`][api-tmuxcommandlist]: several changes, one process
+
+When several changes belong together, a command list spends one tmux
+invocation on all of them instead of one each:
 
 ```swift
 var plan = TmuxCommandList()
@@ -326,42 +285,111 @@ for name in ["edit", "test", "logs"] {
 _ = try await server.run(plan)
 ```
 
-## Filters that travel
+`ChangingTests` asserts every window the list names exists afterwards.
 
-Filter with the standard library when the predicate is local to your code.
-[`FilterExpr`][api-filterexpr] is for when the filter has to leave it — stored
-in a config, sent to another process, handed to a tool. It is built from key
-paths, so the compiler rejects a text operator on a number, and it holds no
-closures, so it encodes:
+## Type into a pane and wait
+
+tmux has no hook that fires when a pane prints something, so a wait built from
+commands alone re-reads the pane on a timer and spends a process per tick.
+
+A control connection is told instead. These three waits are cheaper than the
+loop everyone writes first; reach for them in this order.
+
+### [`Server.wait(for:)`][api-server-wait-for]: you wrote the command
+
+Compose a channel into the command: tmux blocks server-side and returns on the
+signal itself, so nothing is inferred from what the screen looks like.
+[`Server.shellInvocation`][api-server-shellinvocation] names the tmux that
+serves the pane:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
-let matching = try await server.panes().filter(expression)
+try await server.run(
+    "make; \(server.shellInvocation) wait-for -S built",
+    in: pane
+)
+try await server.wait(for: "built")
 ```
 
-The same expression can also travel all the way to tmux, so the rows that would
-have been discarded never cross the process boundary:
+`WaitingTests` runs it and asserts the wait returns when the command signals.
+
+### [`FormatSubscription`][api-formatsubscription]: the question is about state
+
+Subscribe to a format and tmux reports each time its value changes, with no
+capture and no prompt regex. [`ControlSession.watch`][api-controlsession-watch]
+subscribes and
+[`ControlSession.changes(named:)`][api-controlsession-changes-named] yields the
+changes:
 
 ```swift
-let matching = try await server.panes(where: expression)
+try await server.connected(attachingTo: "work") { server, control in
+    try await control.watch(
+        FormatSubscription(
+            name: "cmd",
+            scope: .pane(pane.id),
+            format: "#{pane_current_command}"
+        )
+    )
+    for try await change in control.changes(named: "cmd") {
+        return change.value
+    }
+    return nil
+}
 ```
 
-Both give the same answer. The difference is what crosses the boundary: the
-first formats, pipes and decodes every row before discarding most of them, and
-the second does not, so the cost tracks the size of the result rather than the
-size of the server. What tmux cannot evaluate — a regular expression, which runs
-on this package's bounded engine rather than tmux's — simply widens the
-predicate and is decided here instead.
+`WaitingTests` asserts the watch returns the value it names. The format
+`#{pane_current_command}` answers "is my command done?" exactly.
 
-This is what lets the [MCP tools](#tmux-as-mcp-tools) offer filtering to a
-client that does not speak Swift. The full vocabulary — operators, aliases, and
-which fields carry which type — is in [`Filtering.md`][filtering].
+### [`Server.waitForOutput`][api-server-waitforoutput-in-matching-stoppingat-requiringfreshoutput-startingat-timeout-taillimit]: you did not write the command
 
-## One switch changes how work reaches tmux
+For a daemon printing `ready` or a dev server someone else started, wait on the
+pane's output. `%output` wakes the wait, and the matching runs against the
+rendered grid. [`RegexPattern`][api-regexpattern] values say what to match and
+what to stop at:
 
-…and never what you get back. [`TmuxMode`][api-tmuxmode] is the dial, and it has
-two settings: (One caveat, in [typed errors](#typed-errors-across-a-scope): a
-scope takes a closure, so it widens the thrown type.)
+```swift
+let ready = try RegexPattern("Listening on")
+let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
+let waited = try await server.waitForOutput(
+    in: pane,
+    matching: [ready],
+    stoppingAt: [failed]
+)
+```
+
+`WaitingTests` asserts the wait ends `.matched` on the line it was given. A
+small liveness check detects a pane removed while it is quiet. What to know:
+
+- **Stops.** Pass `stoppingAt` whenever a failure marker exists. A build that
+  fails after five seconds ends the wait at five seconds.
+- **Already on screen.** The condition is checked before it is blocked on, so
+  text already on screen returns at once with `matchedAtEntry: true`. Pass
+  `requiringFreshOutput` when only a new occurrence counts.
+
+When a wait ends without a match, [`OutputWait`][api-outputwait] says which
+thing happened:
+
+- **`timedOut`, `sawNewOutput: false`.** The pane stayed quiet, and no pattern
+  will fix it.
+- **`timedOut`, with output.** `tail` holds what arrived, so you can fix the
+  pattern against it.
+- **`expiredWhileReading`.** The timeout ended before the pane could be read at
+  all, so nothing was established either way.
+- **`alternateScreen`.** A pager, editor, or other full-screen program held the
+  pane. tmux fills it from a grid it keeps out of history, so matching is
+  suppressed there.
+
+The DocC catalogue's `Waiting` article explains why the output stream only
+signals that the pane wrote something, and the match runs against the rendered
+grid. The [waiting and retrying][ref-topic-waiting] page covers it on
+libtmux.org.
+
+## Choosing how to reach tmux
+
+### [`TmuxMode`][api-tmuxmode]: one switch, the same answers
+
+`TmuxMode` changes how work reaches tmux and never what you get back. It has two
+settings, [`TmuxMode.direct`][api-tmuxmode-direct] and
+[`TmuxMode.connected(to:)`][api-tmuxmode-connected-to]:
 
 | Mode | How work travels | Where it wins |
 | --- | --- | --- |
@@ -374,7 +402,9 @@ The default needs no word at all:
 let sessions = try await server.sessions()
 ```
 
-Each other mode adds one:
+Each other mode adds one. [`Server.using(_:_:)`][api-server-using] runs a scope
+in the mode you name, and the calls inside are the same calls with the same
+types:
 
 ```swift
 let names = try await server.using(.connected(to: "main")) { server in
@@ -382,9 +412,8 @@ let names = try await server.using(.connected(to: "main")) { server in
 }
 ```
 
-The calls inside are the same calls and return the same types. Because the mode
-is a value rather than a shape of call, a program that decides at runtime writes
-the decision:
+The mode is a value, so a program that decides at runtime can write the
+decision:
 
 ```swift
 let mode: TmuxMode = shouldAttach ? .connected(to: "main") : .direct
@@ -393,30 +422,40 @@ let sessions = try await server.using(mode) { server in
 }
 ```
 
-### Which server is in which mode, in order of precedence
+`ModeTests` asserts that a connected scope, and one chosen at runtime, return
+what the direct one would.
+
+### [`Server.using(_:_:)`][api-server-using]: which server is in which mode
+
+Three rules decide it, in order of precedence:
 
 1. **The value you were handed.** [`using(_:)`][api-server-using] and
-   [`connected(attachingTo:_:)`][api-server-connected]
-   give you a server in that mode, and nesting them takes the innermost —
-   `using(.direct)` inside a connected scope keeps one call off the connection.
+   [`connected(attachingTo:_:)`][api-server-connected-attachingto] give you a
+   server in that mode. Nesting takes the innermost, so
+   [`using(.direct)`][api-server-using] inside a connected scope keeps one call
+   off the connection.
 2. **Anything else is `.direct`**, including a server captured from outside the
    closure.
-3. **Two calls take their own process regardless** — `wait(for:)`, which would
-   otherwise deadlock the scope, and `buffer(named:)`, whose bytes a connection
-   cannot report unambiguously. Both do it so that what comes back does not
+3. **Two calls take their own process regardless**:
+   [`Server.wait(for:)`][api-server-wait-for], which would otherwise deadlock
+   the scope, and [`Server.buffer(named:)`][api-server-buffer-named], whose
+   bytes a connection cannot report unambiguously. What comes back does not
    depend on the mode.
 
-Nothing is global and nothing is inherited by a task. `server.mode` reports
-which mode a value carries, so the rule can be read rather than trusted.
+Nothing is global, and nothing is inherited by a task.
+[`server.mode`][api-server-mode] reports which mode a value carries, so the rule
+can be checked at runtime.
 
 ### What it costs
 
-`swift run --package-path Benchmarks libtmux-bench` runs each scenario under
-each mode behind a shim standing in for the tmux binary, counting a process
-every time one starts and a round trip every time a command line is handed over.
-The table below is written by that benchmark rather than transcribed from it —
-`Scripts/update_mode_matrix.py --check` fails if it has drifted, and CI runs
-that check.
+`swift run --package-path Benchmarks libtmux-bench` measures each mode:
+
+- It runs each scenario under each mode, behind a shim standing in for the tmux
+  binary.
+- It counts a process every time one starts and a round trip every time a
+  command line is handed over.
+- The benchmark writes the table below. `Scripts/update_mode_matrix.py --check`
+  fails if it has drifted, and CI runs that check.
 
 <!-- mode-matrix:start -->
 
@@ -440,17 +479,21 @@ that check.
 
 <!-- mode-matrix:end -->
 
-Directly, a round trip is a process, so that column always agrees with itself.
-Connecting collapses the processes to one and charges a single extra round trip,
-the attach — which is why a single call is the row where the default wins, and
-why from the second call onward the connection is ahead. Round trips are also
-where a command list shows up: under a connection it and the separate commands
-cost the same one process, and only the round trips tell them apart.
+How to read the table:
 
-The benchmark also prints wall-clock medians, which move with the machine — run
+- **Directly, a round trip is a process**, so that column always agrees with
+  itself.
+- **Connecting collapses the processes to one** and charges a single extra
+  round trip, the attach. A single call is therefore where the default wins,
+  and from the second call on the connection is ahead.
+- **A command list shows up in the round trips.** Under a connection it and the
+  separate commands cost the same one process, and only the round trips tell
+  them apart.
+
+The benchmark also prints wall-clock medians, which move with the machine. Run
 it yourself for those.
 
-### Being told rather than asking
+### [`Server.connected(attachingTo:_:)`][api-server-connected-attachingto]: hear changes as they happen
 
 A connection can do one thing a process cannot, which is report what changed
 without being asked:
@@ -465,12 +508,14 @@ let firstLine: String? = try await server.connected(attachingTo: "work") { serve
 }
 ```
 
-### Typed errors across a scope
+`StreamingTests` asserts the connection reports pane output as it happens.
 
-Every call throws `TmuxError` and says so, so a program can be
-`throws(TmuxError)` from top to bottom. The scoped forms are the exception:
-they take a closure, and Swift 6.2 cannot carry a closure's thrown type out of
-one. Wrap the scope to narrow it back:
+### [`withTmuxError`][api-withtmuxerror]: typed errors across a scope
+
+Every call throws [`TmuxError`][api-tmuxerror] and says so, so a program can use
+typed throws from top to bottom. The scoped forms take a closure, and Swift 6.2
+cannot carry a closure's thrown type out of one. Wrap the scope to narrow it
+back:
 
 ```swift
 func names(_ server: Server) async throws(TmuxError) -> [String] {
@@ -482,90 +527,21 @@ func names(_ server: Server) async throws(TmuxError) -> [String] {
 }
 ```
 
-This is a language limitation rather than a choice: a `throws(TmuxError)`
-overload of the scopes is unreachable, because a closure literal's thrown type
-is never inferred from its body, and a scope that fails on its own behalf has no
-way to rethrow that as the body's error type.
+`LookupTests` asserts the scope returns the session names.
 
-## Waiting without polling
-
-tmux has no hook that fires when a pane prints something, so a wait built from
-commands alone has to re-read the pane on a timer and spend a process per tick.
-A control connection is told instead, and that makes three waits cheaper than
-the loop everyone writes first. Reach for them in this order.
-
-**You wrote the command.** Compose a channel into it: tmux blocks server-side
-and returns on the signal itself, so nothing is inferred from what the screen
-looks like.
-
-```swift
-try await server.run(
-    "make; \(server.shellInvocation) wait-for -S built",
-    in: pane
-)
-try await server.wait(for: "built")
-```
-
-**The question is about state.** Subscribe to a format and tmux reports each
-time its value changes — no capture, no scrollback, no prompt regex.
-`#{pane_current_command}` answers "is my command done?" exactly:
-
-```swift
-try await server.connected(attachingTo: "work") { server, control in
-    try await control.watch(
-        FormatSubscription(
-            name: "cmd",
-            scope: .pane(pane.id),
-            format: "#{pane_current_command}"
-        )
-    )
-    for try await change in control.changes(named: "cmd") {
-        return change.value
-    }
-    return nil
-}
-```
-
-**You did not write the command.** For a daemon printing `ready` or a dev
-server someone else started, wait on the pane's output. `%output` wakes the
-wait as the pane writes, and the matching runs against the rendered grid. A
-small liveness check detects a pane removed while it is quiet:
-
-```swift
-let ready = try RegexPattern("Listening on")
-let failed = try RegexPattern("EADDRINUSE|error", options: [.caseInsensitive])
-let waited = try await server.waitForOutput(
-    in: pane,
-    matching: [ready],
-    stoppingAt: [failed]
-)
-```
-
-Pass `stops` whenever a failure marker exists — a build that fails after five
-seconds should end the wait then, not hold it open to report the same failure
-later.
-
-The condition is checked before it is blocked on, the way any other wait on a
-predicate works: text already on screen returns at once with
-`matchedAtEntry: true`, because "wait until it is listening" is answered by
-something already listening. Pass `requiringFreshOutput` when only a new
-occurrence counts. When a wait does end without a match, the result says which
-thing happened: `timedOut` with `sawNewOutput: false` means the pane stayed
-quiet and no pattern will fix it, `timedOut` with output means `tail` holds what
-actually arrived so the pattern can be fixed from that rather than from memory,
-`expiredWhileReading` means the timeout ended before the pane could be read
-at all, so nothing was established either way, and `alternateScreen` means a
-pager, editor, or other full-screen program held the pane, which tmux fills
-from a grid it keeps out of history — matching is suppressed there rather than
-run against what the program painted.
-
-The DocC catalogue's `Waiting` article covers why the output stream is a
-doorbell rather than the text being matched.
+Swift 6.2 cannot do this for you: a typed-throws overload of the scopes is
+unreachable, because a closure literal's thrown type is never inferred from its
+body.
 
 ## Workspaces, from a file or from Swift
 
-`TmuxWorkspace` builds a whole session in one go, from a [tmuxp][] workspace.
-Written in Swift, it is ordinary values:
+[`TmuxWorkspace`][mod-tmuxworkspace] builds a whole session in one go, from a
+[tmuxp][] workspace. Written in Swift, a workspace is ordinary values.
+
+### [`Workspace`][api-workspace]: a session described as values
+
+[`WindowPlan`][api-windowplan] and [`PanePlan`][api-paneplan] describe each
+window and its panes:
 
 ```swift
 let workspace = Workspace(
@@ -584,64 +560,98 @@ let workspace = Workspace(
 )
 ```
 
+`WorkspaceTests` builds this value and asserts tmux ends up with its windows.
+
+### [`WorkspaceBuilder.build(_:on:)`][api-workspacebuilder-build-on]: build it on a server
+
 ```swift
 let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
-Building refuses rather than adopting a session that already has the name: two
-callers building the same workspace should not silently share one. A later,
-ordinary failure removes the exact session this build created; a rollback
-failure reports both errors. An interruption removes nothing: the same signal
-that stopped the build could just as well stop the cleanup that would follow
-it.
+`WorkspaceTests` asserts the `work` session exists with `editor` and `logs`
+windows and two panes in `editor`. What to know:
+
+- **A name in use is refused.** Two callers building the same workspace should
+  not silently share a session.
+- **A failure rolls back.** A later, ordinary failure removes the exact session
+  this build created; a rollback failure reports both errors.
+- **An interruption removes nothing.** The signal that stopped the build could
+  just as well stop the cleanup that would follow it.
+
+### [`Server.validateLayouts(_:)`][api-server-validatelayouts]: check layouts first
 
 The builder validates every layout before creating the session. The same native
 guard protects [`Server.selectLayout(_:_:)`][api-server-selectlayout] and MCP
-[`select_layout`]. Custom builders can check a complete batch with desired pane
-counts first:
+[`select_layout`]. Custom builders can check a complete batch with the desired
+pane counts first:
 
 ```swift
 try await server.validateLayouts([("even-h", 2), ("tiled", 1)])
 ```
 
-Names accept unique abbreviations for the running daemon's version. Saved
-layouts require a checksum, nonempty tree and enough cells; tmux still owns
-geometry and pruning. An empty batch performs no I/O unless cancelled. A
-version-sensitive name on an unbound cold endpoint uses the configured tmux
-client; permission, protocol and retained-connection errors propagate.
+`WorkspaceTests` runs this call. The rules:
 
-JSON needs no trait, because tmuxp's keys decode straight into these types.
-Reading the YAML that tmuxp files are usually written in needs a parser, which
-is what the `YAMLWorkspaces` trait pulls in:
+- **Abbreviations.** Names accept unique abbreviations for the running
+  daemon's version.
+- **Saved layouts.** They require a checksum, a nonempty tree, and enough
+  cells; tmux still owns geometry and pruning.
+- **An empty batch** performs no I/O unless cancelled.
+- **A cold endpoint.** A version-sensitive name on an unbound cold endpoint uses
+  the configured tmux client; permission, protocol, and retained-connection
+  errors propagate.
+
+### [`Workspace.decode(yaml:)`][api-workspace-decode-yaml]: read a tmuxp file
+
+JSON needs no trait, because tmuxp's keys decode straight into these types with
+[`Workspace.decode(json:)`][api-workspace-decode-json]. The YAML that tmuxp
+files are usually written in needs the `YAMLWorkspaces` trait:
 
 ```swift
 try Workspace.decode(yaml: text)
 ```
 
-The fixtures the suite tests against are tmuxp's own examples, decoded both ways
-and compared — a stronger claim than either parsing alone.
+`WorkspaceTests` asserts a tmuxp file decodes into the workspace it describes.
+The fixtures are tmuxp's own examples, decoded both ways and compared, which is
+a stronger claim than either parsing alone.
 
-`Workspace` is a narrower language than the `tmux-workspace` executable reads,
-and the two are separate readers of one file format. Handed the same tmuxp
-file, `Workspace.decode` drops `shell_command_before`, `suppress_history`,
-`options`, `global_options`, `window_options`, `options_after`,
-`before_script` and `workspace_builder_options`, and leaves `$VAR` unexpanded,
-where the executable reads all of them. What both do share is the builder: the
-executable creates every session through `WorkspaceBuilder`, so a layout built
-from Swift is the layout the command builds.
+### [`tmux-workspace`][mod-tmux-workspace]: a second reader of the same format
+
+[`Workspace`][api-workspace] is a narrower language than the `tmux-workspace`
+executable reads, and the two are separate readers of one file format:
+
+- **Dropped by [`decode(yaml:)`][api-workspace-decode-yaml].**
+  `shell_command_before`, `suppress_history`, `options`, `global_options`,
+  `window_options`, `options_after`, `before_script`, and
+  `workspace_builder_options`; `$VAR` stays unexpanded.
+- **Read by the executable.** It reads all of those.
+- **Shared.** The executable creates every session through
+  [`WorkspaceBuilder`][api-workspacebuilder], so a layout built from Swift is
+  the layout the command builds.
 
 ## tmux as MCP tools
 
-`libtmux-mcp` is a [Model Context Protocol][MCP] server. It speaks JSON-RPC 2.0
-over stdio, one message per line, so anything that launches an MCP server can
-drive tmux through it.
+[`libtmux-mcp`][mod-libtmux-mcp] is a [Model Context Protocol][MCP] server. It
+speaks JSON-RPC 2.0 over stdio, one message per line, so anything that launches
+an MCP server can drive tmux through it.
+
+### [`libtmux-mcp`][mod-libtmux-mcp]: start the server
+
+Build the executable:
 
 ```console
 $ swift build --product libtmux-mcp
 ```
 
-Point a client at the built binary. It takes no flags — which tmux it talks to
-and which tools it exposes are fixed from its startup environment:
+Register it with Claude Code, limited to the `inspect` toolset:
+
+```console
+$ claude mcp add tmux \
+    -e LIBTMUX_TOOLSETS=inspect \
+    -- /path/to/.build/debug/libtmux-mcp
+```
+
+Other clients take a JSON configuration. The server takes no flags: which tmux
+it talks to and which tools it exposes are fixed from its startup environment.
 
 ```json
 {
@@ -657,6 +667,10 @@ and which tools it exposes are fixed from its startup environment:
 }
 ```
 
+`ReadmeDocumentationTests` passes this `env` and every `claude mcp add` setting
+in the repository through [`ServerConfiguration`][api-serverconfiguration], the
+parse the executable runs before it opens a socket.
+
 | Variable | Default | What it selects |
 | --- | --- | --- |
 | `LIBTMUX_SOCKET` | `libtmux-mcp` | Plain tmux socket name |
@@ -668,35 +682,41 @@ and which tools it exposes are fixed from its startup environment:
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
 | `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The ceiling every wait is clamped to, itself capped at 300 |
 
-The default launch uses the dedicated `libtmux-mcp` socket and minimal config.
-It adds teardown only when the daemon retains this process's launch nonce from
-that config. Explicit sockets, explicit configs, and existing daemons never
-gain implicit teardown authority. Unknown names and empty list tokens fail
-before the socket is opened. When stdio ends, the process removes only the
-default daemon whose launch nonce and incarnation still match; existing and
-replacement daemons remain.
+What to know about startup:
 
-Toolsets classify direct operations; they do not sandbox the host. `execute`
-exposes `run_shell_command` and `send_keys`, which act with the tmux user's
-authority. Grant it only to clients trusted to act as that user.
+- **Default launch.** The dedicated `libtmux-mcp` socket and the minimal config.
+- **Teardown.** Added only when the daemon retains this process's launch nonce
+  from that config. Explicit sockets, configs, and existing daemons never gain
+  it.
+- **Bad names.** Unknown names and empty list tokens fail before the socket is
+  opened.
+- **Shutdown.** When stdio ends, the process removes only the default daemon
+  whose launch nonce and incarnation still match.
+- **Socket names.** `LIBTMUX_SOCKET` is a name, and tmux resolves a name inside
+  `TMUX_TMPDIR`. Set that in the same `env` block when your tmux keeps its
+  sockets somewhere else.
+- **stderr.** Anything for a human goes there, because stdout is the protocol
+  and a stray line corrupts it.
 
-Anything the server wants to tell a human goes to stderr, because stdout is the
-protocol and a stray line there corrupts it.
+The full launch contract is in
+[`docs/mcp-contract.md`][r-docs-mcp-contract-md-default-launch-and-teardown].
 
-`LIBTMUX_SOCKET` is a name rather than a path, and tmux resolves a name inside
-`TMUX_TMPDIR`. Set that in the same `env` block when your tmux keeps its sockets
-somewhere other than the default, and the name will mean the same server to this
-package that it means to you.
+### [`Toolset`][api-toolset]: the tools a client is offered
 
-### The tools
+A toolset is a named group of tools, and it is what an operator grants or
+withholds:
 
-The registry contains 45 tools: 18 `inspect`, 14 `manage`, nine `execute`, and
-four `teardown`. A configured executable exposes the first three toolsets by
-default (41 tools); an authenticated daemon started from the bundled minimal
-configuration also receives `teardown` (45 tools).
+- **`inspect`** reads tmux and what panes show.
+- **`manage`** renames, resizes, selects, and moves what exists.
+- **`execute`** creates sessions, windows, and panes, and sends input to them.
+- **`teardown`** kills sessions, windows, and panes, and clears scrollback.
 
-Each name links to its page on libtmux.org, and the [tool index][ref-mcp-tools]
-lists them all.
+The registry holds 45 tools: 18 `inspect`, 14 `manage`, nine `execute`, and four
+`teardown`. By default:
+
+- **A configured executable** exposes the first three toolsets, 41 tools.
+- **An authenticated daemon** started from the bundled minimal configuration
+  also receives `teardown`, 45 tools.
 
 | Tool | What it answers or does |
 | --- | --- |
@@ -716,83 +736,116 @@ lists them all.
 | [`set_synchronize_panes`] | Makes later pane input fan out across a window |
 | [`clear_pane_scrollback`] [`kill_pane`] [`kill_window`] [`kill_session`] | Deletes retained or live tmux state |
 
-Pane modes remain human-client state, not MCP automation state. Read bounded
-scrollback with `capture_pane` and its `start`/`end` range, use `search_panes` to
-discover matching output, or use `snapshot_pane` when one MCP response should
-contain both pane metadata and bounded content; the metadata and capture are
-separate reads, not an atomic snapshot. Carry the opaque `capture_since` cursor
-across turns for new output. If a pane is already in a human-owned mode, read
-`pane_in_mode` or `pane_mode` through `get_tmux_variables`, report it, and leave
-entry or cancellation to the client that owns the interaction.
+Each name links to its page on libtmux.org, and the [tool index][ref-mcp-tools]
+lists them all.
 
-Pane input reads fresh typed death, mode-count, effective synchronization,
-caller, and terminal-attendance state. Missing, malformed, or inconsistent
-caller/client context fails closed. A zoomed terminal client protects its
-active pane; an unzoomed terminal client protects every pane in its active
-window. Control clients do not count. `send_keys` checks every configured
-member of the effective synchronized cohort; `send_keys_batch` repeats that
-check for every executed row. Returned pane IDs describe configured
-membership, not proof of delivery, and the checks remain observational because
-tmux state can change after a snapshot. A process-wide reservation protects
-every configured member through dispatch, so pane input refuses overlap with
-an active run or other input.
+The `execute` tools run with the tmux user's authority whatever toolsets are
+selected, so grant them only to clients trusted to act as that user.
 
-`paste_text` checks its target before staging and immediately before its one
-paste dispatch. It keeps non-empty text and its optional Enter target-only in
-one private buffer and removes the buffer on every path. Empty text without
-Enter still performs its initial safety check, then returns without creating a
-buffer or dispatching input. `run_shell_command` checks before setup and again
-before dispatch, refuses a second run instead of waiting, requires a single
-configured pane running a recognized POSIX shell, and contains the command in
-a subshell so it cannot leave shell state behind. Those guarantees assume the
-selected shell, tmux daemon, and configuration are trusted; they do not claim
-containment against a hostile shell environment. `force=true` bypasses only an
-exact caller-pane match; it never bypasses attendance, active-operation, mode,
-death, shell, or target-count checks.
+### [`send_keys`]: the checks before pane input
 
-Every tool declares native input and output schemas and carries its complete
-capability row under `_meta["com.git-pull.libtmux-mcp/capability"]`. The same
-immutable registry drives registration, dispatch, descriptions, filtering, and
-the [`tmux://capabilities`][ref-mcp-capabilities] report. That static report is
-the only MCP resource; the server exposes no prompts or dynamic templates.
+Pane input reads fresh state and fails closed when it is missing or
+inconsistent. What a caller can rely on:
 
-Every answer travels as both `structuredContent` and JSON text, so clients that
-read either representation receive the same typed result.
+- **Dead and moded panes are refused.** So is a pane whose caller or
+  terminal-attendance context is incomplete or malformed.
+- **Attended panes are protected.** A zoomed terminal client protects its active
+  pane; an unzoomed one protects every pane in its active window. Control
+  clients do not count.
+- **Synchronized panes are checked together.** `send_keys` checks every
+  configured member of the cohort, and [`send_keys_batch`] repeats the
+  check for every executed row.
+- **`force=true` is narrow.** It bypasses only an exact caller-pane match.
+- **IDs describe configuration.** Returned pane IDs are the checked members,
+  not proof of delivery.
 
-The rows disclose process reach, tmux effects, output classes, one
-`inputLiteralization` map, and conservative MCP annotations. Detailed input
-sink tables remain internal validation data. The rows are consent metadata,
-not a security boundary. Terminal content, environment values, configured
-commands, and tmux metadata may contain secrets or untrusted instructions.
+Two tools get their own checks:
+
+- [`paste_text`] checks its target before staging and again before its one
+  paste, in a private buffer it removes on every path.
+- [`run_shell_command`] refuses a second run, needs one pane running a
+  recognized POSIX shell, and contains the command in a subshell.
+
+The full contract is in
+[`docs/mcp-contract.md`][r-docs-mcp-contract-md-pane-input].
+
+### [`capture_pane`]: history, snapshots, and pane modes
+
+A pane in a mode belongs to the human attached to it:
+
+- **Read history** with `capture_pane` and its `start`/`end` range, or find it
+  with [`search_panes`].
+- **Read pane and content together** with [`snapshot_pane`]. The metadata
+  and the capture are two reads, so a pane can change between them.
+- **Follow output** across turns with the opaque cursor from
+  [`capture_since`].
+- **If a pane is in a mode,** read `pane_in_mode` or `pane_mode` through
+  [`get_tmux_variables`], report it, and leave entry or cancellation to the
+  client that owns the interaction.
+
+More in [`docs/mcp-contract.md`][r-docs-mcp-contract-md-pane-modes].
+
+### [`wait_for_text`]: limits on waits and reads
+
+- **Waits have deadlines.** Every wait is clamped to a ceiling and reports what
+  was enforced. `notifications/cancelled` stops one the client has dropped.
+- **Reads are budgeted.** Pane reads collect at most 262,144 bytes per stream
+  and return at most 128,000 UTF-8 bytes, in whole rows.
+- **Searches are bounded.** [`search_panes`] scans at most 200 panes, 20,000
+  lines, 1,000,000 bytes, or five seconds, and says which ceiling truncated it.
+- **Long waits report life signs.** With a `progressToken`, a long wait sends
+  advisory progress while output has capacity.
+- **It will not end the conversation.** Direct teardown tools refuse the pane,
+  window, or session the server runs in unless the call passes `force`.
+
+[`wait_for_channel`] is the other blocking tool, and
+[`call_read_tools_batch`] keeps a batch's whole response at or below
+1,000,000 bytes. The details are in
+[`docs/mcp-contract.md`][r-docs-mcp-contract-md-output-budgets-and-deadlines].
+
+### [`tmux://capabilities`][ref-capabilities]: what each tool says about itself
+
+- **Schemas.** Every tool declares native input and output schemas, and carries
+  its capability row under `_meta["com.git-pull.libtmux-mcp/capability"]`.
+- **One registry.** It drives registration, dispatch, descriptions, filtering,
+  and the `tmux://capabilities` report. That static report is the only MCP
+  resource; there are no prompts or dynamic templates.
+- **Two representations.** Every answer travels as both `structuredContent` and
+  JSON text.
+- **Consent metadata.** The rows describe a tool for consent and enforce
+  nothing. Terminal content, environment values, configured commands, and tmux
+  metadata may contain secrets or untrusted instructions.
+
+More in [`docs/mcp-contract.md`][r-docs-mcp-contract-md-capability-metadata].
 
 ### Migrating from the earlier MCP surface
 
 Earlier alpha releases used ordered safety tiers and different tool names.
-These names are not aliases on the frozen 45-tool surface:
+None of these names exists on the frozen 45-tool surface:
 
 | Earlier name or URI | Current path |
 | --- | --- |
-| `enter_copy_mode`, `exit_copy_mode` | No MCP replacement. Read history through `capture_pane`, locate output with `search_panes`, continue with `capture_since`, and leave human-owned pane modes unchanged. Applications that own pane state can use the core library's `enterCopyMode` and `cancelModes` APIs. |
+| `enter_copy_mode`, `exit_copy_mode` | No MCP replacement. Read history through [`capture_pane`], locate output with [`search_panes`], continue with [`capture_since`], and leave human-owned pane modes unchanged. Applications that own pane state can use the core library's `enterCopyMode` and `cancelModes` APIs. |
 | `LIBTMUX_SAFETY` | Use `LIBTMUX_TOOLSETS`; any present legacy value stops startup. |
 | `LIBTMUX_MCP_TOOLS` | Use `LIBTMUX_TOOLSETS=` with `LIBTMUX_TOOLS` to preserve its exact allowlist; any present legacy value stops startup. |
-| `tmux://snapshot` | Compose `list_sessions`, `list_windows`, `list_panes`, and `snapshot_pane`. |
+| `tmux://snapshot` | Compose [`list_sessions`], [`list_windows`], [`list_panes`], and [`snapshot_pane`]. |
 | `tmux://sessions` | Use `list_sessions`. |
 | `tmux://filters` | Read native input schemas from `tmux://capabilities` and filter bounded listings client-side. |
 | `tmux://sessions/{session}/windows` | Use `list_windows` with the session reference. |
-| `tmux://panes/{pane}` | Use `get_pane_info` with the pane reference. |
+| `tmux://panes/{pane}` | Use [`get_pane_info`] with the pane reference. |
 | `tmux://panes/{pane}/content` | Use `capture_pane` for a bounded slice, `snapshot_pane` for metadata and content, or `capture_since` to continue across turns. |
-| `describe_server` | Use `get_server_info`; `list_panes` also marks the caller pane. |
+| `describe_server` | Use [`get_server_info`]; `list_panes` also marks the caller pane. |
 | `list_servers` | No discovery route; pin one socket per process and run another process for another socket. |
 | `describe_filters` | No separate route; read the published input schemas and filter bounded listings client-side. |
 | `snapshot` | Compose `list_sessions`, `list_windows`, `list_panes`, and `snapshot_pane`; the capability report carries frozen connection provenance. |
-| `read_format` | Use `get_tmux_variables` for validated names; arbitrary tmux formats have no replacement. |
-| `show_options` | Use `show_option` for one named option. |
-| `run_shell` | Use `run_shell_command`; it remains synchronous and bounded. |
-| `wait_for_output` | Use `wait_for_text`. |
+| `read_format` | Use [`get_tmux_variables`] for validated names; arbitrary tmux formats have no replacement. |
+| `show_options` | Use [`show_option`] for one named option. |
+| `run_shell` | Use [`run_shell_command`]; it remains synchronous and bounded. |
+| `wait_for_output` | Use [`wait_for_text`]. |
 | `watch_format` | No format subscription; use `capture_since`, `wait_for_text`, or a typed metadata read. |
-| `new_session`, `new_window`, `split_pane` | Use `create_session`, `create_window`, and `split_window`. |
-| `rename`, `select` | Use the session/window and pane/window variants, such as `rename_session` and `select_pane`. |
-| `set_option` | Use `set_mouse_enabled`, `set_history_limit`, `set_synchronize_panes`, or `set_pane_title`; there is no generic setter. |
+| `new_session`, `new_window`, `split_pane` | Use [`create_session`], [`create_window`], and [`split_window`]. |
+| `rename`, `select` | Use the session/window and pane/window variants, such as [`rename_session`] and [`select_pane`]. |
+| `set_option` | Use [`set_mouse_enabled`], [`set_history_limit`], [`set_synchronize_panes`], or [`set_pane_title`]; there is no generic setter. |
 | `set_environment` | No public process-environment mutation route. |
 | `apply_workspace` | Compose create, split, layout, title, selection, and execution tools explicitly. |
 | `kill_server` | No server-wide teardown route; kill selected sessions or administer tmux outside MCP. |
@@ -807,39 +860,7 @@ The removed prompts remain useful as typed-tool workflows:
 | `build_workspace` | Compose `create_session`, `create_window`, `split_window`, layout, title, selection, and execution calls. |
 | `find_my_pane` | Call `get_server_info`, then use the `isCaller` marker from `list_panes` before changing topology. |
 
-### Three things it does that a wrapper does not
-
-**Waits have deadlines.** Every wait is clamped to a ceiling and reports what
-was actually enforced. Requests are served concurrently, so a thirty-second
-wait does not hold up the `ping` beside it, and `notifications/cancelled` stops
-one that the client has stopped caring about. `wait_for_text` and
-`wait_for_channel` expose the two blocking operations through bounded calls.
-
-**It will not spend context you did not ask it to.** Pane reads collect at most
-262,144 bytes per stream and return at most 128,000 UTF-8 bytes in whole rows;
-they say when older output was omitted. `run_shell_command` returns only what
-that command printed, not its echoed wrapper or the shell prompt.
-`capture_since` returns a cursor, so watching something across turns sends the
-difference rather than the screen. `call_read_tools_batch` retains complete
-nested envelopes where they fit, marks each elided result, reports aggregate
-success, failure, stop, and truncation totals, and keeps the complete
-newline-delimited response at or below 1,000,000 bytes.
-A request ID that cannot fit inside that ceiling receives a bounded `id: null`
-invalid-request response before any tool runs.
-
-`search_panes` scans at most 200 panes, 20,000 lines, 1,000,000 bytes, or five
-seconds, and reports which ceiling truncated the search.
-
-**Long waits report life signs.** When a client sends a `progressToken`, a long
-wait sends advisory progress while output has capacity. Final answers and
-protocol errors take priority when the client stops draining output.
-
-**It will not end the conversation.** When the server runs inside the selected
-tmux it knows which pane is its own. Direct teardown tools refuse that pane,
-window, or session unless the call explicitly passes `force`. The guard does
-not claim to constrain equivalent commands sent through an execute tool.
-
-### What it feels like
+### [`list_panes`]: what it feels like
 
 > **You:** Which of my panes are sitting in an editor?
 >
@@ -852,79 +873,269 @@ editor, and answered from the typed metadata. It did not shell out, parse
 
 ### When it earns its keep
 
-For a single `tmux send-keys`, it does not — run tmux. It earns its keep when
-something has to be *asked* rather than done, or *waited for* rather than
-polled: which pane is running the failing test, whether the dev server came up,
-whether the session you are about to create already exists.
+For a single `tmux send-keys`, run tmux.
 
-`LibTmuxMCP` is the same tools as a library, if you would rather embed them in a
-server of your own than run this one.
+It earns its keep when something has to be *asked* or *waited for*: which pane
+is running the failing test, whether the dev server came up, whether the
+session you are about to create already exists.
 
-## Project status
+[`LibTmuxMCP`][mod-libtmuxmcp] is the same tools as a library, to embed in a
+server of your own.
+
+## Testing your own code
+
+### [`withTmuxServer`][api-withtmuxserver]: a real tmux for tests
+
+[`TmuxFixture`][mod-tmuxfixture] provisions a private tmux server for a test or
+benchmark and reaps it when the body returns, throws, or the process is killed.
+
+`withTmuxServer` hands the body a server with one `bootstrap` session on a
+socket under `/tmp/libtmux-swift-test/`:
+
+```swift
+try await withTmuxServer { @Sendable server in
+    _ = try await server.newSession(named: "work")
+    _ = try await server.newSession(named: "build")
+    let sessions = try await server.sessions()
+    for session in sessions.sorted(by: { $0.name < $1.name }) {
+        print("\(session.name): \(session.windowCount) window")
+    }
+}
+```
+
+After `import TmuxFixture`, `ApiExamplesTests` runs this program and compares
+what it prints, `bootstrap: 1 window`, `build: 1 window`, and `work: 1 window`,
+with the expected output in `Examples/api-examples.json`.
+
+- **Every test uses it.** The suite provisions all its servers this way.
+- **Sockets by name.** [`withNamedTmuxServer`][api-withnamedtmuxserver] serves
+  the half that addresses a socket by name, and needs `TMUX_TMPDIR` below the
+  test root; [`namedSocketsAvailable`][api-namedsocketsavailable] says whether
+  it is.
+
+## Products
+
+Six things ship from this one package. Take only what you need — the core has
+one dependency, and the YAML reader is behind a trait so you do not pay for it
+unless you ask.
+
+| Product | Source | What it is for | Depends on |
+| --- | --- | --- | --- |
+| **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
+| **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
+| **[`tmux-workspace`](Sources/TmuxWorkspaceCLI/)** | [`Sources/TmuxWorkspaceCLI/`](Sources/TmuxWorkspaceCLI/) | Partial native workspace CLI: list, search, convert, import, load and capture. The command guide lists remaining work. | `LibTmux`, `TmuxWorkspace`, ArgumentParser, optional Yams |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
+| **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
+| **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
+
+Each has its own README with an install snippet, a usage example, and what it
+does and does not cover.
+
+[`TmuxWorkspace`][mod-tmuxworkspace] and [`LibTmuxMCP`][mod-libtmuxmcp] are both
+written against [`Server`][api-server] and neither mentions a mode, so both work
+in every mode.
+
+### [`LibTmux`][dir-libtmux]: the library
+
+Servers, sessions, windows, panes, and clients as values, with options, hooks,
+filtering, snapshots, and streaming over them. Reference: the
+[API pages][ref-libtmux-reference] on libtmux.org and
+[Swift Package Index][spi-libtmux].
+
+[`Server.version()`][api-server-version] reports what the server runs, and
+[`TmuxVersion`][api-tmuxversion] compares properly:
+
+```swift
+if try await server.version() < TmuxVersion(major: 3, minor: 4) {
+    print("this release predates the behaviour relied on below")
+}
+```
+
+`PlatformSupportTests` runs this against a fixture server.
+
+### [`TmuxWorkspace`][dir-tmuxworkspace]: workspaces from Swift
+
+Builds a session from a [tmuxp][] workspace written in Swift, JSON, or YAML.
+Reference: the [API pages][ref-ws-reference] and
+[Swift Package Index][spi-workspace].
+
+[`WorkspaceBuilder`][api-workspacebuilder] creates the session for a
+[`Workspace`][api-workspace] value, such as the one under
+[Workspaces](#workspaces-from-a-file-or-from-swift):
+
+```swift
+let session = try await WorkspaceBuilder.build(workspace, on: server)
+```
+
+### [`tmux-workspace`][dir-tmux-workspace]: the command
+
+Loads, lists, searches, converts, imports, and captures workspaces from a
+shell. It is partial; the [command manual][ref-cli] lists what remains.
+
+With a [workspace file][ref-ws-config] saved as `project.yaml`,
+[`load`][ref-cli-load] builds it on a tmux socket named `project` without
+attaching to it:
+
+```console
+$ tmux-workspace load \
+    -L project \
+    -d \
+    project.yaml
+```
+
+The [README][cli-readme] has an example for each subcommand.
+
+### [`LibTmuxMCP`][dir-libtmuxmcp]: tmux tools to embed
+
+The tools [`libtmux-mcp`][mod-libtmux-mcp] serves, as a library for a server of
+your own. Reference: the [API pages][ref-mcp-reference], [Swift Package
+Index][spi-mcp], and one page per [tool][ref-mcp-tools].
+
+[`TmuxTools`][api-tmuxtools] exposes the `inspect` toolset, which reads bounded
+state, unless a [`ToolAuthority`][api-toolauthority] says otherwise. This one
+exposes [`create_window`] and [`list_sessions`] and nothing else:
+
+```swift
+let authority = ToolAuthority(
+    toolsets: [],
+    includedTools: ["create_window", "list_sessions"]
+)
+let tools = TmuxTools(server: server, authority: authority)
+```
+
+`MCPEmbeddingTests` asserts the exact selection exposes only those two tools.
+
+### [`libtmux-mcp`][dir-libtmux-mcp]: the MCP server
+
+A [Model Context Protocol][MCP] server over stdio, started by an MCP client.
+Reference: the [overview][ref-mcp], the [client guide][ref-mcp-guide], and
+one page per [tool][ref-mcp-tools].
+
+Register a built binary with Claude Code, limited to the `inspect` toolset:
+
+```console
+$ claude mcp add tmux \
+    -e LIBTMUX_TOOLSETS=inspect \
+    -- /path/to/.build/debug/libtmux-mcp
+```
+
+Other clients take the JSON configuration under
+[tmux as MCP tools](#tmux-as-mcp-tools).
+
+### [`TmuxFixture`][dir-tmuxfixture]: a real tmux for tests
+
+Provisions a private tmux server for a test or benchmark and reaps it when the
+body returns, throws, or the process is killed. Guide:
+[Testing with libtmux][ref-guide-testing]. The example is under
+[Testing your own code](#testing-your-own-code).
+
+
+## What it leaves out
+
+- **A terminal.** Nothing here renders or emulates one; it sends commands to
+  tmux and reads its answers.
+- **Live objects.** A [`Session`][api-session] or a [`Pane`][api-pane] is a
+  value of what tmux reported when it was read, and does not change when tmux
+  does. Ask again, or subscribe, to see a change.
+- **Python's query list and exception hierarchy.** Results are plain arrays and
+  one typed [`TmuxError`][api-tmuxerror] replaces the hierarchy.
+- **Everything Python libtmux does.** This port follows it where following it
+  earns its place, and `Scripts/parity_report.py` names each divergence from its
+  recorded API.
+- **A signal disposition.** The library does not set `SIGPIPE`; see
+  [Platform notes](#platform-notes).
+- **A stable API.** Every release so far is an alpha and names are still
+  moving; see [Support and status](#support-and-status).
+
+## Support and status
 
 **Alpha.** The library works and its suite runs against eight tmux releases on
 every push, but the API has had no outside use and names are still moving.
 Expect to update code when you update the package.
 
-What that means concretely:
-
 - **The public API can change in any release**, with no deprecation first.
   Semantic versioning starts saying something at `0.1.0`; until then a version
   number only tells you which alpha you have.
 - **Pin an exact version**, for the reasons under [Install](#install).
-- **`LibTmux` is the part to build on.** It is the largest, the most exercised,
-  and the closest to settled. `TmuxWorkspace` and `LibTmuxMCP` are newer and
-  thinner, and are likelier to move.
+- **Swift 6 language mode,** with complete strict concurrency and no unsafe
+  flags.
+- **[`LibTmux`][mod-libtmux] is the part to build on.** It is the largest, the
+  most exercised, and the closest to settled.
+  [`TmuxWorkspace`][mod-tmuxworkspace] and [`LibTmuxMCP`][mod-libtmuxmcp] are
+  newer and thinner, and are likelier to move.
 - **The tmux behaviour is the tested part.** Compatibility with 3.2a through
-  3.7b is checked in CI against each release built from its own tag, so what
-  the library claims about tmux is evidence rather than intent. The Swift
+  3.7b is checked in CI against each release built from its own tag. The Swift
   surface around it is what has not settled.
 
 Useful now for a tool you control and can update. Not yet something to put
 under a dependency you do not.
 
-## Requirements
-
 | | |
 | --- | --- |
 | Swift | 6.2 or later |
-| Platforms | Linux and macOS — see [Platform notes](#platform-notes) |
+| Platforms | Linux, including WSL, and macOS — see [Platform notes](#platform-notes) |
 | tmux | 3.2a through 3.7b |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
+### Platform notes
+
+- **Linux, including WSL.** CI runs Ubuntu against each of the eight supported
+  tmux releases, in parallel.
+- **macOS.** CI runs tmux 3.2a and 3.7b, the ends of the range.
+- **Darwin handling.** None of it varies by tmux release: the `TMPDIR` a socket
+  path cannot afford, keg-only libevent and ncurses, and `F_SETNOSIGPIPE`.
+- **On Darwin, build with Xcode 26's toolchain.** [swift-subprocess][] needs
+  Swift 6.3 and fails to build under a 6.2 toolchain;
+  [`CONTRIBUTING.md`][r-github-contributing-md] has the detail.
+- **Ignore `SIGPIPE`** in a program that opens connections, because a write to
+  a tmux that went away first will otherwise end the process:
+
+```swift
+signal(SIGPIPE, SIG_IGN)
+```
+
+The library does not set this itself. The disposition is process-wide, and a
+library changing it would change how its host behaves at the end of every
+pipeline it is in.
+
+This package's own suite makes the call, which is how the need for it is known.
+
 ## Documentation
 
-The [DocC][] catalogue is the reference, and covers modes, snapshots, filtering,
-streaming, waiting, and platform support:
+The [DocC][] catalogue is the reference, and covers modes, snapshots,
+filtering, streaming, waiting, and platform support:
 
 ```console
 $ swift package --disable-sandbox preview-documentation --target LibTmux
 ```
 
-CI builds it and fails the job on any warning.
+CI builds it and fails the job on any warning. The same reference is hosted on
+libtmux.org:
 
-The same reference is hosted on libtmux.org, with [guides][ref-guides],
-[concepts][ref-concepts], and [topics][ref-topics] beside the
-[API pages][ref-libtmux], and on [Swift Package Index][spi-libtmux], which
-documents `LibTmux`, `TmuxWorkspace`, and `LibTmuxMCP`.
+- [API pages][ref-libtmux-reference], with [guides][ref-guides],
+  [concepts][ref-concepts], and [topics][ref-topics] beside them
+- [Swift Package Index][spi-libtmux], which documents [`LibTmux`][mod-libtmux],
+  [`TmuxWorkspace`][mod-tmuxworkspace], and [`LibTmuxMCP`][mod-libtmuxmcp]
+- [`docs/`][r-docs]: the CLI and MCP contracts that are too long for a README
 
 Every Swift example in this file is also code the build compiles, and most of
-it is code the suite *runs*. Compiling catches a call that was renamed; only
-running catches one that quietly began answering something else — so the
-examples that can address a live server live in [`Examples/`][examples] and are
-executed against real tmux, on sockets under this suite's own namespace.
+it is code the suite *runs*:
+
+- **Compiling** catches a call that was renamed.
+- **Running** catches one that quietly began answering something else.
+- **The live examples** are in [`Examples/`][examples] and run against real
+  tmux, on sockets under this suite's own namespace.
 
 ```console
 $ python3 Scripts/check_examples.py
-61 documented examples mapped to consumer sources
-53 have live-test call sites
+62 documented examples mapped to consumer sources
+55 have live-test call sites
 ```
 
 That check fails if a fence here has no example behind it. The Examples test
-run is what compiles those sources and exercises the 53 live call sites; CI
-runs both gates.
-[`Examples/README.md`](Examples/) says how a fence is matched, and what the
-check cannot see.
+run compiles those sources and exercises the live call sites; CI runs both
+gates. [`Examples/README.md`][r-examples] says how a fence is matched, and what
+the check cannot see.
 
 ## Tests
 
@@ -950,7 +1161,7 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 | Path | What is in it |
 | --- | --- |
 | [`Sources/`][sources] | The four runtime products |
-| [`Tests/`][tests] | The suite, and the `TmuxFixture` product every suite provisions servers through |
+| [`Tests/`][tests] | The suite, and the [`TmuxFixture`][mod-tmuxfixture] product every suite provisions servers through |
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
 | [`Parity/`][parity] | What Python libtmux exposes, recorded, and what this port does about each of it |
@@ -958,54 +1169,18 @@ CI runs the suite on Linux against each of tmux 3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7,
 | `Scripts/` | The Python tooling CI runs |
 | `dev/Spikes/` | Disposable experiment packages. Not part of a release |
 
-## Platform notes
-
-The suite runs on both. Linux covers every supported tmux release, eight ways
-in parallel; macOS runs the ends of that range, because what differs on Darwin
-is this package's own handling — the `TMPDIR` a socket path cannot afford,
-keg-only libevent and ncurses, `F_SETNOSIGPIPE` — and none of it varies by tmux
-release.
-
-**On Darwin, build with Xcode's toolchain rather than one from swift.org.**
-[swift-subprocess][] reaches `Span.bytes`, whose accessor back-deploys only from
-Swift 6.3, so a 6.2 toolchain fails inside the dependency at any deployment
-target below macOS 26 — and SwiftPM compiles a dependency at *that dependency's*
-declared minimum, so no number set here reaches it. Xcode 26 ships Swift 6.3,
-which is what the macOS lane and upstream's own CI both use.
-
-A program that opens connections should ignore `SIGPIPE`, because a write to a
-tmux that went away first will otherwise end the process:
-
-```swift
-signal(SIGPIPE, SIG_IGN)
-```
-
-The library does not set this itself — the disposition is process-wide, and a
-library changing it would change how its host behaves at the end of every
-pipeline it is in. This package's own suite makes the call, which is how the
-need for it is known.
-
-## Relationship to Python libtmux
-
-This is a port of [libtmux][] for Python, and follows it where following it
-earns its place. Where Swift wants something else, it gets something else:
-results are plain arrays rather than a query list, a single typed `TmuxError`
-replaces an exception hierarchy, and objects are values rather than live
-handles. `Scripts/parity_report.py` measures the surface against Python's
-recorded API and names each divergence, so a difference reads as a decision
-rather than an omission.
-
 ## Related projects
 
 - [libtmux][] — the Python library this is a port of
-- [tmuxp][] — tmux session manager, and the workspace format `TmuxWorkspace`
-  reads
+- [tmuxp][] — tmux session manager, and the workspace format
+  [`TmuxWorkspace`][mod-tmuxworkspace] reads
 - [libtmux-mcp][py-mcp] — the Python MCP server for tmux
 - [The Tao of tmux][tao] — the book
 
 ## Attribution
 
-Please use the following BibTeX template to cite libtmux-swift in scientific discourse:
+Please use the following BibTeX template to cite libtmux-swift in scientific
+discourse:
 
 ```bibtex
 @misc{libtmux-swift,
@@ -1018,7 +1193,7 @@ Please use the following BibTeX template to cite libtmux-swift in scientific dis
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE][r-license].
 
 [libtmux]: https://github.com/tmux-python/libtmux
 [tmuxp]: https://tmuxp.git-pull.com/
@@ -1040,90 +1215,149 @@ MIT. See [LICENSE](LICENSE).
 [tao]: https://leanpub.com/the-tao-of-tmux
 [filtering]: Sources/LibTmux/LibTmux.docc/Filtering.md
 [alpha3-readme]: https://github.com/libtmux/libtmux-swift/blob/0.1.0-alpha.3/README.md
-[dir-libtmux]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/LibTmux
-[dir-workspace]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/TmuxWorkspace
-[dir-cli]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/TmuxWorkspaceCLI
-[dir-mcp]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/LibTmuxMCP
-[dir-mcp-server]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/libtmux-mcp
-[dir-fixture]: https://github.com/libtmux/libtmux-swift/tree/master/Tests/TmuxFixture
-[api-server]: https://libtmux.org/en/swift/latest/reference/server/
-[api-session]: https://libtmux.org/en/swift/latest/reference/session/
-[api-window]: https://libtmux.org/en/swift/latest/reference/window/
-[api-pane]: https://libtmux.org/en/swift/latest/reference/pane/
-[api-client]: https://libtmux.org/en/swift/latest/reference/client/
-[api-tmuxerror]: https://libtmux.org/en/swift/latest/reference/tmuxerror/
-[api-filterexpr]: https://libtmux.org/en/swift/latest/reference/filterexpr/
-[api-tmuxmode]: https://libtmux.org/en/swift/latest/reference/tmuxmode/
-[api-workspace]: https://libtmux.org/en/swift/latest/workspace/reference/workspace/
-[api-workspacebuilder]: https://libtmux.org/en/swift/latest/workspace/reference/workspacebuilder/
-[api-tmuxtools]: https://libtmux.org/en/swift/latest/mcp/reference/tmuxtools/
-[api-toolauthority]: https://libtmux.org/en/swift/latest/mcp/reference/toolauthority/
-[api-server-snapshot]: <https://libtmux.org/en/swift/latest/reference/server-snapshot()/>
-[api-server-using]: <https://libtmux.org/en/swift/latest/reference/server-using(_-_-)/>
-[api-server-connected]: <https://libtmux.org/en/swift/latest/reference/server-connected(attachingto-_-)/>
-[api-server-selectlayout]: <https://libtmux.org/en/swift/latest/reference/server-selectlayout(_-_-)/>
-[api-workspace-decode-yaml]: <https://libtmux.org/en/swift/latest/workspace/reference/workspace-decode(yaml-)/>
-[ref-libtmux]: https://libtmux.org/en/swift/latest/reference/
-[ref-workspace]: https://libtmux.org/en/swift/latest/workspace/reference/
-[ref-cli]: https://libtmux.org/en/swift/latest/workspace/cli/
-[ref-cli-load]: https://libtmux.org/en/swift/latest/workspace/cli/load/
-[ref-cli-freeze]: https://libtmux.org/en/swift/latest/workspace/cli/freeze/
-[ref-workspace-config]: https://libtmux.org/en/swift/latest/workspace/configuration/
-[ref-mcp]: https://libtmux.org/en/swift/latest/mcp/
-[ref-mcp-reference]: https://libtmux.org/en/swift/latest/mcp/reference/
-[ref-mcp-tools]: https://libtmux.org/en/swift/latest/mcp/tools/
-[ref-mcp-guide]: https://libtmux.org/en/swift/latest/mcp/guides/
-[ref-mcp-capabilities]: https://libtmux.org/en/swift/latest/mcp/resources/capabilities/
-[ref-testing]: https://libtmux.org/en/swift/latest/guides/testing-with-libtmux/
-[ref-guides]: https://libtmux.org/en/swift/latest/guides/
-[ref-concepts]: https://libtmux.org/en/swift/latest/concepts/
-[ref-topics]: https://libtmux.org/en/swift/latest/topics/
 [spi-libtmux]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmux
 [spi-workspace]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/tmuxworkspace
 [spi-mcp]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmuxmcp
-[`list_sessions`]: https://libtmux.org/en/swift/latest/mcp/tools/list_sessions/
-[`list_windows`]: https://libtmux.org/en/swift/latest/mcp/tools/list_windows/
-[`list_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/list_panes/
-[`get_server_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_server_info/
-[`get_session_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_session_info/
-[`get_window_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_window_info/
-[`get_pane_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_pane_info/
+[cli-readme]: Sources/TmuxWorkspaceCLI/README.md
+[api-client]: https://libtmux.org/en/swift/latest/reference/client/
+[api-controlsession-changes-named]: <https://libtmux.org/en/swift/latest/reference/controlsession-changes(named-)/>
+[api-controlsession-watch]: <https://libtmux.org/en/swift/latest/reference/controlsession-watch(_-)/>
+[api-filterexpr]: https://libtmux.org/en/swift/latest/reference/filterexpr/
+[api-formatsubscription]: https://libtmux.org/en/swift/latest/reference/formatsubscription/
+[api-namedsocketsavailable]: https://libtmux.org/en/swift/latest/reference/namedsocketsavailable/
+[api-outputwait]: https://libtmux.org/en/swift/latest/reference/outputwait/
+[api-pane-currentcommand]: https://libtmux.org/en/swift/latest/reference/pane-currentcommand/
+[api-pane-currentpath]: https://libtmux.org/en/swift/latest/reference/pane-currentpath/
+[api-pane]: https://libtmux.org/en/swift/latest/reference/pane/
+[api-paneplan]: https://libtmux.org/en/swift/latest/workspace/reference/paneplan/
+[api-regexpattern]: https://libtmux.org/en/swift/latest/reference/regexpattern/
+[api-server-buffer-named]: <https://libtmux.org/en/swift/latest/reference/server-buffer(named-)/>
+[api-server-capture-includinghistory]: <https://libtmux.org/en/swift/latest/reference/server-capture(_-includinghistory-)/>
+[api-server-connected-attachingto]: <https://libtmux.org/en/swift/latest/reference/server-connected(attachingto-_-)/>
+[api-server-hassession]: <https://libtmux.org/en/swift/latest/reference/server-hassession(_-)/>
+[api-server-mode]: https://libtmux.org/en/swift/latest/reference/server-mode/
+[api-server-newsession-named-startdirectory-windowname-width-height]: <https://libtmux.org/en/swift/latest/reference/server-newsession(named-startdirectory-windowname-width-height-)/>
+[api-server-newwindow-in-named-startdirectory]: <https://libtmux.org/en/swift/latest/reference/server-newwindow(in-named-startdirectory-)/>
+[api-server-panes-where]: <https://libtmux.org/en/swift/latest/reference/server-panes(where-)/>
+[api-server-panes]: <https://libtmux.org/en/swift/latest/reference/server-panes()/>
+[api-server-refresh]: <https://libtmux.org/en/swift/latest/reference/server-refresh(_-)/>
+[api-server-run-in]: <https://libtmux.org/en/swift/latest/reference/server-run(_-in-)/>
+[api-server-run]: <https://libtmux.org/en/swift/latest/reference/server-run(_-)/>
+[api-server-selectlayout]: <https://libtmux.org/en/swift/latest/reference/server-selectlayout(_-_-)/>
+[api-server-session-named]: <https://libtmux.org/en/swift/latest/reference/server-session(named-)/>
+[api-server-sessions]: <https://libtmux.org/en/swift/latest/reference/server-sessions()/>
+[api-server-setoption-to-scope]: <https://libtmux.org/en/swift/latest/reference/server-setoption(_-to-scope-)/>
+[api-server-shellinvocation]: https://libtmux.org/en/swift/latest/reference/server-shellinvocation/
+[api-server-snapshot]: <https://libtmux.org/en/swift/latest/reference/server-snapshot()/>
+[api-server-using]: <https://libtmux.org/en/swift/latest/reference/server-using(_-_-)/>
+[api-server-validatelayouts]: <https://libtmux.org/en/swift/latest/reference/server-validatelayouts(_-)/>
+[api-server-version]: <https://libtmux.org/en/swift/latest/reference/server-version()/>
+[api-server-wait-for]: <https://libtmux.org/en/swift/latest/reference/server-wait(for-)/>
+[api-server-waitforoutput-in-matching-stoppingat-requiringfreshoutput-startingat-timeout-taillimit]: <https://libtmux.org/en/swift/latest/reference/server-waitforoutput(in-matching-stoppingat-requiringfreshoutput-startingat-timeout-taillimit-)/>
+[api-server-windows]: <https://libtmux.org/en/swift/latest/reference/server-windows()/>
+[api-server]: https://libtmux.org/en/swift/latest/reference/server/
+[api-serverconfiguration]: https://libtmux.org/en/swift/latest/mcp/reference/serverconfiguration/
+[api-session]: https://libtmux.org/en/swift/latest/reference/session/
+[api-snapshot]: https://libtmux.org/en/swift/latest/reference/snapshot/
+[api-tmuxcommand]: https://libtmux.org/en/swift/latest/reference/tmuxcommand/
+[api-tmuxcommandlist]: https://libtmux.org/en/swift/latest/reference/tmuxcommandlist/
+[api-tmuxerror]: https://libtmux.org/en/swift/latest/reference/tmuxerror/
+[api-tmuxmode-connected-to]: <https://libtmux.org/en/swift/latest/reference/tmuxmode-connected(to-)/>
+[api-tmuxmode-direct]: https://libtmux.org/en/swift/latest/reference/tmuxmode-direct/
+[api-tmuxmode]: https://libtmux.org/en/swift/latest/reference/tmuxmode/
+[api-tmuxtools]: https://libtmux.org/en/swift/latest/mcp/reference/tmuxtools/
+[api-tmuxversion]: https://libtmux.org/en/swift/latest/reference/tmuxversion/
+[api-toolauthority]: https://libtmux.org/en/swift/latest/mcp/reference/toolauthority/
+[api-toolset]: https://libtmux.org/en/swift/latest/mcp/reference/toolset/
+[api-window]: https://libtmux.org/en/swift/latest/reference/window/
+[api-windowplan]: https://libtmux.org/en/swift/latest/workspace/reference/windowplan/
+[api-withnamedtmuxserver]: <https://libtmux.org/en/swift/latest/reference/withnamedtmuxserver(_-)/>
+[api-withtmuxerror]: <https://libtmux.org/en/swift/latest/reference/withtmuxerror(_-)/>
+[api-withtmuxserver]: <https://libtmux.org/en/swift/latest/reference/withtmuxserver(socketfilename-_-)/>
+[api-workspace-decode-json]: <https://libtmux.org/en/swift/latest/workspace/reference/workspace-decode(json-)/>
+[api-workspace-decode-yaml]: <https://libtmux.org/en/swift/latest/workspace/reference/workspace-decode(yaml-)/>
+[api-workspace]: https://libtmux.org/en/swift/latest/workspace/reference/workspace/
+[api-workspacebuilder-build-on]: <https://libtmux.org/en/swift/latest/workspace/reference/workspacebuilder-build(_-on-)/>
+[api-workspacebuilder]: https://libtmux.org/en/swift/latest/workspace/reference/workspacebuilder/
+[dir-libtmux-mcp]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/libtmux-mcp
+[dir-libtmux]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/LibTmux
+[dir-libtmuxmcp]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/LibTmuxMCP
+[dir-tmux-workspace]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/TmuxWorkspaceCLI
+[dir-tmuxfixture]: https://github.com/libtmux/libtmux-swift/tree/master/Tests/TmuxFixture
+[dir-tmuxworkspace]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/TmuxWorkspace
+[mod-libtmux-mcp]: https://libtmux.org/en/swift/latest/mcp/
+[mod-libtmux]: https://libtmux.org/en/swift/latest/reference/
+[mod-libtmuxmcp]: https://libtmux.org/en/swift/latest/mcp/reference/
+[mod-tmux-workspace]: https://libtmux.org/en/swift/latest/workspace/cli/
+[mod-tmuxfixture]: https://libtmux.org/en/swift/latest/guides/testing-with-libtmux/
+[mod-tmuxworkspace]: https://libtmux.org/en/swift/latest/workspace/reference/
+[r-docs-mcp-contract-md-capability-metadata]: docs/mcp-contract.md#capability-metadata
+[r-docs-mcp-contract-md-default-launch-and-teardown]: docs/mcp-contract.md#default-launch-and-teardown
+[r-docs-mcp-contract-md-output-budgets-and-deadlines]: docs/mcp-contract.md#output-budgets-and-deadlines
+[r-docs-mcp-contract-md-pane-input]: docs/mcp-contract.md#pane-input
+[r-docs-mcp-contract-md-pane-modes]: docs/mcp-contract.md#pane-modes
+[r-docs]: docs/
+[r-examples]: Examples/
+[r-github-contributing-md]: .github/CONTRIBUTING.md
+[r-license]: LICENSE
+[ref-capabilities]: https://libtmux.org/en/swift/latest/mcp/resources/capabilities/
+[ref-cli-load]: https://libtmux.org/en/swift/latest/workspace/cli/load/
+[ref-cli]: https://libtmux.org/en/swift/latest/workspace/cli/
+[ref-concept-queries]: https://libtmux.org/en/swift/latest/concepts/queries/
+[ref-concepts]: https://libtmux.org/en/swift/latest/concepts/
+[ref-guide-testing]: https://libtmux.org/en/swift/latest/guides/testing-with-libtmux/
+[ref-guides]: https://libtmux.org/en/swift/latest/guides/
+[ref-libtmux-reference]: https://libtmux.org/en/swift/latest/reference/
+[ref-mcp-guide]: https://libtmux.org/en/swift/latest/mcp/guides/
+[ref-mcp-reference]: https://libtmux.org/en/swift/latest/mcp/reference/
+[ref-mcp-tools]: https://libtmux.org/en/swift/latest/mcp/tools/
+[ref-mcp]: https://libtmux.org/en/swift/latest/mcp/
+[ref-topic-waiting]: https://libtmux.org/en/swift/latest/topics/waiting-and-retry/
+[ref-topics]: https://libtmux.org/en/swift/latest/topics/
+[ref-ws-config]: https://libtmux.org/en/swift/latest/workspace/configuration/
+[ref-ws-reference]: https://libtmux.org/en/swift/latest/workspace/reference/
+[`call_read_tools_batch`]: https://libtmux.org/en/swift/latest/mcp/tools/call_read_tools_batch/
 [`capture_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/capture_pane/
 [`capture_since`]: https://libtmux.org/en/swift/latest/mcp/tools/capture_since/
-[`snapshot_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/snapshot_pane/
-[`search_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/search_panes/
-[`find_pane_by_position`]: https://libtmux.org/en/swift/latest/mcp/tools/find_pane_by_position/
-[`wait_for_text`]: https://libtmux.org/en/swift/latest/mcp/tools/wait_for_text/
-[`get_tmux_variables`]: https://libtmux.org/en/swift/latest/mcp/tools/get_tmux_variables/
-[`show_option`]: https://libtmux.org/en/swift/latest/mcp/tools/show_option/
-[`show_environment`]: https://libtmux.org/en/swift/latest/mcp/tools/show_environment/
-[`show_hooks`]: https://libtmux.org/en/swift/latest/mcp/tools/show_hooks/
-[`call_read_tools_batch`]: https://libtmux.org/en/swift/latest/mcp/tools/call_read_tools_batch/
-[`rename_session`]: https://libtmux.org/en/swift/latest/mcp/tools/rename_session/
-[`rename_window`]: https://libtmux.org/en/swift/latest/mcp/tools/rename_window/
-[`select_window`]: https://libtmux.org/en/swift/latest/mcp/tools/select_window/
-[`select_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/select_pane/
-[`select_layout`]: https://libtmux.org/en/swift/latest/mcp/tools/select_layout/
-[`resize_window`]: https://libtmux.org/en/swift/latest/mcp/tools/resize_window/
-[`resize_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/resize_pane/
-[`move_window`]: https://libtmux.org/en/swift/latest/mcp/tools/move_window/
-[`swap_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/swap_pane/
-[`set_pane_title`]: https://libtmux.org/en/swift/latest/mcp/tools/set_pane_title/
-[`wait_for_channel`]: https://libtmux.org/en/swift/latest/mcp/tools/wait_for_channel/
-[`signal_channel`]: https://libtmux.org/en/swift/latest/mcp/tools/signal_channel/
-[`set_mouse_enabled`]: https://libtmux.org/en/swift/latest/mcp/tools/set_mouse_enabled/
-[`set_history_limit`]: https://libtmux.org/en/swift/latest/mcp/tools/set_history_limit/
+[`clear_pane_scrollback`]: https://libtmux.org/en/swift/latest/mcp/tools/clear_pane_scrollback/
 [`create_session`]: https://libtmux.org/en/swift/latest/mcp/tools/create_session/
 [`create_window`]: https://libtmux.org/en/swift/latest/mcp/tools/create_window/
-[`split_window`]: https://libtmux.org/en/swift/latest/mcp/tools/split_window/
+[`find_pane_by_position`]: https://libtmux.org/en/swift/latest/mcp/tools/find_pane_by_position/
+[`get_pane_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_pane_info/
+[`get_server_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_server_info/
+[`get_session_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_session_info/
+[`get_tmux_variables`]: https://libtmux.org/en/swift/latest/mcp/tools/get_tmux_variables/
+[`get_window_info`]: https://libtmux.org/en/swift/latest/mcp/tools/get_window_info/
+[`kill_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/kill_pane/
+[`kill_session`]: https://libtmux.org/en/swift/latest/mcp/tools/kill_session/
+[`kill_window`]: https://libtmux.org/en/swift/latest/mcp/tools/kill_window/
+[`list_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/list_panes/
+[`list_sessions`]: https://libtmux.org/en/swift/latest/mcp/tools/list_sessions/
+[`list_windows`]: https://libtmux.org/en/swift/latest/mcp/tools/list_windows/
+[`move_window`]: https://libtmux.org/en/swift/latest/mcp/tools/move_window/
+[`paste_text`]: https://libtmux.org/en/swift/latest/mcp/tools/paste_text/
+[`rename_session`]: https://libtmux.org/en/swift/latest/mcp/tools/rename_session/
+[`rename_window`]: https://libtmux.org/en/swift/latest/mcp/tools/rename_window/
+[`resize_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/resize_pane/
+[`resize_window`]: https://libtmux.org/en/swift/latest/mcp/tools/resize_window/
 [`respawn_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/respawn_pane/
 [`run_shell_command`]: https://libtmux.org/en/swift/latest/mcp/tools/run_shell_command/
-[`send_keys`]: https://libtmux.org/en/swift/latest/mcp/tools/send_keys/
+[`search_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/search_panes/
+[`select_layout`]: https://libtmux.org/en/swift/latest/mcp/tools/select_layout/
+[`select_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/select_pane/
+[`select_window`]: https://libtmux.org/en/swift/latest/mcp/tools/select_window/
 [`send_keys_batch`]: https://libtmux.org/en/swift/latest/mcp/tools/send_keys_batch/
-[`paste_text`]: https://libtmux.org/en/swift/latest/mcp/tools/paste_text/
+[`send_keys`]: https://libtmux.org/en/swift/latest/mcp/tools/send_keys/
+[`set_history_limit`]: https://libtmux.org/en/swift/latest/mcp/tools/set_history_limit/
+[`set_mouse_enabled`]: https://libtmux.org/en/swift/latest/mcp/tools/set_mouse_enabled/
+[`set_pane_title`]: https://libtmux.org/en/swift/latest/mcp/tools/set_pane_title/
 [`set_synchronize_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/set_synchronize_panes/
-[`clear_pane_scrollback`]: https://libtmux.org/en/swift/latest/mcp/tools/clear_pane_scrollback/
-[`kill_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/kill_pane/
-[`kill_window`]: https://libtmux.org/en/swift/latest/mcp/tools/kill_window/
-[`kill_session`]: https://libtmux.org/en/swift/latest/mcp/tools/kill_session/
-[api-withtmuxserver]: <https://libtmux.org/en/swift/latest/reference/withtmuxserver(socketfilename-_-)/>
+[`show_environment`]: https://libtmux.org/en/swift/latest/mcp/tools/show_environment/
+[`show_hooks`]: https://libtmux.org/en/swift/latest/mcp/tools/show_hooks/
+[`show_option`]: https://libtmux.org/en/swift/latest/mcp/tools/show_option/
+[`signal_channel`]: https://libtmux.org/en/swift/latest/mcp/tools/signal_channel/
+[`snapshot_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/snapshot_pane/
+[`split_window`]: https://libtmux.org/en/swift/latest/mcp/tools/split_window/
+[`swap_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/swap_pane/
+[`wait_for_channel`]: https://libtmux.org/en/swift/latest/mcp/tools/wait_for_channel/
+[`wait_for_text`]: https://libtmux.org/en/swift/latest/mcp/tools/wait_for_text/

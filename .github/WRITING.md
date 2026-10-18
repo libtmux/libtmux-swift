@@ -70,6 +70,20 @@ where do I go deeper.
   behind the issues nobody has filed yet.
 - **Stable, literal headings.** "Install", "Requirements", "Tests" retrieve;
   "Getting going" and "A few knobs" do not.
+- **Quick start first, then tasks in the reader's words.** One `##` section per
+  task, ordered from first use to deeper use. Under it, one `###` per API,
+  headed by the linked API and what it does: ``### [`Server.sessions()`][ref]:
+  what tmux has now``.
+- **Each subsection builds one step.** One or two sentences naming the call and
+  its linked siblings, a short example the Examples package runs, where it runs
+  and what it prints, then at most one short note.
+- **Link the API where it is named.** Every API, MCP tool, and CLI command links
+  to its libtmux.org page on its first mention in each section, with the
+  definitions collected at the foot of the file. A code fence holds no link.
+- **No walls.** A prose block is at most 240 characters once its markup is
+  removed, and `Scripts/check_readme_links.py` fails a longer one in a product
+  README. A contract a caller must know is a few bullets that each link the
+  full text on libtmux.org, or in [`docs/`](../docs/) where no page exists.
 
 Two rules are enforced rather than trusted:
 

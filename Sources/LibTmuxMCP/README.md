@@ -9,25 +9,36 @@
 
 <div align="center">
 
-# `LibTmuxMCP`
+# [`LibTmuxMCP`][mod-libtmuxmcp]
 
 tmux as [Model Context Protocol][MCP] tools you can embed:
-[`TmuxTools`][api-tmuxtools], [`MCPRequestHandler`][api-handler], and
-[`MCPService`][api-service], without the stdio executable.
+[`TmuxTools`][api-tmuxtools], [`MCPRequestHandler`][api-mcprequesthandler], and
+[`MCPService`][api-mcpservice], without the stdio executable.
 
 </div>
 
-To *run* one rather than embed it, use [`libtmux-mcp`](../libtmux-mcp), which is
-these tools served over stdio.
+[`libtmux-mcp`][r-libtmux-mcp] serves these tools over stdio, for an MCP client
+to launch.
 
 ```swift
 .product(name: "LibTmuxMCP", package: "libtmux-swift")
 ```
 
+**Contents** — [Quick start](#quick-start) · [The tools](#the-tools) ·
+[Pane input](#pane-input-checks) · [Adding a tool](#adding-a-tool) ·
+[Reference](#reference)
+
+## Quick start
+
 ```swift
 import LibTmux
 import LibTmuxMCP
 ```
+
+### [`TmuxTools`][api-tmuxtools]: the tools, as values
+
+`TmuxTools` wraps a [`Server`][api-server]. `visibleDefinitions` lists the tools
+it exposes, and a [`ToolCall`][api-toolcall] names the tool to run:
 
 ```swift
 public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
@@ -40,15 +51,19 @@ public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
 }
 ```
 
-`TmuxTools(server:)` exposes the `inspect` toolset. Pass an explicit
-[`ToolAuthority`][api-authority] to add the independent `manage`, `execute`, or
-`teardown` groups. Toolsets shape the callable interface; they do not authorize
-commands or confine the tmux user.
+`MCPEmbeddingTests` runs this against a fixture server and asserts it lists the
+fixture's one pane. It prints each tool's name and summary.
 
-The default constructor exposes 18 inspect tools. The complete registry has 45:
-18 `inspect`, 14 `manage`, nine `execute`, and four `teardown`.
+- **Default.** `TmuxTools(server:)` exposes the 18 `inspect` tools.
+- **The registry** has 45: 18 `inspect`, 14 `manage`, nine `execute`, and four
+  `teardown`.
+- **No authorization.** Toolsets choose which tools a client can call. Every
+  call still runs as the tmux user.
 
-For least authority, pass a typed exact selection:
+### [`ToolAuthority`][api-toolauthority]: grant more, or less
+
+Pass an explicit `ToolAuthority` to add the independent `manage`, `execute`,
+or `teardown` groups. For least authority, pass a typed exact selection:
 
 ```swift
 let authority = ToolAuthority(
@@ -58,82 +73,86 @@ let authority = ToolAuthority(
 let tools = TmuxTools(server: server, authority: authority)
 ```
 
-Named inclusions apply after toolset expansion. Exclusions apply last and also
-remove names from aggregate authority.
+`MCPEmbeddingTests` asserts this exposes only [`create_window`] and
+[`list_sessions`].
+
+- **Inclusions** apply after toolset expansion.
+- **Exclusions** apply last, and also remove names from aggregate authority.
 
 ## The tools
 
-The [root tool catalogue](../../README.md#the-tools) lists the authoritative
-registry, grouped by intent: `inspect` reads bounded state, `manage` changes
-tmux objects, `execute` starts or drives pane processes, and `teardown` deletes
-tmux state. `visibleDefinitions` exposes the effective rows, including native
-input and output schemas, process reach, tmux effects, output classes, one
-`inputLiteralization` map, and aggregate authority. Detailed input sink tables
-remain internal validation data.
+The [tool index][ref-mcp-tools] has one page per tool, and the
+[root tool table][r-readme-md-toolset-the-tools-a-client-is-offered] groups
+them by intent:
 
-[`select_layout`] accepts named layouts, unique abbreviations for the running
-daemon's version, and checksummed saved layouts. It checks syntax before window
-lookup, then uses the core mutation's captured-window guard on the selected
-transport. tmux owns geometry and pruning. The result's `layout` field echoes
-the accepted input.
+- **By toolset.** `inspect` reads bounded state, `manage` changes tmux objects,
+  `execute` starts or drives pane processes, and `teardown` deletes tmux state.
+- **By definition.** `visibleDefinitions` exposes the effective rows: native
+  input and output schemas, process reach, tmux effects, output classes, and
+  aggregate authority.
 
-`CapabilityResources` publishes that same frozen surface at
-[`tmux://capabilities`][ref-capabilities]. Tool registration metadata and the
-resource use the same complete capability rows. The report also marks itself
-frozen and carries the common execution boundary and connection-provenance
-objects.
+### [`select_layout`]: names, abbreviations, saved layouts
 
-Hierarchy rows carry opaque references for follow-up reads. They bind the row
-to the current tmux daemon and expire when the MCP process restarts; re-list to
-replace one that has expired. Exact window occurrences carry both a global
-`windowRef` and session-local `linkRef`.
+- **Accepts** named layouts, unique abbreviations for the running daemon's
+  version, and checksummed saved layouts.
+- **Checks syntax** before window lookup, then uses the core mutation's
+  captured-window guard on the selected transport.
+- **Leaves geometry** and pruning to tmux. The result's `layout` field echoes
+  the accepted input.
 
-`TmuxTools` is written against [`LibTmux`](../LibTmux)'s `Server` and never
+### [`capture_pane`]: bounded history, no pane modes
+
+- **History.** Use `capture_pane` ranges, [`search_panes`] for discovery,
+  and [`snapshot_pane`] for metadata and content in one response. The
+  snapshot is several reads, so a pane can change between them.
+- **Following.** An opaque [`capture_since`] cursor returns the output
+  that came after.
+- **Pane modes.** Read `pane_in_mode` or `pane_mode` with
+  [`get_tmux_variables`], then report the human-owned state without
+  entering or cancelling it.
+
+### [`tmux://capabilities`][ref-capabilities]: the report of what is served
+
+- **One report.** `CapabilityResources` publishes the surface fixed at startup,
+  and tool registration metadata carries the same capability rows.
+- **Common objects.** The report also carries the execution boundary and the
+  connection provenance.
+- **References.** Hierarchy rows carry opaque references for follow-up reads.
+  They bind the row to the current tmux daemon and expire when the MCP process
+  restarts; re-list to replace one.
+
+[`TmuxTools`][api-tmuxtools] is written against [`Server`][api-server] and never
 mentions a mode, so it works the same directly or over a connection.
 
-That boundary is deliberate. Use [`capture_pane`] ranges for bounded history,
-[`search_panes`] for discovery, [`snapshot_pane`] for metadata and content in
-one MCP response, and an opaque [`capture_since`] cursor for subsequent output.
-`snapshot_pane` performs separate reads; it does not promise atomicity. Read
-`pane_in_mode` or `pane_mode` with [`get_tmux_variables`] when mode state
-matters, then report the human-owned state without entering or cancelling it.
+## Pane input checks
 
-Pane-input tools read fresh typed pane state and refuse dead panes, nonzero mode
-stacks, incomplete or malformed caller context, and terminal-attended panes. A
-zoomed terminal client protects its active pane; an unzoomed terminal client
-protects every pane in its active window. Control clients do not count.
-`force=true` bypasses only an exact caller-pane match; it never bypasses
-attendance, active-operation, mode, death, shell, or target-count checks.
-[`send_keys`] derives effective synchronized membership from each pane's
-configured value and reserves every configured member through dispatch. Its
-`resolvedPaneIds` are the checked configuration, not an attestation that tmux
-delivered bytes to every member. Batch rows are checked individually, and
-every check remains observational rather than atomic.
+### [`send_keys`]: the checks before input
 
-[`paste_text`] checks the target before staging and again immediately before its
-one paste dispatch. It puts non-empty text and its optional newline in one
-private, target-only buffer, then removes the buffer on success or failure.
-Empty text without Enter still performs the initial guard, then returns without
-a buffer or input dispatch. [`run_shell_command`] likewise checks exactly before
-setup and before dispatch, and a second run refuses instead of waiting. It
-requires one configured target running a recognized POSIX shell, pins the
-selected tmux executable and socket route, and isolates the command in a
-subshell so `cd`, variables, traps, syntax errors, and `exit` do not alter or
-terminate the interactive parent.
+- **Fresh state.** Pane-input tools read typed pane state and refuse dead panes,
+  nonzero mode stacks, incomplete or malformed caller context, and
+  terminal-attended panes.
+- **Attendance.** A zoomed terminal client protects its active pane; an
+  unzoomed one protects every pane in its active window. Control clients do not
+  count.
+- **`force=true`** bypasses only an exact caller-pane match.
+- **Synchronized panes.** `send_keys` reserves every configured member through
+  dispatch, and [`send_keys_batch`] checks each row on its own. The returned
+  `resolvedPaneIds` lists the members that were checked; it does not confirm
+  delivery.
 
-These are safeguards for a trusted shell, tmux daemon, and configuration, not
-universal containment for a hostile shell environment. Pane state can still
-change after the final check.
+### [`paste_text`] and [`run_shell_command`]: one buffer, one subshell
 
-## Reference
+- **`paste_text`** checks its target before staging and again before its one
+  paste dispatch, in a private buffer it removes on success or failure.
+- **`run_shell_command`** checks before setup and before dispatch, and refuses a
+  second run. It needs one target running a recognized POSIX shell, and runs the
+  command in a subshell.
+- **Trusted shells.** The guards assume a trusted shell, tmux daemon, and
+  configuration; a hostile shell can get around them. Pane state can still
+  change after the final check.
 
-- [API pages][ref-reference]: the embedding types, typed tool authority, and the
-  separate protocol catalogue
-- [MCP overview][ref-mcp], [toolset selection][ref-topics], and the
-  [embedded example][ref-examples]
-- [Tool pages][ref-tools], one per tool, and the
-  [`tmux://capabilities`][ref-capabilities] resource
-- [Swift Package Index][spi-mcp]
+The full text of each guard is in
+[`docs/mcp-contract.md`][r-docs-mcp-contract-md-pane-input].
 
 ## Adding a tool
 
@@ -148,24 +167,43 @@ A tool has three code-native declarations, and tests hold them together:
 control mismatch, undeclared nested authority, invalid recursive input or
 output, or drift between registration metadata and the capability resource.
 
+## Reference
+
+- [API pages][ref-mcp-reference]: the embedding types, typed tool authority,
+  and the separate protocol catalogue
+- [MCP overview][ref-mcp], [toolset selection][ref-mcp-topics], and the
+  [embedded example][ref-mcp-examples]
+- [Tool pages][ref-mcp-tools], one per tool, and the
+  [`tmux://capabilities`][ref-capabilities] resource
+- [Swift Package Index][spi-mcp]
+
 [MCP]: https://modelcontextprotocol.io
-[api-tmuxtools]: https://libtmux.org/en/swift/latest/mcp/reference/tmuxtools/
-[api-handler]: https://libtmux.org/en/swift/latest/mcp/reference/mcprequesthandler/
-[api-service]: https://libtmux.org/en/swift/latest/mcp/reference/mcpservice/
-[api-authority]: https://libtmux.org/en/swift/latest/mcp/reference/toolauthority/
-[ref-reference]: https://libtmux.org/en/swift/latest/mcp/reference/
-[ref-mcp]: https://libtmux.org/en/swift/latest/mcp/
-[ref-topics]: https://libtmux.org/en/swift/latest/mcp/topics/
-[ref-examples]: https://libtmux.org/en/swift/latest/mcp/examples/
-[ref-tools]: https://libtmux.org/en/swift/latest/mcp/tools/
-[ref-capabilities]: https://libtmux.org/en/swift/latest/mcp/resources/capabilities/
 [spi-mcp]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmuxmcp
-[`select_layout`]: https://libtmux.org/en/swift/latest/mcp/tools/select_layout/
+[api-mcprequesthandler]: https://libtmux.org/en/swift/latest/mcp/reference/mcprequesthandler/
+[api-mcpservice]: https://libtmux.org/en/swift/latest/mcp/reference/mcpservice/
+[api-server]: https://libtmux.org/en/swift/latest/reference/server/
+[api-tmuxtools]: https://libtmux.org/en/swift/latest/mcp/reference/tmuxtools/
+[api-toolauthority]: https://libtmux.org/en/swift/latest/mcp/reference/toolauthority/
+[api-toolcall]: https://libtmux.org/en/swift/latest/mcp/reference/toolcall/
+[mod-libtmuxmcp]: https://libtmux.org/en/swift/latest/mcp/reference/
+[r-docs-mcp-contract-md-pane-input]: ../../docs/mcp-contract.md#pane-input
+[r-libtmux-mcp]: ../libtmux-mcp
+[r-readme-md-toolset-the-tools-a-client-is-offered]: ../../README.md#toolset-the-tools-a-client-is-offered
+[ref-capabilities]: https://libtmux.org/en/swift/latest/mcp/resources/capabilities/
+[ref-mcp-examples]: https://libtmux.org/en/swift/latest/mcp/examples/
+[ref-mcp-reference]: https://libtmux.org/en/swift/latest/mcp/reference/
+[ref-mcp-tools]: https://libtmux.org/en/swift/latest/mcp/tools/
+[ref-mcp-topics]: https://libtmux.org/en/swift/latest/mcp/topics/
+[ref-mcp]: https://libtmux.org/en/swift/latest/mcp/
 [`capture_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/capture_pane/
-[`search_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/search_panes/
-[`snapshot_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/snapshot_pane/
 [`capture_since`]: https://libtmux.org/en/swift/latest/mcp/tools/capture_since/
+[`create_window`]: https://libtmux.org/en/swift/latest/mcp/tools/create_window/
 [`get_tmux_variables`]: https://libtmux.org/en/swift/latest/mcp/tools/get_tmux_variables/
-[`send_keys`]: https://libtmux.org/en/swift/latest/mcp/tools/send_keys/
+[`list_sessions`]: https://libtmux.org/en/swift/latest/mcp/tools/list_sessions/
 [`paste_text`]: https://libtmux.org/en/swift/latest/mcp/tools/paste_text/
 [`run_shell_command`]: https://libtmux.org/en/swift/latest/mcp/tools/run_shell_command/
+[`search_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/search_panes/
+[`select_layout`]: https://libtmux.org/en/swift/latest/mcp/tools/select_layout/
+[`send_keys_batch`]: https://libtmux.org/en/swift/latest/mcp/tools/send_keys_batch/
+[`send_keys`]: https://libtmux.org/en/swift/latest/mcp/tools/send_keys/
+[`snapshot_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/snapshot_pane/

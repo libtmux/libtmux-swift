@@ -131,3 +131,48 @@ def test_a_link_inside_a_code_fence_is_not_read(tmp_path: Path) -> None:
     fenced = GOOD + "\n```\n[x](./nowhere.md)\n```\n"
 
     assert problems(tmp_path, fenced) == []
+
+
+WALL = " ".join(["word"] * 80)
+
+
+def test_a_paragraph_over_the_limit_is_reported(tmp_path: Path) -> None:
+    """A wall is a block no reader takes in at a glance."""
+    found = problems(tmp_path, GOOD + "\n" + WALL + "\n")
+
+    assert any("a block over 240 characters" in line for line in found)
+
+
+def test_a_list_item_over_the_limit_is_reported(tmp_path: Path) -> None:
+    """A bullet that runs on is a wall too."""
+    found = problems(tmp_path, GOOD + "\n- **Lead.** " + WALL + "\n")
+
+    assert any("a block over 240 characters" in line for line in found)
+
+
+def test_markup_does_not_count_toward_the_limit(tmp_path: Path) -> None:
+    """Only what a reader sees is measured, not the link targets behind it."""
+    target = "https://example.com/" + "a" * 300
+    prose = f"See [the page]({target}) and [`Server`][api-server] for more.\n"
+
+    assert problems(tmp_path, GOOD + "\n" + prose) == []
+
+
+def test_tables_html_and_the_contents_line_are_not_walls(tmp_path: Path) -> None:
+    """Index lines and markup are not prose."""
+    table = f"| Name | {WALL} |\n| --- | --- |\n"
+    contents = f"**Contents** — {WALL}\n"
+    html = f'<div align="center" data-x="{WALL}">\n'
+
+    assert problems(tmp_path, GOOD + "\n" + table + "\n" + contents + "\n" + html) == []
+
+
+def test_a_page_under_docs_is_read(tmp_path: Path) -> None:
+    """Moved detail has to stay linked as well as the README that points to it."""
+    repository(tmp_path)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/contract.md").write_text("See [it](./missing.md).\n")
+
+    found = check(tmp_path, REQUIRED)
+
+    assert any("docs/contract.md" in line and "missing.md" in line for line in found)
