@@ -11,6 +11,13 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Changed
+
+- CI no longer runs macOS: the `macos` workflow is gone, and the `ci` workflow
+  carries no macOS branches. macOS stays supported on a best-effort basis, and
+  CI coverage for it is highly limited, so a macOS-only regression is not
+  caught before merge. (#60)
+
 ## [0.1.0-alpha.7] - 2026-10-18
 
 ### Changed
