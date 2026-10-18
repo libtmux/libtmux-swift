@@ -184,6 +184,14 @@ jobs:
         if: runner.os == 'Linux' && matrix.tmux == '3.7b'
         run: python3 Scripts/check_examples.py --min-executed 40
 
+      # A README link is a claim about where something lives, and a moved
+      # directory or a renamed type breaks it without touching the page. This
+      # reads the tree rather than the network, so a link added before the
+      # documentation publishes does not fail here.
+      - name: Check README links resolve
+        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        run: python3 Scripts/check_readme_links.py
+
       # AGENTS.md states the socket-namespace rule in prose; this is what makes
       # it fail rather than be remembered. `/tmp` is shared with every other
       # libtmux port on the machine.

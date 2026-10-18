@@ -244,6 +244,14 @@ that package:
 $ python3 Scripts/check_examples.py --min-executed 40
 ```
 
+Every link in a README that points into this repository or at a libtmux.org
+API page names something that exists. The check reads the tree rather than the
+network, so it passes before the documentation publishes:
+
+```console
+$ python3 Scripts/check_readme_links.py
+```
+
 Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 
@@ -363,6 +371,14 @@ Edit the example, never the block on the page, then run the check:
 ```console
 $ python3 Scripts/check_examples.py
 ```
+
+Console commands in the Markdown are held to the code the same way. The suite
+parses every `$ tmux-workspace ...` command against the executable's command
+tree (`DocumentedCommandsTests`), and passes every MCP client configuration —
+the JSON `env` blocks and the `-e` settings of `claude mcp add` — through
+`ServerConfiguration`, the parse `libtmux-mcp` runs at startup
+(`ReadmeDocumentationTests`). The same file holds each tool name in the
+Markdown to its libtmux.org page.
 
 [`Examples/README.md`](../Examples/README.md) is the reference for the rest —
 how a fence is matched to an example, what the check cannot see, and the three
