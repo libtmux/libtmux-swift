@@ -244,6 +244,14 @@ that package:
 $ python3 Scripts/check_examples.py --min-executed 40
 ```
 
+Every link in a README that points into this repository or at a libtmux.org
+API page names something that exists. The check reads the tree rather than the
+network, so it passes before the documentation publishes:
+
+```console
+$ python3 Scripts/check_readme_links.py
+```
+
 Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 

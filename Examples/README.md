@@ -8,8 +8,8 @@ fails the build when a documented block appears in no file below.
 
 ```console
 $ python3 Scripts/check_examples.py --min-executed 41
-53 documented examples mapped to consumer sources
-47 have live-test call sites
+61 documented examples mapped to consumer sources
+53 have live-test call sites
 ```
 
 ## Why this is its own package

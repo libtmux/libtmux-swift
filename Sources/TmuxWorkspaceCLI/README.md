@@ -109,6 +109,74 @@ windows:
 $ tmux-workspace load example.yaml
 ```
 
+That form builds the session on the tmux server you are already inside and
+switches to it. Outside tmux, `load` needs an endpoint, so it refuses without
+`-S` or `-L`.
+
+## Command examples
+
+The [command manual][ref-cli] has one page per command.
+
+Outside tmux, [`load`][ref-cli-load] builds `example.yaml` on a socket named
+`project` and leaves the session detached:
+
+```console
+$ tmux-workspace load \
+    -L project \
+    -d \
+    example.yaml
+```
+
+Add `--json` to get one machine-readable result instead of text:
+
+```console
+$ tmux-workspace load \
+    --json \
+    -L project \
+    -d \
+    example.yaml
+```
+
+[`ls`][ref-cli-ls] lists the global workspaces and the local `.tmuxp.*` files
+it finds:
+
+```console
+$ tmux-workspace ls
+```
+
+[`search`][ref-cli-search] filters them, here by a window field matching
+`logs`:
+
+```console
+$ tmux-workspace search window:logs
+```
+
+[`freeze`][ref-cli-freeze] captures the running `example` session as a
+workspace file:
+
+```console
+$ tmux-workspace freeze \
+    -L project \
+    --save-to captured.yaml \
+    example
+```
+
+[`convert`][ref-cli-convert] prints a file in the other format, YAML as JSON
+here:
+
+```console
+$ tmux-workspace convert example.yaml
+```
+
+[`import`][ref-cli-import] translates a tmuxinator project, found by name in
+`~/.tmuxinator` or by path, and saves the result:
+
+```console
+$ tmux-workspace import tmuxinator \
+    --save-to blog.yaml \
+    blog
+```
+
 ## Commands
 
 `ls` discovers global workspaces and local `.tmuxp.yaml`, `.tmuxp.yml` and
@@ -296,9 +364,9 @@ For `-L` loads, set `LIBTMUX_SOCKET` to the same name instead of
 `LIBTMUX_SOCKET_PATH`. Set `LIBTMUX_TMUX_BIN` when selecting a tmux executable
 outside `PATH`. The endpoint is selected once at MCP startup.
 
-Discover tools with `tools/list`, then call `list_sessions`, `list_windows`
-with the loaded session's name, and `list_panes`. Use returned pane IDs as
-`paneId` with `capture_pane` or `wait_for_text`; bound `maxLines` and the
+Discover tools with `tools/list`, then call [`list_sessions`], [`list_windows`]
+with the loaded session's name, and [`list_panes`]. Use returned pane IDs as
+`paneId` with [`capture_pane`] or [`wait_for_text`]; bound `maxLines` and the
 wait's `timeoutMs` in milliseconds. A pending text wait allows other
 inspection calls on the same connection. The `tmux://capabilities` resource
 reports the selected endpoint and available tools.
@@ -387,9 +455,41 @@ runs.
 `--no-progress`, `TMUXP_PROGRESS=0`, `TERM=dumb`, redirected stderr and machine
 output disable the display. NDJSON receives discrete window/pane events.
 
+## Reference
+
+- [Command manual][ref-cli]: every subcommand, with [`edit`][ref-cli-edit],
+  [`debug-info`][ref-cli-debug-info], [`shell`][ref-cli-shell], and
+  [shell completion][ref-cli-completion]
+- [Output formats][ref-output] and [exit codes][ref-exit-codes]
+- [Install and load a workspace][ref-install] and
+  [inspect a workspace through MCP][ref-inspect-mcp]
+- [Workspace configuration][ref-config]: the file the commands read
+
 ## Remaining work
 
 Plugins and further execution settings; complete capture;
 generated manuals and portable distribution
 remain outside this checkpoint. The complete tmuxp command
 surface is not yet available. YAML is unavailable when its build trait is off.
+
+[ref-cli]: https://libtmux.org/en/swift/latest/workspace/cli/
+[ref-cli-load]: https://libtmux.org/en/swift/latest/workspace/cli/load/
+[ref-cli-ls]: https://libtmux.org/en/swift/latest/workspace/cli/ls/
+[ref-cli-search]: https://libtmux.org/en/swift/latest/workspace/cli/search/
+[ref-cli-freeze]: https://libtmux.org/en/swift/latest/workspace/cli/freeze/
+[ref-cli-convert]: https://libtmux.org/en/swift/latest/workspace/cli/convert/
+[ref-cli-import]: https://libtmux.org/en/swift/latest/workspace/cli/import/
+[ref-cli-edit]: https://libtmux.org/en/swift/latest/workspace/cli/edit/
+[ref-cli-debug-info]: https://libtmux.org/en/swift/latest/workspace/cli/debug-info/
+[ref-cli-shell]: https://libtmux.org/en/swift/latest/workspace/cli/shell/
+[ref-cli-completion]: https://libtmux.org/en/swift/latest/workspace/cli/completion/
+[ref-output]: https://libtmux.org/en/swift/latest/workspace/reference/output/
+[ref-exit-codes]: https://libtmux.org/en/swift/latest/workspace/reference/exit-codes/
+[ref-install]: https://libtmux.org/en/swift/latest/workspace/guides/installation/
+[ref-inspect-mcp]: https://libtmux.org/en/swift/latest/workspace/guides/inspect-with-mcp/
+[ref-config]: https://libtmux.org/en/swift/latest/workspace/configuration/
+[`list_sessions`]: https://libtmux.org/en/swift/latest/mcp/tools/list_sessions/
+[`list_windows`]: https://libtmux.org/en/swift/latest/mcp/tools/list_windows/
+[`list_panes`]: https://libtmux.org/en/swift/latest/mcp/tools/list_panes/
+[`capture_pane`]: https://libtmux.org/en/swift/latest/mcp/tools/capture_pane/
+[`wait_for_text`]: https://libtmux.org/en/swift/latest/mcp/tools/wait_for_text/
