@@ -1,10 +1,10 @@
 <!-- libtmux-logo -->
-<p align="center">
+<div align="center">
   <picture>
     <source srcset="../../assets/workspace.svg" type="image/svg+xml">
     <img src="../../assets/workspace.png" width="128" height="128" alt="libtmux for Swift workspace">
   </picture>
-</p>
+</div>
 <!-- /libtmux-logo -->
 
 <div align="center">
