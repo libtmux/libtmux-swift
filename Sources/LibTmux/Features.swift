@@ -16,10 +16,12 @@ enum TmuxFeature: Sendable {
         }
     }
 
+    /// Read from the capability table, so the gate and the published manifest
+    /// cannot disagree.
     var minimum: TmuxVersion {
         switch self {
-        case .controlConnection: TmuxVersion(major: 3, minor: 7)
-        case .namedBufferEditing: TmuxVersion(major: 3, minor: 4)
+        case .controlConnection: Support.Capabilities.capability("control-mode").minimum
+        case .namedBufferEditing: Support.Capabilities.capability("buffer-delete-named").minimum
         }
     }
 
@@ -88,12 +90,11 @@ enum TmuxCommandGuard {
             .unsupportedTmuxVersion(
                 reported: checked.token, required: "\(required)", operation: operation)
         }
-        let deleteNamed = TmuxFeature.namedBufferEditing.minimum
-        let renameBuffer = TmuxFeature.namedBufferEditing.minimum
-        let fixedInThreeSevenA = TmuxVersion(major: 3, minor: 7, pointRelease: "a")
-        let breakPane = ExactRelease(major: 3, minor: 7, fixed: fixedInThreeSevenA)
-        let separators = ExactRelease(major: 3, minor: 7, fixed: fixedInThreeSevenA)
-        let percentSplit = ExactRelease(major: 3, minor: 4, fixed: TmuxVersion(major: 3, minor: 5))
+        let deleteNamed = Support.Capabilities.capability("buffer-delete-named").minimum
+        let renameBuffer = Support.Capabilities.capability("buffer-rename").minimum
+        let breakPane = Support.Capabilities.workaround("break-pane-misnames-windows")
+        let separators = Support.Capabilities.workaround("name-separators-rejected")
+        let percentSplit = Support.Capabilities.workaround("split-window-percent-size")
         let parsed = ParsedArguments(arguments, template: templates[name] ?? "")
         switch name {
         case "delete-buffer":
@@ -124,12 +125,13 @@ enum TmuxCommandGuard {
                 throw refuse(percentSplit.fixed, "split-window -p")
             }
         case "refresh-client":
-            let clipboard = TmuxVersion(major: 3, minor: 4)
+            let clipboard = Support.Capabilities.capability("clipboard-query").minimum
             if parsed.has("l"), version < clipboard {
                 throw refuse(clipboard, "refresh-client -l")
             }
         case "select-layout":
-            let beforeValidation = TmuxVersion(major: 3, minor: 4)
+            let beforeValidation = Support.Capabilities.capability("layout-without-checksum")
+                .minimum
             guard version < beforeValidation else { return }
             guard !(["n", "o", "p"] as [Character]).contains(where: parsed.has) else { return }
             if let layout = parsed.operands.first,
@@ -167,27 +169,11 @@ enum TmuxCommandGuard {
     private static func checkName(
         _ name: String?, _ version: TmuxVersion, _ checked: ServerVersion
     ) throws(TmuxError) {
-        let separators = ExactRelease(
-            major: 3, minor: 7, fixed: TmuxVersion(major: 3, minor: 7, pointRelease: "a"))
+        let separators = Support.Capabilities.workaround("name-separators-rejected")
         guard separators.affects(version), let name, hasSeparator(name) else { return }
         throw .unsupportedTmuxVersion(
             reported: checked.token, required: "\(separators.fixed)",
             operation: "a name containing ':' or '.'")
-    }
-
-    /// The release `major.minor` itself, which a defect shipped in: at or above
-    /// it and below its first patch letter. `next-3.7` and `3.7-rc2` rank below
-    /// 3.7 and so are outside it, by the same ordering the version check uses.
-    private struct ExactRelease {
-        let major: Int
-        let minor: Int
-        /// The release a refusal names as the one that is safe.
-        let fixed: TmuxVersion
-
-        func affects(_ version: TmuxVersion) -> Bool {
-            version >= TmuxVersion(major: major, minor: minor)
-                && version < TmuxVersion(major: major, minor: minor, pointRelease: "a")
-        }
     }
 
     /// The commands of a batch: arguments up to each separator argument.

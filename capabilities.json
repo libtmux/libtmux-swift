@@ -1,0 +1,214 @@
+{
+  "capabilities" : [
+    {
+      "apis" : [
+        "Server.withControlMode(attachingTo:_:)",
+        "Server.connected(attachingTo:_:)",
+        "Server.using(_:_:)"
+      ],
+      "commands" : [
+        {
+          "command" : "attach-session"
+        }
+      ],
+      "error" : "TmuxError.unsupportedTmuxVersion(reported:required:operation:)",
+      "handling" : "refuse",
+      "id" : "control-mode",
+      "name" : "Control mode",
+      "since" : "3.7",
+      "summary" : "Attach a library-managed control client and stream events."
+    },
+    {
+      "apis" : [
+        "Server.deleteBuffer(named:)"
+      ],
+      "commands" : [
+        {
+          "command" : "delete-buffer",
+          "flags" : [
+            "-b"
+          ]
+        }
+      ],
+      "error" : "TmuxError.unsupportedTmuxVersion(reported:required:operation:)",
+      "handling" : "refuse",
+      "id" : "buffer-delete-named",
+      "name" : "Named buffer deletion",
+      "since" : "3.4",
+      "summary" : "Delete one paste buffer by name without risking another buffer."
+    },
+    {
+      "apis" : [
+        "Server.run(_:)"
+      ],
+      "commands" : [
+        {
+          "command" : "set-buffer",
+          "flags" : [
+            "-b",
+            "-n"
+          ]
+        }
+      ],
+      "error" : "TmuxError.unsupportedTmuxVersion(reported:required:operation:)",
+      "handling" : "refuse",
+      "id" : "buffer-rename",
+      "name" : "Named buffer rename",
+      "since" : "3.4",
+      "summary" : "Rename one paste buffer without risking another buffer."
+    },
+    {
+      "apis" : [
+        "Server.run(_:)",
+        "ControlSession.send(_:)"
+      ],
+      "commands" : [
+        {
+          "command" : "refresh-client",
+          "flags" : [
+            "-l"
+          ]
+        }
+      ],
+      "error" : "TmuxError.unsupportedTmuxVersion(reported:required:operation:)",
+      "handling" : "refuse",
+      "id" : "clipboard-query",
+      "name" : "Clipboard query",
+      "since" : "3.4",
+      "summary" : "Ask an attached client for its clipboard with refresh-client -l."
+    },
+    {
+      "apis" : [
+        "Server.selectLayout(_:_:)",
+        "Server.run(_:)"
+      ],
+      "commands" : [
+        {
+          "command" : "select-layout"
+        }
+      ],
+      "error" : "TmuxError.unsupportedTmuxVersion(reported:required:operation:)",
+      "handling" : "refuse",
+      "id" : "layout-without-checksum",
+      "name" : "Layout string without a checksum",
+      "since" : "3.4",
+      "summary" : "select-layout reports a layout that lacks its checksum as invalid."
+    },
+    {
+      "apis" : [
+        "Server.selectLayout(_:_:)",
+        "Server.validateLayouts(_:)"
+      ],
+      "commands" : [
+        {
+          "command" : "select-layout"
+        }
+      ],
+      "error" : "TmuxError.invocationFailed(reason:)",
+      "handling" : "refuse",
+      "id" : "layout-mirrored-main",
+      "name" : "Mirrored main layouts",
+      "since" : "3.5",
+      "summary" : "Apply main-horizontal-mirrored and main-vertical-mirrored."
+    },
+    {
+      "apis" : [
+        "Server.selectLayout(_:_:)",
+        "Server.validateLayouts(_:)"
+      ],
+      "commands" : [
+        {
+          "command" : "select-layout"
+        }
+      ],
+      "error" : "TmuxError.invocationFailed(reason:)",
+      "handling" : "refuse",
+      "id" : "layout-json",
+      "name" : "JSON layouts",
+      "since" : "3.8-rc2",
+      "summary" : "Apply a layout in the JSON form that tmux reports."
+    }
+  ],
+  "floor" : {
+    "minimum" : "3.3a"
+  },
+  "port" : "swift",
+  "schema" : "libtmux-capabilities/1",
+  "workarounds" : [
+    {
+      "apis" : [
+        "Server.breakPane(_:from:named:)"
+      ],
+      "commands" : [
+        {
+          "command" : "break-pane",
+          "flags" : [
+            "-n"
+          ]
+        }
+      ],
+      "handling" : "repair",
+      "id" : "break-pane-misnames-windows",
+      "name" : "break-pane names windows wrongly on 3.7",
+      "releases" : [
+        "3.7"
+      ],
+      "summary" : "break-pane gives the new window the default name when -n is given and fails when it is not; breakPane passes a name, and a raw command is refused."
+    },
+    {
+      "apis" : [
+        "Server.run(_:)"
+      ],
+      "commands" : [
+        {
+          "command" : "split-window",
+          "flags" : [
+            "-p"
+          ]
+        }
+      ],
+      "handling" : "refuse",
+      "id" : "split-window-percent-size",
+      "name" : "split-window -p reads -l on 3.4",
+      "releases" : [
+        "3.4"
+      ],
+      "summary" : "split-window -p takes its value from -l, so a raw -p is refused."
+    },
+    {
+      "apis" : [
+        "Server.newSession(named:startDirectory:windowName:width:height:)",
+        "Server.newWindow(in:named:startDirectory:)",
+        "Server.rename(_:to:)"
+      ],
+      "commands" : [
+        {
+          "command" : "new-session",
+          "flags" : [
+            "-n",
+            "-s"
+          ]
+        },
+        {
+          "command" : "new-window",
+          "flags" : [
+            "-n"
+          ]
+        },
+        {
+          "command" : "rename-session"
+        },
+        {
+          "command" : "rename-window"
+        }
+      ],
+      "handling" : "refuse",
+      "id" : "name-separators-rejected",
+      "name" : "Names with a colon or period on 3.7",
+      "releases" : [
+        "3.7"
+      ],
+      "summary" : "new-session, new-window, rename-session and rename-window reject a name containing ':' or '.', so the library refuses one before it is sent."
+    }
+  ]
+}

@@ -132,10 +132,12 @@ extension Server {
                 "break-pane",
                 arguments + ["-n", "libtmux"]
             )
+            let broken = Support.Capabilities.workaround("break-pane-misnames-windows")
+            let conditions = broken.releases.map { "#{==:#{version},\($0)}" }
             command = TmuxCommand(
                 "if-shell",
                 [
-                    "-F", "#{==:#{version},3.7}",
+                    "-F", conditions.dropFirst().reduce(conditions[0]) { "#{||:\($0),\($1)}" },
                     workaround.parsedString,
                     command.parsedString,
                 ]
