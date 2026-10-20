@@ -12,7 +12,6 @@
 # libtmux for Swift
 
 [![ci](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-swift/actions/workflows/ci.yml)
-[![macos](https://github.com/libtmux/libtmux-swift/actions/workflows/macos.yml/badge.svg)](https://github.com/libtmux/libtmux-swift/actions/workflows/macos.yml)
 
 Drive tmux from Swift. A port of [libtmux][] for Python, in the same family of
 ports and holding to what that library established about tmux.
@@ -1083,7 +1082,8 @@ under a dependency you do not.
 
 - **Linux, including WSL.** CI runs Ubuntu against each supported tmux
   release, in parallel.
-- **macOS.** CI runs tmux 3.3a and 3.7b.
+- **macOS.** Supported on a best-effort basis; CI coverage for it is highly
+  limited, as CI runs Linux only.
 - **Darwin handling.** None of it varies by tmux release: the `TMPDIR` a socket
   path cannot afford, keg-only libevent and ncurses, and `F_SETNOSIGPIPE`.
 - **On Darwin, build with Xcode 26's toolchain.** [swift-subprocess][] needs

@@ -55,8 +55,8 @@ $ swift build --force-resolved-versions
 from Swift 6.3, so a 6.2 toolchain fails inside the dependency at any
 deployment target below macOS 26 — and SwiftPM compiles a dependency at *that
 dependency's* declared minimum, so no number in `Package.swift` reaches it.
-Xcode 26 ships Swift 6.3, which is what the macOS lane and upstream's own CI
-both use. On that lane every command is prefixed `xcrun`.
+Xcode 26 ships Swift 6.3, which is what upstream's own CI uses. With that
+toolchain every command is prefixed `xcrun`.
 
 ## Running the tests
 
@@ -146,10 +146,10 @@ $ for _ in $(seq 20); do swift test --force-resolved-versions --filter observers
 Every suite carries `.timeLimit(.minutes(5))`, and that number is a backstop
 rather than a stopwatch. The suite runs its cases in parallel, one tmux server
 each, so what a case reports is mostly time spent waiting for a core: on a
-macOS runner that passed, the fifteen slowest cases all measured between 47 and
-48.5 seconds while the whole run took 51. A one-minute limit against that is
-not a limit on the case, it is a limit on how loaded the runner may be, and it
-went red on a lane that had nothing wrong with it. Five minutes still catches a
+loaded runner, the slowest cases all took nearly as long as the whole run. A
+one-minute limit against that is not a limit on the case, it is a limit on how
+loaded the runner may be, and it went red on a lane that had nothing wrong
+with it. Five minutes still catches a
 hang long before the job's own thirty.
 
 Raise it here rather than per suite. A limit that differs between suites
@@ -173,6 +173,11 @@ child was written to catch.
 
 Each of these gates CI, and each can fail. Build and test run on every cell of
 the matrix; the tooling checks run once, on the Linux tmux 3.7b cell.
+
+CI runs Linux only. macOS is supported on a best-effort basis, and CI coverage
+for it is highly limited: no job builds or tests there, so a macOS-only
+regression is not caught before merge. Run the suite on a Mac when a change
+touches Darwin handling.
 
 Formatting, against `.swift-format` at the root — four spaces, 100 columns:
 
@@ -344,7 +349,7 @@ that locally needs the checkout; the check itself is
 
 None of these catch a symbol that exists only on a newer macOS than the package
 supports — `Package.swift` says 13, and a Linux compiler has no availability to
-check against. The macOS lane is the only thing that fails, after a push.
+check against, and CI does not build on macOS. Review for it by hand.
 Naming a generic's failure type (`AsyncSequence<T, Never>`) is the one that has
 bitten: it needs macOS 15.
 
@@ -465,11 +470,11 @@ $ gh workflow run release --ref master -f dry_run=true
 | tmux | 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a, 3.7b, 3.8, master |
 
 CI builds each of those tmux releases from its own release tarball and runs the
-suite against it on Linux. macOS runs the ends of the range only — 3.3a and
-3.7b — because what differs on Darwin is this package's own handling rather
-than anything that varies by tmux release: the `TMPDIR` a socket path cannot
-afford, keg-only libevent and ncurses, `F_SETNOSIGPIPE`, and a pty cap low
-enough that the lane raises it before the suite.
+suite against it on Linux. macOS is supported on a best-effort basis and has no
+CI lane. What differs on Darwin is this package's own handling rather than
+anything that varies by tmux release: the `TMPDIR` a socket path cannot afford,
+keg-only libevent and ncurses, `F_SETNOSIGPIPE`, and a pty cap low enough that
+a parallel run needs it raised first.
 
 3.3a is the floor, and the daemon's release decides:
 every command is refused before it has an effect when the daemon it would reach
