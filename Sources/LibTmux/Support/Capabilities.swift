@@ -106,7 +106,7 @@ extension Support {
                 id: "clipboard-query",
                 name: "Clipboard query",
                 summary: "Ask an attached client for its clipboard with refresh-client -l.",
-                since: "3.4", except: [], handling: .refuse, error: unsupported,
+                since: "3.6a", except: [], handling: .refuse, error: unsupported,
                 apis: ["Server.run(_:)", "ControlSession.send(_:)"],
                 commands: [Command("refresh-client", "-l")]),
             Capability(

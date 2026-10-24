@@ -201,13 +201,22 @@ struct CommandGuardTests {
         }
     }
 
-    @Test("refresh-client -l, which asks a client for its clipboard, needs 3.4")
+    @Test("refresh-client -l, which asks a client for its clipboard, needs 3.6a")
     func clipboardQuery() {
         for spelling in ["refresh-client", "refresh", "refresh-c", "refr"] {
             #expect(refused("3.3a", [spelling, "-t", "client", "-l"]), Comment(rawValue: spelling))
             #expect(refused("3.3a", [spelling, "-lx"]), Comment(rawValue: spelling))
             #expect(refused("3.3a", [spelling, "-cl"]), Comment(rawValue: spelling))
-            #expect(!refused("3.4", [spelling, "-t", "client", "-l"]), Comment(rawValue: spelling))
+            for release in ["3.4", "3.5", "3.5a", "3.6"] {
+                #expect(
+                    refused(release, [spelling, "-t", "client", "-l"]),
+                    Comment(rawValue: "\(spelling) on \(release)"))
+            }
+            for release in ["3.6a", "3.6b", "3.8"] {
+                #expect(
+                    !refused(release, [spelling, "-t", "client", "-l"]),
+                    Comment(rawValue: "\(spelling) on \(release)"))
+            }
         }
         #expect(refused("3.3a", ["new-window", "-d", ";", "refr", "-l"]))
         #expect(refused("3.3a", ["new-window", "-d;", "refresh", "-l"]))
@@ -678,11 +687,14 @@ struct RawPathLaneTests {
         }
     }
 
+    // 3.3a exits on the query with a client attached, and 3.4 through 3.6 exit
+    // when that client leaves before its terminal answers. The release is
+    // written out here, so moving the registry fails this test on those lanes.
     @Test(
-        "refresh-client -l never reaches a tmux 3.3a server with a client attached",
-        .enabled(if: laneIsSupported && !laneAtLeast(3, 4), "needs tmux 3.3a")
+        "refresh-client -l never reaches a tmux server older than 3.6a with a client attached",
+        .enabled(if: laneIsSupported && !laneAtLeast(3, 6, "a"), "needs tmux older than 3.6a")
     )
-    func clipboardQueryIsRefusedOnThreeThreeA() async throws {
+    func clipboardQueryIsRefusedBelowThreeSixA() async throws {
         try await withTmuxServer { server in
             guard case let .socketPath(path) = server.endpoint else {
                 Issue.record("the fixture serves a socket path")
