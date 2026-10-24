@@ -64,16 +64,25 @@ struct CommandGuardTests {
         }
     }
 
+    private func accepted(_ release: String, _ arguments: [String]) -> Bool {
+        do {
+            try check(release, arguments)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     @Test("a nested break-pane reaches tmux 3.7 unread, and a direct one is refused")
     func nestedCommandTextIsNotRead() {
         // The documented limit: `if-shell` carries its command as text, which the
         // guard does not read. tmux accepts this form; `{ break-pane }` would not.
-        #expect(!refused("3.7", ["if-shell", "-F", "1", "break-pane -d"]))
+        #expect(accepted("3.7", ["if-shell", "-F", "1", "break-pane -d"]))
         // Control: the same text with a name is fine, and the direct nameless form
-        // is still refused.
-        #expect(!refused("3.7", ["if-shell", "-F", "1", "break-pane -d -n x"]))
+        // is still refused while a direct named one is accepted.
+        #expect(accepted("3.7", ["if-shell", "-F", "1", "break-pane -d -n x"]))
         #expect(refused("3.7", ["break-pane", "-d"]))
-        #expect(!refused("3.7", ["break-pane", "-d", "-n", "x"]))
+        #expect(accepted("3.7", ["break-pane", "-d", "-n", "x"]))
     }
 
     @Test("the exact-release checks follow the strict ranking")
