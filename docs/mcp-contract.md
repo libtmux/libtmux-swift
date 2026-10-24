@@ -155,7 +155,10 @@ through bounded calls.
 **`wait_for_text` streams from tmux 3.7 and polls below it.** From 3.7 it reads
 pane output over a control client. On 3.3a through 3.6 it attaches no control
 client and reads the screen on a timer, so output that changes no row, such as
-a line of only blanks, is not seen. Both paths end in one of these outcomes:
+a line of only blanks, is not seen. Both paths end in one of these outcomes,
+or in an error. A connection that drops while the pane lives is
+re-attached first; if that fails, the wait raises the error instead, such as
+`connectionClosed`, and an error is not an outcome.
 
 | `outcome` | Meaning |
 | --- | --- |
