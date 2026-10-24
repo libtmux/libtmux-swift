@@ -11,6 +11,8 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.8] - 2026-10-24
+
 ### Added
 
 - `capabilities.json` at the repository root lists the tmux releases each
