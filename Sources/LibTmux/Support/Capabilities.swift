@@ -10,8 +10,8 @@ extension Support {
     /// what a gate here reads is listed; an entry makes a claim, so an absent
     /// one makes none: capture, `run-shell` and the other commands this library
     /// sends the same way on every supported release have no entry because no
-    /// gate reads them, and it has no `list-keys` API. Kept apart from the MCP tool catalogue in
-    /// `LibTmuxMCP`, which describes tools, not releases.
+    /// gate reads them, and it has no `list-keys` API. Kept apart from the MCP
+    /// tool catalogue in `LibTmuxMCP`, which describes tools, not releases.
     enum Capabilities {
         /// What the library does where a capability is not available.
         enum Handling: String, Sendable {
