@@ -769,6 +769,7 @@ private final class PtyClient: @unchecked Sendable {
     private let process = Process()
     private let master: Int32
     private let slave: FileHandle
+    private var drain: DescriptorDrain?
 
     init(socketPath: String, session: String) throws {
         let master = Self.openMaster()
@@ -791,11 +792,7 @@ private final class PtyClient: @unchecked Sendable {
         process.standardError = handle
         try process.run()
         // The client draws on attach; reading keeps its output from filling up.
-        let descriptor = master
-        Thread.detachNewThread {
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while read(descriptor, &buffer, buffer.count) > 0 {}
-        }
+        drain = DescriptorDrain(reading: master)
     }
 
     private static func openMaster() -> Int32 {
@@ -831,6 +828,10 @@ private final class PtyClient: @unchecked Sendable {
         // Not waited for: the client is a bystander, and the server it was
         // attached to is killed right after.
         kill(process.processIdentifier, SIGKILL)
+        // The reader is stopped before the descriptor is closed: a reader that
+        // outlives it reads whichever file the process opens under that number.
+        drain?.stop()
+        drain = nil
         Glibc.close(master)
     }
 }
