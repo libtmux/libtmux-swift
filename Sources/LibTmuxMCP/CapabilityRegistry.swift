@@ -411,7 +411,13 @@ extension TmuxTools {
                 handler: { try await $0.snapshotPane($1) }
             ),
             capability(
-                .waitForText, "Wait for text", "Wait within one deadline for pane text.",
+                .waitForText, "Wait for text",
+                "Wait within one deadline for pane text. "
+                    + "From tmux 3.7 it streams pane output over a control client; below 3.7 "
+                    + "it reads the screen on a timer, so output that changes no row, such as "
+                    + "blank-only output, is not seen. "
+                    + "Ends as matched, stopped, timedOut, expiredWhileReading, paneClosed, "
+                    + "or alternateScreen.",
                 toolset: .inspect, reach: .none, effects: [.observe], outputs: terminal,
                 arguments: [
                     argument("cursor", maximumLength: 16_384),
