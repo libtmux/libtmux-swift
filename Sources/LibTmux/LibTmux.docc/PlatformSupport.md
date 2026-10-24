@@ -4,15 +4,16 @@ What has been exercised, and what has not.
 
 ## Overview
 
-The package builds and runs its real-server suite on Linux and macOS. It
-supports tmux releases 3.3a through 3.8, and master. A daemon older than
-3.3a is refused before the command that reached it has any effect.
+The package supports tmux releases 3.3a through 3.8, and master, on Linux
+(including WSL) and, on a best-effort basis, macOS. CI runs Linux only. A
+daemon older than 3.3a is refused before the command that reached it has any
+effect.
 
 The test suite runs against real tmux, one private server and socket per case.
 Every supported release is exercised on Linux, individually and concurrently.
-The macOS lane exercises 3.3a and 3.7b with
-Xcode's toolchain and Homebrew's keg-only libraries. Releases below the floor
-are built too, to show they are refused.
+No job builds or tests on macOS, so a macOS-only regression is not caught
+before merge; run the suite on a Mac when a change touches Darwin handling.
+Releases below the floor are built too, to show they are refused.
 
 ## Which release decides
 

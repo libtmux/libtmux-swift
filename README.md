@@ -60,7 +60,8 @@ for session in try await server.sessions() {
 
 A [`Server`][api-server] addresses a tmux socket by name, and
 [`Server.sessions()`][api-server-sessions] asks it for every session. It runs on
-Linux, including WSL, and on macOS, with tmux 3.3a through 3.8, and master.
+Linux, including WSL, and on macOS (best effort, no CI),
+with tmux 3.3a through 3.8, and master.
 
 `QuickStartTests` spawns this program against a fixture server that holds one
 session named `quickstart`, and checks that the output names it. It prints one
@@ -1079,8 +1080,8 @@ under a dependency you do not.
 | | |
 | --- | --- |
 | Swift | 6.2 or later |
-| Platforms | Linux, including WSL, and macOS — see [Platform notes](#platform-notes) |
-| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release in the DocC platform page |
+| Platforms | Linux, including WSL, and macOS (best effort, no CI) — see [Platform notes](#platform-notes) |
+| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release; the [platform page][r-platformsupport-md] lists them with what each refuses below it, and [`capabilities.json`][r-capabilities-json] records the same gates in machine-readable form |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 ### Platform notes
@@ -1310,6 +1311,8 @@ MIT. See [LICENSE][r-license].
 [r-docs]: docs/
 [r-examples]: Examples/
 [r-github-contributing-md]: .github/CONTRIBUTING.md
+[r-platformsupport-md]: Sources/LibTmux/LibTmux.docc/PlatformSupport.md
+[r-capabilities-json]: capabilities.json
 [r-license]: LICENSE
 [ref-capabilities]: https://libtmux.org/en/swift/latest/mcp/resources/capabilities/
 [ref-cli-load]: https://libtmux.org/en/swift/latest/workspace/cli/load/
