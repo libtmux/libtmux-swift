@@ -63,7 +63,7 @@ toolchain every command is prefixed `xcrun`.
 The suite runs against real tmux — no mocks of the server — one private socket
 per case, with servers reaped even when a run is killed outright.
 
-The `YAMLWorkspaces` trait is off by default and six tests come with it, the
+The `YAMLWorkspaces` trait is off by default and the tests that read YAML come with it, the
 YAML reader and everything that exercises it. A bare
 `swift test --force-resolved-versions` passes while covering less, which is why
 the gate names the trait:

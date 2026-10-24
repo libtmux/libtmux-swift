@@ -152,6 +152,20 @@ that the client has stopped caring about.
 `wait_for_text` and `wait_for_channel` expose the two blocking operations
 through bounded calls.
 
+**`wait_for_text` streams from tmux 3.7 and polls below it.** From 3.7 it reads
+pane output over a control client. On 3.3a through 3.6 it attaches no control
+client and reads the screen on a timer, so output that changes no row, such as
+a line of only blanks, is not seen. Both paths end in one of these outcomes:
+
+| `outcome` | Meaning |
+| --- | --- |
+| `matched` | A pattern appeared in output that arrived during the wait. |
+| `stopped` | A `stop` pattern appeared first. |
+| `timedOut` | Nothing matched before the deadline, in reads that finished. |
+| `expiredWhileReading` | The deadline arrived while a read was in flight; retry with a longer timeout. |
+| `paneClosed` | The pane, or the server, went away; `tail` holds the output seen so far. |
+| `alternateScreen` | A full-screen program owned the pane, so matching was suppressed; use `capture_pane`. |
+
 **It will not spend context you did not ask it to.** Pane reads collect at most
 262,144 bytes per stream and return at most 128,000 UTF-8 bytes in whole rows;
 they say when older output was omitted. `run_shell_command` returns only what

@@ -60,7 +60,8 @@ for session in try await server.sessions() {
 
 A [`Server`][api-server] addresses a tmux socket by name, and
 [`Server.sessions()`][api-server-sessions] asks it for every session. It runs on
-Linux, including WSL, and on macOS, with tmux 3.3a through 3.8, and master.
+Linux, including WSL, and on macOS (best effort, no CI),
+with tmux 3.3a through 3.8, and master.
 
 `QuickStartTests` spawns this program against a fixture server that holds one
 session named `quickstart`, and checks that the output names it. It prints one
@@ -717,12 +718,11 @@ withholds:
 - **`execute`** creates sessions, windows, and panes, and sends input to them.
 - **`teardown`** kills sessions, windows, and panes, and clears scrollback.
 
-The registry holds 45 tools: 18 `inspect`, 14 `manage`, nine `execute`, and four
-`teardown`. By default:
+The registry holds every tool under exactly one toolset. By default:
 
-- **A configured executable** exposes the first three toolsets, 41 tools.
+- **A configured executable** exposes `inspect`, `manage`, and `execute`.
 - **An authenticated daemon** started from the bundled minimal configuration
-  also receives `teardown`, 45 tools.
+  also receives `teardown`.
 
 | Tool | What it answers or does |
 | --- | --- |
@@ -1079,9 +1079,28 @@ under a dependency you do not.
 | | |
 | --- | --- |
 | Swift | 6.2 or later |
-| Platforms | Linux, including WSL, and macOS — see [Platform notes](#platform-notes) |
-| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release in the DocC platform page |
+| Platforms | Linux, including WSL, and macOS (best effort, no CI) — see [Platform notes](#platform-notes) |
+| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release; the [platform page][r-platformsupport-md] lists them with what each refuses below it, and [`capabilities.json`][r-capabilities-json] records the same gates in machine-readable form |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
+
+### Optional features
+
+A feature that needs more than 3.3a refuses before it does anything, with
+`TmuxError.unsupportedTmuxVersion`. None of them raises the floor for the rest
+of the library.
+
+| Feature | Needs | Below that |
+| --- | --- | --- |
+| Connected mode: `Server.connected(attachingTo:_:)`, `Server.using(_:_:)` with a connected mode, `Server.withControlMode(attachingTo:_:)` | 3.7 | refused before any client attaches |
+| `Server.waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)` | any | reads the pane on a timer; output that changes no row, such as blank-only output, is not seen |
+| `Server.deleteBuffer(named:)` and the MCP `paste_text` staging buffer | 3.4 | refused |
+| `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7 |
+| `split-window -p` | 3.5 | refused on exactly 3.4 |
+| `select-layout` with a layout tmux cannot parse | 3.4 | refused, because 3.3a crashes on one |
+| `refresh-client -l`, the clipboard query | 3.6a | refused |
+
+The [platform page][r-platformsupport-md] gives the detail, including which
+command forms are read before they are sent and which are not.
 
 ### Platform notes
 
@@ -1153,7 +1172,8 @@ per case, with servers reaped even when a run is killed outright.
 $ swift test --traits YAMLWorkspaces
 ```
 
-The trait is off by default and six tests come with it, so the gate names it.
+The trait is off by default, and the tests that read YAML run only with it, so
+the gate names it.
 Point the suite at a particular release to test against that one:
 
 ```console
@@ -1310,6 +1330,8 @@ MIT. See [LICENSE][r-license].
 [r-docs]: docs/
 [r-examples]: Examples/
 [r-github-contributing-md]: .github/CONTRIBUTING.md
+[r-platformsupport-md]: Sources/LibTmux/LibTmux.docc/PlatformSupport.md
+[r-capabilities-json]: capabilities.json
 [r-license]: LICENSE
 [ref-capabilities]: https://libtmux.org/en/swift/latest/mcp/resources/capabilities/
 [ref-cli-load]: https://libtmux.org/en/swift/latest/workspace/cli/load/

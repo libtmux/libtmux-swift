@@ -4,15 +4,16 @@ What has been exercised, and what has not.
 
 ## Overview
 
-The package builds and runs its real-server suite on Linux and macOS. It
-supports tmux releases 3.3a through 3.8, and master. A daemon older than
-3.3a is refused before the command that reached it has any effect.
+The package supports tmux releases 3.3a through 3.8, and master, on Linux
+(including WSL) and, on a best-effort basis, macOS. CI runs Linux only. A
+daemon older than 3.3a is refused before the command that reached it has any
+effect.
 
 The test suite runs against real tmux, one private server and socket per case.
 Every supported release is exercised on Linux, individually and concurrently.
-The macOS lane exercises 3.3a and 3.7b with
-Xcode's toolchain and Homebrew's keg-only libraries. Releases below the floor
-are built too, to show they are refused.
+No job builds or tests on macOS, so a macOS-only regression is not caught
+before merge; run the suite on a Mac when a change touches Darwin handling.
+Releases below the floor are built too, to show they are refused.
 
 ## Which release decides
 
@@ -77,6 +78,21 @@ binding, and a `command-alias` the caller sets. They reach the daemon unread, so
 do not nest a command that the table above refuses. A shell command is the
 caller's own program, and is not read either.
 
+What reaches tmux this way, and what it does there, by command:
+
+| Command | Releases | What happens |
+| --- | --- | --- |
+| `break-pane` without `-n` | exactly 3.7 | the server exits; 3.7a does not |
+| `select-layout` with a layout tmux cannot parse | 3.3 and 3.3a | the server exits; 3.4 answers "invalid layout" |
+| `refresh-client -l` | below 3.6a | the server exits when an attached client's terminal does not answer |
+| `delete-buffer -b NAME` and `set-buffer -b NAME -n` | below 3.4 | a name that does not exist acts on the newest buffer instead, silently |
+| `split-window -p` | exactly 3.4 | tmux answers with an error and nothing changes |
+| `:` or `.` in a session or window name | exactly 3.7 | tmux answers with an error and nothing changes |
+
+On exactly tmux 3.7, name every `break-pane`, nested or not, or upgrade to
+3.7a. A nested `if-shell -F 1 'break-pane -d'` passes the guard unchanged, and
+`FeatureGateTests` pins that.
+
 ``Server/version()`` reports which tmux executable a server runs, and answers
 for any release because it is a diagnostic rather than a version check.
 ``TmuxVersion`` orders releases the way tmux issues them, including the point
@@ -115,5 +131,5 @@ signal(SIGPIPE, SIG_IGN)
 With SIGPIPE ignored, the write reports `EPIPE` instead. An in-flight command
 reports ``TmuxError/connectionClosed``; a later call that never entered the
 write queue reports ``TmuxError/requestNotSubmitted``. This package's own test
-suite ignores SIGPIPE; without that, roughly one full run in ten ended by a
-signal rather than by a failing case.
+suite ignores SIGPIPE; without that, a run can end by a signal rather than by a
+failing case.

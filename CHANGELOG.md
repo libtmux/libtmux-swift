@@ -11,6 +11,14 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Changed
+
+- The MCP `wait_for_text` description and `docs/mcp-contract.md` now say
+  that it streams from tmux 3.7 and reads the screen on a timer below it,
+  and list its outcomes. The platform page and README describe macOS as
+  best effort with no CI, and the platform page lists what happens when a
+  refused command is nested in command text. (#68)
+
 ## [0.1.0-alpha.8] - 2026-10-24
 
 ### Added
