@@ -78,6 +78,21 @@ binding, and a `command-alias` the caller sets. They reach the daemon unread, so
 do not nest a command that the table above refuses. A shell command is the
 caller's own program, and is not read either.
 
+What reaches tmux this way, and what it does there, by command:
+
+| Command | Releases | What happens |
+| --- | --- | --- |
+| `break-pane` without `-n` | exactly 3.7 | the server exits; 3.7a does not |
+| `select-layout` with a layout tmux cannot parse | 3.3 and 3.3a | the server exits; 3.4 answers "invalid layout" |
+| `refresh-client -l` | below 3.6a | the server exits when an attached client's terminal does not answer |
+| `delete-buffer -b NAME` and `set-buffer -b NAME -n` | below 3.4 | a name that does not exist acts on the newest buffer instead, silently |
+| `split-window -p` | exactly 3.4 | tmux answers with an error and nothing changes |
+| `:` or `.` in a session or window name | exactly 3.7 | tmux answers with an error and nothing changes |
+
+On exactly tmux 3.7, name every `break-pane`, nested or not, or upgrade to
+3.7a. A nested `if-shell -F 1 'break-pane -d'` passes the guard unchanged, and
+`FeatureGateTests` pins that.
+
 ``Server/version()`` reports which tmux executable a server runs, and answers
 for any release because it is a diagnostic rather than a version check.
 ``TmuxVersion`` orders releases the way tmux issues them, including the point
