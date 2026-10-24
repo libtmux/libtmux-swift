@@ -44,13 +44,14 @@ version number says only which alpha you have. Pin an exact one.
 
 - A literal command batch is refused before dispatch when its release cannot
   run it safely: `break-pane` without `-n` on exactly 3.7, a window or session
-  name holding `:` or `.` on exactly 3.7, `split-window -p` on exactly 3.4, and
-  a `select-layout` argument tmux 3.3a cannot parse, and `refresh-client -l`
-  below 3.4, which exits a 3.3a server with a client attached. Command names
-  are read as tmux reads them, so an alias or a unique prefix such as
-  `break-p` is the same command, and `ControlSession.send(_:)` applies the
-  same check. Nested command strings, such as an `if-shell` body, are not
-  read. (#48)
+  name holding `:` or `.` on exactly 3.7, `split-window -p` on exactly 3.4, a
+  `select-layout` argument tmux 3.3a cannot parse, and `refresh-client -l`
+  below 3.6a, which exits a 3.3a server with a client attached and a 3.4
+  through 3.6 server when that client leaves before its terminal answers.
+  Command names are read as tmux reads them, so an alias or a unique prefix
+  such as `break-p` is the same command, and `ControlSession.send(_:)` applies
+  the same check. Nested command strings, such as an `if-shell` body, are not
+  read. (#48, #64)
 
 ### Fixed
 
