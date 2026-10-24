@@ -47,7 +47,7 @@ decided from the daemon's release.
 | `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7; ``Server/breakPane(_:from:named:)`` supplies a name there | Qualified on 3.7 and 3.7a |
 | `split-window -p` | 3.5 | refused on exactly 3.4; the typed splits send `-l N%` | Qualified |
 | `select-layout` with a layout tmux cannot parse | 3.4 | refused before it is sent, because 3.3a crashes on one | Qualified on 3.3a |
-| `refresh-client -l`, the clipboard query | 3.4 | refused before it is sent, because a 3.3a server with a client attached exits | Qualified on 3.3a |
+| `refresh-client -l`, the clipboard query | 3.6a | refused before it is sent, because a 3.3a server with a client attached exits, and a 3.4 through 3.6 server exits when that client leaves before its terminal answers | Qualified on 3.3a through 3.6 |
 
 Tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
 quickly, which is why the release is checked before attaching and not after.
