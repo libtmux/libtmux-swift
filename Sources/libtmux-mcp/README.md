@@ -112,9 +112,9 @@ libtmux.org, and the [tool index][ref-mcp-tools] lists them all.
   default daemon this process launched.
 - **Trust.** Grant `execute` only to clients trusted to act as the tmux user;
   [toolset selection][ref-mcp-topics] covers the rest.
-- **Counts.** The configured default exposes 41 of the 45 tools, and an
-  authenticated default daemon adds the four `teardown` tools.
-- **Embedding.** [`TmuxTools`][api-tmuxtools] remains the 18-tool inspect-only
+- **Teardown.** The configured default leaves out the `teardown` tools, and an
+  authenticated default daemon adds them.
+- **Embedding.** [`TmuxTools`][api-tmuxtools] remains the inspect-only
   default for embedding.
 
 ### `LIBTMUX_TOOLS`: name exact tools

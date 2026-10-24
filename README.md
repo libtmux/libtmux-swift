@@ -718,12 +718,11 @@ withholds:
 - **`execute`** creates sessions, windows, and panes, and sends input to them.
 - **`teardown`** kills sessions, windows, and panes, and clears scrollback.
 
-The registry holds 45 tools: 18 `inspect`, 14 `manage`, nine `execute`, and four
-`teardown`. By default:
+The registry holds every tool under exactly one toolset. By default:
 
-- **A configured executable** exposes the first three toolsets, 41 tools.
+- **A configured executable** exposes `inspect`, `manage`, and `execute`.
 - **An authenticated daemon** started from the bundled minimal configuration
-  also receives `teardown`, 45 tools.
+  also receives `teardown`.
 
 | Tool | What it answers or does |
 | --- | --- |
@@ -1154,7 +1153,8 @@ per case, with servers reaped even when a run is killed outright.
 $ swift test --traits YAMLWorkspaces
 ```
 
-The trait is off by default and six tests come with it, so the gate names it.
+The trait is off by default, and the tests that read YAML run only with it, so
+the gate names it.
 Point the suite at a particular release to test against that one:
 
 ```console

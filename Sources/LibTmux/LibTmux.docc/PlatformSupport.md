@@ -116,5 +116,5 @@ signal(SIGPIPE, SIG_IGN)
 With SIGPIPE ignored, the write reports `EPIPE` instead. An in-flight command
 reports ``TmuxError/connectionClosed``; a later call that never entered the
 write queue reports ``TmuxError/requestNotSubmitted``. This package's own test
-suite ignores SIGPIPE; without that, roughly one full run in ten ended by a
-signal rather than by a failing case.
+suite ignores SIGPIPE; without that, a run can end by a signal rather than by a
+failing case.

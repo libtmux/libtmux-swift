@@ -78,7 +78,7 @@ struct ToolSurfaceTests {
 
         switch argument.kind {
         case .integer, .number:
-            // Anything that waits must not wait long: this drives 45 tools.
+            // Anything that waits must not wait long: this drives every tool.
             let bounded = min(max(argument.minimum ?? 1, 1), argument.maximum ?? 1)
             return .number(name.contains("econds") || name.contains("imeout") ? 1 : bounded)
         case .boolean:
