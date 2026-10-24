@@ -6,7 +6,9 @@ import TmuxFixture
 
 @Suite("clients and connection close", .timeLimit(.minutes(5)))
 struct ClientTests {
-    @Test("switching authenticates the selected client and preserves other clients")
+    @Test(
+        "switching authenticates the selected client and preserves other clients",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func switchingAuthenticatesTheSelectedClient() async throws {
         try await withTmuxServer { server in
             let destination = try await server.newSession(named: "destination")
@@ -55,7 +57,9 @@ struct ClientTests {
         }
     }
 
-    @Test("a control connection appears as a client and detaches")
+    @Test(
+        "a control connection appears as a client and detaches",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func controlConnectionIsAClientAndDetaches() async throws {
         try await withTmuxServer { server in
             await #expect(throws: TmuxError.connectionClosed) {
@@ -93,7 +97,9 @@ struct ClientTests {
         }
     }
 
-    @Test("detaching by session removes that session's clients")
+    @Test(
+        "detaching by session removes that session's clients",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func detachingBySessionRemovesItsClients() async throws {
         try await withTmuxServer { server in
             let sessions = try await server.sessions()

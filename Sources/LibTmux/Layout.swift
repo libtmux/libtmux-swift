@@ -15,8 +15,8 @@ extension Server {
         _ layouts: [(layout: String, paneCount: Int)]
     ) async throws(TmuxError) {
         if Task.isCancelled { throw .cancelled }
-        let beforeMirrors = TmuxVersion(major: 3, minor: 4)
-        let withMirrors = TmuxVersion(major: 3, minor: 5)
+        let beforeMirrors = Support.Capabilities.capability("layout-without-checksum").minimum
+        let withMirrors = Support.Capabilities.capability("layout-mirrored-main").minimum
         var sensitive: [(layout: String, paneCount: Int)] = []
         for item in layouts {
             if Task.isCancelled { throw .cancelled }
@@ -52,14 +52,17 @@ extension Server {
 /// wrong wherever it is loaded, while one only some releases accept still has
 /// to be put to the running daemon.
 package func acceptsLayoutSyntax(_ layout: String, panes: Int) -> Bool {
-    [TmuxVersion(major: 3, minor: 4), TmuxVersion(major: 3, minor: 5), .jsonLayouts]
-        .contains { LayoutSyntax.accepts(layout, version: $0, panes: panes) }
+    [
+        Support.Capabilities.capability("layout-without-checksum").minimum,
+        Support.Capabilities.capability("layout-mirrored-main").minimum, .jsonLayouts,
+    ]
+    .contains { LayoutSyntax.accepts(layout, version: $0, panes: panes) }
 }
 
 extension TmuxVersion {
     /// The earliest build measured to report `#{window_layout}` as JSON, a
     /// release candidate that ranks just below the 3.8 release itself.
-    static let jsonLayouts = TmuxVersion(major: 3, minor: 8, build: "rc2")
+    static let jsonLayouts = Support.Capabilities.capability("layout-json").minimum
 }
 
 // Native saved-layout syntax; tmux retains geometry correction and pruning.
@@ -74,7 +77,7 @@ enum LayoutSyntax {
         var names = [
             "even-horizontal", "even-vertical", "main-horizontal", "main-vertical", "tiled",
         ]
-        if version >= TmuxVersion(major: 3, minor: 5) {
+        if version >= Support.Capabilities.capability("layout-mirrored-main").minimum {
             names += ["main-horizontal-mirrored", "main-vertical-mirrored"]
         }
         if names.contains(layout) || names.filter({ $0.hasPrefix(layout) }).count == 1 {

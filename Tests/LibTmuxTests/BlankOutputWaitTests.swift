@@ -40,7 +40,9 @@ struct BlankOutputWaitTests {
         )
     }
 
-    @Test("an empty pattern matches a new blank-only output event")
+    @Test(
+        "an empty pattern matches a new blank-only output event",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func emptyPatternMatchesBlankOutput() async throws {
         try await withTmuxServer { server in
             let result = try await waitForOutput(
@@ -55,7 +57,9 @@ struct BlankOutputWaitTests {
         }
     }
 
-    @Test("a blank-line pattern matches a new blank-only output event")
+    @Test(
+        "a blank-line pattern matches a new blank-only output event",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func blankPatternMatchesBlankOutput() async throws {
         try await withTmuxServer { server in
             let result = try await waitForOutput(
@@ -72,7 +76,9 @@ struct BlankOutputWaitTests {
         }
     }
 
-    @Test("a nonblank line does not add a blank match after its newline")
+    @Test(
+        "a nonblank line does not add a blank match after its newline",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func nonblankLineDoesNotMatchBlankPattern() async throws {
         try await withTmuxServer { server in
             let result = try await waitForOutput(
@@ -89,7 +95,9 @@ struct BlankOutputWaitTests {
         }
     }
 
-    @Test("a captured stop precedes the empty-pattern output fallback")
+    @Test(
+        "a captured stop precedes the empty-pattern output fallback",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func stopPrecedesEmptyPatternFallback() async throws {
         try await withTmuxServer { server in
             let result = try await waitForOutput(
@@ -106,7 +114,9 @@ struct BlankOutputWaitTests {
         }
     }
 
-    @Test("a topology wake does not count as pane output")
+    @Test(
+        "a topology wake does not count as pane output",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func topologyWakeDoesNotMatch() async throws {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)

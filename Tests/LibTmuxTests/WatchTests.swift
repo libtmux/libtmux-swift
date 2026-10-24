@@ -326,7 +326,9 @@ struct WatchTests {
         }
     }
 
-    @Test("a bounded forward scan finds an early line in a large burst")
+    @Test(
+        "a bounded forward scan finds an early line in a large burst",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func earlyBurstMatchSurvivesBoundedCapture() async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
@@ -380,7 +382,9 @@ struct WatchTests {
         }
     }
 
-    @Test("sustained output cannot move a wait past its deadline")
+    @Test(
+        "sustained output cannot move a wait past its deadline",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func sustainedOutputCannotMoveTheDeadline() async throws {
         try await withTmuxServer { fixture in
             let pane = try await bootstrapPane(fixture)
@@ -572,7 +576,9 @@ struct WatchTests {
         }
     }
 
-    @Test("a wait fails when its retained output boundary is lost")
+    @Test(
+        "a wait fails when its retained output boundary is lost",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func outputContinuityLossFailsTheWait() async throws {
         try await withTmuxServer { server in
             let historyLimit = 20
@@ -856,7 +862,9 @@ struct WatchTests {
         }
     }
 
-    @Test("output from a pane respawn ends an established wait")
+    @Test(
+        "output from a pane respawn ends an established wait",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func respawnedPaneOutputIsNotLost() async throws {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)
@@ -883,7 +891,9 @@ struct WatchTests {
         }
     }
 
-    @Test("a subscription reports the foreground command changing")
+    @Test(
+        "a subscription reports the foreground command changing",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func subscriptionReportsCommandChange() async throws {
         try await withTmuxServer { server in
             let pane = try await bootstrapPane(server)

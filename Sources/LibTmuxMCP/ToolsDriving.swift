@@ -22,6 +22,8 @@ extension TmuxTools {
                 )
             )
         }
+        // Staging a named buffer is only safe where it can be deleted exactly.
+        try await server.requireNamedBufferEditing()
         let reservation = try await Self.reservePaneInput(initial, operation: "paste_text")
         let buffer = "libtmux-mcp-\(UUID().uuidString.prefix(8))"
         do {

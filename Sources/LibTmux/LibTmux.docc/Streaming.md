@@ -19,7 +19,9 @@ let firstLine: String? = try await server.connected(attachingTo: "work") { serve
 ```
 
 There is no way to write this against a server that has no connection — the
-value carrying the stream exists only inside the scope that opened one.
+value carrying the stream exists only inside the scope that opened one. A
+connection is a control client, which needs tmux 3.7; on an older daemon the
+call throws before anything attaches. See <doc:PlatformSupport>.
 
 The loop leaves on the notification it was waiting for, and the stream ends by
 itself when the connection closes, which is what the `nil` answers. A loop with

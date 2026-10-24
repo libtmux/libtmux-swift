@@ -132,10 +132,12 @@ extension Server {
                 "break-pane",
                 arguments + ["-n", "libtmux"]
             )
+            let broken = Support.Capabilities.workaround("break-pane-misnames-windows")
+            let conditions = broken.releases.map { "#{==:#{version},\($0)}" }
             command = TmuxCommand(
                 "if-shell",
                 [
-                    "-F", "#{==:#{version},3.7}",
+                    "-F", conditions.dropFirst().reduce(conditions[0]) { "#{||:\($0),\($1)}" },
                     workaround.parsedString,
                     command.parsedString,
                 ]
@@ -143,7 +145,18 @@ extension Server {
         }
         var appearance = try await windowAppearance(
             from: command,
-            guardedBy: [.pane(pane), .windowLink(source)]
+            guardedBy: [.pane(pane), .windowLink(source)],
+            whenSilent: { () async throws(TmuxError) -> WindowAppearance in
+                // tmux 3.3a to 3.5 print no id when the pane is alone in its
+                // window; the window is the one it was already in.
+                let rows = try await self.windowListingRows()
+                guard
+                    let row = rows.first(where: {
+                        $0.window.id == pane.windowID && $0.link.sessionID == source.sessionID
+                    })
+                else { throw .staleServerValue }
+                return row
+            }
         )
         // Some releases ignore `-n` here and name the window after whatever is
         // running in it. Comparing the result rather than the version means

@@ -94,6 +94,10 @@ private struct AttachWaiter {
 /// the server volunteers meanwhile arrives on ``notifications``.
 public actor ControlSession {
     private let write: @Sendable ([UInt8]) async throws -> Void
+    /// The release the daemon was checked at, which ``send(_:)`` holds a
+    /// command to. Only the initializer that scripts a connection for the tests
+    /// can leave it out, and such a session sends whatever it is given.
+    private let checked: ServerVersion?
     private var parser: ControlProtocolParser
     private let replyByteLimit: Int
     private var pending: [SubmittedLine] = []
@@ -133,7 +137,8 @@ public actor ControlSession {
         broadcast.subscribe()
     }
 
-    init(writer: StandardInputWriter) {
+    init(writer: StandardInputWriter, checked: ServerVersion) {
+        self.checked = checked
         self.write = { bytes in
             _ = try await writer.write(bytes)
         }
@@ -144,10 +149,12 @@ public actor ControlSession {
 
     init(
         write: @escaping @Sendable ([UInt8]) async throws -> Void,
+        checked: ServerVersion? = nil,
         notificationLimit: Int = NotificationBroadcast.defaultLimit,
         replyByteLimit: Int = defaultTmuxReplyByteLimit
     ) {
         precondition(replyByteLimit >= 0)
+        self.checked = checked
         self.write = write
         self.parser = ControlProtocolParser(maximumReplyBytes: replyByteLimit)
         self.replyByteLimit = replyByteLimit
@@ -165,8 +172,17 @@ public actor ControlSession {
     /// commands, so replies are matched to waiters in that order — which holds
     /// because writes are chained, not merely because they are usually fast.
     /// A reply exceeding 1 MiB fails with ``TmuxError/outputLimitExceeded(perStreamBytes:)``.
+    ///
+    /// The command is read before it is sent, like one given to
+    /// ``Server/run(_:)-(TmuxCommand)``: a command that the daemon's release cannot run
+    /// safely throws ``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``
+    /// and nothing is sent. Nested command strings are not read; see
+    /// <doc:PlatformSupport>.
     public func send(_ command: TmuxCommand) async throws(TmuxError) -> ControlReply {
         try requireSingleLine(command.argumentVector)
+        if let checked {
+            try TmuxCommandGuard.check(command.argumentVector, against: checked)
+        }
         return try await send(
             line: command.argumentVector.map(tmuxQuoted).joined(separator: " ")
         )

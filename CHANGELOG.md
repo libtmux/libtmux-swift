@@ -11,12 +11,56 @@ version number says only which alpha you have. Pin an exact one.
 
 ## [Unreleased]
 
+### Added
+
+- `capabilities.json` at the repository root lists the tmux releases each
+  optional feature and release defect covers, for the documentation's
+  capability pages. It is written from the table the version gates read, and
+  a test fails when the two differ. (#48)
+
 ### Changed
 
 - CI no longer runs macOS: the `macos` workflow is gone, and the `ci` workflow
   carries no macOS branches. macOS stays supported on a best-effort basis, and
   CI coverage for it is highly limited, so a macOS-only regression is not
   caught before merge. (#60)
+
+- `Server.connected(attachingTo:_:)`, `Server.using(_:_:)` with a connected
+  mode and `Server.withControlMode(attachingTo:_:)` need a 3.7 daemon, decided
+  before any client attaches, and throw
+  `TmuxError.unsupportedTmuxVersion(reported:required:operation:)` below it.
+  tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
+  quickly. Direct mode, `Server.snapshot()` and the workspace builder keep
+  working on every supported release. (#48)
+
+- `Server.waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)`
+  reads the pane on a timer below 3.7 instead of attaching a control client;
+  output that changes no row, such as a line of only blanks, is not seen as an
+  event there. (#48)
+
+- `Server.deleteBuffer(named:)` and the MCP `paste_text` tool need tmux 3.4:
+  earlier releases can delete or rename an unrelated buffer when the named one
+  is missing. `paste_text` refuses before it stages a buffer. (#48)
+
+- A literal command batch is refused before dispatch when its release cannot
+  run it safely: `break-pane` without `-n` on exactly 3.7, a window or session
+  name holding `:` or `.` on exactly 3.7, `split-window -p` on exactly 3.4, and
+  a `select-layout` argument tmux 3.3a cannot parse, and `refresh-client -l`
+  below 3.4, which exits a 3.3a server with a client attached. Command names
+  are read as tmux reads them, so an alias or a unique prefix such as
+  `break-p` is the same command, and `ControlSession.send(_:)` applies the
+  same check. Nested command strings, such as an `if-shell` body, are not
+  read. (#48)
+
+### Fixed
+
+- `Server.breakPane(_:from:named:)` returns the window of a pane that was alone
+  in it on tmux 3.3a through 3.5, which print no id for that case. (#48)
+
+- `Server.waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)`
+  matches a pattern that spans a wrapped row, and a killed server ends it as
+  `paneClosed` with the output so far, the same as a killed pane, instead of
+  throwing a transport error. (#48)
 
 ## [0.1.0-alpha.7] - 2026-10-18
 

@@ -13,8 +13,19 @@ private struct IncrementalPaneState {
 /// its forward scans continue from.
 struct EntryCapture: Sendable {
     let rows: [String]
+    /// Where `rows` came from, when one of them could be a piece of a wrapped
+    /// line. Joining the rows costs further reads, so it waits until the rows
+    /// alone have not answered: see ``Server/entryLines(of:in:perStreamOutputLimit:)``.
+    let wrap: EntryWrap?
     let cursor: CaptureCursor
     let alternateScreen: Bool
+}
+
+/// The part of the pane that an entry read covered.
+struct EntryWrap: Sendable {
+    let bounds: PaneCaptureBounds
+    let firstRow: Int
+    let lastRow: Int
 }
 
 extension Server {
@@ -74,6 +85,26 @@ extension Server {
         maximumChunks: Int,
         perStreamOutputLimit: Int,
         _ visit: ([String]) -> Bool
+    ) async throws(TmuxError) -> ForwardCaptureResult {
+        try await scanForwardLines(
+            pane,
+            since: cursor,
+            sourceLinesPerChunk: sourceLinesPerChunk,
+            maximumChunks: maximumChunks,
+            perStreamOutputLimit: perStreamOutputLimit
+        ) { rows, _ in visit(rows) }
+    }
+
+    /// ``scanForward(_:since:sourceLinesPerChunk:maximumChunks:perStreamOutputLimit:_:)``
+    /// for a reader that matches text: `visit` is also given the same rows
+    /// with the rows of a wrapped line joined into one.
+    func scanForwardLines(
+        _ pane: Pane,
+        since cursor: CaptureCursor,
+        sourceLinesPerChunk: Int,
+        maximumChunks: Int,
+        perStreamOutputLimit: Int,
+        _ visit: (_ rows: [String], _ lines: [String]) -> Bool
     ) async throws(TmuxError) -> ForwardCaptureResult {
         guard sourceLinesPerChunk > 1 else {
             throw .invocationFailed(reason: "a forward capture chunk needs at least two lines")
@@ -184,10 +215,34 @@ extension Server {
                 // Keep a completed blank anchor, but not the empty row the cursor lands on.
                 let completedBlankAnchor =
                     advanced && aligned.tail == nil && rows.first?.isEmpty == true
-                if rows.first == (aligned.tail ?? "") { rows.removeFirst() }
-                if completedBlankAnchor { rows.insert("", at: 0) }
+                var firstVisited = start
+                if rows.first == (aligned.tail ?? "") {
+                    rows.removeFirst()
+                    firstVisited += 1
+                }
+                if completedBlankAnchor {
+                    rows.insert("", at: 0)
+                    firstVisited -= 1
+                }
+                var lastVisited = end
                 if advanced, rows.last?.isEmpty == true {
                     rows.removeLast()
+                    lastVisited -= 1
+                }
+                // The row above the first one read is what a continuation
+                // row would be joined to, and it is no longer in `rawRows`.
+                var lines = rows
+                if Self.canWrap(
+                    rawRows + (aligned.checkpoint.last.map { [$0] } ?? []),
+                    width: state.paneWidth)
+                {
+                    lines = try await logicalLines(
+                        pane,
+                        bounds: state.bounds,
+                        rows: rows,
+                        firstVisited: firstVisited,
+                        lastVisited: lastVisited,
+                        perStreamOutputLimit: perStreamOutputLimit)
                 }
                 let nextCursor = try makeCursor(
                     for: pane,
@@ -199,7 +254,7 @@ extension Server {
                 previousCursor = nextCursor
                 remainingAttempts = Self.incrementalCaptureAttempts
                 completedChunks += 1
-                let stopped = visit(rows)
+                let stopped = visit(rows, lines)
                 let hasMore = end != state.absoluteCursorRow
                 let result = ForwardCaptureResult(
                     cursor: nextCursor,
@@ -447,6 +502,12 @@ extension Server {
         }
         return EntryCapture(
             rows: rows,
+            wrap: Self.canWrap(rows, width: state.paneWidth)
+                ? EntryWrap(
+                    bounds: bounds,
+                    firstRow: bounds.historySize + start,
+                    lastRow: state.absoluteCursorRow)
+                : nil,
             cursor: try makeCursor(
                 for: pane,
                 state: state,
@@ -606,6 +667,110 @@ extension Server {
             match = candidate
         }
         return match
+    }
+
+    /// The rows of an entry read with the rows of a wrapped line joined.
+    func entryLines(
+        of entry: EntryCapture,
+        in pane: Pane,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> [String] {
+        guard let wrap = entry.wrap else { return entry.rows }
+        return try await logicalLines(
+            pane,
+            bounds: wrap.bounds,
+            rows: entry.rows,
+            firstVisited: wrap.firstRow,
+            lastVisited: wrap.lastRow,
+            perStreamOutputLimit: perStreamOutputLimit)
+    }
+
+    /// How far above the rows being read a wrapped line is followed back to
+    /// its first row.
+    private static let wrapLookbackRows = 64
+
+    /// Whether any of `rows` could be a piece of a wrapped line. tmux wraps a
+    /// row only once it has filled the pane's width, so a screen of short rows
+    /// has nothing to join and costs no extra reads. A wide character fills
+    /// two cells, hence the factor.
+    static func canWrap(_ rows: [String], width: Int) -> Bool {
+        rows.contains { $0.count * 2 >= width }
+    }
+
+    /// The lines of `rows` as a reader sees them, with the rows of a wrapped
+    /// line joined and each line trimmed like a row.
+    ///
+    /// `rows` are the unjoined rows at absolute rows `firstVisited` through
+    /// `lastVisited`. A line that begins above `firstVisited` is followed back
+    /// to its start, and a line that ends above it is left out, because those
+    /// rows were read earlier.
+    ///
+    /// The rows of a joined line are told apart by reading the same range
+    /// twice, once as rows and once joined: the rows of one line hold exactly
+    /// the characters of the joined line, once spaces are set aside (tmux trims
+    /// every row, so the spaces a row ended with are gone from it).
+    ///
+    /// Known limit: reads that do not add up, because the pane moved between
+    /// them, return `rows` unjoined with no signal. A pattern that spans a
+    /// wrap can then be missed for that one read; the next read joins it again.
+    /// A line is followed back at most `wrapLookbackRows` rows.
+    func logicalLines(
+        _ pane: Pane,
+        bounds: PaneCaptureBounds,
+        rows: [String],
+        firstVisited: Int,
+        lastVisited: Int,
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> [String] {
+        guard lastVisited >= firstVisited, !rows.isEmpty else { return rows }
+        let lowest = max(0, firstVisited - Self.wrapLookbackRows)
+        let count = lastVisited - lowest + 1
+        let first = lowest - bounds.historySize
+        let last = lastVisited - bounds.historySize
+        let separate = try await captureTail(
+            pane,
+            startingAt: .line(first),
+            endingAt: last,
+            bounds: bounds,
+            maximumLines: count,
+            perStreamOutputLimit: perStreamOutputLimit
+        )
+        let joined = try await captureTail(
+            pane,
+            startingAt: .line(first),
+            endingAt: last,
+            bounds: bounds,
+            maximumLines: count,
+            perStreamOutputLimit: perStreamOutputLimit,
+            joiningWrappedLines: true
+        )
+        guard separate.droppedLines == 0, joined.droppedLines == 0,
+            separate.lines.count == count
+        else { return rows }
+        func characters(_ text: String) -> Int {
+            text.utf8.reduce(0) { $0 + ($1 == 0x20 ? 0 : 1) }
+        }
+        func trimmed(_ text: String) -> String {
+            var text = text
+            while text.hasSuffix(" ") { text.removeLast() }
+            return text
+        }
+        var lines: [String] = []
+        var next = 0
+        for text in joined.lines {
+            let target = characters(text)
+            let begin = next
+            var length = 0
+            repeat {
+                guard next < separate.lines.count else { return rows }
+                length += characters(separate.lines[next])
+                next += 1
+            } while length < target
+            guard length == target else { return rows }
+            guard lowest + next - 1 >= firstVisited else { continue }
+            lines.append(next - begin == 1 ? separate.lines[begin] : trimmed(text))
+        }
+        return next == separate.lines.count ? lines : rows
     }
 
     private func captureExactRows(

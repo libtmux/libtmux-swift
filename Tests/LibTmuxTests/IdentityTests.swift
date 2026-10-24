@@ -199,7 +199,9 @@ struct IdentityTests {
         }
     }
 
-    @Test("connected unlink fences its rejected branch reply")
+    @Test(
+        "connected unlink fences its rejected branch reply",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func connectedUnlinkDrainsRejectionReply() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
@@ -226,7 +228,9 @@ struct IdentityTests {
         }
     }
 
-    @Test("connected unlink drains a nested mutation error")
+    @Test(
+        "connected unlink drains a nested mutation error",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func connectedUnlinkDrainsNestedMutationError() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)
@@ -267,7 +271,9 @@ struct IdentityTests {
         }
     }
 
-    @Test("connected guard ignores hook blocks while fencing")
+    @Test(
+        "connected guard ignores hook blocks while fencing",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func connectedGuardIgnoresHookBlocks() async throws {
         try await withTmuxServer { server in
             let session = try #require(try await server.sessions().first)

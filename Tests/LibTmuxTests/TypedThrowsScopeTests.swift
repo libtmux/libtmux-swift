@@ -106,7 +106,9 @@ struct TypedThrowsScopeTests {
         }
     }
 
-    @Test("the connection-carrying forms keep the type too")
+    @Test(
+        "the connection-carrying forms keep the type too",
+        .enabled(if: laneSupportsControl, "control mode needs tmux 3.7"))
     func connectedFormsStayTyped() async throws {
         try await withTmuxServer { server in
             let session = try await server.newSession(named: "typed")

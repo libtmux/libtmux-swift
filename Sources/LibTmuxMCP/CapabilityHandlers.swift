@@ -256,7 +256,7 @@ extension TmuxTools {
     func getServerInfo() async throws -> ToolOutcome {
         let running = try await server.isRunning()
         var result: [String: JSONValue] = ["running": .bool(running)]
-        if let version = try? await server.version() {
+        if let version = try? await server.daemonVersion() {
             result["version"] = .string(version.description)
         }
         if running, let socket = try await server.format("#{socket_path}") {

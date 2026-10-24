@@ -16,6 +16,22 @@ notification stream is free while nothing is happening. `waitForOutput` also
 checks its target once per quiet second so removing a silent pane ends the
 wait instead of looking like a timeout.
 
+Below tmux 3.7 no control connection is opened. `waitForOutput` reads the pane
+on a timer instead and answers the same questions from the rows it finds, so
+output that changes no row, such as a line of only blanks, is not seen as an
+event. See <doc:PlatformSupport>.
+
+Patterns match whole lines, joined the way `capture-pane -J` joins them. A line
+wider than the pane is shown on several rows, and a pattern that spans the
+break still matches, on a timer and on a connection alike.
+
+A wait ends as ``OutputWait/Outcome/paneClosed``, with the output that arrived
+before, when the pane is killed and when the whole server is killed. That holds
+while another client keeps the dying server up: tmux stays until every client
+has left, and a request to it then fails with the daemon gone rather than with
+a missing pane. A connection that drops while the pane lives is a different
+answer, ``TmuxError/connectionClosed``, because the pane is still there.
+
 ## Pick the cheapest one that answers the question
 
 **You wrote the command: signal it.** Compose a channel into the command and
@@ -167,11 +183,18 @@ this is for:
 
 | Waiting for a line that has not been printed yet | Polling | waitForOutput |
 | --- | --- | --- |
-| pane captures taken | one per tick, for as long as the wait lasts | 4 captures |
+| pane captures taken | one per tick, for as long as the wait lasts | 6 captures |
 | quiet liveness | checked by every capture | one in-band target check per second |
-| tmux processes spent | one per capture | 9; quiet checks reuse the connection |
+| tmux processes spent | one per capture | 11; quiet checks reuse the connection |
 
 <!-- waiting-matrix:end -->
+
+A pattern matches whole lines, so a capture that holds a row of half the
+pane's width or more, such as the long command line the benchmark types, is
+read twice more, once as rows and once joined, to tell a wrapped line from
+separate rows. That is why the right column counts two more captures and two
+more processes than it did before patterns matched whole lines. A screen of
+shorter rows takes neither read.
 
 Only the right column is a measurement. Polling's cost is a function of how
 fast the machine gets round its loop — three runs of the benchmark saw 31, 35

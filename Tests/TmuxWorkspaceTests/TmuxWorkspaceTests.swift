@@ -417,7 +417,9 @@ struct WorkspaceBuildingTests {
         }
     }
 
-    @Test("a rollback returns at its deadline when cleanup ignores cancellation")
+    @Test(
+        "a rollback returns at its deadline when cleanup ignores cancellation",
+        .timeLimit(.minutes(1)))
     func stuckRollbackReturnsAtDeadline() async throws {
         let socketPath = "/tmp/libtmux-swift-test/workspace-rollback/socket"
         let endpoint = try Endpoint(socketPath: socketPath)
@@ -437,7 +439,6 @@ struct WorkspaceBuildingTests {
             )
         )
 
-        let started = ContinuousClock.now
         let rollback = Task {
             await WorkspaceBuilder.rollback(
                 session,
@@ -446,16 +447,27 @@ struct WorkspaceBuildingTests {
             )
         }
         rollback.cancel()
-        let cleanup = await rollback.value
+        // A rollback that waits for the cleanup would wait forever. When the
+        // time limit cancels this test, release the cleanup so the rollback
+        // returns and the ordering check below reports the failure.
+        let cleanup = await withTaskCancellationHandler {
+            await rollback.value
+        } onCancel: {
+            Task { await transport.releaseAndWait() }
+        }
 
         guard case let .invocationFailed(reason) = cleanup else {
             Issue.record("rollback cleanup = \(String(describing: cleanup)), want timeout")
             return
         }
         #expect(reason == "workspace rollback timed out")
-        #expect(ContinuousClock.now - started < .seconds(1))
+
+        // The cleanup is still blocked, so the rollback returned on its own
+        // deadline; one that waited for the cleanup would not have returned.
+        #expect(await transport.finished == false)
 
         await transport.releaseAndWait()
+        #expect(await transport.finished)
         #expect(await transport.cancelled)
     }
 
@@ -517,7 +529,7 @@ struct WorkspaceBuildingTests {
 private actor StuckRollbackTransport: ProcessTransport {
     private(set) var cancelled = false
     private var released = false
-    private var finished = false
+    private(set) var finished = false
     private var releaseWaiter: CheckedContinuation<Void, Never>?
     private var finishWaiter: CheckedContinuation<Void, Never>?
 

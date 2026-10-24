@@ -142,6 +142,9 @@ struct ToolSurfaceTests {
             for operation in ToolOperation.allCases {
                 let name = operation.rawValue
                 if Self.notDriven[name] != nil { continue }
+                // Staging a buffer is refused where it cannot be deleted
+                // exactly; that refusal has its own test.
+                if name == "paste_text", !laneSupportsNamedBufferEditing { continue }
                 guard let definition = TmuxTools.byName[name] else {
                     failures.append("\(name): advertised by ToolOperation but absent from byName")
                     continue
@@ -198,7 +201,8 @@ struct ToolSurfaceTests {
         }
 
         let advertised = Set(ToolOperation.allCases.map(\.rawValue))
-        let expected = advertised.subtracting(Self.notDriven.keys)
+        var expected = advertised.subtracting(Self.notDriven.keys)
+        if !laneSupportsNamedBufferEditing { expected.remove("paste_text") }
         let neverCalled = expected.subtracting(called).sorted()
         #expect(
             neverCalled.isEmpty && failures.isEmpty,
