@@ -432,7 +432,7 @@ What a reviewer is looking for, beyond whether it works:
 - **Whether a new test was shown capable of failing.** A green test proves
   nothing until it has been made to go red on purpose.
 - **Whether the public surface grew without a caller needing it.** Anything
-  exported is something the alpha promise will eventually have to keep.
+  exported is something the release policy will eventually have to keep.
 - **Whether a claim in prose is checkable.** A number in the README that no
   script regenerates is a number that will be wrong.
 
@@ -442,7 +442,8 @@ The maintainer creates and pushes tags; nobody else does. Pushing the tag is
 what publishes — SwiftPM resolves a package from its git history and nothing is
 uploaded anywhere — and `.github/workflows/release.yml` turns that push into
 the GitHub Release every established Swift package carries, marking it a
-prerelease whenever the version has a suffix.
+prerelease whenever the version has a suffix. No release has one unless the
+maintainer asks for it; the next is `0.1.0`, then `0.1.1`, `0.1.2` and so on.
 
 The release commit does two things, and the workflow refuses the tag if either
 is missing:
@@ -487,9 +488,9 @@ variable to a second tmux, so a client that reports another release than its
 daemon is exercised too. A feature that needs a newer release says so where it
 is described and refuses by itself; none of them raises this floor.
 
-The package is alpha. The public API can change in any release with no
-deprecation first, so semantic versioning starts describing this package at
-`0.1.0`; before that a version number says only which alpha you have. What is
+Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+settled: any release may change or remove exported identifiers, and the
+changelog marks each break. Pin an exact version to avoid one. What is
 tested is the tmux behaviour — the Swift surface around it is what has not
 settled.
 

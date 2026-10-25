@@ -30,9 +30,9 @@ reported when you asked, and it stays that way when tmux changes. Ask again for
 a newer view.
 
 > [!WARNING]
-> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
-> settled, and any release may change or remove exported identifiers without a
-> deprecation period. Pin an exact version. Not recommended for production.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [Install](#install) ·
 [Asking](#find-sessions-windows-and-panes) ·
@@ -1050,18 +1050,17 @@ body returns, throws, or the process is killed. Guide:
   recorded API.
 - **A signal disposition.** The library does not set `SIGPIPE`; see
   [Platform notes](#platform-notes).
-- **A stable API.** Every release so far is an alpha and names are still
-  moving; see [Support and status](#support-and-status).
+- **A stable API.** Names are still moving and any release may change them;
+  see [Support and status](#support-and-status).
 
 ## Support and status
 
-**Alpha.** The library works and its suite runs against every supported tmux release on
+The library works and its suite runs against every supported tmux release on
 every push, but the API has had no outside use and names are still moving.
 Expect to update code when you update the package.
 
-- **The public API can change in any release**, with no deprecation first.
-  Semantic versioning starts saying something at `0.1.0`; until then a version
-  number only tells you which alpha you have.
+- **The public API can change in any release.** Releases are numbered `0.1.N`,
+  each increments `N`, and the changelog marks each break.
 - **Pin an exact version**, for the reasons under [Install](#install).
 - **Swift 6 language mode,** with complete strict concurrency and no unsafe
   flags.

@@ -4,15 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Everything up to `0.1.0` is alpha: the public API may change in any release,
-without a deprecation first and without a major version to announce it.
-Semantic versioning starts describing this package at `0.1.0`; before that a
-version number says only which alpha you have. Pin an exact one.
+Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+settled: any release may change or remove exported identifiers, and the
+changelog marks each break. Pin an exact version to avoid one.
 
 ## [Unreleased]
 
 ### Changed
 
+- Releases are numbered `0.1.N` from `0.1.0` on, and none carries an `-alpha`
+  tag unless the maintainer asks for one. Each release increments `N` and may
+  change or remove exported identifiers; the changelog marks each break, so pin
+  an exact version to avoid one. The README, the `LibTmux` documentation
+  catalogue and the contributor guides say so in place of the alpha warning.
 - The MCP `wait_for_text` description and `docs/mcp-contract.md` now say
   that it streams from tmux 3.7 and reads the screen on a timer below it,
   and list its outcomes. The platform page and README describe macOS as
