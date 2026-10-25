@@ -1208,6 +1208,13 @@ refused; 3.0a and 3.1c also behind a 3.3a client.
 - [libtmux-mcp][py-mcp] — the Python MCP server for tmux
 - [The Tao of tmux][tao] — the book
 
+## AI policy
+
+Use these packages with AI tools as you like. When contributing, check what you
+submit and wait for a maintainer's invitation before preparing a pull request.
+See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
+[AI_POLICY.md](https://github.com/libtmux/.github/blob/HEAD/AI_POLICY.md).
+
 ## Attribution
 
 Please use the following BibTeX template to cite libtmux-swift in scientific
