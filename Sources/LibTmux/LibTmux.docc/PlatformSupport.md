@@ -48,7 +48,7 @@ decided from the daemon's release.
 | `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7; ``Server/breakPane(_:from:named:)`` supplies a name there | Qualified on 3.7 and 3.7a |
 | `split-window -p` | 3.5 | refused on exactly 3.4; the typed splits send `-l N%` | Qualified |
 | `select-layout` with a layout tmux cannot parse | 3.4 | refused before it is sent, because 3.3a crashes on one | Qualified on 3.3a |
-| `refresh-client -l`, the clipboard query | 3.6a | refused before it is sent, because a 3.3a server exits when an attached client's terminal does not answer, and a 3.4 through 3.6 server exits when that client leaves before its terminal answers | Qualified on 3.3a through 3.6 |
+| `refresh-client -l`, the clipboard query | 3.6a | refused before it is sent, because a 3.3a server exits at once with an attached client whose terminal has the `Ms` clipboard capability, such as `xterm-256color` or `tmux-256color`, and a 3.4 through 3.6 server exits when that client leaves before its terminal answers | Qualified on 3.3a through 3.6 |
 
 Tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
 quickly, which is why the release is checked before attaching and not after.
@@ -84,7 +84,7 @@ What reaches tmux this way, and what it does there, by command:
 | --- | --- | --- |
 | `break-pane` without `-n` | exactly 3.7 | the server exits; 3.7a does not |
 | `select-layout` with a layout tmux cannot parse | 3.3 and 3.3a | the server exits; 3.4 answers "invalid layout" |
-| `refresh-client -l` | 3.3a, and 3.4 through 3.6 | 3.3a exits when an attached client's terminal does not answer; 3.4 through 3.6 exit when that client leaves before its terminal answers |
+| `refresh-client -l` | 3.3a, and 3.4 through 3.6 | 3.3a exits at once with an attached client whose terminal has the `Ms` clipboard capability, such as `xterm-256color` or `tmux-256color`; 3.4 through 3.6 exit when that client leaves before its terminal answers |
 | `delete-buffer -b NAME` and `set-buffer -b NAME -n` | below 3.4 | a name that does not exist acts on the newest buffer instead, silently |
 | `split-window -p` | exactly 3.4 | tmux answers with an error and nothing changes |
 | `:` or `.` in a session or window name | exactly 3.7 | tmux answers with an error and nothing changes |
