@@ -48,16 +48,11 @@ MANIFEST_EXCERPTS = {
     '.product(name: "LibTmux", package: "libtmux-swift")',
     '.product(name: "LibTmuxMCP", package: "libtmux-swift")',
     '.product(name: "TmuxWorkspace", package: "libtmux-swift")',
+    '.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")',
     (
         '.package(\n'
         '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
-        '    exact: "0.1.0-alpha.8"\n'
-        ")"
-    ),
-    (
-        '.package(\n'
-        '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
-        '    exact: "0.1.0-alpha.8",\n'
+        '    from: "0.1.0",\n'
         '    traits: ["YAMLWorkspaces"]\n'
         ")"
     ),

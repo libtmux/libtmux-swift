@@ -310,7 +310,8 @@ invokes directly does not fail only there:
 $ python3 Scripts/check_script_modes.py
 ```
 
-Every `exact:` pin in the documentation names the version the package claims:
+Every `exact:` pin in the documentation names the version the package claims,
+and every `from:` bound names a final release no newer than it:
 
 ```console
 $ python3 Scripts/check_version.py
@@ -449,8 +450,8 @@ The release commit does two things, and the workflow refuses the tag if either
 is missing:
 
 - Set `LibTmuxVersion.current` to the version being tagged. Every `exact:` pin
-  in the documentation names it, and `Scripts/check_version.py` fails when one
-  does not.
+  in the documentation names it, and every `from:` bound is a final release no
+  newer than it. `Scripts/check_version.py` fails when one is not.
 - Rename `## [Unreleased]` in `CHANGELOG.md` to `## [<version>] - <date>` and
   open a fresh `## [Unreleased]` above it. Those lines become the release
   notes, so an empty section fails the release rather than publishing one.

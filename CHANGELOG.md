@@ -17,6 +17,8 @@ changelog marks each break. Pin an exact version to avoid one.
   change or remove exported identifiers; the changelog marks each break, so pin
   an exact version to avoid one. The README, the `LibTmux` documentation
   catalogue and the contributor guides say so in place of the alpha warning.
+- The install section recommends `from: "0.1.0"`, which resolves once `0.1.0` is
+  tagged; every earlier tag is a prerelease that a range does not match.
 - The MCP `wait_for_text` description and `docs/mcp-contract.md` now say
   that it streams from tmux 3.7 and reads the screen on a timer below it,
   and list its outcomes. The platform page and README describe macOS as

@@ -90,7 +90,8 @@ Two rules are enforced rather than trusted:
 - Every `swift` fence in `README.md` or the DocC catalogue must also exist as a
   file under `Examples/Sources/`. `Scripts/check_examples.py` fails otherwise,
   so a documented example is compiled code and most of it is run.
-- Every `exact:` pin must name the version in `LibTmuxVersion.current`.
+- Every `exact:` pin must name the version in `LibTmuxVersion.current`, and
+  every `from:` bound a final release no newer than it.
   `Scripts/check_version.py` fails otherwise.
 
 Quoting a command's output in the README makes that output a claim. Run the
