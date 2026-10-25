@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Require every version this package claims to be the one it is.
 
-`LibTmuxVersion.current` is the source. A reader is told to depend on an exact
-version, because every tag until 0.1.0 is a prerelease and SwiftPM will not
-resolve one from a range — so each `exact:` pin in the documentation is a claim
-about which tag exists, and a stale one sends a reader to a version that does
-not.
+`LibTmuxVersion.current` is the source. A reader is told to depend on a
+release, so each version the documentation names is a claim about which tag
+exists, and a stale one sends a reader to a version that does not:
+
+- An `exact:` pin names `LibTmuxVersion.current` itself.
+- A `from:` bound names a final release, never a prerelease, and one that is
+  not newer than the release `LibTmuxVersion.current` is or is heading to. A
+  bound is a floor, so it stays valid as later releases ship: `from: "0.1.0"`
+  passes at `0.1.0-alpha.8` and at `0.1.7`, and `from: "0.2.0"` fails at both.
 
 Only pins naming this repository are that claim. A nested package pinning a
 third-party dependency is held at its own upstream version, and passes through.
@@ -29,6 +33,8 @@ SOURCE = ROOT / "Sources/LibTmux/LibTmuxVersion.swift"
 
 DECLARED = re.compile(r'static let current = "([^"]+)"')
 PIN = re.compile(r'exact:\s*"([^"]+)"')
+FLOOR = re.compile(r'\bfrom:\s*"([^"]+)"')
+RELEASE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 URL = re.compile(r'url:\s*"([^"]+)"')
 PACKAGE = re.compile(r"\.package\(")
 
@@ -86,6 +92,41 @@ def own_pins(text: str) -> list[tuple[int, str]]:
     return found
 
 
+def own_floors(text: str) -> list[tuple[int, str]]:
+    """List every `from:` bound in `text` that is a claim about this package.
+
+    Subjects are found as `own_pins` finds them, so a third-party dependency's
+    bound passes through. A `from:` with no enclosing block is not reported:
+    only a `.package(` block is a dependency declaration.
+    """
+    found: list[tuple[int, str]] = []
+    subject: str | None = None
+
+    for number, line in enumerate(text.splitlines(), 1):
+        if PACKAGE.search(line):
+            subject = None
+        url = URL.search(line)
+        if url is not None:
+            subject = url.group(1)
+        if subject is not None and OWN_PACKAGE in subject:
+            found.extend((number, bound) for bound in FLOOR.findall(line))
+
+    return found
+
+
+def floor_problem(bound: str, version: str) -> str | None:
+    """Say why `from: bound` is not a valid floor at `version`, or None."""
+    floor = RELEASE.fullmatch(bound)
+    if floor is None:
+        return "is not a final release"
+    heading = RELEASE.match(version)
+    if heading is None:
+        return f"cannot be compared with {version}"
+    if tuple(map(int, floor.groups())) > tuple(map(int, heading.groups())):
+        return f"is newer than {version}"
+    return None
+
+
 def main() -> int:
     """Report any pin that names a version this package is not."""
     version = declared_version()
@@ -99,19 +140,25 @@ def main() -> int:
             pins += 1
             if pinned != version:
                 failures.append(f"{relative}:{number}: pins {pinned}")
+        for number, bound in own_floors((ROOT / relative).read_text()):
+            pins += 1
+            problem = floor_problem(bound, version)
+            if problem is not None:
+                failures.append(f"{relative}:{number}: from {bound} {problem}")
 
     if failures:
-        print(f"{len(failures)} pin(s) disagree with {version}:", file=sys.stderr)
+        print(f"{len(failures)} claim(s) disagree with {version}:", file=sys.stderr)
         for failure in failures:
             print(f"  {failure}", file=sys.stderr)
         print(
             f"\nEvery `exact:` pin names the version in "
-            f"{SOURCE.relative_to(ROOT)}.",
+            f"{SOURCE.relative_to(ROOT)}, and every `from:` bound is a final "
+            f"release no newer than it.",
             file=sys.stderr,
         )
         return 1
 
-    print(f"{pins} pins checked; each names {version}")
+    print(f"{pins} claims checked against {version}")
     return 0
 
 

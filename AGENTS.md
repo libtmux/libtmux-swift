@@ -16,7 +16,7 @@ and cannot be pointed at a subdirectory.
   unrelated cleanup out of it.
 - Reuse an existing type, helper, fixture, or test before adding a new one.
 - Keep new API internal until a caller outside the module needs it. Anything
-  exported is something the alpha promise will eventually have to keep.
+  exported is something the release policy will eventually have to keep.
 - Add a file only for a durable boundary — a distinct responsibility, or
   independent reuse — not for a single-use helper.
 - A passing gate is evidence only once it has been shown capable of failing.

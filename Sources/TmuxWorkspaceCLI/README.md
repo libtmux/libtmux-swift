@@ -25,8 +25,9 @@ the gaps.
 The library's workspace APIs, [`TmuxWorkspace`][mod-tmuxworkspace], remain
 available separately.
 
-Alpha software. The command surface can change in any release. Pin an exact
-version.
+Releases are numbered `0.1.N`, and each release increments `N`. The command
+surface is not settled: any release may change or remove it, and the changelog
+marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [Install](#install) ·
 [Load](#load-a-workspace) · [Find](#find-a-workspace) ·
@@ -456,7 +457,8 @@ $ python3 Scripts/benchmark_workspace_cli.py \
   WSL, and macOS. CI runs Ubuntu on every release in the range and macOS on 3.3a
   and 3.7b.
 - **tmuxp 1.74.0** only for [`shell`][ref-cli-shell] and the benchmark.
-- **Alpha.** Any release may change the command surface; pin an exact version.
+- **Unsettled surface.** Any release may change the command surface; pin an
+  exact version.
 
 ## Reference
 

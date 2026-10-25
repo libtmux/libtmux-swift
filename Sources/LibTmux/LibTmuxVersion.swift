@@ -7,6 +7,7 @@
 /// the release workflow refuses a tag that does not match this.
 public enum LibTmuxVersion {
     /// The current version, in the form a git tag carries it: bare semver, no
-    /// `v`, with a prerelease suffix while the API may still change.
+    /// `v`. Releases are numbered `0.1.N`, with no prerelease suffix unless the
+    /// maintainer asks for one.
     public static let current = "0.1.0-alpha.8"
 }

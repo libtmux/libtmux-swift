@@ -60,10 +60,10 @@ where do I go deeper.
   posture. That block is the real description.
 - **Two badges.** They report CI state, which is a fact. A wall of shields is
   decoration.
-- **The alpha warning states the same terms every port states**: releases carry
-  an `-alpha` prerelease tag, the API is not settled, any release may change or
-  remove exported identifiers without a deprecation period, pin an exact
-  version, not recommended for production.
+- **The API warning states the same terms every port states**, word for word:
+  "Releases are numbered `0.1.N`, and each release increments `N`. The API is
+  not settled: any release may change or remove exported identifiers, and the
+  changelog marks each break. Pin an exact version to avoid one."
 - **Compatibility is first-class content**, not a footnote: the toolchain
   floor, the platforms, the tmux range, and what the stability promise covers.
 - **Non-goals get their own sentences.** They answer the architectural question
@@ -90,7 +90,8 @@ Two rules are enforced rather than trusted:
 - Every `swift` fence in `README.md` or the DocC catalogue must also exist as a
   file under `Examples/Sources/`. `Scripts/check_examples.py` fails otherwise,
   so a documented example is compiled code and most of it is run.
-- Every `exact:` pin must name the version in `LibTmuxVersion.current`.
+- Every `exact:` pin must name the version in `LibTmuxVersion.current`, and
+  every `from:` bound a final release no newer than it.
   `Scripts/check_version.py` fails otherwise.
 
 Quoting a command's output in the README makes that output a claim. Run the
