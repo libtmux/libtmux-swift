@@ -10,6 +10,8 @@ changelog marks each break. Pin an exact version to avoid one.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-25
+
 ### Changed
 
 - Releases are numbered `0.1.N` from `0.1.0` on, and none carries an `-alpha`
