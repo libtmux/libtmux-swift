@@ -14,6 +14,9 @@
 The library. Servers, sessions, windows, panes and clients as values, with
 options, hooks, formats, filtering, snapshots and streaming over them.
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/swift/)
+[![Swift Package Index](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Flibtmux%2Flibtmux-swift%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/libtmux/libtmux-swift)
+
 </div>
 
 One dependency ([swift-subprocess][]), and the only product most callers need.

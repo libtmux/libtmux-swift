@@ -2,8 +2,7 @@ name: docs
 
 # Publishes this port's documentation to libtmux.org: trunk as
 # /en/swift/latest/, and each release tag (bare, without a `v`) as its own
-# version plus an alias, `next` for a prerelease and `stable` (the default)
-# for a release.
+# version, the default for a release, and a prerelease also as `next`.
 #
 # libtmux/docs builds and publishes the tree, through two reusable workflows
 # pinned to one commit: port-docs.yml decides which versions an event builds
