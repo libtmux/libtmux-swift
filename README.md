@@ -1047,7 +1047,7 @@ body returns, throws, or the process is killed. Guide:
   recorded API.
 - **A signal disposition.** The library does not set `SIGPIPE`; see
   [Platform notes](#platform-notes).
-- **A stable API.** Names are still moving and any release may change them;
+- **A settled API.** Names are still moving and any release may change them;
   see [Support and status](#support-and-status).
 
 ## Support and status
