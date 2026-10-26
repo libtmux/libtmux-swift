@@ -222,6 +222,7 @@ def check_site(
 
 def rendered(text: str) -> str:
     """Return `text` as a reader sees it: link text and code, without markup."""
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = re.sub(r"\[([^\]]*)\]\[[^\]]*\]", r"\1", text)
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = re.sub(r"\[(`[^`]+`)\]", r"\1", text)

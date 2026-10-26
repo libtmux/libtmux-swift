@@ -158,6 +158,23 @@ def test_markup_does_not_count_toward_the_limit(tmp_path: Path) -> None:
     assert problems(tmp_path, GOOD + "\n" + prose) == []
 
 
+def test_a_badge_row_counts_its_alt_text_only(tmp_path: Path) -> None:
+    """A linked badge shows its alt text, not the image or link URLs."""
+    image = "https://img.shields.io/" + "a" * 120
+    link = "https://example.com/" + "b" * 120
+    row = "\n".join(f"[![badge{n}]({image})]({link})" for n in range(5))
+
+    assert problems(tmp_path, GOOD + "\n" + row + "\n") == []
+
+
+def test_prose_after_a_badge_is_still_measured(tmp_path: Path) -> None:
+    """A badge at the start of a paragraph does not exempt the paragraph."""
+    badge = "[![ci](https://img.shields.io/ci)](https://example.com/ci)"
+    found = problems(tmp_path, GOOD + "\n" + badge + " " + WALL + "\n")
+
+    assert any("a block over 240 characters" in line for line in found)
+
+
 def test_tables_html_and_the_contents_line_are_not_walls(tmp_path: Path) -> None:
     """Index lines and markup are not prose."""
     table = f"| Name | {WALL} |\n| --- | --- |\n"
