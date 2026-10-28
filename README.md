@@ -1096,7 +1096,7 @@ of the library.
 | `Server.deleteBuffer(named:)` and the MCP `paste_text` staging buffer | 3.4 | refused |
 | `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7 |
 | `split-window -p` | 3.5 | refused on exactly 3.4 |
-| A JSON layout in `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)` and the MCP `select_layout` tool | 3.8 | refused before anything is sent, naming tmux 3.8 |
+| A JSON layout in `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)`, the MCP `select_layout` tool and a raw `select-layout` | 3.8 | refused before anything is sent, naming tmux 3.8 |
 | `switch-mode` | 3.8 | tmux rejects it as an unknown command; the library does not resolve it |
 | `select-layout` with a layout tmux cannot parse | 3.4 | refused, because 3.3a crashes on one |
 | `refresh-client -l`, the clipboard query | 3.6a | refused |

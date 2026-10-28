@@ -114,7 +114,9 @@
     {
       "apis" : [
         "Server.selectLayout(_:_:)",
-        "Server.validateLayouts(_:)"
+        "Server.validateLayouts(_:)",
+        "Server.run(_:)",
+        "ControlSession.send(_:)"
       ],
       "commands" : [
         {
