@@ -137,10 +137,10 @@ replace one that has expired. Exact window occurrences carry both a global
 ## select_layout
 
 [`select_layout`] accepts named layouts, unique abbreviations for the running
-daemon's version, and checksummed saved layouts. It checks syntax before window
-lookup, then uses the core mutation's captured-window guard on the selected
-transport. tmux owns geometry and pruning. The result's `layout` field echoes
-the accepted input.
+daemon's version, and checksummed saved layouts, plus a JSON layout document on
+tmux 3.8 and later. It checks syntax before window lookup, then uses the core
+mutation's captured-window guard on the selected transport. tmux owns geometry
+and pruning. The result's `layout` field echoes the accepted input.
 
 ## Output budgets and deadlines
 

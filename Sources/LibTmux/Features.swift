@@ -82,6 +82,21 @@ enum TmuxCommandGuard {
         }
     }
 
+    /// The refusal for a `{` layout operand below the JSON floor, read as
+    /// `validateLayouts` reads it; 3.3a keeps its own refusal.
+    private static func jsonLayoutOperandRefusal(
+        _ layout: String, version: TmuxVersion, checkedFrom beforeValidation: TmuxVersion
+    ) -> TmuxError? {
+        guard layout.hasPrefix("{"), version < .jsonLayouts else { return nil }
+        // Below 3.4 a well-formed document gets this message, not 3.3a's own
+        // refusal, because it names the release the caller needs.
+        if LayoutSyntax.accepts(layout, version: .jsonLayouts, panes: 1) {
+            return .invocationFailed(reason: LayoutSyntax.jsonFloorRefusal(version))
+        }
+        guard version >= beforeValidation else { return nil }
+        return .invocationFailed(reason: "Invalid window layout for tmux \(version).")
+    }
+
     private static func check(
         _ name: String, _ arguments: [String], _ checked: ServerVersion
     ) throws(TmuxError) {
@@ -130,10 +145,17 @@ enum TmuxCommandGuard {
                 throw refuse(clipboard, "refresh-client -l")
             }
         case "select-layout":
+            let usesOperand = !(["E", "n", "o", "p"] as [Character]).contains(where: parsed.has)
             let beforeValidation = Support.Capabilities.capability("layout-without-checksum")
                 .minimum
+            if usesOperand, let layout = parsed.operands.first,
+                let refusal = jsonLayoutOperandRefusal(
+                    layout, version: version, checkedFrom: beforeValidation)
+            {
+                throw refusal
+            }
             guard version < beforeValidation else { return }
-            guard !(["n", "o", "p"] as [Character]).contains(where: parsed.has) else { return }
+            guard usesOperand else { return }
             if let layout = parsed.operands.first,
                 !LayoutSyntax.accepts(layout, version: version, panes: 1)
             {

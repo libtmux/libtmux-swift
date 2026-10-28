@@ -114,7 +114,9 @@
     {
       "apis" : [
         "Server.selectLayout(_:_:)",
-        "Server.validateLayouts(_:)"
+        "Server.validateLayouts(_:)",
+        "Server.run(_:)",
+        "ControlSession.send(_:)"
       ],
       "commands" : [
         {
@@ -125,7 +127,7 @@
       "handling" : "refuse",
       "id" : "layout-json",
       "name" : "JSON layouts",
-      "since" : "3.8-rc2",
+      "since" : "3.8",
       "summary" : "Apply a layout in the JSON form that tmux reports."
     }
   ],

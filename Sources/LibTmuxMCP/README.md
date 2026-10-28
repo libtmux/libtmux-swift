@@ -97,7 +97,8 @@ them by intent:
 ### [`select_layout`]: names, abbreviations, saved layouts
 
 - **Accepts** named layouts, unique abbreviations for the running daemon's
-  version, and checksummed saved layouts.
+  version, and checksummed saved layouts, plus a JSON layout document on
+  tmux 3.8 and later.
 - **Checks syntax** before window lookup, then uses the core mutation's
   captured-window guard on the selected transport.
 - **Leaves geometry** and pruning to tmux. The result's `layout` field echoes

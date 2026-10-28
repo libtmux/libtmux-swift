@@ -36,10 +36,9 @@ struct ClientTests {
                     await #expect(throws: TmuxError.staleServerValue) {
                         try await server.switchClient(first, to: destination)
                     }
-                    // tmux 3.8 removed the `active-pane` client flag, and the
-                    // 3.8 release candidates already lack it, so the flag change
-                    // this step relies on exists only before 3.8-rc2.
-                    guard try await server.version() < TmuxVersion(parsing: "3.8-rc2")! else {
+                    // tmux 3.8 removed the `active-pane` client flag, so the
+                    // flag change this step relies on exists only before 3.8.
+                    guard try await server.version() < TmuxVersion(major: 3, minor: 8) else {
                         return
                     }
                     let reply = try await server.run(

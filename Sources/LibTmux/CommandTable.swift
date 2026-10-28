@@ -148,7 +148,7 @@ enum TmuxCommandTable {
         ("swap-pane", "swapp", nil),
         ("swap-window", "swapw", nil),
         ("switch-client", "switchc", nil),
-        ("switch-mode", nil, "next-3.8"),
+        ("switch-mode", nil, "3.8"),
         ("unbind-key", "unbind", nil),
         ("unlink-window", "unlinkw", nil),
         ("wait-for", "wait", nil),

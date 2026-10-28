@@ -512,7 +512,8 @@ extension TmuxTools {
             capability(
                 .selectLayout, "Select layout",
                 "Apply a named layout, a unique abbreviation for the running tmux version, "
-                    + "or a checksummed saved layout. Invalid syntax is refused before window lookup; "
+                    + "or a checksummed saved layout; a JSON layout document needs tmux 3.8. "
+                    + "Invalid syntax is refused before window lookup; "
                     + "tmux validates geometry when applying the layout.",
                 toolset: .manage, reach: .none, effects: [.observe, .change], outputs: inspectMeta,
                 arguments: [argument("layout", required: true), windowID()],

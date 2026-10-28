@@ -292,6 +292,36 @@ struct CommandGuardTests {
         #expect(TmuxCommandTable.resolve("new-p", on: release) == "new-pane")
     }
 
+    @Test("switch-mode exists from tmux 3.8, the release that added it")
+    func switchModeStartsAtThreeEight() throws {
+        let before = try #require(TmuxVersion(parsing: "3.7c"))
+        let release = try #require(TmuxVersion(parsing: "3.8"))
+        #expect(TmuxCommandTable.resolve("switch-mode", on: before) == nil)
+        #expect(TmuxCommandTable.resolve("switch-m", on: before) == nil)
+        let entry = try #require(TmuxCommandTable.entries.first { $0.name == "switch-mode" })
+        #expect(entry.since == TmuxVersion(major: 3, minor: 8))
+        #expect(TmuxCommandTable.resolve("switch-mode", on: release) == "switch-mode")
+        #expect(TmuxCommandTable.resolve("switch-m", on: release) == "switch-mode")
+    }
+
+    @Test("a raw select-layout with a JSON layout is refused below 3.8 and passes on 3.8")
+    func rawJSONLayoutNeedsThreeEight() {
+        let document = #"{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}"#
+        let command = ["select-layout", "-t", "@1", document]
+        for release in ["3.7c", "3.4"] {
+            #expect(
+                throws: TmuxError.invocationFailed(
+                    reason: "JSON layouts need tmux 3.8 or later; this is tmux \(release)."),
+                Comment(rawValue: release)
+            ) { try check(release, command) }
+        }
+        #expect(throws: Never.self) { try check("3.8", command) }
+        // A classic layout, and the flags that take no layout, are not read as JSON.
+        #expect(throws: Never.self) { try check("3.7c", ["select-layout", "tiled"]) }
+        #expect(throws: Never.self) { try check("3.7c", ["select-layout", "-n", document]) }
+        #expect(throws: Never.self) { try check("3.7c", ["select-layout", "-E", document]) }
+    }
+
     /// Whether a send is refused for its release. A session that is not attached
     /// waits for an attach that never comes, so a send that is not refused is
     /// cut off instead of holding the run open.
@@ -330,6 +360,68 @@ struct CommandGuardTests {
         let listed = TmuxCommand("new-window", ["-d", ";", "br", "-d", "-s", "%1"])
         #expect(await sendIsRefused(control, listed))
         #expect(await written.count == 0)
+    }
+
+    @Test("a well-formed JSON operand on 3.3a gets the JSON-floor message")
+    func jsonOperandOnThreeThreeA() {
+        let document = #"{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}"#
+        #expect(
+            throws: TmuxError.invocationFailed(
+                reason: "JSON layouts need tmux 3.8 or later; this is tmux 3.3a.")
+        ) { try check("3.3a", ["select-layout", "-t", "@1", document]) }
+    }
+
+    @Test("a malformed { operand is refused before sending, raw and typed, on 3.7c")
+    func malformedJSONOperandIsRefusedOnBothPaths() async throws {
+        let malformed = "{not json"
+        #expect(throws: TmuxError.invocationFailed(reason: "Invalid window layout for tmux 3.7c."))
+        {
+            try check("3.7c", ["select-layout", "-t", "@1", malformed])
+        }
+        let transport = JSONOperandProbe()
+        let server = Server(
+            endpoint: try Endpoint(
+                socketPath: "/tmp/libtmux-swift-test/malformed-json-operand/socket"),
+            transport: transport)
+        await #expect(
+            throws: TmuxError.invocationFailed(reason: "Invalid window layout or pane count.")
+        ) {
+            try await server.validateLayouts([(malformed, 1)])
+        }
+        #expect(await transport.sawSelectLayout == false)
+    }
+
+    @Test("a raw select-layout with a JSON layout over a control session is read first")
+    func controlSessionJSONLayoutIsGuarded() async throws {
+        let written = WrittenBytes()
+        let control = ControlSession(
+            write: { await written.append($0) },
+            checked: try Support.Versions.requireCore("3.7c"))
+        let document = #"{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}"#
+        await #expect(
+            throws: TmuxError.invocationFailed(
+                reason: "JSON layouts need tmux 3.8 or later; this is tmux 3.7c.")
+        ) {
+            _ = try await control.send(TmuxCommand("select-layout", ["-t", "@1", document]))
+        }
+        #expect(await written.count == 0)
+    }
+}
+
+private actor JSONOperandProbe: ProcessTransport {
+    private(set) var sawSelectLayout = false
+
+    func run(
+        executable: String, arguments: [String], environment: [String: String],
+        perStreamOutputLimit: Int
+    ) async throws(TmuxError) -> TmuxReply {
+        if arguments.contains("select-layout") { sawSelectLayout = true }
+        if arguments.contains("-V") {
+            return TmuxReply(
+                standardOutput: Array("tmux 3.7c\n".utf8), standardError: [], exitCode: 0)
+        }
+        return TmuxReply(
+            standardOutput: [], standardError: Array("no server running\n".utf8), exitCode: 1)
     }
 }
 

@@ -44,11 +44,11 @@ def release_key(token):
     return (int(match.group(1)), int(match.group(2)), match.group(3), rank)
 
 
-# tmux 3.8 removed the `active-pane` client flag, and its release candidates
-# from 3.8-rc2 already lack it, so a client cannot be made independent there.
+# tmux 3.8 removed the `active-pane` client flag, so a client cannot be made
+# independent there.
 HAS_ACTIVE_PANE_FLAG = release_key(
     subprocess.check_output([tmux, "-V"], text=True).split()[-1]
-) < release_key("3.8-rc2")
+) < release_key("3.8")
 NEEDS_ACTIVE_PANE_FLAG = {
     "independent-yes",
     "independent-detached",

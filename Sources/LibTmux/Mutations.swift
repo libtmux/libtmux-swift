@@ -42,7 +42,8 @@ extension Server {
         )
     }
 
-    /// Applies a named layout, unique abbreviation or checksummed saved layout.
+    /// Applies a named layout, unique abbreviation or checksummed saved layout,
+    /// or a JSON layout document on tmux 3.8 and later.
     /// Invalid syntax is refused before dispatch; tmux validates geometry.
     public func selectLayout(
         _ window: Window,

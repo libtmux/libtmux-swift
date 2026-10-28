@@ -26,6 +26,30 @@ struct CapabilityRegressionTests {
         #expect(await transport.calls == 0)
     }
 
+    @Test("select_layout refuses a JSON layout on tmux 3.7c with text naming tmux 3.8")
+    func jsonLayoutNamesTheFloor() async throws {
+        let transport = InvalidMCPLayoutProbeTransport(banner: "tmux 3.7c")
+        let server = Server(
+            endpoint: try Endpoint(
+                socketPath: "/tmp/libtmux-swift-test/mcp-layout-json-floor/socket"),
+            transport: transport)
+        await #expect(
+            throws: ToolError.tmux(
+                .invocationFailed(
+                    reason: "JSON layouts need tmux 3.8 or later; this is tmux 3.7c."))
+        ) {
+            _ = try await tools(server).call(
+                ToolCall(
+                    name: "select_layout",
+                    arguments: .object([
+                        "windowId": .string("@1"),
+                        "layout": .string(
+                            #"{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}"#),
+                    ])))
+        }
+        #expect(!(await transport.arguments).contains { $0.contains("select-layout") })
+    }
+
     @Test("MCP layouts reuse native saved and daemon-sensitive named validation")
     func nativeLayoutForms() async throws {
         try await withTmuxServer { server in
@@ -297,12 +321,29 @@ struct CapabilityRegressionTests {
 
 private actor InvalidMCPLayoutProbeTransport: ProcessTransport {
     private(set) var calls = 0
+    private(set) var arguments: [[String]] = []
+    let banner: String?
+
+    init(banner: String? = nil) { self.banner = banner }
 
     func run(
         executable: String, arguments: [String], environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         calls += 1
+        self.arguments.append(arguments)
+        if let banner, arguments.contains("-V") {
+            return TmuxReply(
+                standardOutput: Array("\(banner)\n".utf8), standardError: [], exitCode: 0)
+        }
+        if banner != nil {
+            return TmuxReply(
+                standardOutput: [],
+                standardError: Array(
+                    "no server running on /tmp/libtmux-swift-test/mcp-layout-json-floor/socket\n"
+                        .utf8),
+                exitCode: 1)
+        }
         return TmuxReply(standardOutput: [], standardError: [], exitCode: 0)
     }
 }
