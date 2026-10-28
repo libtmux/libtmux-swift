@@ -7,6 +7,8 @@ extension Server {
     /// cells. Geometry and pruning remain tmux's responsibility. Empty batches
     /// perform no I/O unless cancelled; each supplied layout must be nonempty.
     ///
+    /// A JSON layout document is refused on a release below tmux 3.8.
+    ///
     /// Unique named abbreviations follow the running daemon. Only an endpoint
     /// with no daemon uses the configured executable's version. A release
     /// below the supported floor, like transport and cancellation failures,
@@ -38,6 +40,14 @@ extension Server {
         for item in sensitive {
             if Task.isCancelled { throw .cancelled }
             guard LayoutSyntax.accepts(item.layout, version: version, panes: item.paneCount) else {
+                // Only a JSON document gets the JSON-floor message; a classic
+                // layout that a newer release takes keeps the generic one.
+                if item.layout.hasPrefix("{"), version < .jsonLayouts,
+                    LayoutSyntax.accepts(
+                        item.layout, version: .jsonLayouts, panes: item.paneCount)
+                {
+                    throw .invocationFailed(reason: LayoutSyntax.jsonFloorRefusal(version))
+                }
                 throw .invocationFailed(reason: "Invalid window layout for tmux \(version).")
             }
         }
@@ -60,17 +70,22 @@ package func acceptsLayoutSyntax(_ layout: String, panes: Int) -> Bool {
 }
 
 extension TmuxVersion {
-    /// The earliest build measured to report `#{window_layout}` as JSON, a
-    /// release candidate that ranks just below the 3.8 release itself.
+    /// The first release that reports `#{window_layout}` as JSON: tmux 3.8.
     static let jsonLayouts = Support.Capabilities.capability("layout-json").minimum
 }
 
 // Native saved-layout syntax; tmux retains geometry correction and pruning.
 enum LayoutSyntax {
+    /// The refusal for a JSON layout on a release below `jsonLayouts`.
+    static func jsonFloorRefusal(_ version: TmuxVersion) -> String {
+        "JSON layouts need tmux \(TmuxVersion.jsonLayouts) or later; this is tmux \(version)."
+    }
+
     static func accepts(_ layout: String, version: TmuxVersion, panes: Int) -> Bool {
         guard !layout.isEmpty, panes > 0 else { return false }
-        // From 3.8 a window's layout is a JSON document, and `select-layout`
-        // takes the same document back. The geometry stays tmux's to judge.
+        // From 3.8 `#{window_layout}` reports a JSON document (control clients
+        // only with the new-layouts flag), and `select-layout` takes the same
+        // document back. The geometry stays tmux's to judge.
         if layout.hasPrefix("{") {
             return version >= .jsonLayouts && acceptsJSON(layout, panes: panes)
         }

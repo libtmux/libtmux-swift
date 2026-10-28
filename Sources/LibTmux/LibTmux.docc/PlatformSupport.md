@@ -49,6 +49,8 @@ decided from the daemon's release.
 | `split-window -p` | 3.5 | refused on exactly 3.4; the typed splits send `-l N%` | Qualified |
 | `select-layout` with a layout tmux cannot parse | 3.4 | refused before it is sent, because 3.3a crashes on one | Qualified on 3.3a |
 | `refresh-client -l`, the clipboard query | 3.6a | refused before it is sent, because a 3.3a server exits at once with an attached client whose terminal has the `Ms` clipboard capability, such as `xterm-256color` or `tmux-256color`, and a 3.4 through 3.6 server exits when that client leaves before its terminal answers | Qualified on 3.3a through 3.6 |
+| A JSON layout in ``Server/selectLayout(_:_:)``, ``Server/validateLayouts(_:)`` and the MCP `select_layout` tool | 3.8 | refused before it is sent | Qualified on 3.8; refused below |
+| `switch-mode` | 3.8 | tmux rejects it as an unknown command below 3.8; the library does not resolve it | Qualified on 3.8; tmux rejects it below |
 
 Tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
 quickly, which is why the release is checked before attaching and not after.

@@ -30,7 +30,7 @@ struct LayoutTests {
         #expect(!LayoutSyntax.accepts(saved("80x24,0,0,4294967296"), version: version, panes: 1))
     }
 
-    @Test("a 3.8 layout document is judged by structure, and only from its candidates")
+    @Test("a 3.8 layout document is judged by structure, and only from 3.8")
     func jsonLayoutsStartAtThreeEight() {
         func pane(_ id: Int) -> String { #"{"t":"p","w":40,"h":24,"x":0,"y":0,"i":\#(id)}"# }
         let split =
@@ -50,13 +50,11 @@ struct LayoutTests {
         #expect(!LayoutSyntax.accepts(#"{"V":2,"L":{"t":"v","c":[]}}"#, version: release, panes: 1))
         #expect(!LayoutSyntax.accepts(#"{"V":2,"L":{"t":"x"}}"#, version: release, panes: 1))
         #expect(!LayoutSyntax.accepts("{not json", version: release, panes: 1))
-        // Earlier releases refuse the document; the candidates and later builds
-        // of 3.8 take it.
-        #expect(!LayoutSyntax.accepts(split, version: TmuxVersion(major: 3, minor: 7), panes: 2))
-        #expect(!LayoutSyntax.accepts(split, version: TmuxVersion(parsing: "next-3.8")!, panes: 2))
-        for token in ["3.8-rc2", "3.8-rc3"] {
-            #expect(LayoutSyntax.accepts(split, version: TmuxVersion(parsing: token)!, panes: 2))
-        }
+        // Earlier releases refuse the document; 3.8 and later releases take it.
+        #expect(Support.Capabilities.capability("layout-json").since == "3.8")
+        #expect(TmuxVersion.jsonLayouts == TmuxVersion(major: 3, minor: 8))
+        #expect(!LayoutSyntax.accepts(split, version: TmuxVersion(parsing: "3.7c")!, panes: 2))
+        #expect(LayoutSyntax.accepts(split, version: release, panes: 2))
         #expect(LayoutSyntax.accepts(split, version: TmuxVersion(parsing: "next-3.9")!, panes: 2))
         #expect(acceptsLayoutSyntax(split, panes: 2))
         #expect(!acceptsLayoutSyntax(split, panes: 3))
@@ -110,6 +108,58 @@ struct LayoutTests {
         }
         await #expect(throws: TmuxError.cancelled) { try await task.value }
         #expect(await transport.arguments.isEmpty)
+    }
+
+    @Test("a JSON layout is refused on tmux 3.7c before anything is sent, and passes on 3.8")
+    func jsonLayoutNeedsThreeEight() async throws {
+        let path = "/tmp/libtmux-swift-test/layout-json-floor/socket"
+        let endpoint = try Endpoint(socketPath: path)
+        let document =
+            #"{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}"#
+        let window = Window(
+            id: "@1", name: "keeper", paneCount: 1, width: 80, height: 24,
+            incarnation: ServerIncarnation(
+                endpoint: endpoint, socketPath: path, processID: 123, startedAt: 456))
+
+        let older = LayoutProbeTransport(banner: "tmux 3.7c")
+        let refusing = Server(endpoint: endpoint, transport: older)
+        let refusal = TmuxError.invocationFailed(
+            reason: "JSON layouts need tmux 3.8 or later; this is tmux 3.7c.")
+        await #expect(throws: refusal) { try await refusing.validateLayouts([(document, 1)]) }
+        await #expect(throws: refusal) { try await refusing.selectLayout(window, document) }
+        #expect(!(await older.arguments).contains { $0.contains("select-layout") })
+
+        let current = LayoutProbeTransport(banner: "tmux 3.8")
+        try await Server(endpoint: endpoint, transport: current)
+            .validateLayouts([(document, 1)])
+    }
+
+    @Test("a JSON layout read from a window applies again", .enabled(if: laneAtLeast(3, 8)))
+    func jsonLayoutRoundTrip() async throws {
+        try await withTmuxServer { server in
+            let window = try #require(try await server.windows().first)
+            _ = try await server.splitWindow(window)
+            let link = try #require(try await server.windowLinks().first)
+            let layout = try #require(try await server.format("#{window_layout}", for: link))
+            try #require(layout.hasPrefix("{"))
+            let captured = try #require(try await server.window(window.id))
+            try await server.validateLayouts([(layout, captured.paneCount)])
+            try await server.selectLayout(captured, layout)
+            #expect(try await server.window(window.id)?.paneCount == 2)
+        }
+    }
+
+    @Test("a classic layout a newer release takes keeps the generic refusal")
+    func classicLayoutKeepsGenericRefusal() async throws {
+        let endpoint = try Endpoint(
+            socketPath: "/tmp/libtmux-swift-test/layout-classic-floor/socket")
+        let server = Server(
+            endpoint: endpoint, transport: LayoutProbeTransport(banner: "tmux 3.4"))
+        await #expect(
+            throws: TmuxError.invocationFailed(reason: "Invalid window layout for tmux 3.4.")
+        ) {
+            try await server.validateLayouts([("main-horizontal-mirrored", 1)])
+        }
     }
 
     @Test("a layout for a captured window is refused when no version can be read")
@@ -190,15 +240,24 @@ struct LayoutTests {
 
 private actor LayoutProbeTransport: ProcessTransport {
     let forward: Bool
+    let banner: String?
     private(set) var arguments: [[String]] = []
 
-    init(forward: Bool = false) { self.forward = forward }
+    /// `banner` is what the executable prints for `-V` while no daemon runs.
+    init(forward: Bool = false, banner: String? = nil) {
+        self.forward = forward
+        self.banner = banner
+    }
 
     func run(
         executable: String, arguments: [String], environment: [String: String],
         perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         self.arguments.append(arguments)
+        if let banner, arguments.contains("-V") {
+            return TmuxReply(
+                standardOutput: Array("\(banner)\n".utf8), standardError: [], exitCode: 0)
+        }
         if forward {
             return try await SubprocessTransport().run(
                 executable: executable, arguments: arguments, environment: environment,

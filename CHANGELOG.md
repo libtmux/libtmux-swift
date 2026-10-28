@@ -10,6 +10,14 @@ changelog marks each break. Pin an exact version to avoid one.
 
 ## [Unreleased]
 
+### Changed
+
+- JSON layouts (`layout-json`) require tmux 3.8, the first release that
+  accepts one. `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)` and
+  the MCP `select_layout` tool refuse one on an older tmux before anything is
+  sent, and the refusal names tmux 3.8 as the minimum; upgrade to tmux 3.8 to
+  apply a JSON layout. (#82)
+
 ## [0.1.0] - 2026-10-25
 
 ### Changed

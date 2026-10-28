@@ -130,7 +130,7 @@ extension Support {
                 id: "layout-json",
                 name: "JSON layouts",
                 summary: "Apply a layout in the JSON form that tmux reports.",
-                since: "3.8-rc2", except: [], handling: .refuse,
+                since: "3.8", except: [], handling: .refuse,
                 error: "TmuxError.invocationFailed(reason:)",
                 apis: ["Server.selectLayout(_:_:)", "Server.validateLayouts(_:)"],
                 commands: [Command("select-layout")]),

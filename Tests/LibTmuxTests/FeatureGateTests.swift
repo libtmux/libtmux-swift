@@ -292,6 +292,18 @@ struct CommandGuardTests {
         #expect(TmuxCommandTable.resolve("new-p", on: release) == "new-pane")
     }
 
+    @Test("switch-mode exists from tmux 3.8, the release that added it")
+    func switchModeStartsAtThreeEight() throws {
+        let before = try #require(TmuxVersion(parsing: "3.7c"))
+        let release = try #require(TmuxVersion(parsing: "3.8"))
+        #expect(TmuxCommandTable.resolve("switch-mode", on: before) == nil)
+        #expect(TmuxCommandTable.resolve("switch-m", on: before) == nil)
+        let entry = try #require(TmuxCommandTable.entries.first { $0.name == "switch-mode" })
+        #expect(entry.since == TmuxVersion(major: 3, minor: 8))
+        #expect(TmuxCommandTable.resolve("switch-mode", on: release) == "switch-mode")
+        #expect(TmuxCommandTable.resolve("switch-m", on: release) == "switch-mode")
+    }
+
     /// Whether a send is refused for its release. A session that is not attached
     /// waits for an attach that never comes, so a send that is not refused is
     /// cut off instead of holding the run open.
