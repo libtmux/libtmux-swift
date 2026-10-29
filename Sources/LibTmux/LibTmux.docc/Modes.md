@@ -239,10 +239,8 @@ connection is handed a command *line*, where it is the end of the command — so
 an argument carrying one would leave the rest to be read as the next command,
 and tmux would answer the truncated version successfully.
 
-No quoting avoids it: tmux's single quotes leave the newline where it is, and
-its double quotes carry it as `\n` only by also expanding any `#` or `$` in the
-value, with no escape for `#`. So a connection refuses such an argument rather
-than sending part of it. Nothing else in this library changes shape by mode.
+This package's control-command encoder rejects arguments containing newlines
+before dispatch. Run that operation on a direct server instead.
 
 ## What a connection cannot hide
 
