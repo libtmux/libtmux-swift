@@ -174,9 +174,10 @@ public actor ControlSession {
     /// A reply exceeding 1 MiB fails with ``TmuxError/outputLimitExceeded(perStreamBytes:)``.
     ///
     /// The command is read before it is sent, like one given to
-    /// ``Server/run(_:)-(TmuxCommand)``: a command that the daemon's release cannot run
-    /// safely throws ``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``
-    /// and nothing is sent. Nested command strings are not read; see
+    /// ``Server/run(_:)-(TmuxCommand)``: a refused command throws
+    /// ``TmuxError/unsupportedTmuxVersion(reported:required:operation:)`` or,
+    /// for a JSON layout, ``TmuxError/invocationFailed(reason:)`` before this
+    /// call sends the command. Nested command strings are not read; see
     /// <doc:PlatformSupport>.
     public func send(_ command: TmuxCommand) async throws(TmuxError) -> ControlReply {
         try requireSingleLine(command.argumentVector)
