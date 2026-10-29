@@ -58,8 +58,7 @@ pane after creation.
 A window whose panes ask for no focus is left on the last pane built, matching
 tmuxp. Duplicate explicit indexes and multiple focus selections fail during
 configuration validation. A window naming no `layout` is tiled rather than
-stacked into tmuxp's halving splits, and the first pane is focused by default
-rather than the last; both are deliberate differences from tmuxp.
+stacked into tmuxp's halving splits.
 
 Session, window and pane `environment` reach the pane they are given for at
 creation — session at the first pane, window at its own first pane unless that
@@ -86,8 +85,9 @@ level.
 Existing exact session names are reused, and a reused session is compared
 against the document: a session missing windows the document asks for is
 `session_mismatch`, exit 1, naming what is missing, with nothing built and
-nothing changed. A failed build removes only the session that build created and
-reports earlier successful workspaces as partial results.
+nothing changed. An ordinary build failure removes only the session that build
+created; an interruption preserves it. Earlier successful workspaces remain in
+partial results.
 
 ### load --append
 
