@@ -218,8 +218,8 @@ let matching = try await server.panes().filter(expression)
 
 `FilteringTests` asserts the expression selects the same panes the predicate
 would. [`Server.panes(where:)`][api-server-panes-where] sends the same
-expression to tmux, so the rows that would have been discarded never cross the
-process boundary:
+expression through a tmux predicate that narrows the rows before they cross
+the process boundary:
 
 ```swift
 let matching = try await server.panes(where: expression)
@@ -230,14 +230,15 @@ the same answer:
 
 - **The first** formats, pipes, and decodes every row before discarding most of
   them.
-- **The second** sends the filter to tmux, so only matching rows come back.
+- **The second** lets tmux narrow the rows, then applies the full expression
+  here.
 - **A regular expression** cannot run in tmux. The predicate sent to tmux is
   widened, and this package's bounded regex engine decides the rest here.
 
 The full vocabulary of operators, aliases, and field types is in
 [`Filtering.md`][filtering] and on the [queries page][ref-concept-queries]. The
-[MCP tools](#tmux-as-mcp-tools) offer the same filtering to a client that does
-not speak Swift.
+[MCP tools](#tmux-as-mcp-tools) accept session and window selectors; clients
+apply other predicates to the returned metadata.
 
 ## Change what tmux holds
 

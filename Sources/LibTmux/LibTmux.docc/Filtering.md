@@ -52,9 +52,9 @@ let editors = try await server.panes(
 )
 ```
 
-The two give the same answer. The difference is what crosses the process
-boundary: the rows a filter discards are never formatted, piped or decoded, so
-the cost tracks the size of the result rather than the size of the server.
+The two give the same answer. tmux narrows the rows before they are formatted,
+piped or decoded. A predicate that cannot narrow the expression still returns
+the full listing for local filtering.
 
 ### What tmux can and cannot be asked
 
@@ -62,14 +62,16 @@ An expression is lowered to a tmux `-f` predicate that admits *at least*
 everything the expression matches, and the result is filtered again here. That
 second pass is not a fallback; it is what lets the first one be approximate.
 
-Most of the vocabulary lowers exactly. Two things do not, and both simply widen
-the predicate rather than failing:
+These cases widen the predicate rather than failing:
 
 - ``FilterOperation/matches(pattern:)`` runs on this package's bounded regular
   expression engine, which is not the one tmux would use. It is left out of the
   predicate entirely.
 - A glob operator whose text contains a backslash. `fnmatch` reads a backslash
   as its own escape, with no portable way to spell a literal one.
+- A text literal containing non-ASCII characters or `#`. Swift's canonical
+  string equivalence and tmux's format escaping prevent a byte comparison
+  from asking the same question; the literal is matched here instead.
 
 ``Server/clients(where:)`` is the exception that pushes nothing: tmux only
 grew `list-clients -f` in 3.4, and a server has one client per attachment, so
@@ -79,3 +81,6 @@ Because the predicate may be wide, it is only ever *narrowed* where that is
 sound: an `and` keeps whichever side it understands, an `or` containing a branch
 it cannot evaluate gives up on the whole disjunction, and a `not` only negates a
 child that lowered exactly.
+
+A lowered glob remains approximate because tmux matches bytes and Swift
+matches characters, so it is never negated.
