@@ -37,9 +37,8 @@ public struct OutputWait: Sendable, Hashable, Codable {
     public let matched: String?
     /// Its position in whichever list it came from.
     public let matchedIndex: Int?
-    /// Whether anything at all arrived. `false` with
-    /// ``Outcome/timedOut`` means the pane was quiet — usually the command
-    /// never ran, which no change of pattern will fix. Under
+    /// Whether new output was observed during the wait. A silent command may
+    /// still have run when this is `false`. Under
     /// ``Outcome/expiredWhileReading`` it says nothing: the reads that would
     /// have seen output did not finish.
     public let sawNewOutput: Bool
