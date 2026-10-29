@@ -444,7 +444,7 @@ what publishes — SwiftPM resolves a package from its git history and nothing i
 uploaded anywhere — and `.github/workflows/release.yml` turns that push into
 the GitHub Release every established Swift package carries, marking it a
 prerelease whenever the version has a suffix. No release has one unless the
-maintainer asks for it; the next is `0.1.0`, then `0.1.1`, `0.1.2` and so on.
+maintainer asks for it. Increment `N` in `0.1.N` for each release.
 
 The release commit does two things, and the workflow refuses the tag if either
 is missing:

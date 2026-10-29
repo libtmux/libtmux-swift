@@ -54,8 +54,9 @@ Everything that comes back is a value. A [`Session`][api-session] you hold is
 what the server reported when you asked, and it stays that way when tmux
 changes. Ask again for a newer view.
 
-- **Sendable and Codable.** Every type crossing your API is `Sendable` and
-  `Codable`.
+- **Sendable and Codable.** [`Session`][api-session], [`Window`][api-window],
+  [`Pane`][api-pane], [`Client`][api-client], and [`Snapshot`][api-snapshot]
+  values can cross tasks and encode.
 - **One actor.** The mutable part, the process boundary and the live
   connection, sits behind an actor the value shares.
 - **Input state.** [`Pane`][api-pane] also projects
@@ -233,6 +234,7 @@ $ swift package --disable-sandbox preview-documentation --target LibTmux
 [spi-libtmux]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmux
 [spi-mcp]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmuxmcp
 [spi-workspace]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/tmuxworkspace
+[api-client]: https://libtmux.org/en/swift/latest/reference/client/
 [api-filterexpr]: https://libtmux.org/en/swift/latest/reference/filterexpr/
 [api-pane-currentcommand]: https://libtmux.org/en/swift/latest/reference/pane-currentcommand/
 [api-pane-currentpath]: https://libtmux.org/en/swift/latest/reference/pane-currentpath/
@@ -246,9 +248,11 @@ $ swift package --disable-sandbox preview-documentation --target LibTmux
 [api-server-windows]: <https://libtmux.org/en/swift/latest/reference/server-windows()/>
 [api-server]: https://libtmux.org/en/swift/latest/reference/server/
 [api-session]: https://libtmux.org/en/swift/latest/reference/session/
+[api-snapshot]: https://libtmux.org/en/swift/latest/reference/snapshot/
 [api-tmuxtools]: https://libtmux.org/en/swift/latest/mcp/reference/tmuxtools/
 [api-tmuxversion]: https://libtmux.org/en/swift/latest/reference/tmuxversion/
 [api-toolauthority]: https://libtmux.org/en/swift/latest/mcp/reference/toolauthority/
+[api-window]: https://libtmux.org/en/swift/latest/reference/window/
 [api-workspace]: https://libtmux.org/en/swift/latest/workspace/reference/workspace/
 [api-workspacebuilder]: https://libtmux.org/en/swift/latest/workspace/reference/workspacebuilder/
 [dir-libtmux-mcp]: https://github.com/libtmux/libtmux-swift/tree/master/Sources/libtmux-mcp
