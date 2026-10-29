@@ -9,6 +9,10 @@ The package supports tmux releases 3.3a through 3.8, and master, on Linux
 daemon older than 3.3a is refused before the command that reached it has any
 effect.
 
+tmux release candidates are not supported: a feature can require one only until
+its release ships, and ``TmuxVersion`` ranks a candidate such as `X.Y-rcN` below
+`X.Y`. See [Release candidates](https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates).
+
 The test suite runs against real tmux, one private server and socket per case.
 Every supported release is exercised on Linux, individually and concurrently.
 No job builds or tests on macOS, so a macOS-only regression is not caught
