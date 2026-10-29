@@ -72,7 +72,7 @@ public struct TmuxVersion: Sendable, Hashable, Comparable, Codable {
     ///
     /// `next-X.Y` is master before the release branch is cut, `X.Y-rc` and
     /// `X.Y-rcN` are candidates cut from it, and the release follows them:
-    /// `next-3.7` < `3.7-rc` < `3.7-rc2` < `3.7` < `3.7a`. Neither has the
+    /// `next-X.Y` < `X.Y-rc` < `X.Y-rc2` < `X.Y` < `X.Ya`. Neither has the
     /// release's fixes. Every other build (`openbsd`, an old `master`) ranks
     /// with the release.
     private var buildRank: (Int, Int) {
