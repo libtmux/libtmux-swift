@@ -247,7 +247,8 @@ apply other predicates to the returned metadata.
 [`Server.newSession`][api-server-newsession-named-startdirectory-windowname-width-height]
 makes a session.
 [`Server.newWindow(in:named:startDirectory:)`][api-server-newwindow-in-named-startdirectory],
-{{Server.splitWindow}), and [`Server.setOption`][api-server-setoption-to-scope]
+[`Server.splitWindow`][api-server-splitwindow], and
+[`Server.setOption`][api-server-setoption-to-scope]
 shape it, and [`Server.run(_:in:)`][api-server-run-in] sends a command to a
 pane:
 
@@ -935,7 +936,7 @@ unless you ask.
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
 | **[`tmux-workspace`](Sources/TmuxWorkspaceCLI/)** | [`Sources/TmuxWorkspaceCLI/`](Sources/TmuxWorkspaceCLI/) | Partial native workspace CLI: list, search, convert, import, load and capture. The command guide lists remaining work. | `LibTmux`, `TmuxWorkspace`, ArgumentParser, optional Yams |
-| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
 | **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
 
@@ -1209,7 +1210,7 @@ Any other tmux runs on demand:
 
 | Path | What is in it |
 | --- | --- |
-| [`Sources/`][sources] | The four runtime products |
+| [`Sources/`][sources] | The five runtime products |
 | [`Tests/`][tests] | The suite, and the [`TmuxFixture`][mod-tmuxfixture] product every suite provisions servers through |
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
@@ -1297,6 +1298,7 @@ MIT. See [LICENSE][r-license].
 [api-server-setoption-to-scope]: <https://libtmux.org/en/swift/latest/reference/server-setoption(_-to-scope-)/>
 [api-server-shellinvocation]: https://libtmux.org/en/swift/latest/reference/server-shellinvocation/
 [api-server-snapshot]: <https://libtmux.org/en/swift/latest/reference/server-snapshot()/>
+[api-server-splitwindow]: <https://libtmux.org/en/swift/latest/reference/server-splitwindow(_-direction-size-startdirectory-environment-shell-)/>
 [api-server-using]: <https://libtmux.org/en/swift/latest/reference/server-using(_-_-)/>
 [api-server-validatelayouts]: <https://libtmux.org/en/swift/latest/reference/server-validatelayouts(_-)/>
 [api-server-version]: <https://libtmux.org/en/swift/latest/reference/server-version()/>
