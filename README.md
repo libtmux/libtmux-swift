@@ -604,8 +604,9 @@ try await server.validateLayouts([("even-h", 2), ("tiled", 1)])
   daemon's version.
 - **Saved layouts.** They require a checksum, a nonempty tree, and enough
   cells; tmux still owns geometry and pruning.
-- **JSON layouts.** A JSON layout document needs tmux 3.8; an older daemon
-  refuses it before anything is sent, and the error names tmux 3.8.
+- **JSON layouts.** The library refuses a JSON layout below tmux 3.8 with
+  `TmuxError.invocationFailed` before dispatching the layout command. A version
+  probe may run first; the error names tmux 3.8.
 - **An empty batch** performs no I/O unless cancelled.
 - **A cold endpoint.** A version-sensitive name on an unbound cold endpoint uses
   the configured tmux client; permission, protocol, and retained-connection
@@ -1083,7 +1084,7 @@ under a dependency you do not.
 | --- | --- |
 | Swift | 6.2 or later |
 | Platforms | Linux, including WSL, and macOS (best effort, no CI) — see [Platform notes](#platform-notes) |
-| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release; the [platform page][r-platformsupport-md] lists them with what each refuses below it, and [`capabilities.json`][r-capabilities-json] records the same gates in machine-readable form |
+| tmux | 3.3a through 3.8, and master; older daemons are refused before the requested command runs. Connected mode needs 3.7, and a few features name their own release; the [platform page][r-platformsupport-md] lists them with what each refuses below it, and [`capabilities.json`][r-capabilities-json] records the same gates in machine-readable form |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 tmux release candidates are not supported: a feature can require one only until
@@ -1092,9 +1093,11 @@ as `X.Y-rcN` below `X.Y`. See [Release candidates][ref-tmux-release-candidates].
 
 ### Optional features
 
-A feature that needs more than 3.3a refuses before it does anything, with
-`TmuxError.unsupportedTmuxVersion`. None of them raises the floor for the rest
-of the library.
+Features keep their own version gates; none raises the core floor. A version
+check may query tmux before refusing the requested operation.
+
+`TmuxError.unsupportedTmuxVersion` reports most release refusals. Layout
+validation uses `TmuxError.invocationFailed` instead.
 
 | Feature | Needs | Below that |
 | --- | --- | --- |
@@ -1103,10 +1106,13 @@ of the library.
 | `Server.deleteBuffer(named:)` and the MCP `paste_text` staging buffer | 3.4 | refused |
 | `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7 |
 | `split-window -p` | 3.5 | refused on exactly 3.4 |
-| A JSON layout in `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)`, the MCP `select_layout` tool and a raw `select-layout` | 3.8 | refused before anything is sent, naming tmux 3.8 |
+| A JSON layout in `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)`, the MCP `select_layout` tool and a raw `select-layout` | 3.8 | refused with `TmuxError.invocationFailed` before the layout command is sent, naming tmux 3.8 |
 | `switch-mode` | 3.8 | tmux rejects it as an unknown command; the library does not resolve it |
 | `select-layout` with a layout tmux cannot parse | 3.4 | refused, because 3.3a crashes on one |
 | `refresh-client -l`, the clipboard query | 3.6a | refused |
+
+On tmux 3.4 through versions below 3.8, the raw JSON guard also rejects
+malformed `{` operands. At 3.8 and later, tmux validates raw operands.
 
 The [platform page][r-platformsupport-md] gives the detail, including which
 command forms are read before they are sent and which are not.

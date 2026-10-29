@@ -259,7 +259,7 @@ itself uses one of the codes the sibling ports share: `workspace_not_found`,
 `tmux_unavailable`, `tmux_unsupported`, `tmux_failed`, `script_failed`,
 `destination_exists` and `usage`. `tmux_unsupported` is a tmux older than 3.3a;
 its message says to upgrade tmux and restart the server, and that nothing was
-sent.
+sent. This refers to the requested operation; version probes may run first.
 
 A document handed to `import` that cannot be read — an untranslated field,
 unexpanded ERB — is `invalid_workspace` too: the defect is in the document, not
