@@ -51,10 +51,10 @@ deadlocks on the failure it exists to report. ``Server/shellInvocation`` names
 the same tmux binary and endpoint as `server` rather than whichever `tmux`
 happens to be on the pane's `PATH`.
 
-**The question is about state: subscribe to a format.** "Has the command
-finished", "has the pane died", "has that window rung its bell" are all
-formats, and tmux will report a change without being asked. No scrollback is
-read at all, which makes this the cheapest wait there is:
+**The question is about state: subscribe to a format.** The foreground command,
+pane death and a window's bell state are formats tmux can report without being
+asked. A command name does not prove a submitted job finished; use a signalled
+channel for completion. No scrollback is read:
 
 ```swift
 try await server.connected(attachingTo: "work") { server, control in
@@ -72,8 +72,8 @@ try await server.connected(attachingTo: "work") { server, control in
 }
 ```
 
-tmux evaluates a subscribed format about once a second and sends the current
-value once when the subscription is made — which is why the loop above leaves
+tmux reports changed values at most once a second and sends the current value
+once when the subscription is made — which is why the loop above leaves
 on its first report: a watcher learns where it is starting from without asking
 for it, and every report after that is a change.
 
@@ -150,7 +150,7 @@ result distinguishes them rather than leaving it to be guessed:
 
 | Field | What it means |
 | --- | --- |
-| `sawNewOutput: false`, `outcome: .timedOut` | The pane stayed quiet. The command never ran; no pattern fixes that. |
+| `sawNewOutput: false`, `outcome: .timedOut` | No new output was observed during the wait. A silent command may still have run. |
 | `sawNewOutput: true`, `outcome: .timedOut` | Output arrived and did not match. `tail` holds what it actually said. |
 | `matchedAtEntry: true` | It was on screen when the wait started — matched at once, or waited past under `requiringFreshOutput`. |
 | `outcome: .stopped` | A `stops` marker hit first. `matchedIndex` says which. |

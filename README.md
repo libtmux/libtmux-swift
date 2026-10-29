@@ -314,8 +314,8 @@ try await server.wait(for: "built")
 
 ### [`FormatSubscription`][api-formatsubscription]: the question is about state
 
-Subscribe to a format and tmux reports each time its value changes, with no
-capture and no prompt regex. [`ControlSession.watch`][api-controlsession-watch]
+Subscribe to a format and tmux reports changed values at most once a second,
+with no capture or prompt regex. [`ControlSession.watch`][api-controlsession-watch]
 subscribes and
 [`ControlSession.changes(named:)`][api-controlsession-changes-named] yields the
 changes:
@@ -336,9 +336,11 @@ try await server.connected(attachingTo: "work") { server, control in
 }
 ```
 
-`WaitingTests` asserts the watch returns the value it names. The format
-`#{pane_current_command}` answers "is my command done?" exactly. This needs a
-connection, which needs tmux 3.7; an older daemon refuses it before anything
+`WaitingTests` asserts that the watch reports a value.
+`#{pane_current_command}` names the foreground command; it does not prove a
+submitted job has finished. Use a signalled channel for completion.
+
+The connection needs tmux 3.7; an older daemon refuses it before anything
 attaches.
 
 ### [`Server.waitForOutput`][api-server-waitforoutput-in-matching-stoppingat-requiringfreshoutput-startingat-timeout-taillimit]: you did not write the command
@@ -370,8 +372,8 @@ small liveness check detects a pane removed while it is quiet. What to know:
 When a wait ends without a match, [`OutputWait`][api-outputwait] says which
 thing happened:
 
-- **`timedOut`, `sawNewOutput: false`.** The pane stayed quiet, and no pattern
-  will fix it.
+- **`timedOut`, `sawNewOutput: false`.** No new output was observed during the
+  wait; this does not establish whether a command ran.
 - **`timedOut`, with output.** `tail` holds what arrived, so you can fix the
   pattern against it.
 - **`expiredWhileReading`.** The timeout ended before the pane could be read at
