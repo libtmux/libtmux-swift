@@ -1083,6 +1083,10 @@ under a dependency you do not.
 | tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release; the [platform page][r-platformsupport-md] lists them with what each refuses below it, and [`capabilities.json`][r-capabilities-json] records the same gates in machine-readable form |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
+tmux release candidates are not supported: a feature can require one only until
+its release ships, and [`TmuxVersion`][api-tmuxversion] ranks a candidate such
+as `X.Y-rcN` below `X.Y`. See [Release candidates][ref-tmux-release-candidates].
+
 ### Optional features
 
 A feature that needs more than 3.3a refuses before it does anything, with
@@ -1346,6 +1350,7 @@ MIT. See [LICENSE][r-license].
 [ref-mcp-reference]: https://libtmux.org/en/swift/latest/mcp/reference/
 [ref-mcp-tools]: https://libtmux.org/en/swift/latest/mcp/tools/
 [ref-mcp]: https://libtmux.org/en/swift/latest/mcp/
+[ref-tmux-release-candidates]: https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates
 [ref-topic-waiting]: https://libtmux.org/en/swift/latest/topics/waiting-and-retry/
 [ref-topics]: https://libtmux.org/en/swift/latest/topics/
 [ref-ws-config]: https://libtmux.org/en/swift/latest/workspace/configuration/

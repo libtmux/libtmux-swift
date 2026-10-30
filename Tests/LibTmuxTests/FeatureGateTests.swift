@@ -87,7 +87,7 @@ struct CommandGuardTests {
 
     @Test("the exact-release checks follow the strict ranking")
     func exactReleasesUseTheRanking() {
-        // next-3.7 and 3.7-rc2 rank below 3.7, 3.7a ranks above it.
+        // A snapshot or candidate of 3.7 ranks below 3.7, and 3.7a ranks above it.
         for release in ["next-3.7", "3.7-rc", "3.7-rc2", "3.7a", "3.7d"] {
             #expect(!refused(release, ["break-pane", "-s", "%1"]), Comment(rawValue: release))
         }

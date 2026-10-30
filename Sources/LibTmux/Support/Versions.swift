@@ -16,10 +16,10 @@ extension TmuxVersion {
     /// Whether ordinary operations accept this build.
     ///
     /// A snapshot (`next-X.Y`) or release candidate ranks below the release it
-    /// names, so `3.3-rc` is refused and `next-3.9` and `3.8-rc` are not. A
-    /// build suffix tmux has not reported is refused rather than treated as a
-    /// release: `openbsd` carries OpenBSD's own numbering, which says nothing
-    /// about the tmux release underneath it.
+    /// names, so a snapshot or candidate of 3.3a is refused and one of a later
+    /// release is not. A build suffix tmux has not reported is refused rather
+    /// than treated as a release: `openbsd` carries OpenBSD's own numbering,
+    /// which says nothing about the tmux release underneath it.
     var isCoreSupported: Bool {
         if let build, !Support.Versions.recognizedBuild(build, pointRelease: pointRelease) {
             return false
