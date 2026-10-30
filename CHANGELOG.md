@@ -14,14 +14,14 @@ changelog marks each break. Pin an exact version to avoid one.
 
 - JSON layouts (`layout-json`) require tmux 3.8, the first release that
   accepts one. `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)` and
-  the MCP `select_layout` tool refuse one on an older tmux before anything is
-  sent, and the refusal names tmux 3.8 as the minimum; upgrade to tmux 3.8 to
-  apply a JSON layout.
+  the MCP `select_layout` tool refuse one on an older tmux before the layout
+  command is sent. A version probe may run first. The refusal names tmux 3.8
+  as the minimum; upgrade to tmux 3.8 to apply a JSON layout.
 
   A raw `select-layout`, including one sent over a `ControlSession`, now
   refuses a JSON layout before it is sent on tmux below 3.8, and a malformed
-  `{` operand on tmux 3.4 and later; tmux used to reject both after the
-  send. (#82)
+  `{` operand on tmux 3.4 through versions below 3.8; tmux used to reject
+  both after the send. (#82)
 
 ## [0.1.0] - 2026-10-25
 

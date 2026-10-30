@@ -81,8 +81,10 @@ know:
 
 - **A name in use is refused.** Two callers building the same workspace should
   not silently share one session.
-- **A failure rolls back.** A later failure removes the exact session this
-  build created; a rollback failure reports both errors.
+- **A failure rolls back.** A later, ordinary failure removes the exact session
+  this build created; a rollback failure reports both errors.
+- **Cancellation preserves the session.** An interrupted build attempts no
+  rollback.
 
 [`WorkspaceBuilderError`][api-workspacebuildererror] names each way a build can
 fail.

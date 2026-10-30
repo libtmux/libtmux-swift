@@ -21,17 +21,18 @@ Releases below the floor are built too, to show they are refused.
 
 ## Which release decides
 
-The release that decides is the daemon's, not the client's. Before a server
-sends anything it asks the daemon at its endpoint which release it is, refuses
-one older than 3.3a with
+The release that decides is the daemon's, not the client's. Before sending a
+requested command, a server asks the daemon at its endpoint which release it
+is, refuses one older than 3.3a with
 ``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``, and holds
 every command it sends to that release, so a daemon replaced in between refuses
 the command instead of running it. Where nothing listens yet, the executable
 that would start the daemon is held to the same floor. The question is asked in
 a way that fires none of a configuration's hooks.
 
-A refusal means nothing was sent. The remedy is to upgrade tmux and restart the
-server, or to pin the previous libtmux release. A daemon older than 3.2 has no
+A refusal withholds the requested command; a version probe may already have
+run. The remedy is to upgrade tmux and restart the server, or to pin the
+previous libtmux release. A daemon older than 3.2 has no
 `run-shell -C`, so the question itself fails there; that failure is read as the
 same refusal (reported as "older than 3.2"). A report that names no release,
 such as `master`, `openbsd-7.6` or `3.3a-dev`, is refused as unrecognized, not
@@ -39,10 +40,11 @@ as a release below the floor.
 
 ## Features that need a newer release
 
-A feature that needs more than 3.3a says so by itself and refuses before it
-does anything; none of them raises the floor for the rest of the library. The
-refusal is ``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``,
-decided from the daemon's release.
+A feature that needs more than 3.3a refuses the requested operation below its
+own floor; none raises the floor for the rest of the library. A version probe
+may run first. Most release refusals throw
+``TmuxError/unsupportedTmuxVersion(reported:required:operation:)``; layout
+validation throws ``TmuxError/invocationFailed(reason:)`` instead.
 
 | Feature | Needs | Below that | State |
 | --- | --- | --- | --- |
@@ -53,8 +55,11 @@ decided from the daemon's release.
 | `split-window -p` | 3.5 | refused on exactly 3.4; the typed splits send `-l N%` | Qualified |
 | `select-layout` with a layout tmux cannot parse | 3.4 | refused before it is sent, because 3.3a crashes on one | Qualified on 3.3a |
 | `refresh-client -l`, the clipboard query | 3.6a | refused before it is sent, because a 3.3a server exits at once with an attached client whose terminal has the `Ms` clipboard capability, such as `xterm-256color` or `tmux-256color`, and a 3.4 through 3.6 server exits when that client leaves before its terminal answers | Qualified on 3.3a through 3.6 |
-| A JSON layout in ``Server/selectLayout(_:_:)`` and ``Server/validateLayouts(_:)``, the MCP `select_layout` tool and a raw `select-layout` | 3.8 | refused before it is sent | Qualified on 3.8; refused below |
+| A JSON layout in ``Server/selectLayout(_:_:)`` and ``Server/validateLayouts(_:)``, the MCP `select_layout` tool and a raw `select-layout` | 3.8 | refused with ``TmuxError/invocationFailed(reason:)`` before the layout command is sent | Qualified on 3.8; refused below |
 | `switch-mode` | 3.8 | tmux rejects it as an unknown command below 3.8; the library does not resolve it | Qualified on 3.8; tmux rejects it below |
+
+On tmux 3.4 through versions below 3.8, the raw JSON guard also rejects
+malformed `{` operands. At 3.8 and later, tmux validates raw operands.
 
 Tmux 3.2a and 3.6b servers crash when a control client attaches and detaches
 quickly, which is why the release is checked before attaching and not after.

@@ -166,11 +166,12 @@ The result holds `status`, `errors`, and a `results` entry per input with its
   or `--append`.
 - **Reuse.** A session that lacks windows the file asks for exits 1 with
   `session_mismatch`, and nothing is built or changed.
-- **Failure.** A failed build removes only the session that build created.
+- **Failure.** An ordinary build failure removes only the session that build
+  created. An interrupted build preserves it.
 - **Layouts.** Names and checksums are checked before anything is created;
   tmux still decides geometry.
-- **Differences from tmuxp.** A window with no `layout` is tiled, and the first
-  pane is focused by default.
+- **Layout.** A window with no `layout` is tiled. With no explicit pane focus,
+  the last pane built remains active, matching tmuxp.
 
 The full contract is in [`docs/workspace-cli.md`][r-docs-workspace-cli-md-load]
 and on the command's page.
@@ -457,8 +458,8 @@ $ python3 Scripts/benchmark_workspace_cli.py \
 ## Support and status
 
 - **Swift 6.2**, and tmux **3.3a through 3.8, and master**, on Linux, including
-  WSL, and macOS. CI runs Ubuntu on every release in the range and macOS on 3.3a
-  and 3.7b.
+  WSL, and macOS. CI runs Ubuntu on every release in the range; macOS is best
+  effort, with no CI lane.
 - **tmuxp 1.74.0** only for [`shell`][ref-cli-shell] and the benchmark.
 - **Unsettled surface.** Any release may change the command surface; pin an
   exact version.
