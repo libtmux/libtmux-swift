@@ -173,6 +173,17 @@ def check_ci(text: str, manifest: object) -> list[str]:
     if not re.search(r'(?m)^    tags: \["\*"\]$', text):
         problems.append("ci.yml does not run on a tag, so a release is not tested")
 
+    # GitHub reads a bare `off` as false, in the options and in the default. A
+    # default that is not one of the options refuses every dispatch that sets
+    # nothing, and a bare pair reaches the plan as `false`.
+    if (
+        "options: ['off', before-tests, on-failure]" not in text
+        or "default: 'off'" not in text
+    ):
+        problems.append(
+            "the tmate input must quote 'off': GitHub reads a bare off as false"
+        )
+
     jobs = _jobs(text)
     for name in ("test", "refusal"):
         wanted = f"matrix: ${{{{ fromJSON(needs.plan.outputs.{name}) }}}}"

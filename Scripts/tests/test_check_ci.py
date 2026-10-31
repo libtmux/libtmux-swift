@@ -180,6 +180,18 @@ def test_a_workflow_that_skips_tags_is_flagged(tree: Tree) -> None:
     assert tree.flags("does not run on a tag")
 
 
+def test_a_bare_off_in_the_tmate_input_is_flagged(tree: Tree) -> None:
+    """A bare off is false to GitHub, which breaks every default dispatch."""
+    tree.edit(CI, "options: ['off',", "options: [off,")
+    assert tree.flags("must quote 'off'")
+
+
+def test_a_bare_off_default_is_flagged(tree: Tree) -> None:
+    """The default has to be the same string as the option it names."""
+    tree.edit(CI, "default: 'off'", "default: off")
+    assert tree.flags("must quote 'off'")
+
+
 def test_an_unpinned_tmate_is_flagged(tree: Tree) -> None:
     """The action is pinned by commit."""
     tree.edit(CI, f"action-tmate@{SHA} # v3.24", "action-tmate@v3 # v3", 2)

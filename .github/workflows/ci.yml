@@ -30,8 +30,8 @@ on:
       tmate:
         description: "Open a tmate session on the one test leg. Needs scope custom with a single tmux-ref."
         type: choice
-        options: [off, before-tests, on-failure]
-        default: off
+        options: ['off', before-tests, on-failure]
+        default: 'off'
 
 concurrency:
   # A dispatch asks for one particular permutation, so it must not cancel the
