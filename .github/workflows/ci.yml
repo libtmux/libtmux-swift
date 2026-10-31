@@ -1,12 +1,32 @@
 name: ci
 
 # Pull requests already test their head commit. Running every branch push too
-# duplicates the eight real-tmux jobs and makes both suites compete for runners.
+# duplicates the real-tmux jobs and makes both suites compete for runners.
+#
+# A push or pull request tests the oldest and newest released tmux. A tag, which
+# is a release, and a dispatch with `scope: full` test the whole table, the
+# pinned master and the releases the library refuses. Scripts/tmux-matrix.json
+# is the one list, and `plan` turns it into the matrices below.
 on:
   push:
     branches: [master]
+    tags: ["*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "edges: the oldest and newest released tmux. full: the whole table, master and the refusal cells. custom: the tmux-ref and swift below."
+        type: choice
+        options: [edges, full, custom]
+        default: edges
+      tmux-ref:
+        description: "With scope custom: comma-separated tmux releases, tags, branches or 40-hex commits from github.com/tmux/tmux, for example 3.6b,master."
+        type: string
+        default: ""
+      swift:
+        description: "Comma-separated Swift toolchains for the test job, for example 6.1,6.2. Empty is the pinned toolchain."
+        type: string
+        default: ""
 
 concurrency:
   # A dispatch asks for one particular permutation, so it must not cancel the
@@ -16,20 +36,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The tmux axis of both matrices, from Scripts/tmux-matrix.json and the
+  # event. The plan also fails a dispatch that asks for something CI will not
+  # do before any runner is spent on it.
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.plan.outputs.scope }}
+      test: ${{ steps.plan.outputs.test }}
+      refusal: ${{ steps.plan.outputs.refusal }}
+      refusal_planned: ${{ steps.plan.outputs.refusal_planned }}
+      tmux_jobs: ${{ steps.plan.outputs.tmux_jobs }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Plan the tmux matrix
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          SCOPE: ${{ inputs.scope }}
+          TMUX_REF: ${{ inputs.tmux-ref }}
+          SWIFT: ${{ inputs.swift }}
+        run: |
+          python3 Scripts/ci_plan.py matrix \
+            --event "$EVENT" --ref-type "$REF_TYPE" --scope "$SCOPE" \
+            --tmux-ref "$TMUX_REF" --swift "$SWIFT" \
+            --github-output "$GITHUB_OUTPUT"
+
   # The releases the library refuses. Each is built from its own tag and run
   # against only the version check suites: the claim is that a daemon below the
   # floor is refused before any command has an effect, which the rest of the
-  # suite cannot say because it would be refused too.
+  # suite cannot say because it would be refused too. They are part of the
+  # whole table, so only a tag and a full-scope dispatch run them.
   refusal:
     name: ubuntu-latest / tmux ${{ matrix.tmux }} (refused)
+    needs: plan
+    if: needs.plan.outputs.refusal_planned == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        tmux: ["3.0a", "3.1c", "3.2a", "3.3"]
+      matrix: ${{ fromJSON(needs.plan.outputs.refusal) }}
 
     steps:
       - uses: actions/checkout@v7
@@ -57,42 +111,32 @@ jobs:
 
       - name: Build tmux ${{ matrix.tmux }}
         if: steps.tmux-cache.outputs.cache-hit != 'true'
+        env:
+          VERSION: ${{ matrix.tmux }}
         run: |
-          set -euo pipefail
-          curl --location --fail --silent --show-error \
-            "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
-            --output tmux.tar.gz
-          tar -xzf tmux.tar.gz
-          cd "tmux-${{ matrix.tmux }}"
-          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}"
-          make -j"$(getconf _NPROCESSORS_ONLN)"
-          make install
+          python3 Scripts/tmux_ref.py build --source release \
+            --ref "$VERSION" --prefix "$HOME/tmux-$VERSION"
 
       # tmux 3.0a and 3.1c keep the client's stdout open from the daemon, so
       # the refusal also runs with a client that is at the floor: the old
       # binary as its own client only exercises the client rejecting -N.
-      - name: Restore the tmux 3.3a client
+      - name: Restore the tmux ${{ matrix.client }} client
         id: client-cache
         uses: actions/cache@v6
         with:
-          path: ~/tmux-3.3a
-          key: tmux-3.3a-${{ runner.os }}-${{ runner.arch }}
+          path: ~/tmux-${{ matrix.client }}
+          key: tmux-${{ matrix.client }}-${{ runner.os }}-${{ runner.arch }}
 
-      - name: Build the tmux 3.3a client
+      - name: Build the tmux ${{ matrix.client }} client
         if: steps.client-cache.outputs.cache-hit != 'true'
+        env:
+          CLIENT: ${{ matrix.client }}
         run: |
-          set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             bison libevent-dev libncurses-dev pkg-config
-          curl --location --fail --silent --show-error \
-            "https://github.com/tmux/tmux/releases/download/3.3a/tmux-3.3a.tar.gz" \
-            --output client.tar.gz
-          tar -xzf client.tar.gz
-          cd tmux-3.3a
-          ./configure --prefix="${HOME}/tmux-3.3a"
-          make -j"$(getconf _NPROCESSORS_ONLN)"
-          make install
+          python3 Scripts/tmux_ref.py build --source release \
+            --ref "$CLIENT" --prefix "$HOME/tmux-$CLIENT"
 
       - name: Restore the SwiftPM cache
         uses: actions/cache@v6
@@ -104,16 +148,18 @@ jobs:
       - name: Set up Swift
         uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.2"
+          swift-version: ${{ matrix.swift }}
 
       - name: Test the refusal
         env:
           # The refusal cases are skipped on a supported release, so the run
           # names what it must have exercised and fails when it did not.
           LIBTMUX_EXPECT_REFUSAL: "1"
+          VERSION: ${{ matrix.tmux }}
+          CLIENT: ${{ matrix.client }}
         run: |
-          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
-          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-3.3a/bin/tmux"
+          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${VERSION}/bin/tmux"
+          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-${CLIENT}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
           "$LIBTMUX_TMUX_CLIENT_BIN" -V
           export TMUX_TMPDIR=/tmp/libtmux-swift-test/named
@@ -121,7 +167,8 @@ jobs:
           swift test --force-resolved-versions --filter VersionCheck
 
   test:
-    name: ${{ matrix.os }} / tmux ${{ matrix.tmux }}
+    name: ${{ matrix.os }} / tmux ${{ matrix.tmux }} / swift ${{ matrix.swift }}
+    needs: plan
     runs-on: ${{ matrix.os }}
     # Real tmux, real waits: a case that parks a thread is one a Swift Testing
     # `.timeLimit` cannot cancel, so the job is the only ceiling left. The
@@ -129,37 +176,40 @@ jobs:
     # cold one adds the tarball build; 30 leaves room for both and still turns
     # a hang into a failure with logs rather than six hours of silence.
     timeout-minutes: 30
-    env:
-      # tmux clients and daemons speak one protocol only within a range: a
-      # 3.3a client cannot talk to a 3.6 or newer daemon.
-      CLIENT_TMUX: ${{ contains(fromJSON('["3.3a", "3.4", "3.5"]'), matrix.tmux) && '3.3a' || '3.6' }}
-      TMUX_MASTER_COMMIT: e1b55d504cab5c11e8e7d432b1b52dd94cc6d1f0
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        # The releases the library claims to support. Building each from its
-        # own tag is what makes a compatibility claim evidence rather than an
-        # assertion: behaviour differs between 3.3a, 3.4 and 3.7 on one machine.
-        # Releases below the floor are the `refusal` job's. `master` is built
-        # from the commit pinned in TMUX_MASTER_COMMIT, which reports itself
-        # as next-X.Y; move the pin deliberately, so an upstream break does
-        # not red an unrelated change.
-        tmux: ["3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.8", "master"]
+      # Which tmux releases, and which toolchains, come from `plan`. The
+      # releases the library claims to support are built from their own tags:
+      # that is what makes a compatibility claim evidence rather than an
+      # assertion, because behaviour differs between 3.3a, 3.4 and 3.7 on one
+      # machine. Releases below the floor are the `refusal` job's. `master` is
+      # built from the commit pinned in the manifest, which reports itself as
+      # next-X.Y; move the pin deliberately, so an upstream break does not red
+      # an unrelated change.
+      matrix: ${{ fromJSON(needs.plan.outputs.test) }}
 
     steps:
       - uses: actions/checkout@v7
 
-      # Eight jobs building the same releases from source is most of this
-      # workflow's runtime. A release tarball never changes, so the version and
-      # the runner are the whole key.
+      # A release tarball never changes, so the version and the runner are the
+      # whole key; anything else is keyed on the commit it resolves to.
+      - name: Resolve tmux ${{ matrix.tmux }}
+        id: tmux-ref
+        env:
+          SOURCE: ${{ matrix.source }}
+          TMUX_REF: ${{ matrix.ref }}
+        run: |
+          python3 Scripts/tmux_ref.py resolve --source "$SOURCE" "$TMUX_REF" \
+            --github-output "$GITHUB_OUTPUT"
+
+      # Several jobs building the same releases from source is most of this
+      # workflow's runtime.
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
         uses: actions/cache@v6
         with:
-          path: ~/tmux-${{ matrix.tmux }}
-          # master is a pinned commit, so its key names the commit.
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}${{ matrix.tmux == 'master' && format('-{0}', env.TMUX_MASTER_COMMIT) || '' }}
+          path: ~/tmux-${{ matrix.slug }}
+          key: tmux-${{ steps.tmux-ref.outputs.key }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.tmux-cache.outputs.cache-hit != 'true'
@@ -170,47 +220,36 @@ jobs:
 
       - name: Build tmux ${{ matrix.tmux }}
         if: steps.tmux-cache.outputs.cache-hit != 'true'
+        env:
+          SOURCE: ${{ matrix.source }}
+          BUILD_REF: ${{ steps.tmux-ref.outputs.sha || matrix.ref }}
+          SLUG: ${{ matrix.slug }}
         run: |
-          set -euo pipefail
-          if [ "${{ matrix.tmux }}" = master ]; then
-            git init --quiet "tmux-master"
-            cd "tmux-master"
-            git fetch --quiet --depth 1 https://github.com/tmux/tmux.git "$TMUX_MASTER_COMMIT"
-            git checkout --quiet FETCH_HEAD
-            sh autogen.sh
-          else
-            curl --location --fail --silent --show-error \
-              "https://github.com/tmux/tmux/releases/download/${{ matrix.tmux }}/tmux-${{ matrix.tmux }}.tar.gz" \
-              --output tmux.tar.gz
-            tar -xzf tmux.tar.gz
-            cd "tmux-${{ matrix.tmux }}"
-          fi
-          ./configure --prefix="${HOME}/tmux-${{ matrix.tmux }}"
-          make -j"$(getconf _NPROCESSORS_ONLN)"
-          make install
+          python3 Scripts/tmux_ref.py build --source "$SOURCE" \
+            --ref "$BUILD_REF" --prefix "$HOME/tmux-$SLUG"
 
       # A second, older tmux as the client, so the suite also runs a client
-      # that reports another release than the daemon it talks to.
-      - name: Restore the tmux ${{ env.CLIENT_TMUX }} client
+      # that reports another release than the daemon it talks to. tmux clients
+      # and daemons speak one protocol only within a range: a 3.3a client
+      # cannot talk to a 3.6 or newer daemon, so `plan` picks the client.
+      - name: Restore the tmux ${{ matrix.client }} client
         id: client-cache
-        if: matrix.tmux != env.CLIENT_TMUX
+        if: matrix.client != ''
         uses: actions/cache@v6
         with:
-          path: ~/tmux-${{ env.CLIENT_TMUX }}
-          key: tmux-${{ env.CLIENT_TMUX }}-${{ runner.os }}-${{ runner.arch }}
+          path: ~/tmux-${{ matrix.client }}
+          key: tmux-${{ matrix.client }}-${{ runner.os }}-${{ runner.arch }}
 
-      - name: Build the tmux ${{ env.CLIENT_TMUX }} client
-        if: matrix.tmux != env.CLIENT_TMUX && steps.client-cache.outputs.cache-hit != 'true'
+      - name: Build the tmux ${{ matrix.client }} client
+        if: matrix.client != '' && steps.client-cache.outputs.cache-hit != 'true'
+        env:
+          CLIENT: ${{ matrix.client }}
         run: |
-          set -euo pipefail
-          curl --location --fail --silent --show-error \
-            "https://github.com/tmux/tmux/releases/download/${CLIENT_TMUX}/tmux-${CLIENT_TMUX}.tar.gz" \
-            --output client.tar.gz
-          tar -xzf client.tar.gz
-          cd "tmux-${CLIENT_TMUX}"
-          ./configure --prefix="${HOME}/tmux-${CLIENT_TMUX}"
-          make -j"$(getconf _NPROCESSORS_ONLN)"
-          make install
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            automake autoconf bison libevent-dev libncurses-dev pkg-config
+          python3 Scripts/tmux_ref.py build --source release \
+            --ref "$CLIENT" --prefix "$HOME/tmux-$CLIENT"
 
       # Resolving fetches five repositories on every run, and a clone that
       # times out fails a lane that has nothing wrong with it.
@@ -224,7 +263,7 @@ jobs:
       - name: Set up Swift
         uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.2"
+          swift-version: ${{ matrix.swift }}
 
       - name: Check formatting
         run: >-
@@ -234,18 +273,21 @@ jobs:
           Tools/McpSwap/Tests Package.swift Tools/McpSwap/Package.swift
 
       - name: Test the private MCP swap tool
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: swift test --package-path Tools/McpSwap --jobs 5 --force-resolved-versions
 
       - name: Check the private MCP swap C shim formatting
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: >-
           clang-format --dry-run --Werror
           Tools/McpSwap/Sources/CMcpSwap/mcp_swap.c
           Tools/McpSwap/Sources/CMcpSwap/include/mcp_swap.h
 
       # The checks below are about the repository rather than the platform, so
-      # one lane runs them. A missing DocC link is not a per-runner fact.
+      # one lane runs them: the one on the newest released tmux and the pinned
+      # toolchain. A missing DocC link is not a per-runner fact. The two that
+      # run a tmux binary stay on the release they were written against, which
+      # the whole table includes and a push does not.
 
       # Pinned, because the action defaults to whatever ruff released most
       # recently and lints an unchanged tree against it. 0.16.3 added a rule
@@ -254,7 +296,7 @@ jobs:
       # toolchain, the tmux tags, the resolved dependencies — for the reason
       # this demonstrates.
       - name: Lint the Python tooling
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         uses: astral-sh/ruff-action@v4.1.0
         with:
           version: "0.16.1"
@@ -265,11 +307,11 @@ jobs:
       # report that stopped running.
       #
       - name: Check the parity report runs
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/parity_report.py
 
       - name: Test the Python tooling
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: |
           python3 -m pip install --quiet pytest tomlkit
           python3 -m pytest Scripts/tests -q
@@ -280,10 +322,12 @@ jobs:
       # behaviour so a contract calling itself inherited has something
       # executable behind the claim, and this is where that gets run.
       - name: Check the parity manifests against libtmux
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.version_checks
+        env:
+          SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
-          export PATH="${HOME}/tmux-${{ matrix.tmux }}/bin:${PATH}"
+          export PATH="${HOME}/tmux-${SLUG}/bin:${PATH}"
           commit=$(python3 -c "import json; print(json.load(open('Parity/python-public-api.json'))['pythonSource']['commit'])")
           git clone --quiet --filter=blob:none \
             https://github.com/tmux-python/libtmux.git "${RUNNER_TEMP}/libtmux"
@@ -299,7 +343,7 @@ jobs:
       # examples on the page are the ones in the package, rather than copies
       # that drifted — and that the number of them actually run has not slid.
       - name: Check documented examples are mapped
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_examples.py --min-executed 40
 
       # A README link is a claim about where something lives, and a moved
@@ -307,43 +351,43 @@ jobs:
       # reads the tree rather than the network, so a link added before the
       # documentation publishes does not fail here.
       - name: Check README links resolve
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_readme_links.py
 
       # AGENTS.md states the socket-namespace rule in prose; this is what makes
       # it fail rather than be remembered. `/tmp` is shared with every other
       # libtmux port on the machine.
       - name: Check every socket names this port
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_socket_namespace.py
 
       # A continuation nobody resumes does not fail slowly, it never returns —
       # and a `.timeLimit` cannot end it, because the limit cancels the case
       # and then waits for it. Six hours of one lane were spent that way.
       - name: Check every continuation answers cancellation
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_continuations.py
 
       # Ruff reports EXE001 on the runner but not locally, so the mode a file
       # was committed with is checked here too, where it can be reproduced.
       - name: Check shebanged files are executable
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_script_modes.py
 
       # A pin that names a version nobody tagged sends a reader nowhere, and
       # the release workflow refuses a tag this file disagrees with.
       - name: Check every version pin agrees
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_version.py
 
       # A changelog entry leads with an identifier, which is what makes it go
       # stale silently: a renamed symbol still reads fine on the page.
       - name: Check every changelog symbol resolves
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_changelog_symbols.py
 
       - name: Build documentation
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.repo_checks
         run: |
           set -euo pipefail
           : > docs.log
@@ -361,9 +405,11 @@ jobs:
       # output. If they have drifted from what the code now does, the table is
       # wrong and saying so here is cheaper than a reader trusting it.
       - name: Check the mode matrix is current
-        if: runner.os == 'Linux' && matrix.tmux == '3.7b'
+        if: runner.os == 'Linux' && matrix.version_checks
+        env:
+          SLUG: ${{ matrix.slug }}
         run: |
-          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${SLUG}/bin/tmux"
           python3 Scripts/update_mode_matrix.py --check
 
       # The trait is off by default, so this proves the configuration a consumer
@@ -373,12 +419,15 @@ jobs:
         run: swift build --force-resolved-versions
 
       - name: Test
+        env:
+          SLUG: ${{ matrix.slug }}
+          CLIENT_SLUG: ${{ matrix.client_slug }}
         run: |
           # Every test resolves its tmux through this, so the whole suite runs
           # against the release being exercised rather than whatever the runner
           # happens to ship.
-          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
-          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-${CLIENT_TMUX}/bin/tmux"
+          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${SLUG}/bin/tmux"
+          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-${CLIENT_SLUG}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
           # tmux resolves a socket *name* inside this, and its default is
           # shared with every other tmux on the machine. Naming it here rather
@@ -395,12 +444,14 @@ jobs:
           swift test --traits YAMLWorkspaces --force-resolved-versions
 
       - name: Test the staged workspace CLI
+        env:
+          SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
           binary="${RUNNER_TEMP}/workspace-cli/bin/tmux-workspace"
           mkdir -p "$(dirname "$binary")"
           install -m 755 .build/debug/tmux-workspace "$binary"
-          tmux="${HOME}/tmux-${{ matrix.tmux }}/bin/tmux"
+          tmux="${HOME}/tmux-${SLUG}/bin/tmux"
           python3 Scripts/check_workspace_terminal.py "$binary"
           python3 Scripts/check_workspace_progress.py "$binary" "$tmux"
           python3 Scripts/check_workspace_attach.py "$binary" "$tmux"
@@ -415,3 +466,30 @@ jobs:
           set -euo pipefail
           jq -e '.pins[] | select(.identity == "yams")' Package.resolved > /dev/null
           git diff --exit-code Package.resolved Examples/Package.resolved
+
+  # The one check that means "CI passed". Naming every leg in branch protection
+  # would mean editing the rule whenever the table changes, and a leg that is
+  # renamed and forgotten would stop being required without anything saying so.
+  # Every job must have succeeded; `refusal` must have been skipped when the
+  # plan put it out of scope.
+  required:
+    if: always()
+    needs:
+      - plan
+      - refusal
+      - test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Every planned job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          REFUSAL_PLANNED: ${{ needs.plan.outputs.refusal_planned }}
+        run: |
+          python3 Scripts/ci_plan.py verify \
+            --needs "$NEEDS" --refusal-planned "$REFUSAL_PLANNED"
