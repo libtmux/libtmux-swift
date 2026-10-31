@@ -1,8 +1,8 @@
 import Foundation
 import LibTmux
 import Testing
-import TmuxFixture
 
+@testable import TmuxFixture
 @testable import TmuxWorkspaceCLI
 
 #if canImport(Darwin)
@@ -30,7 +30,7 @@ struct ProcessOutputTests {
                 ]).encoded().utf8
             ).write(to: file)
             let captured = ProcessOutput(gate: root.appendingPathComponent("unused-release"))
-            var environment = ProcessInfo.processInfo.environment
+            var environment = sandboxedEnvironment(tmuxTemporaryDirectory: root.path)
             environment["LIBTMUX_TMUX_BIN"] = server.tmuxExecutable
             let snapshot = try await server.snapshot()
             let session = try #require(snapshot.sessions.first)
@@ -101,7 +101,7 @@ struct ProcessOutputTests {
             let gate = root.appendingPathComponent("shell-release")
             let captured = ProcessOutput(gate: gate)
             let session = try await server.sessions()[0]
-            var environment = ProcessInfo.processInfo.environment
+            var environment = sandboxedEnvironment(tmuxTemporaryDirectory: root.path)
             environment["LIBTMUX_TMUX_BIN"] = server.tmuxExecutable
             environment["TMUX_WORKSPACE_PYTHON"] = environment["TMUX_WORKSPACE_TEST_PYTHON"]
             environment["RELEASE"] = gate.path
@@ -334,7 +334,7 @@ struct ProcessOutputTests {
                 ]).encoded().utf8
             ).write(to: file)
             let captured = ProcessOutput(gate: gate)
-            var environment = ProcessInfo.processInfo.environment
+            var environment = sandboxedEnvironment(tmuxTemporaryDirectory: root.path)
             environment["LIBTMUX_TMUX_BIN"] = server.tmuxExecutable
             environment["RELEASE"] = gate.path
             let context = CLIContext(
@@ -382,7 +382,7 @@ struct ProcessOutputTests {
             guard case let .socketPath(socket) = server.endpoint else { return }
             let root = URL(fileURLWithPath: socket).deletingLastPathComponent()
             let captured = ProcessOutput(gate: root.appendingPathComponent("unused-gate"))
-            var environment = ProcessInfo.processInfo.environment
+            var environment = sandboxedEnvironment(tmuxTemporaryDirectory: root.path)
             environment["LIBTMUX_TMUX_BIN"] = server.tmuxExecutable
             environment["TMUX_WORKSPACE_PYTHON"] = environment["TMUX_WORKSPACE_TEST_PYTHON"]
             let context = CLIContext(
