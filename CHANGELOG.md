@@ -28,7 +28,7 @@ changelog marks each break. Pin an exact version to avoid one.
   from 3.3a through 3.8, the pinned master and the refusal lanes. A dispatch
   also takes `tmux-ref` (a release, tag, branch or commit), `swift` and
   `tmate`, and the `required` job reports whether every planned job passed.
-  (#88)
+  (#89)
 
 ## [0.1.0] - 2026-10-25
 
