@@ -1,0 +1,172 @@
+#!/bin/sh
+# Runs `swift test` with no tmux selector in its environment.
+#
+# tmux follows an inherited TMUX to the server its caller is inside, ahead of
+# TMUX_TMPDIR, and otherwise uses the default socket under TMUX_TMPDIR.
+# TMUX_PANE retargets a command that names no pane, and the LIBTMUX_SOCKET*
+# variables choose a socket for libtmux-mcp. A suite started from a tmux pane
+# therefore reaches the server around it as soon as one case names no socket.
+#
+#     Scripts/swift-test --traits YAMLWorkspaces --force-resolved-versions
+#
+# Arguments go to `swift test` unchanged, and so does its exit status. Set
+# LIBTMUX_TEST_TMUX_TMPDIR to an absolute path to put the run's private
+# directory under a parent of your own. The script makes a fresh directory
+# inside it and removes that directory afterwards. It refuses a parent that is
+# a link, is not empty, holds a tmux-<uid> entry, or is so long that the
+# default socket under it would pass 100 bytes. It never changes the mode of a
+# directory that exists.
+#
+# Before the directory goes, the script looks for sockets anywhere under it,
+# whoever named them, and stops every server still listening on one, since
+# removing the socket of a live server leaves a server nothing can address. It
+# checks that each stopped server no longer accepts a connection, and fails the
+# run, naming the sockets, even when `swift test` passed: a case that starts a
+# server and does not stop it is a defect. A socket file nothing listens on is
+# not. The directory stays while any server still listens. Connecting takes
+# python3, which the other tooling here needs too; without it every socket is
+# taken to be live.
+#
+# The suite reads LIBTMUX_TEST_SANDBOX to learn that this script started it.
+# The fixture never sets the variables itself: setenv writes to environ while
+# other cases read it to build a tmux environment, and that is a data race.
+
+set -eu
+
+root=/tmp/libtmux-swift-test
+limit=100
+
+unset TMUX TMUX_PANE
+for name in $(env | sed -n 's/^\(LIBTMUX_SOCKET[A-Za-z0-9_]*\)=.*/\1/p'); do
+    unset "$name"
+done
+
+refuse() {
+    echo "swift-test: LIBTMUX_TEST_TMUX_TMPDIR $1" >&2
+    exit 2
+}
+
+if [ -n "${LIBTMUX_TEST_TMUX_TMPDIR:-}" ]; then
+    parent=$LIBTMUX_TEST_TMUX_TMPDIR
+    case $parent in
+    /*) ;;
+    *) refuse "must be an absolute path" ;;
+    esac
+    if [ -L "$parent" ] || { [ -e "$parent" ] && [ ! -d "$parent" ]; }; then
+        refuse "must be a new or empty directory, not a link or a file"
+    fi
+    longest="$parent/tmux-XXXXXX/tmux-$(id -u)/default"
+    if [ "$(printf %s "$longest" | LC_ALL=C wc -c)" -gt "$limit" ]; then
+        refuse "is too long: the default socket under it would pass $limit bytes"
+    fi
+    if [ -d "$parent" ]; then
+        if [ -e "$parent/tmux-$(id -u)" ]; then
+            refuse "holds a tmux socket directory"
+        fi
+        listing=$(ls -A "$parent") || refuse "cannot be read"
+        [ -z "$listing" ] || refuse "must be a new or empty directory"
+    fi
+    mkdir -p "$parent"
+else
+    parent=$root
+    # shellcheck disable=SC2174 # /tmp exists, so the mode applies to the root.
+    mkdir -p -m 700 "$parent"
+fi
+directory=$(mktemp -d "$parent/tmux-XXXXXX")
+
+# Whether anything accepts a connection on the socket $1. A raw connect rather
+# than a tmux client, which waits on a server that has stopped answering, and
+# this runs when the run is over.
+# shellcheck disable=SC2329 # Run by `finish`, which the EXIT trap runs.
+listening() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        return 0
+    fi
+    python3 -I -c 'import socket, sys
+s = socket.socket(socket.AF_UNIX)
+s.settimeout(2)
+try:
+    s.connect(sys.argv[1])
+except socket.timeout:
+    sys.exit(0)
+except OSError:
+    sys.exit(1)' "$1"
+}
+
+# Waits up to three seconds for the socket $1 to stop accepting connections.
+# shellcheck disable=SC2329 # Run by `finish`, which the EXIT trap runs.
+gone() {
+    waited=0
+    while listening "$1"; do
+        if [ "$waited" -ge 3 ]; then
+            return 1
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+
+# Asks each client the run may have used to stop the server on the socket $1,
+# since a client cannot stop a daemon of a release it cannot speak to. What a
+# client says is not trusted: `gone` is what decides.
+# shellcheck disable=SC2329 # Run by `finish`, which the EXIT trap runs.
+stop_server() {
+    for client in "${LIBTMUX_TMUX_BIN:-}" "${LIBTMUX_TMUX_CLIENT_BIN:-}" tmux; do
+        if [ -z "$client" ] || ! command -v "$client" >/dev/null 2>&1; then
+            continue
+        fi
+        if "$client" -f /dev/null -S "$1" kill-server >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Runs on every way out. A socket someone listens on is a leak and is stopped;
+# one nobody listens on is the file tmux leaves behind and is ignored; one that
+# still has a listener after the stop keeps the directory.
+# shellcheck disable=SC2329 # Run by the EXIT trap below.
+finish() {
+    status=$?
+    trap - EXIT INT TERM
+    stopped=
+    stuck=
+    found=$(find "$directory" -type s 2>/dev/null || true)
+    while IFS= read -r socket; do
+        if [ -z "$socket" ] || ! listening "$socket"; then
+            continue
+        fi
+        stop_server "$socket" || true
+        if gone "$socket"; then
+            stopped="$stopped ${socket#"$directory"/}"
+        else
+            stuck="$stuck ${socket#"$directory"/}"
+        fi
+    done <<EOF
+$found
+EOF
+    if [ -n "$stopped" ]; then
+        echo "swift-test: the run left a tmux server on these sockets, now stopped:$stopped" >&2
+    fi
+    if [ -n "$stuck" ]; then
+        echo "swift-test: a tmux server on these sockets could not be stopped, and its directory is left in place:$stuck" >&2
+    fi
+    if [ -n "$stopped$stuck" ] && [ "$status" -eq 0 ]; then
+        status=3
+    fi
+    if [ -z "$stuck" ]; then
+        rm -rf "${directory:?}"
+    fi
+    exit "$status"
+}
+trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+TMUX_TMPDIR=$directory
+LIBTMUX_TEST_SANDBOX=$directory
+export TMUX_TMPDIR LIBTMUX_TEST_SANDBOX
+
+status=0
+swift test "$@" || status=$?
+exit "$status"
