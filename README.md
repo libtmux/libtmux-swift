@@ -1185,15 +1185,19 @@ The suite runs against real tmux — no mocks of the server — one private sock
 per case, with servers reaped even when a run is killed outright.
 
 ```console
-$ swift test --traits YAMLWorkspaces
+$ Scripts/swift-test --traits YAMLWorkspaces
 ```
+
+`Scripts/swift-test` is `swift test` with `TMUX`, `TMUX_PANE` and
+`LIBTMUX_SOCKET*` removed and a private `TMUX_TMPDIR`, so a run started from a
+tmux pane cannot reach that tmux.
 
 The trait is off by default, and the tests that read YAML run only with it, so
 the gate names it.
 Point the suite at a particular release to test against that one:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux swift test
+$ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux Scripts/swift-test
 ```
 
 CI runs the suite on Linux against tmux 3.3a and 3.8 on every push, each built
