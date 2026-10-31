@@ -15,6 +15,14 @@ import LibTmux
 public func spawnCapturing(
     _ executable: String, _ arguments: [String]
 ) -> (output: String, error: String, status: Int32)? {
+    spawnCapturing(executable, arguments, environment: ProcessInfo.processInfo.environment)
+}
+
+/// ``spawnCapturing(_:_:)`` with the environment the caller chooses, for a case
+/// that must hand a child less than the process holds.
+func spawnCapturing(
+    _ executable: String, _ arguments: [String], environment: [String: String]
+) -> (output: String, error: String, status: Int32)? {
     var out: [Int32] = [0, 0]
     var err: [Int32] = [0, 0]
     guard pipe(&out) == 0 else { return nil }
@@ -30,6 +38,24 @@ public func spawnCapturing(
     #endif
     posix_spawn_file_actions_init(&actions)
     defer { posix_spawn_file_actions_destroy(&actions) }
+    // The runner's worker threads block most signals, and a child inherits the
+    // mask of the thread that spawned it. A tmux server started that way never
+    // sees the SIGTERM `kill-server` sends itself, so it outlives the command
+    // that was meant to end it.
+    #if canImport(Darwin)
+        var attributes: posix_spawnattr_t?
+    #else
+        var attributes = posix_spawnattr_t()
+    #endif
+    posix_spawnattr_init(&attributes)
+    defer { posix_spawnattr_destroy(&attributes) }
+    var unblocked = sigset_t()
+    sigemptyset(&unblocked)
+    posix_spawnattr_setsigmask(&attributes, &unblocked)
+    var everySignal = sigset_t()
+    sigfillset(&everySignal)
+    posix_spawnattr_setsigdefault(&attributes, &everySignal)
+    posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF))
     posix_spawn_file_actions_adddup2(&actions, out[1], STDOUT_FILENO)
     posix_spawn_file_actions_adddup2(&actions, err[1], STDERR_FILENO)
     posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
@@ -37,10 +63,9 @@ public func spawnCapturing(
     var child: pid_t = 0
     let argv = ([executable] + arguments).map { strdup($0) } + [nil]
     defer { argv.forEach { free($0) } }
-    let environment =
-        ProcessInfo.processInfo.environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
-    defer { environment.forEach { free($0) } }
-    let status = posix_spawn(&child, executable, &actions, nil, argv, environment)
+    let variables = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+    defer { variables.forEach { free($0) } }
+    let status = posix_spawn(&child, executable, &actions, &attributes, argv, variables)
     close(out[1])
     close(err[1])
     guard status == 0 else {

@@ -11,6 +11,7 @@ private enum TmuxFixtureContext {
 func withTmuxFixtureCapacity<Result>(
     _ operation: () async throws -> Result
 ) async throws -> Result {
+    if let failure = fixtureSandboxFailure { throw failure }
     if let lease = TmuxFixtureContext.lease, await lease.retain() {
         do {
             let result = try await operation()
