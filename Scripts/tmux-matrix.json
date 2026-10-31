@@ -1,0 +1,10 @@
+{
+  "released": ["3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.8"],
+  "preview": [
+    {"name": "master", "commit": "e1b55d504cab5c11e8e7d432b1b52dd94cc6d1f0"}
+  ],
+  "refused": ["3.0a", "3.1c", "3.2a", "3.3"],
+  "clients": {"legacy": "3.3a", "legacy_through": "3.5", "current": "3.6"},
+  "swift": "6.2",
+  "version_checks": "3.7b"
+}
