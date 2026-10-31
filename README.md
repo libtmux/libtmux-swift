@@ -1070,8 +1070,8 @@ Expect to update code when you update the package.
   [`TmuxWorkspace`][mod-tmuxworkspace] and [`LibTmuxMCP`][mod-libtmuxmcp] are
   newer and thinner, and are likelier to move.
 - **The tmux behaviour is the tested part.** Compatibility with 3.3a through
-  3.8, and master, is checked in CI against each release built from its own
-  tag. The Swift surface around it is what has not settled.
+  3.8, and master, is checked in CI: 3.3a and 3.8 on every push, the rest when
+  a release is tagged. The Swift surface around it has not settled.
 
 Useful now for a tool you control and can update. Not yet something to put
 under a dependency you do not.
@@ -1186,12 +1186,15 @@ Point the suite at a particular release to test against that one:
 $ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux swift test
 ```
 
-CI runs the suite on Linux against each of tmux 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a,
-3.7b, 3.8 and master, each built from its own release tarball or, for master,
-from a pinned commit.
+CI runs the suite on Linux against tmux 3.3a and 3.8 on every push, each built
+from its own release tarball.
 
-It also builds 3.0a, 3.1c, 3.2a and the unpatched 3.3 and checks that each is
-refused; 3.0a and 3.1c also behind a 3.3a client.
+A tag, and a dispatch with `scope=full`, run it against 3.3a through 3.8, and
+master, a pinned commit. They also build 3.0a, 3.1c, 3.2a and the unpatched 3.3
+and check that each is refused, behind a 3.3a client for 3.0a and 3.1c.
+
+Any other tmux runs on demand:
+[Running CI against any tmux](.github/CONTRIBUTING.md#running-ci-against-any-tmux).
 
 ## Repository layout
 

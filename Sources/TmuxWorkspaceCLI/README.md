@@ -457,8 +457,8 @@ $ python3 Scripts/benchmark_workspace_cli.py \
 ## Support and status
 
 - **Swift 6.2**, and tmux **3.3a through 3.8, and master**, on Linux, including
-  WSL, and macOS. CI runs Ubuntu on every release in the range and macOS on 3.3a
-  and 3.7b.
+  WSL, and macOS. CI runs Ubuntu only: 3.3a and 3.8 on every push, and every
+  release in the range when a release is tagged.
 - **tmuxp 1.74.0** only for [`shell`][ref-cli-shell] and the benchmark.
 - **Unsettled surface.** Any release may change the command surface; pin an
   exact version.
