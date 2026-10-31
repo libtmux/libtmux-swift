@@ -27,6 +27,11 @@ on:
         description: "Comma-separated Swift toolchains for the test job, for example 6.1,6.2. Empty is the pinned toolchain."
         type: string
         default: ""
+      tmate:
+        description: "Open a tmate session on the one test leg. Needs scope custom with a single tmux-ref."
+        type: choice
+        options: [off, before-tests, on-failure]
+        default: off
 
 concurrency:
   # A dispatch asks for one particular permutation, so it must not cancel the
@@ -62,10 +67,11 @@ jobs:
           SCOPE: ${{ inputs.scope }}
           TMUX_REF: ${{ inputs.tmux-ref }}
           SWIFT: ${{ inputs.swift }}
+          TMATE: ${{ inputs.tmate }}
         run: |
           python3 Scripts/ci_plan.py matrix \
             --event "$EVENT" --ref-type "$REF_TYPE" --scope "$SCOPE" \
-            --tmux-ref "$TMUX_REF" --swift "$SWIFT" \
+            --tmux-ref "$TMUX_REF" --swift "$SWIFT" --tmate "$TMATE" \
             --github-output "$GITHUB_OUTPUT"
 
   # The releases the library refuses. Each is built from its own tag and run
@@ -174,8 +180,9 @@ jobs:
     # `.timeLimit` cannot cancel, so the job is the only ceiling left. The
     # slowest cell observed is under six minutes with a warm tmux cache, and a
     # cold one adds the tarball build; 30 leaves room for both and still turns
-    # a hang into a failure with logs rather than six hours of silence.
-    timeout-minutes: 30
+    # a hang into a failure with logs rather than six hours of silence. A tmate
+    # session is a person debugging, so it gets an hour.
+    timeout-minutes: ${{ matrix.tmate == 'off' && 30 || 60 }}
     strategy:
       fail-fast: false
       # Which tmux releases, and which toolchains, come from `plan`. The
@@ -264,6 +271,15 @@ jobs:
         uses: swift-actions/setup-swift@v2
         with:
           swift-version: ${{ matrix.swift }}
+
+      # Pinned by commit: v3.24, https://github.com/mxschmitt/action-tmate/commit/35b54af.
+      # Only a dispatch gets here, and the plan allows one leg to.
+      - name: Debug session before the tests
+        if: github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests'
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
 
       - name: Check formatting
         run: >-
@@ -466,6 +482,13 @@ jobs:
           set -euo pipefail
           jq -e '.pins[] | select(.identity == "yams")' Package.resolved > /dev/null
           git diff --exit-code Package.resolved Examples/Package.resolved
+
+      - name: Debug session after a failure
+        if: failure() && github.event_name == 'workflow_dispatch' && matrix.tmate == 'on-failure'
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
 
   # The one check that means "CI passed". Naming every leg in branch protection
   # would mean editing the rule whenever the table changes, and a leg that is
