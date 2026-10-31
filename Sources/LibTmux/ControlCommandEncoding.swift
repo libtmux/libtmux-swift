@@ -1,18 +1,8 @@
 import Foundation
 
-/// Refuses an argument a command line cannot carry.
+/// Refuses a multiline argument this control-command encoder does not support.
 ///
-/// A connection sends commands one per line, so a newline inside an argument
-/// ends the command there and leaves the rest to be read as the next one — and
-/// tmux answers the truncated command, successfully, having done something the
-/// caller did not ask for.
-///
-/// There is no encoding that avoids it. Single quotes leave the newline as a
-/// newline. Double quotes carry it as `\n`, but tmux expands `#` and `$` inside
-/// them and offers no escape for `#`, so any value that might contain a format
-/// sequence would be rewritten instead. A process takes an argument vector and
-/// has none of this trouble, which is why the same call is fine in the default
-/// mode.
+/// Direct mode carries these arguments in argv instead of a command line.
 func requireSingleLine(_ arguments: [String]) throws(TmuxError) {
     guard arguments.allSatisfy({ !$0.contains("\n") }) else {
         throw .invocationFailed(

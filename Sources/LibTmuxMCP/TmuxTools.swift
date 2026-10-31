@@ -3,10 +3,8 @@ import LibTmux
 
 /// The tmux tools an MCP client can call.
 ///
-/// This is the layer that puts `LibTmux` across a process boundary, which is
-/// what a filter expression was designed for: a client sends the expression as
-/// data and the tool evaluates it here, rather than the client asking for
-/// everything and filtering at home.
+/// Listing tools accept session and window selectors. Clients apply other
+/// predicates to the returned metadata.
 public struct TmuxTools: Sendable {
     /// The process-wide pane-input reservation registry. See ``PaneRunCoordinator``
     /// for why it is not per-instance.

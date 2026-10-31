@@ -3,10 +3,8 @@ import Foundation
 /// A format tmux reports changes to, rather than being asked for.
 ///
 /// `refresh-client -B` registers one against a control connection. tmux then
-/// evaluates the format about once a second and sends
-/// ``SubscriptionChange`` whenever the value differs from the last one it
-/// sent — so "has the foreground command changed?" costs no commands, no
-/// captures, and no scrollback at all.
+/// reports changed values with ``SubscriptionChange`` at most once a second,
+/// without commands, captures or scrollback reads between reports.
 ///
 /// Requires tmux 3.3a or later, which is this package's floor.
 public struct FormatSubscription: Sendable, Hashable {

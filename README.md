@@ -218,8 +218,8 @@ let matching = try await server.panes().filter(expression)
 
 `FilteringTests` asserts the expression selects the same panes the predicate
 would. [`Server.panes(where:)`][api-server-panes-where] sends the same
-expression to tmux, so the rows that would have been discarded never cross the
-process boundary:
+expression through a tmux predicate that narrows the rows before they cross
+the process boundary:
 
 ```swift
 let matching = try await server.panes(where: expression)
@@ -230,14 +230,15 @@ the same answer:
 
 - **The first** formats, pipes, and decodes every row before discarding most of
   them.
-- **The second** sends the filter to tmux, so only matching rows come back.
+- **The second** lets tmux narrow the rows, then applies the full expression
+  here.
 - **A regular expression** cannot run in tmux. The predicate sent to tmux is
   widened, and this package's bounded regex engine decides the rest here.
 
 The full vocabulary of operators, aliases, and field types is in
 [`Filtering.md`][filtering] and on the [queries page][ref-concept-queries]. The
-[MCP tools](#tmux-as-mcp-tools) offer the same filtering to a client that does
-not speak Swift.
+[MCP tools](#tmux-as-mcp-tools) accept session and window selectors; clients
+apply other predicates to the returned metadata.
 
 ## Change what tmux holds
 
@@ -246,7 +247,8 @@ not speak Swift.
 [`Server.newSession`][api-server-newsession-named-startdirectory-windowname-width-height]
 makes a session.
 [`Server.newWindow(in:named:startDirectory:)`][api-server-newwindow-in-named-startdirectory],
-{{Server.splitWindow}), and [`Server.setOption`][api-server-setoption-to-scope]
+[`Server.splitWindow`][api-server-splitwindow], and
+[`Server.setOption`][api-server-setoption-to-scope]
 shape it, and [`Server.run(_:in:)`][api-server-run-in] sends a command to a
 pane:
 
@@ -313,8 +315,8 @@ try await server.wait(for: "built")
 
 ### [`FormatSubscription`][api-formatsubscription]: the question is about state
 
-Subscribe to a format and tmux reports each time its value changes, with no
-capture and no prompt regex. [`ControlSession.watch`][api-controlsession-watch]
+Subscribe to a format and tmux reports changed values at most once a second,
+with no capture or prompt regex. [`ControlSession.watch`][api-controlsession-watch]
 subscribes and
 [`ControlSession.changes(named:)`][api-controlsession-changes-named] yields the
 changes:
@@ -335,9 +337,11 @@ try await server.connected(attachingTo: "work") { server, control in
 }
 ```
 
-`WaitingTests` asserts the watch returns the value it names. The format
-`#{pane_current_command}` answers "is my command done?" exactly. This needs a
-connection, which needs tmux 3.7; an older daemon refuses it before anything
+`WaitingTests` asserts that the watch reports a value.
+`#{pane_current_command}` names the foreground command; it does not prove a
+submitted job has finished. Use a signalled channel for completion.
+
+The connection needs tmux 3.7; an older daemon refuses it before anything
 attaches.
 
 ### [`Server.waitForOutput`][api-server-waitforoutput-in-matching-stoppingat-requiringfreshoutput-startingat-timeout-taillimit]: you did not write the command
@@ -369,8 +373,8 @@ small liveness check detects a pane removed while it is quiet. What to know:
 When a wait ends without a match, [`OutputWait`][api-outputwait] says which
 thing happened:
 
-- **`timedOut`, `sawNewOutput: false`.** The pane stayed quiet, and no pattern
-  will fix it.
+- **`timedOut`, `sawNewOutput: false`.** No new output was observed during the
+  wait; this does not establish whether a command ran.
 - **`timedOut`, with output.** `tail` holds what arrived, so you can fix the
   pattern against it.
 - **`expiredWhileReading`.** The timeout ended before the pane could be read at
@@ -601,8 +605,9 @@ try await server.validateLayouts([("even-h", 2), ("tiled", 1)])
   daemon's version.
 - **Saved layouts.** They require a checksum, a nonempty tree, and enough
   cells; tmux still owns geometry and pruning.
-- **JSON layouts.** A JSON layout document needs tmux 3.8; an older daemon
-  refuses it before anything is sent, and the error names tmux 3.8.
+- **JSON layouts.** The library refuses a JSON layout below tmux 3.8 with
+  `TmuxError.invocationFailed` before dispatching the layout command. A version
+  probe may run first; the error names tmux 3.8.
 - **An empty batch** performs no I/O unless cancelled.
 - **A cold endpoint.** A version-sensitive name on an unbound cold endpoint uses
   the configured tmux client; permission, protocol, and retained-connection
@@ -931,7 +936,7 @@ unless you ask.
 | **[`LibTmux`][p-lib]** | [`Sources/LibTmux/`][p-lib] | The library. Servers, sessions, windows, panes, options, hooks, filtering, snapshots, streaming. The only one most callers need. | [swift-subprocess][] |
 | **[`TmuxWorkspace`][p-ws]** | [`Sources/TmuxWorkspace/`][p-ws] | Builds a session from a [tmuxp][] workspace — written in Swift, JSON, or YAML. See [Workspaces](#workspaces-from-a-file-or-from-swift). | `LibTmux`, and [Yams][] with the `YAMLWorkspaces` trait |
 | **[`tmux-workspace`](Sources/TmuxWorkspaceCLI/)** | [`Sources/TmuxWorkspaceCLI/`](Sources/TmuxWorkspaceCLI/) | Partial native workspace CLI: list, search, convert, import, load and capture. The command guide lists remaining work. | `LibTmux`, `TmuxWorkspace`, ArgumentParser, optional Yams |
-| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux`, `TmuxWorkspace` |
+| **[`LibTmuxMCP`][p-mcp]** | [`Sources/LibTmuxMCP/`][p-mcp] | tmux as [MCP][] tools, as a library you can embed. | `LibTmux` |
 | **[`libtmux-mcp`][p-server]** | [`Sources/libtmux-mcp/`][p-server] | The MCP server executable that serves those tools over stdio. See [tmux as MCP tools](#tmux-as-mcp-tools). | `LibTmux`, `LibTmuxMCP` |
 | **[`TmuxFixture`][p-test]** | [`Tests/TmuxFixture/`][p-test] | Real-server provisioning and reaping for tests and benchmarks. | `LibTmux` |
 
@@ -1080,7 +1085,7 @@ under a dependency you do not.
 | --- | --- |
 | Swift | 6.2 or later |
 | Platforms | Linux, including WSL, and macOS (best effort, no CI) — see [Platform notes](#platform-notes) |
-| tmux | 3.3a through 3.8, and master; older daemons are refused before any command runs. Connected mode needs 3.7, and a few features name their own release; the [platform page][r-platformsupport-md] lists them with what each refuses below it, and [`capabilities.json`][r-capabilities-json] records the same gates in machine-readable form |
+| tmux | 3.3a through 3.8, and master; older daemons are refused before the requested command runs. Connected mode needs 3.7, and a few features name their own release; the [platform page][r-platformsupport-md] lists them with what each refuses below it, and [`capabilities.json`][r-capabilities-json] records the same gates in machine-readable form |
 | Dependencies | [swift-subprocess][] for the core; [Yams][] behind a trait, for reading YAML |
 
 tmux release candidates are not supported: a feature can require one only until
@@ -1089,9 +1094,11 @@ as `X.Y-rcN` below `X.Y`. See [Release candidates][ref-tmux-release-candidates].
 
 ### Optional features
 
-A feature that needs more than 3.3a refuses before it does anything, with
-`TmuxError.unsupportedTmuxVersion`. None of them raises the floor for the rest
-of the library.
+Features keep their own version gates; none raises the core floor. A version
+check may query tmux before refusing the requested operation.
+
+`TmuxError.unsupportedTmuxVersion` reports most release refusals. Layout
+validation uses `TmuxError.invocationFailed` instead.
 
 | Feature | Needs | Below that |
 | --- | --- | --- |
@@ -1100,10 +1107,13 @@ of the library.
 | `Server.deleteBuffer(named:)` and the MCP `paste_text` staging buffer | 3.4 | refused |
 | `break-pane` without a window name, and a name holding `:` or `.` | 3.7a | refused on exactly 3.7 |
 | `split-window -p` | 3.5 | refused on exactly 3.4 |
-| A JSON layout in `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)`, the MCP `select_layout` tool and a raw `select-layout` | 3.8 | refused before anything is sent, naming tmux 3.8 |
+| A JSON layout in `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)`, the MCP `select_layout` tool and a raw `select-layout` | 3.8 | refused with `TmuxError.invocationFailed` before the layout command is sent, naming tmux 3.8 |
 | `switch-mode` | 3.8 | tmux rejects it as an unknown command; the library does not resolve it |
 | `select-layout` with a layout tmux cannot parse | 3.4 | refused, because 3.3a crashes on one |
 | `refresh-client -l`, the clipboard query | 3.6a | refused |
+
+On tmux 3.4 through versions below 3.8, the raw JSON guard also rejects
+malformed `{` operands. At 3.8 and later, tmux validates raw operands.
 
 The [platform page][r-platformsupport-md] gives the detail, including which
 command forms are read before they are sent and which are not.
@@ -1200,7 +1210,7 @@ Any other tmux runs on demand:
 
 | Path | What is in it |
 | --- | --- |
-| [`Sources/`][sources] | The four runtime products |
+| [`Sources/`][sources] | The five runtime products |
 | [`Tests/`][tests] | The suite, and the [`TmuxFixture`][mod-tmuxfixture] product every suite provisions servers through |
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
@@ -1288,6 +1298,7 @@ MIT. See [LICENSE][r-license].
 [api-server-setoption-to-scope]: <https://libtmux.org/en/swift/latest/reference/server-setoption(_-to-scope-)/>
 [api-server-shellinvocation]: https://libtmux.org/en/swift/latest/reference/server-shellinvocation/
 [api-server-snapshot]: <https://libtmux.org/en/swift/latest/reference/server-snapshot()/>
+[api-server-splitwindow]: <https://libtmux.org/en/swift/latest/reference/server-splitwindow(_-direction-size-startdirectory-environment-shell-)/>
 [api-server-using]: <https://libtmux.org/en/swift/latest/reference/server-using(_-_-)/>
 [api-server-validatelayouts]: <https://libtmux.org/en/swift/latest/reference/server-validatelayouts(_-)/>
 [api-server-version]: <https://libtmux.org/en/swift/latest/reference/server-version()/>
