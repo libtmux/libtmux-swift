@@ -80,8 +80,12 @@ def check(choice):
             LIBTMUX_TMUX_BIN=tmux,
             TMUX_TMPDIR=str(root),
         )
-        environment.pop("TMUX", None)
-        environment.pop("TMUX_PANE", None)
+        for name in [
+            "TMUX",
+            "TMUX_PANE",
+            *(n for n in environment if n.startswith("LIBTMUX_SOCKET")),
+        ]:
+            environment.pop(name, None)
         terminals = []
 
         def command(*arguments, endpoint=socket):
