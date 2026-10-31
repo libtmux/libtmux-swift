@@ -318,9 +318,12 @@ $ python3 Scripts/check_socket_namespace.py
 That script reads literal `Server(socketPath:)` and `Server(socketName:)` calls.
 A path records its root; a name must identify this port, while
 `namedSocketsAvailable` separately proves the suite placed it under the test
-root. The script cannot see whether a server was *started* — nothing reaches
-the filesystem until a command runs against it — so deliberate exceptions are
-listed beside their reason.
+root. It also fails a `Server` constructed with no socket, a
+`TmuxContext.current()` with no environment, and a `makeServer()` outside
+`Sources/`: each follows `TMUX` or tmux's default socket, so a test that calls
+one drives the server its developer is inside. The script cannot see whether a
+server was *started* — nothing reaches the filesystem until a command runs
+against it — so deliberate exceptions are listed beside their reason.
 
 Every continuation the library suspends can be resumed by cancelling it:
 
