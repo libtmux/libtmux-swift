@@ -396,6 +396,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_version.py
 
+      # The tmux versions CI runs come from Scripts/tmux-matrix.json. This fails
+      # when the README, the DocC pages or CONTRIBUTING say something else, or
+      # when this workflow grows a list or a tmate step of its own.
+      - name: Check the CI plan and the docs agree
+        if: runner.os == 'Linux' && matrix.repo_checks
+        run: python3 Scripts/check_ci.py
+
       # A changelog entry leads with an identifier, which is what makes it go
       # stale silently: a renamed symbol still reads fine on the page.
       - name: Check every changelog symbol resolves
