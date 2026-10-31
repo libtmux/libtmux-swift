@@ -6,8 +6,9 @@ Drive tmux from Swift.
 > The API is not settled: any release may change or remove exported
 > identifiers, and the changelog marks each break. Pin an exact version to
 > avoid one. What this package claims about tmux is tested against
-> releases 3.3a through 3.8, and master, on every push; what has not settled
-> is the Swift surface around that.
+> releases 3.3a through 3.8, and master: 3.3a and 3.8 on every push, and the
+> rest when a release is tagged. What has not settled is the Swift surface
+> around that.
 
 ## Overview
 

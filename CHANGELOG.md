@@ -23,6 +23,13 @@ changelog marks each break. Pin an exact version to avoid one.
   `{` operand on tmux 3.4 and later; tmux used to reject both after the
   send. (#82)
 
+- CI tests tmux 3.3a and 3.8 on a push and a pull request. A tag, which is a
+  release, and a `workflow_dispatch` with `scope: full` test every release
+  from 3.3a through 3.8, the pinned master and the refusal lanes. A dispatch
+  also takes `tmux-ref` (a release, tag, branch or commit), `swift` and
+  `tmate`, and the `required` job reports whether every planned job passed.
+  (#88)
+
 ## [0.1.0] - 2026-10-25
 
 ### Changed

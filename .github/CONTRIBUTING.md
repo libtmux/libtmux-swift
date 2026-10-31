@@ -169,10 +169,60 @@ it. Task start is not an ordering: an `async let` evaluates its initializer in
 the child task, which on a loaded runner is late enough to miss the event the
 child was written to catch.
 
+## Running CI against any tmux
+
+A push and a pull request run the oldest and newest released tmux in
+[the table](#compatibility). Any other tmux runs on demand: dispatch `ci.yml`
+from any branch with `scope=custom` and a comma-separated `tmux-ref`, each item
+a release, a tag, a branch or a 40-hex commit from
+[github.com/tmux/tmux](https://github.com/tmux/tmux).
+
+```console
+$ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.6b,master
+```
+
+A release in the table keeps its tarball. Anything else is resolved to a commit
+and built from it, and `master` here is the current tip, not the pinned commit
+the full table tests. `swift` repeats each tmux ref once per toolchain.
+`scope=full` runs the whole table, the pinned master and the refusal cells, as a
+tag does.
+
+```console
+$ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.8 -f swift=6.1,6.2
+```
+
+`tmate=on-failure` opens an
+[`action-tmate`](https://github.com/mxschmitt/action-tmate) SSH session after a
+failing leg, and `tmate=before-tests` opens one before the build and tests. Only
+the account that dispatched the run can connect, so it needs a public SSH key on
+its GitHub profile. The plan accepts a session on exactly one leg, which means
+one `tmux-ref` and at most one `swift`. The build is in `~/tmux-<ref>`, shortened to 12
+characters for a commit, and `LIBTMUX_TMUX_BIN` points the suite at its
+`bin/tmux`.
+
+```console
+$ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.7b -f tmate=on-failure
+```
+
+The dispatch form is only available once `ci.yml` carries the inputs on the
+default branch. This prints the legs a dispatch would run, without a runner:
+
+```console
+$ python3 Scripts/ci_plan.py matrix --event workflow_dispatch --scope custom --tmux-ref 3.6b,master
+```
+
+The tmux versions CI runs come from one manifest, `Scripts/tmux-matrix.json`.
+Adding a release there is the whole change to CI, and `Scripts/check_ci.py`
+names each page that has to say so. Each dispatch is its own run: it does not
+cancel the push run on its branch, and another dispatch does not cancel it.
+
 ## Checks that must pass
 
 Each of these gates CI, and each can fail. Build and test run on every cell of
-the matrix; the tooling checks run once, on the Linux tmux 3.7b cell.
+the matrix; the tooling checks run once, on the cell with the newest released
+tmux. The two that run a tmux binary, the parity manifests and the mode matrix,
+run on tmux 3.7b, which a tag and a full-scope dispatch include and a push does
+not.
 
 CI runs Linux only. macOS is supported on a best-effort basis, and CI coverage
 for it is highly limited: no job builds or tests there, so a macOS-only
@@ -471,8 +521,10 @@ $ gh workflow run release --ref master -f dry_run=true
 | Platforms | Linux and macOS; `Package.swift` declares `macOS(.v13)` |
 | tmux | 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a, 3.7b, 3.8, master |
 
-CI builds each of those tmux releases from its own release tarball and runs the
-suite against it on Linux. macOS is supported on a best-effort basis and has no
+A push or pull request builds the oldest and newest of those, 3.3a and 3.8, from
+their release tarballs and runs the suite against each on Linux. A tag, and a
+dispatch with `scope=full`, do the same for every one of them, with master as a
+pinned commit. macOS is supported on a best-effort basis and has no
 CI lane. What differs on Darwin is this package's own handling rather than
 anything that varies by tmux release: the `TMPDIR` a socket path cannot afford,
 keg-only libevent and ncurses, `F_SETNOSIGPIPE`, and a pty cap low enough that
@@ -481,8 +533,8 @@ a parallel run needs it raised first.
 3.3a is the floor, and the daemon's release decides:
 every command is refused before it has an effect when the daemon it would reach
 is older, whatever the client executable reports. 3.0a, 3.1c, 3.2a and the
-unpatched 3.3 are built too, as refusal lanes: they run only the version check
-suites, which assert the refusal and that nothing it refused happened. 3.0a and
+unpatched 3.3 are built too, as refusal lanes that only a tag and a full-scope
+dispatch run: they run only the version check suites, which assert the refusal and that nothing it refused happened. 3.0a and
 3.1c keep the client's stdout open from the daemon, so their lanes run behind a
 3.3a client named in `LIBTMUX_TMUX_CLIENT_BIN`; the test job sets the same
 variable to a second tmux, so a client that reports another release than its
