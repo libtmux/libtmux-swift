@@ -24,137 +24,206 @@ import Foundation
 /// A tmux server does a great many things, so this type has a great many methods. They fall into a
 /// few groups:
 ///
-/// **Connecting.** ``Server/init(socketPath:tmuxExecutable:configurationFile:)``,
-/// ``Server/init(socketName:tmuxExecutable:configurationFile:)`` and
-/// ``Server/init(tmuxExecutable:configurationFile:environment:)`` address a server without starting
-/// it. ``Server/endpoint`` and ``Server/tmuxExecutable`` say what was addressed, and
-/// ``Server/mode`` how commands reach it. A program running inside tmux finds its server with
-/// ``TmuxContext/current(environment:)`` and ``TmuxContext/server(tmuxExecutable:)``, and
-/// ``TmuxServers/discover(in:tmuxExecutable:)`` lists the ones already running.
-/// ``Server/isRunning()`` answers whether anything is listening, ``Server/requireRunning()`` throws
-/// when nothing is, and ``Server/startServer()`` starts the daemon. ``Server/version()`` reads the
-/// version of the tmux binary, so it answers before any daemon exists, while
-/// ``Server/incarnation()`` and ``Server/serverProcessID()`` identify the daemon that is running.
-/// ``Server/using(_:_:)`` runs a scope in a ``TmuxMode``, which sends each command either to a
-/// process of its own or over one control-mode connection, and ``Server/connected(attachingTo:_:)``
-/// and ``Server/withControlMode(attachingTo:_:)`` open that connection and hand it to you.
+/// **Connecting.** The initializers address a server without starting it. A program running inside
+/// tmux finds its server through its ``TmuxContext``, and a discovery call lists the servers
+/// already running. The running check answers whether anything is listening, the required form
+/// throws when nothing is, and a third call starts the daemon. The version call reads the tmux
+/// binary's version, so it answers before any daemon exists, while the incarnation and the process
+/// ID identify the daemon that is running. Running a scope in a ``TmuxMode`` sends each command
+/// either to a process of its own or over one control-mode connection, and two calls open that
+/// connection and hand it to you.
 ///
-/// **Finding one thing.** ``Server/session(_:)``, ``Server/window(_:)``, and ``Server/pane(_:)``
-/// take an ID; ``Server/session(named:)`` and ``Server/windows(named:)`` take a name. Each answers
-/// `nil`, or an empty array for the plural, when tmux does not have it, and throws when the server
-/// cannot answer. Window names are not unique, which is why ``Server/windows(named:)`` returns an
-/// array. ``Server/hasSession(_:)`` answers by name or ID without returning the session, and
-/// ``Server/refresh(_:)-(Session)``, ``Server/refresh(_:)-(Window)``, and
-/// ``Server/refresh(_:)-(Pane)`` re-read a value you hold. A refresh answers `nil` once the object
-/// has gone. If the daemon was replaced and the ID names something in the new one, it throws
+/// - Address a server without starting it:
+///   ``Server/init(socketPath:tmuxExecutable:configurationFile:)``,
+///   ``Server/init(socketName:tmuxExecutable:configurationFile:)``,
+///   ``Server/init(tmuxExecutable:configurationFile:environment:)``
+/// - What was addressed: ``Server/endpoint``, ``Server/tmuxExecutable``
+/// - How commands reach it: ``Server/mode``
+/// - From inside tmux: ``TmuxContext/current(environment:)``,
+///   ``TmuxContext/server(tmuxExecutable:)``
+/// - Servers already running: ``TmuxServers/discover(in:tmuxExecutable:)``
+/// - Is anything listening: ``Server/isRunning()``
+/// - Require a listening server: ``Server/requireRunning()``
+/// - Start the daemon: ``Server/startServer()``
+/// - Read the tmux binary's version: ``Server/version()``
+/// - Identify the running daemon: ``Server/incarnation()``, ``Server/serverProcessID()``
+/// - Run a scope in a mode: ``Server/using(_:_:)``
+/// - Open the connection: ``Server/connected(attachingTo:_:)``,
+///   ``Server/withControlMode(attachingTo:_:)``
+///
+/// **Finding one thing.** Look up a session, window or pane by ID, or a session or windows by name.
+/// Each lookup answers `nil`, or an empty array for the plural, when tmux does not have it, and
+/// throws when the server cannot answer. Window names are not unique, which is why the lookup by
+/// window name returns an array. A session can be checked for by name or ID without returning it,
+/// and a value you hold can be refreshed. A refresh answers `nil` once the object has gone. If the
+/// daemon was replaced and the ID names something in the new one, it throws
 /// ``TmuxError/serverRestarted`` instead, because tmux numbers IDs from zero again.
 ///
-/// **Listing everything.** ``Server/sessions()``, ``Server/windows()``, ``Server/windowLinks()``,
-/// ``Server/panes()``, and ``Server/clients()`` each read one tmux listing. A failed listing throws
-/// rather than reading as an empty server; use ``Server/isRunning()`` when absence is an expected
-/// answer. A window linked into several sessions appears once in ``Server/windows()`` and once per
-/// session in ``Server/windowLinks()``. ``Server/snapshot()`` reads every listing as one
-/// ``Snapshot`` and throws ``TmuxError/serverRestarted`` if a different daemon bound the socket in
-/// between. It is not a transaction: another client can still change the same daemon between the
-/// listings.
+/// - By ID: ``Server/session(_:)``, ``Server/window(_:)``, ``Server/pane(_:)``
+/// - By name: ``Server/session(named:)``, ``Server/windows(named:)``
+/// - By name or ID, without returning it: ``Server/hasSession(_:)``
+/// - Re-read a value you hold: ``Server/refresh(_:)-(Session)``, ``Server/refresh(_:)-(Window)``,
+///   ``Server/refresh(_:)-(Pane)``
 ///
-/// **Querying things and getting around.** ``Server/sessions(where:)``, ``Server/windows(where:)``,
-/// ``Server/panes(where:)``, and ``Server/clients(where:)`` take a ``FilterExpr``. tmux evaluates
-/// as much of it as its format language can express before the rows cross the process boundary, and
-/// the rest is applied here, so the answer is the one filtering the full listing would give;
-/// ``Server/clients(where:)`` applies all of it here. They throw ``FilteredListingError``, which
-/// keeps a tmux failure apart from a regular expression that ran out of budget. `exactlyOne(_:)`
-/// takes the one element a filter matches from any listing, and ``FilterSelectionError`` tells no
-/// match from several. To move between levels without another tmux command, ask a ``Snapshot``:
-/// ``Snapshot/windows(of:)``, ``Snapshot/panes(of:)-(Window)``, and
-/// ``Snapshot/panes(of:)-(Session)`` go down, and ``Snapshot/sessions(of:)`` and
-/// ``Snapshot/session(of:)`` go up. ``Snapshot/sessions(_:ofPanes:)`` takes a
-/// ``RelationQuantifier`` to select the sessions where some, every, or no pane matches, and
-/// ``Snapshot/panes(inSession:)`` selects panes by a filter on their session. A ``Pane`` carries
-/// its ``Pane/windowID`` and a ``Client`` its ``Client/sessionID``, so a value you hold leads back
+/// **Listing everything.** Each call reads one tmux listing. A failed listing throws rather than
+/// reading as an empty server; use ``Server/isRunning()`` when absence is an expected answer. A
+/// window linked into several sessions appears once in the window listing and once per session in
+/// the window-link listing. Taking a snapshot reads every listing as one ``Snapshot`` and throws
+/// ``TmuxError/serverRestarted`` if a different daemon bound the socket in between. It is not a
+/// transaction: another client can still change the same daemon between the listings.
+///
+/// - Listings: ``Server/sessions()``, ``Server/windows()``, ``Server/windowLinks()``,
+///   ``Server/panes()``, ``Server/clients()``
+/// - Every listing as one snapshot: ``Server/snapshot()``
+///
+/// **Querying things and getting around.** Each filtered listing takes a ``FilterExpr``. tmux
+/// evaluates as much of it as its format language can express before the rows cross the process
+/// boundary, and the rest is applied here, so the answer is the one filtering the full listing
+/// would give; the filtered client listing applies all of it here. Filtered listings throw
+/// ``FilteredListingError``, which keeps a tmux failure apart from a regular expression that ran
+/// out of budget. `exactlyOne(_:)` takes the one element a filter matches from any listing, and
+/// ``FilterSelectionError`` tells no match from several. To move between levels without another
+/// tmux command, ask a ``Snapshot``. Selecting the sessions where some, every, or no pane matches
+/// takes a ``RelationQuantifier``, and panes can be selected by a filter on their session. A
+/// ``Pane`` carries its window ID and a ``Client`` its session ID, so a value you hold leads back
 /// up.
 ///
-/// **Changing things.** Creating returns what was made.
-/// ``Server/newSession(named:startDirectory:windowName:width:height:environment:shell:)`` returns
-/// the ``Session``. ``Server/newWindow(in:named:startDirectory:at:environment:shell:)`` and
-/// ``Server/newWindow(_:_:named:startDirectory:)``, which sits next to a window you name, return a
-/// ``WindowAppearance``. ``Server/splitWindow(_:direction:size:startDirectory:environment:shell:)``
-/// splits a window's active pane and
-/// ``Server/split(_:direction:size:startDirectory:environment:shell:)`` the pane you name; both
-/// return the new ``Pane``. ``Server/kill(_:)-(Session)``, ``Server/kill(_:)-(Window)``, and
-/// ``Server/kill(_:)-(Pane)`` destroy one object, ``Server/killServer()`` stops the daemon, and
-/// ``Server/rename(_:to:)-(Session,String)`` and ``Server/rename(_:to:)-(Window,String)`` rename a
-/// session or a window. ``Server/select(_:)-(WindowLink)``, ``Server/select(_:)-(Pane)``,
-/// ``Server/selectNextWindow(in:)``, ``Server/selectPreviousWindow(in:)``,
-/// ``Server/selectLastWindow(in:)``, and ``Server/selectLastPane(in:)`` choose what is active.
+/// - Filter a listing: ``Server/sessions(where:)``, ``Server/windows(where:)``,
+///   ``Server/panes(where:)``, ``Server/clients(where:)``
+/// - Go down a level: ``Snapshot/windows(of:)``, ``Snapshot/panes(of:)-(Window)``,
+///   ``Snapshot/panes(of:)-(Session)``
+/// - Go up a level: ``Snapshot/sessions(of:)``, ``Snapshot/session(of:)``
+/// - Sessions by their panes: ``Snapshot/sessions(_:ofPanes:)``
+/// - Panes by their session: ``Snapshot/panes(inSession:)``
+/// - Back up from a value you hold: ``Pane/windowID``, ``Client/sessionID``
 ///
-/// **Arranging windows and panes.** ``Server/selectLayout(_:_:)`` applies a layout,
-/// ``Server/nextLayout(_:)`` and ``Server/previousLayout(_:)`` cycle through tmux's presets, and
-/// ``Server/validateLayouts(_:)`` checks layout strings before anything changes.
-/// ``Server/resize(_:width:height:)`` sets a pane's size, ``Server/resize(_:by:toward:)`` moves one
-/// of its boundaries, and ``Server/toggleZoom(_:)`` zooms it. ``Server/rotate(_:upward:)`` moves
-/// the panes of a window through its layout, and ``Server/swap(_:with:)-(WindowLink,WindowLink)``
-/// and ``Server/swap(_:with:)-(Pane,Pane)`` exchange two windows or two panes.
-/// ``Server/breakPane(_:from:named:)`` moves a pane into a window of its own,
-/// ``Server/join(_:into:direction:size:)`` moves it into another window, and
-/// ``Server/move(_:to:at:)``, ``Server/link(_:into:)``, and ``Server/unlink(_:)`` move a window
-/// between sessions, show it in a second one, and remove one of its appearances.
-/// ``Server/respawn(_:running:killingExisting:startDirectory:)`` and
-/// ``Server/respawn(_:running:killingExisting:)`` restart what a pane or a window runs.
+/// **Changing things.** Creating returns what was made: creating a session returns the ``Session``,
+/// creating a window returns a ``WindowAppearance``, and a split returns the new ``Pane``. A split
+/// divides a window's active pane or the pane you name. Killing destroys one object, killing the
+/// server stops the daemon, and renaming changes the name of a session or a window. Selecting
+/// chooses what is active.
+///
+/// - New session:
+///   ``Server/newSession(named:startDirectory:windowName:width:height:environment:shell:)``
+/// - New window: ``Server/newWindow(in:named:startDirectory:at:environment:shell:)``
+/// - New window next to a window you name: ``Server/newWindow(_:_:named:startDirectory:)``
+/// - Split a window's active pane:
+///   ``Server/splitWindow(_:direction:size:startDirectory:environment:shell:)``
+/// - Split the pane you name: ``Server/split(_:direction:size:startDirectory:environment:shell:)``
+/// - Destroy one object: ``Server/kill(_:)-(Session)``, ``Server/kill(_:)-(Window)``,
+///   ``Server/kill(_:)-(Pane)``
+/// - Stop the daemon: ``Server/killServer()``
+/// - Rename a session or a window: ``Server/rename(_:to:)-(Session,String)``,
+///   ``Server/rename(_:to:)-(Window,String)``
+/// - Choose what is active: ``Server/select(_:)-(WindowLink)``, ``Server/select(_:)-(Pane)``,
+///   ``Server/selectNextWindow(in:)``, ``Server/selectPreviousWindow(in:)``,
+///   ``Server/selectLastWindow(in:)``, ``Server/selectLastPane(in:)``
+///
+/// **Arranging windows and panes.** Apply a layout, cycle through tmux's presets, or check layout
+/// strings before anything changes. Set a pane's size, move one of its boundaries, or zoom it.
+/// Rotate the panes of a window through its layout, and exchange two windows or two panes. Move a
+/// pane into a window of its own or into another window. Move a window between sessions, show it in
+/// a second one, or remove one of its appearances. Restart what a pane or a window runs.
+///
+/// - Apply a layout: ``Server/selectLayout(_:_:)``
+/// - Cycle through the presets: ``Server/nextLayout(_:)``, ``Server/previousLayout(_:)``
+/// - Check layout strings first: ``Server/validateLayouts(_:)``
+/// - Set a pane's size: ``Server/resize(_:width:height:)``
+/// - Move one boundary of a pane: ``Server/resize(_:by:toward:)``
+/// - Zoom a pane: ``Server/toggleZoom(_:)``
+/// - Move panes through the layout: ``Server/rotate(_:upward:)``
+/// - Exchange two windows or two panes: ``Server/swap(_:with:)-(WindowLink,WindowLink)``,
+///   ``Server/swap(_:with:)-(Pane,Pane)``
+/// - Move a pane into a window of its own: ``Server/breakPane(_:from:named:)``
+/// - Move a pane into another window: ``Server/join(_:into:direction:size:)``
+/// - Move a window between sessions: ``Server/move(_:to:at:)``
+/// - Show a window in a second session: ``Server/link(_:into:)``
+/// - Remove one appearance of a window: ``Server/unlink(_:)``
+/// - Restart what a pane or a window runs:
+///   ``Server/respawn(_:running:killingExisting:startDirectory:)``,
+///   ``Server/respawn(_:running:killingExisting:)``
 ///
 /// **Options and hooks.** An ``OptionScope`` names the exact table: the server's, the global
-/// session or window table, or one session, window, or pane. ``Server/options(_:)`` lists what has
-/// been set in a table, not tmux's built-in defaults, ``Server/option(_:scope:)`` reads one value
-/// there or answers `nil` when it is not set, and ``Server/resolvedOption(_:scope:)`` reads the
-/// effective value after tmux resolves inheritance. ``Server/setOption(_:to:scope:)`` and
-/// ``Server/unsetOption(_:scope:)`` write. Hooks live in the global table or in one session's,
-/// chosen by a ``HookScope``: ``Server/hooks(_:)`` lists the bound ones,
-/// ``Server/setHook(_:to:at:in:)`` binds a command, ``Server/unsetHook(_:in:)`` unbinds it, and
-/// ``Server/runHook(_:in:)`` runs a hook's commands now. The environment, global or one session's
-/// through an ``EnvironmentScope``, is ``Server/environment(_:)``,
-/// ``Server/environmentValue(_:in:)``, ``Server/setEnvironment(_:to:in:)``,
-/// ``Server/unsetEnvironment(_:in:)``, and ``Server/removeEnvironment(_:in:)``, which marks a
-/// variable so that new processes start without it. These writers hand back tmux's ``TmuxReply``,
-/// so a name tmux refuses is in the reply rather than thrown.
+/// session or window table, or one session, window, or pane. Listing a table shows what has been
+/// set in it, not tmux's built-in defaults. Reading one value there answers `nil` when it is not
+/// set, and the resolved read gives the effective value after tmux resolves inheritance. Hooks live
+/// in the global table or in one session's, chosen by a ``HookScope``. The environment, global or
+/// one session's through an ``EnvironmentScope``, can be read whole or by variable; removing a
+/// variable marks it so that new processes start without it. Writing an option, a hook or an
+/// environment variable hands back tmux's ``TmuxReply``, so a name tmux refuses is in the reply
+/// rather than thrown.
 ///
-/// **Everything else tmux keeps.** Paste buffers are ``Server/buffers()``,
-/// ``Server/buffer(named:)``, ``Server/setBuffer(_:named:)``, ``Server/loadBuffer(from:named:)``,
-/// ``Server/saveBuffer(named:to:)``, ``Server/deleteBuffer(named:)``, and
-/// ``Server/paste(buffer:into:)``; the load and save pair have tmux read or write the file itself,
-/// which avoids the argument-size limit of ``Server/setBuffer(_:named:)`` and, on a connected
-/// server, its refusal of newlines. Format expansion reaches any field the library does not model:
-/// ``Server/format(_:)`` for the server, ``Server/format(_:for:)-(String,Session)``,
-/// ``Server/format(_:for:)-(String,WindowLink)``, and ``Server/format(_:for:through:)`` for an
-/// object you hold, and ``Server/format(_:addressing:)`` for an ID that arrived as a string.
-/// ``Server/sourceFile(_:)`` loads a configuration file into the running server.
-/// ``Server/wait(for:)`` blocks until something signals the channel, such as
-/// ``Server/signal(_:)``, and throws ``TmuxError/serverRestarted`` if the server went away while it
-/// waited.
+/// - List a table: ``Server/options(_:)``
+/// - Read one value: ``Server/option(_:scope:)``
+/// - Read the effective value: ``Server/resolvedOption(_:scope:)``
+/// - Write an option: ``Server/setOption(_:to:scope:)``, ``Server/unsetOption(_:scope:)``
+/// - List the bound hooks: ``Server/hooks(_:)``
+/// - Bind a command to a hook: ``Server/setHook(_:to:at:in:)``
+/// - Unbind a hook: ``Server/unsetHook(_:in:)``
+/// - Run a hook's commands now: ``Server/runHook(_:in:)``
+/// - Read the environment: ``Server/environment(_:)``, ``Server/environmentValue(_:in:)``
+/// - Write the environment: ``Server/setEnvironment(_:to:in:)``, ``Server/unsetEnvironment(_:in:)``
+/// - Remove a variable for new processes: ``Server/removeEnvironment(_:in:)``
 ///
-/// **Talking to a pane.** ``Server/sendKeys(_:to:literally:)`` sends keys, as characters rather
-/// than key names when `literally` is set, and ``Server/run(_:in:)`` types a command line followed
-/// by Enter. ``Server/shellInvocation`` spells a tmux that reaches this server for a command
-/// running inside a pane. ``Server/capture(_:includingHistory:)`` reads the visible rows, and the
-/// scrollback too on request, ``Server/capture(_:includingHistory:maximumLines:)`` keeps the newest
-/// and reports how many it dropped, and
-/// ``Server/captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:)`` reads a range
-/// of them. ``Server/capture(_:since:limit:)`` returns only what has been printed since a
-/// ``CaptureCursor``, and
-/// ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
-/// waits until a pane prints something that matches. ``Server/pipe(_:to:)`` copies a pane's output
-/// to a shell command, ``Server/enterCopyMode(_:)`` enters copy mode, ``Server/cancelModes(in:)``
-/// clears every mode on the pane, ``Server/clearHistory(_:)`` clears its scrollback, and
-/// ``Server/setTitle(_:of:)`` sets its title.
+/// **Everything else tmux keeps.** Paste buffers can be listed, read, set, loaded, saved, deleted
+/// and pasted; the load and save pair have tmux read or write the file itself, which avoids the
+/// argument-size limit of ``Server/setBuffer(_:named:)`` and, on a connected server, its refusal of
+/// newlines. Format expansion reaches any field the library does not model, for the server, for an
+/// object you hold, or for an ID that arrived as a string. Load a configuration file into the
+/// running server. A wait blocks until something signals the channel, and throws
+/// ``TmuxError/serverRestarted`` if the server went away while it waited.
+///
+/// - List and read paste buffers: ``Server/buffers()``, ``Server/buffer(named:)``
+/// - Set a buffer: ``Server/setBuffer(_:named:)``
+/// - Through a file: ``Server/loadBuffer(from:named:)``, ``Server/saveBuffer(named:to:)``
+/// - Delete a buffer: ``Server/deleteBuffer(named:)``
+/// - Paste a buffer: ``Server/paste(buffer:into:)``
+/// - Format for the server: ``Server/format(_:)``
+/// - Format for an object you hold: ``Server/format(_:for:)-(String,Session)``,
+///   ``Server/format(_:for:)-(String,WindowLink)``, ``Server/format(_:for:through:)``
+/// - Format for an ID as a string: ``Server/format(_:addressing:)``
+/// - Load a configuration file: ``Server/sourceFile(_:)``
+/// - Wait for a channel: ``Server/wait(for:)``
+/// - Signal a channel: ``Server/signal(_:)``
+///
+/// **Talking to a pane.** Send keys as characters rather than key names when `literally` is set,
+/// and type a command line followed by Enter. A shell invocation spells a tmux that reaches this
+/// server for a command running inside a pane. A capture reads the visible rows, and the scrollback
+/// too on request; a capture with a line limit keeps the newest and reports how many it dropped,
+/// and a ranged capture reads a range of them. A capture since a ``CaptureCursor`` returns only
+/// what has been printed since it, and waiting for output ends once a pane prints something that
+/// matches. Copy a pane's output to a shell command, enter copy mode, clear every mode, clear its
+/// scrollback, and set its title.
+///
+/// - Send keys: ``Server/sendKeys(_:to:literally:)``
+/// - Type a command line: ``Server/run(_:in:)``
+/// - Spell a tmux for a command in a pane: ``Server/shellInvocation``
+/// - Read the visible rows: ``Server/capture(_:includingHistory:)``
+/// - Keep the newest and report the drop: ``Server/capture(_:includingHistory:maximumLines:)``
+/// - Read a range: ``Server/captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:)``
+/// - Read since a cursor: ``Server/capture(_:since:limit:)``
+/// - Wait for matching output:
+///   ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
+/// - Copy output to a shell command: ``Server/pipe(_:to:)``
+/// - Enter copy mode: ``Server/enterCopyMode(_:)``
+/// - Clear every mode: ``Server/cancelModes(in:)``
+/// - Clear the scrollback: ``Server/clearHistory(_:)``
+/// - Set the title: ``Server/setTitle(_:of:)``
 ///
 /// **Things that need a terminal.** None. Menus, popups, prompts, and key bindings need an attached
-/// client to mean anything, so this type leaves them out. ``Server/detach(_:)`` and
-/// ``Server/detachClients(from:)`` act on clients the server already holds and need no terminal of
-/// their own, and ``Server/connected(attachingTo:_:)`` attaches a control-mode client, which talks
-/// over pipes rather than a terminal.
+/// client to mean anything, so this type leaves them out. Detaching acts on clients the server
+/// already holds and needs no terminal of its own, and a connected scope attaches a control-mode
+/// client, which talks over pipes rather than a terminal.
 ///
-/// Anything tmux can do that is not here is reachable through ``Server/run(_:)-(TmuxCommand)``,
-/// which runs one tmux command, and ``Server/run(_:)-(TmuxCommandList)``, which runs several in one
-/// invocation. Both hand back a ``TmuxReply``: a nonzero status is a reply, not an error.
+/// - Detach: ``Server/detach(_:)``, ``Server/detachClients(from:)``
+/// - Attach a control-mode client: ``Server/connected(attachingTo:_:)``
+///
+/// **Running a command.** Anything tmux can do that is not here is reachable by running a tmux
+/// command. One call runs a single command and another runs several in one invocation. Both hand
+/// back a ``TmuxReply``: a nonzero status is a reply, not an error.
+///
+/// - Run one command: ``Server/run(_:)-(TmuxCommand)``
+/// - Run several in one invocation: ``Server/run(_:)-(TmuxCommandList)``
 public struct Server: Sendable, Hashable {
     /// Where this server listens. Every command carries it, so a call reaches the
     /// server you named, and the one tmux picks only when this is
