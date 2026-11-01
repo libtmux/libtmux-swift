@@ -29,8 +29,9 @@ The library's workspace APIs, [`TmuxWorkspace`][mod-tmuxworkspace], remain
 available separately.
 
 Releases are numbered `0.1.N`, and each release increments `N`. The command
-surface is not settled: any release may change or remove it, and the changelog
-marks each break. Pin an exact version to avoid one.
+surface is not settled: any release may change or remove it, and the
+[changelog](../TmuxWorkspace/CHANGELOG.md) marks each break. Pin an exact
+version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [Install](#install) ·
 [Load](#load-a-workspace) · [Find](#find-a-workspace) ·

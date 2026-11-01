@@ -180,6 +180,8 @@ output, or drift between registration metadata and the capability resource.
 - [Tool pages][ref-mcp-tools], one per tool, and the
   [`tmux://capabilities`][ref-capabilities] resource
 - [Swift Package Index][spi-mcp]
+- [Changelog](CHANGELOG.md): what each release changed, for this product and
+  the `libtmux-mcp` server
 
 [MCP]: https://modelcontextprotocol.io
 [spi-mcp]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmuxmcp

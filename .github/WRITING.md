@@ -106,6 +106,16 @@ under a `## [<version>] - <date>` heading with an ISO date and a bare semver.
 New entries land under `## [Unreleased]`; the release commit is what assigns
 them a version.
 
+Each public product keeps its own changelog, and an entry goes in the file of
+the product it names: `Sources/TmuxWorkspace/CHANGELOG.md` for `TmuxWorkspace`
+and the `tmux-workspace` command, `Sources/LibTmuxMCP/CHANGELOG.md` for
+`LibTmuxMCP` and the `libtmux-mcp` server, and the root `CHANGELOG.md` for
+`LibTmux`. An entry that names more than one product, and a change that spans
+products, such as documentation, CI or release tooling, goes in the root file.
+The products share one version, so every file has a heading for every release,
+and a release with nothing for a product says ``No entries for `TmuxWorkspace`.``
+under it.
+
 Write for someone deciding whether to upgrade:
 
 - **Lead with the identifier and a concrete verb.** Name symbols literally —
@@ -133,10 +143,11 @@ the toolchain floor if it moved, and puts migration instructions ahead of the
 exhaustive list. Nobody should read forty bullets to discover the compile error
 they are about to get.
 
-`.github/workflows/release.yml` lifts the notes out of `CHANGELOG.md` — the
-section for the version being tagged becomes the release body, and an empty one
-fails the release rather than publishing it. So the notes are written before
-the tag, in the changelog, in the voice above.
+`.github/workflows/release.yml` lifts the notes out of the changelogs — the
+section for the version being tagged in `CHANGELOG.md`, then each product's
+under its name, becomes the release body, and a file with no section for the
+version, or no entry anywhere, fails the release rather than publishing it. So
+the notes are written before the tag, in the changelogs, in the voice above.
 
 ## Commit messages
 

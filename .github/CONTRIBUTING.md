@@ -427,11 +427,19 @@ and every `from:` bound names a final release no newer than it:
 $ python3 Scripts/check_version.py
 ```
 
-Every symbol `CHANGELOG.md` names on a type this package declares still exists
-on it:
+Every symbol a changelog names on a type this package declares still exists on
+it, in the root `CHANGELOG.md` and in the one beside each product's sources:
 
 ```console
 $ python3 Scripts/check_changelog_symbols.py
+```
+
+Each product keeps its changelog, opening with its own name and holding an
+`## [Unreleased]` section, and lists the same releases as the root file. The
+two beside the sources are also excluded from their targets in `Package.swift`:
+
+```console
+$ python3 Scripts/changelogs.py check
 ```
 
 The generated tables still match what the benchmark measures:
@@ -562,9 +570,14 @@ is missing:
 - Set `LibTmuxVersion.current` to the version being tagged. Every `exact:` pin
   in the documentation names it, and every `from:` bound is a final release no
   newer than it. `Scripts/check_version.py` fails when one is not.
-- Rename `## [Unreleased]` in `CHANGELOG.md` to `## [<version>] - <date>` and
-  open a fresh `## [Unreleased]` above it. Those lines become the release
-  notes, so an empty section fails the release rather than publishing one.
+- Rename `## [Unreleased]` to `## [<version>] - <date>` in `CHANGELOG.md` and
+  in the changelog of each other product, and open a fresh `## [Unreleased]`
+  above it in each. A product with nothing to say gets ``No entries for
+  `TmuxWorkspace`.`` under its heading. Those lines become the release notes,
+  the root section first and then each product's under its name, so a file
+  with no section for the version, or no entry anywhere, fails the release
+  rather than publishing one. `python3 Scripts/changelogs.py notes <version>`
+  prints them.
 
 Rehearse before tagging. This runs every check and stops before publishing, so
 the release path is not being executed for the first time on the release:

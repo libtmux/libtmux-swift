@@ -226,6 +226,7 @@ $ swift package --disable-sandbox preview-documentation --target LibTmux
 ```
 
 - **Examples with output** live in the [repository README][r-readme-md].
+- **Changes** are in the [changelog](../../CHANGELOG.md).
 - **Hosted:** the [API pages][ref-libtmux-reference], [guides][ref-guides],
   [concepts][ref-concepts], and [topics][ref-topics] on libtmux.org, and
   [Swift Package Index][spi-libtmux].
