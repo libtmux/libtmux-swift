@@ -210,19 +210,6 @@ struct CountingTmux {
     }
 }
 
-func resolveRealTmux() -> String {
-    if let selected = ProcessInfo.processInfo.environment["LIBTMUX_TMUX_BIN"],
-        !selected.isEmpty
-    {
-        return selected
-    }
-    for candidate in ["/usr/bin/tmux", "/usr/local/bin/tmux", "/opt/homebrew/bin/tmux"]
-    where FileManager.default.isExecutableFile(atPath: candidate) {
-        return candidate
-    }
-    return "/usr/bin/tmux"
-}
-
 // MARK: - Running one cell of the table
 
 /// Where every socket this benchmark creates lives.
@@ -263,7 +250,7 @@ func withBenchServer<Result>(
     _ body: (Server, CountingTmux) async throws -> Result
 ) async throws -> Result {
     let root = try benchmarkDirectory()
-    let counting = try CountingTmux(realTmux: resolveRealTmux(), at: root)
+    let counting = try CountingTmux(realTmux: tmuxExecutablePath(), at: root)
     let server = try Server(
         socketPath: root.appendingPathComponent("s").path,
         tmuxExecutable: counting.executable
@@ -410,7 +397,7 @@ if asMarkdown {
 }
 
 print("libtmux — how the same work behaves under each mode")
-print("tmux: \(resolveRealTmux())")
+print("tmux: \(tmuxExecutablePath())")
 print("")
 print(
     pad("scenario", 22) + pad("mode", 12) + pad("median ms", 12)

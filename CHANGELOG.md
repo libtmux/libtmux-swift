@@ -64,6 +64,15 @@ changelog marks each break. Pin an exact version to avoid one.
   `TmuxFixture` is held to the same rules only when its run sets
   `LIBTMUX_TEST_SANDBOX`, as the script does. (#92)
 
+- `tmuxExecutablePath()` in `TmuxFixture` takes `LIBTMUX_TMUX_BIN`, then the
+  first `tmux` on `PATH`, then `/usr/bin/tmux`, `/usr/local/bin/tmux` and
+  `/opt/homebrew/bin/tmux`. It used to skip `PATH` and take the first of those
+  three, so a suite started without the variable tested `/usr/bin/tmux` even
+  when a newer `tmux` came first on `PATH`, and cases that need a newer tmux
+  skipped. A bare name in the variable is now searched for on `PATH`, as
+  `Server` searches for its `tmuxExecutable`. Set `LIBTMUX_TMUX_BIN` to keep
+  testing one binary. (#96)
+
 - JSON layouts (`layout-json`) require tmux 3.8, the first release that
   accepts one. `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)` and
   the MCP `select_layout` tool refuse one on an older tmux before the layout

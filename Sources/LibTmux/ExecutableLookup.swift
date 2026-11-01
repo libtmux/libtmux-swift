@@ -8,7 +8,7 @@ import Foundation
 /// A name that resolves to nothing is returned unchanged, so a typo surfaces as
 /// the invocation failing rather than as construction failing somewhere the
 /// caller was not expecting to handle it.
-func resolvedExecutable(
+package func resolvedExecutable(
     _ name: String,
     searching environment: [String: String] = ProcessInfo.processInfo.environment
 ) -> String {
