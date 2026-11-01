@@ -409,6 +409,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.repo_checks
         run: python3 Scripts/check_changelog_symbols.py
 
+      # The release notes are built from every product's changelog, so a
+      # product that lost its file, its Unreleased section or its place in
+      # Package.swift has to fail here rather than at the tag.
+      - name: Check every product keeps its changelog
+        if: runner.os == 'Linux' && matrix.repo_checks
+        run: python3 Scripts/changelogs.py check
+
       - name: Build documentation
         if: runner.os == 'Linux' && matrix.repo_checks
         run: |
