@@ -48,8 +48,9 @@ holds one session, `bootstrap`, and `CancellationTests` makes this assertion.
 ## Choose the tmux
 
 This product starts a real tmux and mocks nothing. The selected executable comes
-from `LIBTMUX_TMUX_BIN`, then the usual installed locations.
-[`tmuxExecutablePath`][api-tmuxexecutablepath] reports the one a run resolved.
+from `LIBTMUX_TMUX_BIN`, then the first `tmux` on `PATH`, then the usual
+installed locations. [`tmuxExecutablePath`][api-tmuxexecutablepath] reports the
+one a run resolved.
 
 ## Named sockets
 

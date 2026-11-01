@@ -112,9 +112,10 @@ which is a data race whether or not it has bitten yet. A child process a case
 starts takes `sandboxedEnvironment()` instead of the process environment, so it
 holds none of those variables either way.
 
-Point the suite at one tmux release with `LIBTMUX_TMUX_BIN`. Every test
-resolves its binary through it, so this exercises the release named rather than
-whichever one the machine ships:
+Every test resolves its binary through the fixture: `LIBTMUX_TMUX_BIN`, then the
+first `tmux` on `PATH`, then the usual installed locations. Point the suite at
+one tmux release with the variable, which exercises the release named rather
+than whichever one `PATH` finds first:
 
 ```console
 $ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux \

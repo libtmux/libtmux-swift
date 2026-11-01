@@ -374,15 +374,27 @@ public func waitForSocketClosure(_ path: String) async throws -> Bool {
     }
 }
 
-/// The lane binary when a matrix runner selected one, otherwise whatever `tmux`
-/// resolves to. Resolved to a path because the transport never searches `PATH`.
+/// The lane binary when a matrix runner selected one, otherwise the first `tmux` on
+/// `PATH`, otherwise the first usual install location that exists. A bare name in
+/// the variable is searched for on `PATH`. Resolved to a path because the transport
+/// never searches `PATH`.
 public func tmuxExecutablePath() -> String {
-    if let selected = ProcessInfo.processInfo.environment["LIBTMUX_TMUX_BIN"],
-        !selected.isEmpty
-    {
-        return selected
+    tmuxExecutablePath(resolving: ProcessInfo.processInfo.environment)
+}
+
+/// Looks `tmux` up the way ``Server`` does, so a run tests the binary a caller gets.
+func tmuxExecutablePath(
+    resolving environment: [String: String],
+    installedLocations: [String] = [
+        "/usr/bin/tmux", "/usr/local/bin/tmux", "/opt/homebrew/bin/tmux",
+    ]
+) -> String {
+    if let selected = environment["LIBTMUX_TMUX_BIN"], !selected.isEmpty {
+        return resolvedExecutable(selected, searching: environment)
     }
-    for candidate in ["/usr/bin/tmux", "/usr/local/bin/tmux", "/opt/homebrew/bin/tmux"]
+    let found = resolvedExecutable("tmux", searching: environment)
+    if found.contains("/") { return found }
+    for candidate in installedLocations
     where FileManager.default.isExecutableFile(atPath: candidate) {
         return candidate
     }
