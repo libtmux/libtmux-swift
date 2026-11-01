@@ -81,6 +81,12 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
     root = Path(directory)
     socket = str(root / "s")
     env = dict(os.environ, LIBTMUX_TMUX_BIN=tmux, TERM="xterm", HOME=directory)
+    for name in [
+        "TMUX",
+        "TMUX_PANE",
+        *(n for n in env if n.startswith("LIBTMUX_SOCKET")),
+    ]:
+        env.pop(name, None)
     env.pop("TMUXP_PROGRESS", None)
     env.pop("TMUXP_PROGRESS_LINES", None)
     env.pop("TMUXP_PROGRESS_FORMAT", None)
@@ -103,6 +109,7 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
     )
     subprocess.run(
         [tmux, "-f", "/dev/null", "-S", socket, "new-session", "-d", "-s", "keeper"],
+        env=env,
         check=True,
     )
     checked = 0
@@ -224,7 +231,7 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
             and diagnostic.count(b"\n") == 1
         ), (code, out, err)
         sessions = subprocess.check_output(
-            [tmux, "-S", socket, "list-sessions", "-F", "#{session_name}"]
+            [tmux, "-S", socket, "list-sessions", "-F", "#{session_name}"], env=env
         ).splitlines()
         # An interruption is not rolled back: the same signal that stopped
         # the build could just as well stop the cleanup that would follow
@@ -251,6 +258,7 @@ with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
     finally:
         subprocess.run(
             [tmux, "-S", socket, "kill-server"],
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,

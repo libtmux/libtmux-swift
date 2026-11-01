@@ -1,8 +1,8 @@
 import Foundation
 import Testing
-import TmuxFixture
 
 @testable import LibTmux
+@testable import TmuxFixture
 
 #if canImport(Darwin)
     import Darwin
@@ -27,7 +27,7 @@ struct MCPExecutableContractTests {
             process.standardInput = input
             process.standardOutput = output
             process.standardError = Pipe()
-            var environment = ProcessInfo.processInfo.environment
+            var environment = sandboxedEnvironment()
             for key in environment.keys where key.hasPrefix("LIBTMUX_") {
                 environment.removeValue(forKey: key)
             }
@@ -39,10 +39,11 @@ struct MCPExecutableContractTests {
             environment["LIBTMUX_TMUX_BIN"] = tmuxExecutablePath()
             environment["LIBTMUX_SOCKET_PATH"] = incarnation.socketPath
             environment["LIBTMUX_TOOLSETS"] = "execute"
+            // The partial context under test, on the fixture's own server: `TMUX`
+            // with no `TMUX_PANE`. Nothing else reaches the child from outside.
             environment["TMUX"] =
                 "\(incarnation.socketPath),\(incarnation.processID),"
                 + session.id.rawValue.dropFirst()
-            environment.removeValue(forKey: "TMUX_PANE")
             process.environment = environment
             try process.run()
             defer {
@@ -73,7 +74,7 @@ struct MCPExecutableContractTests {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = Pipe()
-        var environment = ProcessInfo.processInfo.environment
+        var environment = sandboxedEnvironment()
         environment["LIBTMUX_SOCKET_PATH"] = "/tmp/libtmux-swift-test/stdio-unstarted"
         environment["LIBTMUX_TOOLSETS"] = ""
         environment.removeValue(forKey: "LIBTMUX_SAFETY")
@@ -105,13 +106,14 @@ struct MCPExecutableContractTests {
         )
         defer { try? FileManager.default.removeItem(at: socketDirectory) }
 
-        var environment = ProcessInfo.processInfo.environment
+        // No `TMUX` and a `TMUX_TMPDIR` of its own: the daemon the child owns,
+        // and the `kill-server` below, can only be on this case's directory.
+        var environment = sandboxedEnvironment(tmuxTemporaryDirectory: socketDirectory.path)
         for key in environment.keys where key.hasPrefix("LIBTMUX_") {
             environment.removeValue(forKey: key)
         }
         // The daemon this starts is the one the lane is meant to exercise.
         environment["LIBTMUX_TMUX_BIN"] = tmuxExecutablePath()
-        environment["TMUX_TMPDIR"] = socketDirectory.path
 
         let input = Pipe()
         let output = Pipe()

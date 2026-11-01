@@ -12,6 +12,15 @@ changelog marks each break. Pin an exact version to avoid one.
 
 ### Changed
 
+- This package's own test run must be started with `Scripts/swift-test`, which
+  takes `swift test`'s arguments. It removes `TMUX`, `TMUX_PANE` and every
+  `LIBTMUX_SOCKET*` variable, gives the run a private `TMUX_TMPDIR` under
+  `/tmp/libtmux-swift-test/`, and stops any tmux server the run left behind,
+  failing the run when it finds one. A bare `swift test` of this package is
+  refused by the first fixture it reaches. A package that depends on
+  `TmuxFixture` is held to the same rules only when its run sets
+  `LIBTMUX_TEST_SANDBOX`, as the script does. (#92)
+
 - JSON layouts (`layout-json`) require tmux 3.8, the first release that
   accepts one. `Server.selectLayout(_:_:)`, `Server.validateLayouts(_:)` and
   the MCP `select_layout` tool refuse one on an older tmux before the layout

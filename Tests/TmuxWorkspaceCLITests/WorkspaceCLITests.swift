@@ -1,9 +1,9 @@
 import Foundation
 import LibTmux
 import Testing
-import TmuxFixture
 import TmuxWorkspace
 
+@testable import TmuxFixture
 @testable import TmuxWorkspaceCLI
 
 #if canImport(Darwin)
@@ -634,7 +634,9 @@ struct WorkspaceCLITests {
                     "--log-file", root.appendingPathComponent("limited.log").path,
                     "--log-level", "info",
                 ]
-                process.environment = ProcessInfo.processInfo.environment.merging([
+                process.environment = sandboxedEnvironment(
+                    tmuxTemporaryDirectory: root.path
+                ).merging([
                     "LIBTMUX_TMUX_BIN": server.tmuxExecutable, "TMUXP_CONFIGDIR": root.path,
                 ]) { _, new in new }
                 let stdout = Pipe()
@@ -2942,7 +2944,7 @@ struct WorkspaceCLITests {
     {
         let output = Lines()
         let error = Lines()
-        var environment = ProcessInfo.processInfo.environment
+        var environment = sandboxedEnvironment(tmuxTemporaryDirectory: root.path)
         environment["HOME"] = root.path
         environment["TMUXP_CONFIGDIR"] = root.path
         environment["LIBTMUX_TMUX_BIN"] = "/unavailable-tmux"

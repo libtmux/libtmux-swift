@@ -36,11 +36,12 @@ $ swift build --jobs 5 --force-resolved-versions
 Hosted CI gets a runner to itself and should keep the default; this is for a
 machine someone is also working on. Serial tests are worth pairing with it —
 they keep a loaded machine from being the reason a timing case fails — and one
-lock file keeps two runs from overlapping:
+lock file keeps two runs from overlapping. `Scripts/swift-test` stands where
+`swift test` does, and the next section says why:
 
 ```console
 $ nice -n 10 flock /tmp/libtmux-swift-test/.swift.lock \
-    swift test --jobs 5 --no-parallel --force-resolved-versions
+    Scripts/swift-test --jobs 5 --no-parallel --force-resolved-versions
 ```
 
 That the default configuration builds is its own check, because the trait-on
@@ -63,30 +64,53 @@ toolchain every command is prefixed `xcrun`.
 The suite runs against real tmux — no mocks of the server — one private socket
 per case, with servers reaped even when a run is killed outright.
 
+Start it with `Scripts/swift-test`, which takes the same arguments as
+`swift test`. tmux follows an inherited `TMUX` to the server its caller is
+inside, ahead of `TMUX_TMPDIR`, and `TMUX_PANE` and the `LIBTMUX_SOCKET*`
+variables pick a pane and a socket for the executables. A suite started from a
+tmux pane would reach that server as soon as one case named no socket, so the
+script removes them and gives the run a fresh owner-only `TMUX_TMPDIR` under
+`/tmp/libtmux-swift-test/`, removed when the run ends. It marks the run in
+`LIBTMUX_TEST_SANDBOX`, which the fixtures check: a test run of this package
+started any other way is refused by the first fixture it reaches, and fails
+`SandboxTests`, both naming the script. A package that depends on `TmuxFixture`
+is held to the sandbox only when its run carries the marker.
+
+Before it removes its directory the script looks for sockets anywhere under it,
+whoever named them, and stops any server still listening on one, since removing
+the socket of a live server leaves one nothing can address. It checks for up to
+three seconds that each stopped server no longer accepts a connection, and fails
+the run naming those sockets even when the tests passed. A socket file nothing
+listens on is not a leak. A case that starts a server, on tmux's default socket
+or one it names with `-S`, stops it and waits for it to go. If a server cannot
+be stopped the directory stays. Checking takes `python3`.
+
 The `YAMLWorkspaces` trait is off by default; the YAML reader and the tests
 that exercise it come with it. A bare
-`swift test --force-resolved-versions` passes while covering less, which is why
-the gate names the trait:
+`Scripts/swift-test --force-resolved-versions` passes while covering less,
+which is why the gate names the trait:
 
 ```console
-$ swift test --traits YAMLWorkspaces --force-resolved-versions
+$ Scripts/swift-test --traits YAMLWorkspaces --force-resolved-versions
 ```
 
 The named-socket cases resolve a socket *name*, which tmux looks up inside
 `TMUX_TMPDIR` — whose default is shared with every other tmux on this machine,
-the other ports' included. Name the directory and those cases run; without it
-they skip and say why:
+the other ports' included. The script's directory is under the test root, so
+those cases run. To put the run's directory under a parent of your own, name
+an absolute path in `LIBTMUX_TEST_TMUX_TMPDIR`; the script makes its owner-only
+directory inside it and removes that directory afterwards. It refuses a parent
+that is a link, is not empty, holds a `tmux-<uid>` directory, or is so long that
+the default socket under it would pass 100 bytes, and it never changes the mode
+of one that exists, so it cannot be pointed at a directory some tmux is using.
+The named-socket cases skip and say why unless the directory is under the test
+root.
 
-```console
-$ TMUX_TMPDIR=/tmp/libtmux-swift-test/named \
-    swift test \
-    --traits YAMLWorkspaces \
-    --force-resolved-versions
-```
-
-The fixture does not set that variable itself: `setenv` writes to `environ`
+The fixture does not set `TMUX_TMPDIR` itself: `setenv` writes to `environ`
 while other cases are concurrently reading it to build a tmux environment,
-which is a data race whether or not it has bitten yet.
+which is a data race whether or not it has bitten yet. A child process a case
+starts takes `sandboxedEnvironment()` instead of the process environment, so it
+holds none of those variables either way.
 
 Point the suite at one tmux release with `LIBTMUX_TMUX_BIN`. Every test
 resolves its binary through it, so this exercises the release named rather than
@@ -94,15 +118,20 @@ whichever one the machine ships:
 
 ```console
 $ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux \
-    swift test \
+    Scripts/swift-test \
     --force-resolved-versions
 ```
 
 The examples are their own package and are run separately:
 
 ```console
-$ swift test --package-path Examples --force-resolved-versions
+$ Scripts/swift-test --package-path Examples --force-resolved-versions
 ```
+
+`Tools/McpSwap` starts no tmux, so its suite runs as plain `swift test`.
+`dev/Spikes` does start tmux, through its own fixture and
+`dev/Spikes/Scripts/test-spikes.sh`; neither the script nor the canary covers
+it.
 
 CI also copies `tmux-workspace` outside `.build` and runs its terminal checks
 on every platform and tmux version. Run these after the trait-on test build;
@@ -140,7 +169,7 @@ a wrong value, and the commit touched nothing the case reads. Re-running the one
 case in a loop is cheaper than another round of CI:
 
 ```console
-$ for _ in $(seq 20); do swift test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
+$ for _ in $(seq 20); do Scripts/swift-test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
 ```
 
 Every suite carries `.timeLimit(.minutes(5))`, and that number is a backstop
@@ -318,9 +347,12 @@ $ python3 Scripts/check_socket_namespace.py
 That script reads literal `Server(socketPath:)` and `Server(socketName:)` calls.
 A path records its root; a name must identify this port, while
 `namedSocketsAvailable` separately proves the suite placed it under the test
-root. The script cannot see whether a server was *started* — nothing reaches
-the filesystem until a command runs against it — so deliberate exceptions are
-listed beside their reason.
+root. It also fails a `Server` constructed with no socket, a
+`TmuxContext.current()` with no environment, and a `makeServer()` outside
+`Sources/`: each follows `TMUX` or tmux's default socket, so a test that calls
+one drives the server its developer is inside. The script cannot see whether a
+server was *started* — nothing reaches the filesystem until a command runs
+against it — so deliberate exceptions are listed beside their reason.
 
 Every continuation the library suspends can be resumed by cancelling it:
 

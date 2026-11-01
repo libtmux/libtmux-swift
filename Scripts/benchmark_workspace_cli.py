@@ -78,8 +78,12 @@ def main():
             LIBTMUX_TMUX_BIN=args.tmux,
             TMUX_WORKSPACE_PYTHON=args.python,
         )
-        env.pop("TMUX", None)
-        env.pop("TMUX_PANE", None)
+        for name in [
+            "TMUX",
+            "TMUX_PANE",
+            *(n for n in env if n.startswith("LIBTMUX_SOCKET")),
+        ]:
+            env.pop(name, None)
         env["PATH"] = str(Path(args.tmux).resolve().parent) + os.pathsep + env["PATH"]
         reference_tmux = shutil.which("tmux", path=env["PATH"])
         if reference_tmux is None or Path(reference_tmux).resolve() != Path(args.tmux):
@@ -124,6 +128,7 @@ def main():
         def kill():
             subprocess.run(
                 [args.tmux, "-S", str(socket), "kill-server"],
+                env=env,
                 capture_output=True,
                 timeout=5,
                 check=False,
