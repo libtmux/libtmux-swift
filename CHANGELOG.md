@@ -10,6 +10,8 @@ changelog marks each break. Pin an exact version to avoid one.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-01
+
 ### Added
 
 - `Server()` builds a server that passes tmux neither `-L` nor `-S`, so tmux
