@@ -98,8 +98,8 @@ jobs:
       # not carry, and a cached build installs nothing else.
       - name: Install the libevent runtime
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends libevent-2.1-7t64
+          ./Scripts/apt-get.sh update
+          ./Scripts/apt-get.sh install --yes --no-install-recommends libevent-2.1-7t64
 
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
@@ -111,8 +111,8 @@ jobs:
       - name: Install build dependencies
         if: steps.tmux-cache.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
+          ./Scripts/apt-get.sh update
+          ./Scripts/apt-get.sh install --yes --no-install-recommends \
             bison libevent-dev libncurses-dev pkg-config
 
       - name: Build tmux ${{ matrix.tmux }}
@@ -138,8 +138,8 @@ jobs:
         env:
           CLIENT: ${{ matrix.client }}
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
+          ./Scripts/apt-get.sh update
+          ./Scripts/apt-get.sh install --yes --no-install-recommends \
             bison libevent-dev libncurses-dev pkg-config
           python3 Scripts/tmux_ref.py build --source release \
             --ref "$CLIENT" --prefix "$HOME/tmux-$CLIENT"
@@ -223,8 +223,8 @@ jobs:
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.tmux-cache.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
+          ./Scripts/apt-get.sh update
+          ./Scripts/apt-get.sh install --yes --no-install-recommends \
             automake autoconf bison libevent-dev libncurses-dev pkg-config
 
       - name: Build tmux ${{ matrix.tmux }}
@@ -254,8 +254,8 @@ jobs:
         env:
           CLIENT: ${{ matrix.client }}
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
+          ./Scripts/apt-get.sh update
+          ./Scripts/apt-get.sh install --yes --no-install-recommends \
             automake autoconf bison libevent-dev libncurses-dev pkg-config
           python3 Scripts/tmux_ref.py build --source release \
             --ref "$CLIENT" --prefix "$HOME/tmux-$CLIENT"
