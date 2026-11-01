@@ -304,18 +304,6 @@ extension Server {
         try await expectSuccess(TmuxCommand("start-server"))
     }
 
-    package func startServer(
-        launchEnvironment: [String: String]
-    ) async throws(TmuxError) {
-        let reply = try await run(
-            TmuxCommand("start-server"),
-            launchEnvironment: launchEnvironment
-        )
-        guard reply.isSuccess else {
-            throw .invocationFailed(reason: reply.errorText)
-        }
-    }
-
     public func killServer() async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("kill-server"))
     }

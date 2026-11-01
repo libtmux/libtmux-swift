@@ -333,16 +333,6 @@ public struct Server: Sendable, Hashable {
         return try await connection.reply(to: rawArguments)
     }
 
-    package func run(
-        _ command: TmuxCommand,
-        launchEnvironment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply {
-        try await runtime.run(
-            rawArguments: command.argumentVector,
-            environmentOverrides: launchEnvironment
-        )
-    }
-
     func versionCheck() async throws(TmuxError) -> (version: ServerVersion, live: Bool) {
         try await runtime.checkVersion()
     }
@@ -697,19 +687,14 @@ actor ServerRuntime {
 
     func run(
         rawArguments: [String],
-        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit,
-        environmentOverrides: [String: String] = [:]
+        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit
     ) async throws(TmuxError) -> TmuxReply {
         guard perStreamOutputLimit >= 0 else {
             throw .invocationFailed(reason: "output limit cannot be negative")
         }
         try requireTmuxCommandFits(rawArguments)
         guard checkingVersions else {
-            return try await send(
-                rawArguments,
-                perStreamOutputLimit: perStreamOutputLimit,
-                environmentOverrides: environmentOverrides
-            )
+            return try await send(rawArguments, perStreamOutputLimit: perStreamOutputLimit)
         }
         var retried = false
         while true {
@@ -721,8 +706,7 @@ actor ServerRuntime {
                     // for a release floor to protect. `-N` keeps the client
                     // from starting the server it was asked to stop.
                     return try await send(
-                        ["-N"] + rawArguments, perStreamOutputLimit: perStreamOutputLimit,
-                        environmentOverrides: environmentOverrides)
+                        ["-N"] + rawArguments, perStreamOutputLimit: perStreamOutputLimit)
                 }
             }
             let (checked, live) = try await checkVersion()
@@ -734,8 +718,7 @@ actor ServerRuntime {
                 // A daemon that vanished after the check must not be restarted
                 // by a client whose release was never checked.
                 (live ? ["-N"] : []) + fenced,
-                perStreamOutputLimit: perStreamOutputLimit,
-                environmentOverrides: environmentOverrides
+                perStreamOutputLimit: perStreamOutputLimit
             )
             if Support.Versions.isRefusal(reply, marker: marker) {
                 // Nothing ran. The daemon is not the one that was checked,
@@ -867,20 +850,17 @@ actor ServerRuntime {
 
     private func send(
         _ rawArguments: [String],
-        perStreamOutputLimit: Int,
-        environmentOverrides: [String: String] = [:]
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         // Copied out of isolation before the await so the actor is not held for
         // the lifetime of a tmux process.
         let transport = self.transport
         let executable = tmuxExecutable
         let arguments = clientArguments + endpoint.addressArguments + rawArguments
-        var environment = TmuxProcessEnvironment.variables()
-        environment.merge(environmentOverrides) { _, override in override }
         let reply = try await transport.run(
             executable: executable,
             arguments: arguments,
-            environment: environment,
+            environment: TmuxProcessEnvironment.variables(),
             perStreamOutputLimit: perStreamOutputLimit
         )
         try requireReplyFitsLimit(reply, perStreamOutputLimit)
