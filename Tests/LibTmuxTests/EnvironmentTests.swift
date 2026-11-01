@@ -19,7 +19,41 @@ struct EnvironmentTests {
         var nested = caller
         nested["TMUX"] = "/tmp/libtmux-swift-test/outer,1,0"
         nested["TMUX_PANE"] = "%7"
-        #expect(TmuxProcessEnvironment.controlAttachmentVariables(readingFrom: nested) == caller)
+        let socket = Endpoint.socketPath("/tmp/libtmux-swift-test/s")
+        let name = Endpoint.socketName("libtmux-swift-name")
+        #expect(
+            TmuxProcessEnvironment.controlAttachmentVariables(for: socket, readingFrom: nested)
+                == caller)
+        #expect(
+            TmuxProcessEnvironment.controlAttachmentVariables(for: name, readingFrom: nested)
+                == caller)
+    }
+
+    @Test("a pane's TMUX and TMUX_PANE reach the clients a server starts")
+    func aPanesSelectorsReachTheClient() {
+        let pane = [
+            "PATH": "/usr/bin:/bin",
+            "TMUX": "/tmp/libtmux-swift-test/outer,1,0",
+            "TMUX_PANE": "%7",
+        ]
+        let handed = TmuxProcessEnvironment.variables(readingFrom: pane)
+        #expect(handed["TMUX"] == pane["TMUX"])
+        #expect(handed["TMUX_PANE"] == pane["TMUX_PANE"])
+        #expect(handed["PATH"] == pane["PATH"])
+    }
+
+    @Test("a control client for an endpoint that names no socket keeps the TMUX that picks it")
+    func controlAttachmentFollowsTmuxWhenNoSocketIsNamed() {
+        let pane = [
+            "PATH": "/usr/bin:/bin",
+            "TMUX": "/tmp/libtmux-swift-test/outer,1,0",
+            "TMUX_PANE": "%7",
+        ]
+        let attached = TmuxProcessEnvironment.controlAttachmentVariables(
+            for: .tmuxChoice, readingFrom: pane)
+        #expect(attached["TMUX"] == pane["TMUX"])
+        #expect(attached["TMUX_PANE"] == nil)
+        #expect(attached["PATH"] == pane["PATH"])
     }
 
     @Test(

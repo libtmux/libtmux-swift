@@ -61,6 +61,7 @@ enum ProcessCommands {
         switch server.endpoint {
         case let .socketPath(path): arguments += ["-S", path]
         case let .socketName(name): arguments += ["-L", name]
+        case .tmuxChoice: break
         }
         arguments.append("--" + command.backend.rawValue)
         arguments.append(command.startup == .usePythonrc ? "--use-pythonrc" : "--no-startup")

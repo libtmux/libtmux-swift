@@ -56,6 +56,9 @@ ALLOWED = {
 # A construction that names no socket, in code that is not shipped, and why it
 # is acceptable there.
 AMBIENT_ALLOWED = {
+    # Reads the endpoint a configuration chose from an environment the test
+    # wrote out; no command is sent to the server it builds.
+    ("Tests/LibTmuxMCPTests/SocketSelectionTests.swift", "makeServer()"),
     # Compiled, never executed: it shows a reader the call, and the example is
     # only non-nil inside tmux.
     ("Examples/Sources/ExampleCode/Snapshots.swift", "TmuxContext.current()"),
@@ -131,6 +134,17 @@ def in_comment(text: str, offset: int) -> bool:
     return "//" in text[text.rfind("\n", 0, offset) + 1 : offset]
 
 
+def names_a_socket(arguments: str) -> bool:
+    """Say whether the arguments of a `Server(` decide which socket it uses.
+
+    An `environment:` does when it is written out, since the two variables are
+    read from it and nothing else; one taken from the process does not.
+    """
+    if ADDRESSING_LABEL.search(arguments):
+        return True
+    return bool(ENVIRONMENT_LABEL.search(arguments)) and "ProcessInfo" not in arguments
+
+
 def ambient_constructions(relative: str, text: str) -> list[str]:
     """Report each construction in `text` that names no socket, outside `Sources/`."""
     if relative.startswith("Sources/"):
@@ -138,7 +152,7 @@ def ambient_constructions(relative: str, text: str) -> list[str]:
     found: list[tuple[int, str]] = []
     for match in SERVER_CALL.finditer(text):
         inside = arguments_of(text, match.end() - 1)
-        if not ADDRESSING_LABEL.search(inside):
+        if not names_a_socket(inside):
             found.append((match.start(), "Server()"))
     found.extend(
         (match.start(), "TmuxContext.current()")

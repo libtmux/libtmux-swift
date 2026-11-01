@@ -168,6 +168,20 @@ extension Server {
         attachingTo session: String,
         _ body: @escaping @Sendable (ControlSession) async throws -> Result
     ) async throws -> Result {
+        try await withControlMode(
+            attachingTo: session,
+            readingEnvironmentFrom: ProcessInfo.processInfo.environment,
+            body)
+    }
+
+    /// ``withControlMode(attachingTo:_:)`` with the environment the control
+    /// client's own is made from, so a case can say which selectors a process in
+    /// a pane would hold.
+    func withControlMode<Result: Sendable>(
+        attachingTo session: String,
+        readingEnvironmentFrom environment: [String: String],
+        _ body: @escaping @Sendable (ControlSession) async throws -> Result
+    ) async throws -> Result {
         // Decided before any client attaches: the version check reads the daemon's
         // release with a process of its own, and `-N` keeps the attach from
         // starting a replacement under a client whose release was never read.
@@ -183,12 +197,15 @@ extension Server {
             clientArguments + ["-C"] + (live ? ["-N"] : []) + endpoint.addressArguments
             + ["attach-session", "-E", "-t", session]
 
+        let variables = TmuxProcessEnvironment.controlAttachmentVariables(
+            for: endpoint, readingFrom: environment)
+
         let outcome = try await Subprocess.run(
             Subprocess.Configuration(
                 executable: .path(FilePath(tmuxExecutablePath)),
                 arguments: Arguments(arguments),
                 environment: .custom(
-                    TmuxProcessEnvironment.controlAttachmentVariables().reduce(into: [:]) {
+                    variables.reduce(into: [:]) {
                         keys, variable in
                         keys[Subprocess.Environment.Key(rawValue: variable.key)!] =
                             variable.value

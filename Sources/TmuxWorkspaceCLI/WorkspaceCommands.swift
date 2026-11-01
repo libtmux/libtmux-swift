@@ -458,6 +458,7 @@ enum WorkspaceCommands {
         switch endpoint {
         case let .socketPath(path): arguments += ["-S", path]
         case let .socketName(name): arguments += ["-L", name]
+        case .tmuxChoice: break
         }
         return arguments + ["attach-session", "-t", session]
     }

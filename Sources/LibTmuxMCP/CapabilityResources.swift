@@ -78,10 +78,11 @@ struct CapabilityResources: Sendable {
     private static func attachCommand(for server: Server) -> String {
         let endpoint: String
         switch server.endpoint {
-        case let .socketName(name): endpoint = "-L \(shellQuote(name))"
-        case let .socketPath(path): endpoint = "-S \(shellQuote(path))"
+        case let .socketName(name): endpoint = " -L \(shellQuote(name))"
+        case let .socketPath(path): endpoint = " -S \(shellQuote(path))"
+        case .tmuxChoice: endpoint = ""
         }
-        return "\(shellQuote(server.tmuxExecutable)) -N \(endpoint) attach"
+        return "\(shellQuote(server.tmuxExecutable)) -N\(endpoint) attach"
     }
 
     private static func shellQuote(_ value: String) -> String {

@@ -65,6 +65,8 @@ def test_a_server_that_names_no_socket_is_reported(source: str) -> None:
         "let s = Server(\n    tmuxExecutable: executable,\n    endpoint: endpoint\n)",
         'let s = Server(tmuxExecutable: "a (b", endpoint: endpoint)',
         "let c = ServerConfiguration(environment: [:])",
+        "let s = try Server(environment: [:])",
+        'let s = try Server(tmuxExecutable: x, environment: ["LIBTMUX_SOCKET": name])',
         "try await withTmuxServer { server in }",
         "let name = SomeServer()",
         "// Server() is what the next release adds",
@@ -74,6 +76,15 @@ def test_a_server_that_names_no_socket_is_reported(source: str) -> None:
 def test_a_server_that_names_its_socket_passes(source: str) -> None:
     """The label is what matters, wherever it sits in the argument list."""
     assert SCAN("Tests/A.swift", source) == []
+
+
+def test_a_server_that_reads_the_process_environment_is_reported() -> None:
+    """An environment taken from the process is the ambient one."""
+    source = "let s = try Server(environment: ProcessInfo.processInfo.environment)"
+
+    assert SCAN("Tests/A.swift", source) == [
+        "Tests/A.swift:1: Server() names no socket"
+    ]
 
 
 def test_the_context_of_this_process_is_reported() -> None:
