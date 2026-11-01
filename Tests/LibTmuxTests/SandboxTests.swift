@@ -215,6 +215,27 @@ struct SandboxTests {
         }
     }
 
+    @Test("a child started from a thread that blocks SIGTERM can still be stopped by it")
+    func aSpawnedChildDoesNotInheritABlockedSignal() throws {
+        // The runner's worker threads block most signals, and a child inherits
+        // the mask of the thread that starts it. A tmux server that did would
+        // never see the SIGTERM `kill-server` sends itself, and would outlive
+        // the run. The child here sends itself that signal: it dies before it
+        // prints when its mask is clear, and prints when SIGTERM is still blocked.
+        var blocked = sigset_t()
+        sigemptyset(&blocked)
+        sigaddset(&blocked, SIGTERM)
+        var previous = sigset_t()
+        pthread_sigmask(SIG_BLOCK, &blocked, &previous)
+        defer { pthread_sigmask(SIG_SETMASK, &previous, nil) }
+
+        let result = try #require(
+            spawnCapturing(
+                "/bin/sh", ["-c", "kill -TERM $$; echo survived"],
+                environment: ["PATH": "/usr/bin:/bin"]))
+        #expect(result.output == "", "the child inherited a blocked SIGTERM")
+    }
+
     @Test("a client that names no socket lands on the default socket in the sandbox")
     func aBareClientLandsInTheSandbox() async throws {
         try await withBareClient(named: "landing", insideRunDirectory: true) { bare in
