@@ -28,3 +28,7 @@ __pycache__/
 /docs/superpowers/
 /plans/
 /superpowers/
+
+# Variables for a program run by hand, such as the socket of its own that keeps
+# it off your tmux. CONTRIBUTING.md says how to use one.
+.env

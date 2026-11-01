@@ -157,6 +157,33 @@ for the dependencies they resolve and leave the unused Yams pin intact.
 Downstream packages that use the libraries resolve independently. The examples
 package enforces its own `Package.resolved` and leaves the root file alone.
 
+## Running the programs by hand
+
+`tmux-workspace`, `libtmux-mcp` and a program that builds `Server()` pass tmux
+no socket unless `LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET` names one, so tmux
+picks the server: the one you are inside, and your default socket otherwise. Run
+from your shell, they drive your own tmux. To keep a direct invocation away from
+it, give development a socket of its own in a `.env`. `.gitignore` keeps that
+file out of the tree and no target packages it:
+
+```console
+$ mkdir -p /tmp/libtmux-swift-dev
+$ printf 'LIBTMUX_SOCKET_PATH=/tmp/libtmux-swift-dev/dev.sock\n' > .env
+```
+
+Nothing here starts a server for a variable that names a socket nobody listens
+on, so start one before the first command, and stop it when you are done:
+
+```console
+$ set -a && . ./.env && set +a
+$ tmux -S "$LIBTMUX_SOCKET_PATH" -f /dev/null new-session -d -s dev
+$ .build/debug/tmux-workspace freeze dev --json
+$ tmux -S "$LIBTMUX_SOCKET_PATH" kill-server
+```
+
+The test suite does not read `.env`: `Scripts/swift-test` removes the variables
+before anything runs.
+
 ## Flaky, or broken?
 
 The suite drives real tmux, and the cases that wait on an event can be delayed
