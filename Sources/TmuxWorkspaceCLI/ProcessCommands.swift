@@ -58,6 +58,9 @@ enum ProcessCommands {
             cli(sys.argv[1:])
             """, "--color", "never", "shell",
         ]
+        // tmuxp reads neither variable, so a socket one of them chose is passed
+        // on. With none, tmuxp does what it does without a flag: it follows
+        // `TMUX` inside tmux and uses the default socket elsewhere.
         switch server.endpoint {
         case let .socketPath(path): arguments += ["-S", path]
         case let .socketName(name): arguments += ["-L", name]
