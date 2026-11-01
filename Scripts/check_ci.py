@@ -6,7 +6,8 @@ page states a range or a table the manifest does not, when the workflow carries
 a version list of its own, and when the workflow structure the plan relies on
 has been undone: a dispatch input spliced into a script, a tmate step that is
 not pinned or not limited to the actor, an aggregate job that forgot a job, a
-workflow that no longer runs on a tag.
+workflow that no longer runs on a tag, a script that calls apt-get or apt
+without `Scripts/apt-get.sh`.
 
     python3 Scripts/check_ci.py
 """
@@ -30,6 +31,7 @@ RANGE_PAGES = (
 EDGE_PAGES = ("README.md", ".github/CONTRIBUTING.md")
 CONTRIBUTING = ".github/CONTRIBUTING.md"
 WORKFLOWS = ".github/workflows"
+ACTIONS = ".github/actions"
 
 RANGE_CLAIM = re.compile(r"(\d+\.\d+[a-z]?) through (\d+\.\d+[a-z]?), and (\w+)")
 TABLE_ROW = re.compile(r"\| tmux \| ([^|]+?) \|")
@@ -42,6 +44,15 @@ SPLICED = re.compile(
     r")"
 )
 RUN_KEY = re.compile(r"^(\s*)(?:- )?run:\s*(.*)$")
+# `apt-get` or `apt` where a command starts: after a separator, a shell keyword,
+# or `sudo`/`env`, their options and any VAR=value words. A path such as
+# `./Scripts/apt-get.sh` and `apt-cache` do not match.
+RAW_APT = re.compile(
+    r"(?:^|[;&|({]|\b(?:then|do|else|sudo|env|exec|time)\b)"
+    r"(?:\s+(?:-\S+|\w+=\S*))*\s*(apt-get|apt)(?![\w./-])"
+)
+STEP_START = re.compile(r"^(\s*)- (?:name|id|if|uses|run|env|with|shell):")
+JOB_ID = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 
 
 def _load_plan() -> object:
@@ -95,6 +106,49 @@ def _jobs(text: str) -> dict[str, str]:
 
 def _steps(job: str) -> list[str]:
     return re.split(r"(?m)^      - ", job)[1:]
+
+
+def _where(lines: list[str], number: int) -> str:
+    """Return the job and step that line `number` (1-based) of a workflow is in."""
+    start = next(
+        (i for i in range(number - 1, -1, -1) if STEP_START.match(lines[i])), None
+    )
+    if start is None:
+        return "outside a step"
+    indent = len(STEP_START.match(lines[start])[1])
+    named = re.compile(rf"^ {{{indent}}}(?:- |  )name:\s*(.*?)\s*$")
+    end = next(
+        (i for i in range(start + 1, len(lines)) if STEP_START.match(lines[i])),
+        len(lines),
+    )
+    step = "unnamed"
+    for line in lines[start:end]:
+        if match := named.match(line):
+            step = repr(match[1].strip("'\""))
+            break
+    job = ""
+    if "jobs:" in lines:
+        for line in reversed(lines[:start]):
+            if line == "jobs:":
+                break
+            if match := JOB_ID.match(line):
+                job = f"job {match[1]}, "
+                break
+    return f"{job}step {step}"
+
+
+def check_apt(text: str, name: str) -> list[str]:
+    """Return each `run` line of a workflow or action that calls apt directly."""
+    lines = text.splitlines()
+    problems: list[str] = []
+    for number, body in _run_bodies(text):
+        call = None if body.lstrip().startswith("#") else RAW_APT.search(body)
+        if call:
+            problems.append(
+                f"{name}:{number} {_where(lines, number)} calls {call[1]} directly; "
+                "run it through Scripts/apt-get.sh"
+            )
+    return problems
 
 
 def check_docs(root: pathlib.Path, manifest: object) -> list[str]:
@@ -232,6 +286,12 @@ def check(root: pathlib.Path) -> list[str]:
         for path in sorted(workflows.glob("*.yml"))
         if path.name != "ci.yml" and TMATE.search(path.read_text())
     ]
+    scripts = [
+        *sorted(workflows.glob("*.y*ml")),
+        *sorted((root / ACTIONS).glob("*/action.y*ml")),
+    ]
+    for path in scripts:
+        problems += check_apt(path.read_text(), str(path.relative_to(root)))
     return problems
 
 
