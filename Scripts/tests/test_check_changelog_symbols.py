@@ -47,3 +47,25 @@ def test_an_extension_adds_to_the_type_it_extends(tmp_path: Path) -> None:
     )
 
     assert "sessions" in members["Server"]
+
+
+def test_every_changelog_is_read(tmp_path: Path) -> None:
+    """An entry moved to a product's changelog goes stale like any other."""
+    (tmp_path / "Sources" / "Product").mkdir(parents=True)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "- `Server.sessions()` lists.\n", encoding="utf-8"
+    )
+    (tmp_path / "Sources" / "Product" / "CHANGELOG.md").write_text(
+        "- `Server.gone()` was removed.\n", encoding="utf-8"
+    )
+    members = {"Server": {"sessions"}}
+
+    paths = GATE["changelogs"](tmp_path)
+    reported = GATE["unresolved"](paths, members)
+
+    assert [path.relative_to(tmp_path).as_posix() for path in paths] == [
+        "CHANGELOG.md",
+        "Sources/Product/CHANGELOG.md",
+    ]
+    assert len(reported) == 1
+    assert "Sources/Product/CHANGELOG.md:1: Server.gone does not exist" in reported[0]

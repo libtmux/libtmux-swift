@@ -36,7 +36,7 @@ a newer view.
 > [!WARNING]
 > Releases are numbered `0.1.N`, and each release increments `N`. The API is
 > not settled: any release may change or remove exported identifiers, and the
-> changelog marks each break. Pin an exact version to avoid one.
+> [changelog](CHANGELOG.md) marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [Install](#install) ·
 [Asking](#find-sessions-windows-and-panes) ·
@@ -952,6 +952,10 @@ unless you ask.
 
 Each has its own README with an install snippet, a usage example, and what it
 does and does not cover.
+
+Each product keeps its own changelog: [`LibTmux`](CHANGELOG.md),
+[`TmuxWorkspace`](Sources/TmuxWorkspace/CHANGELOG.md) and
+[`LibTmuxMCP`](Sources/LibTmuxMCP/CHANGELOG.md).
 
 [`TmuxWorkspace`][mod-tmuxworkspace] and [`LibTmuxMCP`][mod-libtmuxmcp] are both
 written against [`Server`][api-server] and neither mentions a mode, so both work

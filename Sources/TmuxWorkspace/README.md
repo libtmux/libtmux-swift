@@ -168,6 +168,8 @@ creates goes through [`WorkspaceBuilder`][api-workspacebuilder]. Its
   or a file
 - [Workspace configuration][ref-ws-config]: the keys a file may use
 - [Swift Package Index][spi-workspace]
+- [Changelog](CHANGELOG.md): what each release changed, for this product and
+  the `tmux-workspace` command
 
 [tmuxp]: https://tmuxp.git-pull.com/
 [rs]: https://github.com/libtmux/libtmux-rs

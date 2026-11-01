@@ -201,6 +201,7 @@ $ printf '%s\n' \
   [`tmux://capabilities`][ref-capabilities] resource
 - [API pages][ref-mcp-reference] for the embedding types, and
   [Swift Package Index][spi-mcp]
+- [Changelog](../LibTmuxMCP/CHANGELOG.md): what each release changed
 
 [MCP]: https://modelcontextprotocol.io
 [spi-mcp]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmuxmcp

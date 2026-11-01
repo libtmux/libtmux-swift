@@ -12,6 +12,9 @@ Only qualified references are checked -- `Owner.member(labels:)` and
 type name would drag in every Swift standard library name a sentence mentions,
 and an unqualified method name has no owner to check against.
 
+Every changelog is read: the root file and the one beside each product's
+sources, since an entry moved to a product file goes stale the same way.
+
     python3 Scripts/check_changelog_symbols.py
     python3 Scripts/check_changelog_symbols.py --changelog CHANGELOG.md
 """
@@ -65,28 +68,40 @@ def declarations(root: pathlib.Path) -> dict[str, set[str]]:
     return members
 
 
+def changelogs(root: pathlib.Path) -> list[pathlib.Path]:
+    """Return the root changelog and the one beside each product's sources."""
+    return [root / "CHANGELOG.md", *sorted(root.glob("Sources/*/CHANGELOG.md"))]
+
+
+def unresolved(paths: list[pathlib.Path], members: dict[str, set[str]]) -> list[str]:
+    """Describe every qualified reference in `paths` that no longer resolves."""
+    failures = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), 1):
+            for owner, member, _ in REFERENCE.findall(line):
+                if owner not in members:
+                    continue
+                if member in members[owner]:
+                    continue
+                elsewhere = sorted(o for o, names in members.items() if member in names)
+                hint = f" -- declared on {', '.join(elsewhere)}" if elsewhere else ""
+                failures.append(
+                    f"{path}:{number}: {owner}.{member} does not exist{hint}"
+                )
+    return failures
+
+
 def main() -> int:
     """Report every qualified reference that no longer resolves."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--changelog", default="CHANGELOG.md")
+    parser.add_argument("--changelog", action="append", type=pathlib.Path)
     parser.add_argument("--sources", default="Sources")
     arguments = parser.parse_args()
 
     members = declarations(pathlib.Path(arguments.sources))
-    text = pathlib.Path(arguments.changelog).read_text(encoding="utf-8")
-
-    failures = []
-    for number, line in enumerate(text.splitlines(), 1):
-        for owner, member, _ in REFERENCE.findall(line):
-            if owner not in members:
-                continue
-            if member in members[owner]:
-                continue
-            elsewhere = sorted(o for o, names in members.items() if member in names)
-            hint = f" -- declared on {', '.join(elsewhere)}" if elsewhere else ""
-            failures.append(
-                f"{arguments.changelog}:{number}: {owner}.{member} does not exist{hint}"
-            )
+    paths = arguments.changelog or changelogs(pathlib.Path())
+    failures = unresolved(paths, members)
 
     for failure in failures:
         print(failure, file=sys.stderr)

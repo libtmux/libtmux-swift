@@ -6,7 +6,7 @@ name: release
 # notes for that version, marked prerelease while the version says it is one.
 #
 # The tag is pushed by hand. This refuses one that disagrees with
-# `LibTmuxVersion.current` or that the changelog does not describe, so a
+# `LibTmuxVersion.current` or that the changelogs do not describe, so a
 # mistyped tag fails here rather than becoming a version somebody depends on.
 #
 # Runnable by hand as a dry run, which checks the version and the notes without
@@ -63,22 +63,17 @@ jobs:
           fi
           echo "version=$declared" >> "$GITHUB_OUTPUT"
 
-      - name: Take the notes from the changelog
+      - name: Take the notes from the changelogs
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          # From this version's heading to the next one, so the notes are the
-          # section a reader of the changelog already has.
-          awk -v tag="$VERSION" '
-            $0 ~ "^## \\[" tag "\\]" { collecting = 1; next }
-            collecting && /^## \[/ { exit }
-            collecting { print }
-          ' CHANGELOG.md > notes.md
-          # Non-blank rather than non-empty: a heading with nothing under it
-          # extracts as a single newline, which has a size but says nothing.
-          if ! grep -q '[^[:space:]]' notes.md; then
-            echo "::error::CHANGELOG.md has no section for $VERSION, or it is empty"
+          # From this version's heading to the next one in the root changelog,
+          # then in each product's, so the notes are the sections a reader of
+          # those files already has. The script refuses a version any of them
+          # has no section for, and a release that says nothing anywhere.
+          if ! python3 Scripts/changelogs.py notes "$VERSION" > notes.md; then
+            echo "::error::the changelogs do not describe $VERSION; see above"
             exit 1
           fi
           echo "notes:"

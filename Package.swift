@@ -77,12 +77,12 @@ let package = Package(
                     condition: .when(traits: ["YAMLWorkspaces"])
                 ),
             ],
-            exclude: ["README.md"]
+            exclude: ["CHANGELOG.md", "README.md"]
         ),
         .target(
             name: "LibTmuxMCP",
             dependencies: ["LibTmux"],
-            exclude: ["AGENTS.md", "CLAUDE.md", "README.md"]
+            exclude: ["AGENTS.md", "CHANGELOG.md", "CLAUDE.md", "README.md"]
         ),
         .executableTarget(
             name: "libtmux-mcp",
