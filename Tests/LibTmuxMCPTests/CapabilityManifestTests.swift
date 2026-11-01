@@ -499,13 +499,10 @@ struct CapabilityManifestTests {
         )
 
         let defaultConfiguration = ServerConfiguration(environment: [:])
-        #expect(defaultConfiguration.isDefaultDedicatedMinimal)
-        #expect(defaultConfiguration.socketName == "libtmux-mcp")
+        #expect(defaultConfiguration.errors.isEmpty)
+        #expect(defaultConfiguration.socketName == nil)
         #expect(defaultConfiguration.socketPath == nil)
-        #expect(defaultConfiguration.tmuxConfigurationFile?.hasSuffix("/minimal.conf") == true)
-        #expect(
-            defaultConfiguration.tmuxConfigurationFile.map(FileManager.default.fileExists) == true
-        )
+        #expect(defaultConfiguration.tmuxConfigurationFile == nil)
         #expect(!defaultConfiguration.authority.toolsets.contains(.teardown))
         #expect(defaultConfiguration.authority.resolve(TmuxTools.definitions).count == 41)
         #expect(TmuxTools(server: server).visibleDefinitions.count == 18)
@@ -537,7 +534,6 @@ struct CapabilityManifestTests {
 
         let named = ServerConfiguration(environment: ["LIBTMUX_SOCKET": "literal-name"])
         #expect(named.errors.isEmpty)
-        #expect(!named.isDefaultDedicatedMinimal)
         #expect(named.socketName == "literal-name")
         #expect(named.socketPath == nil)
         #expect(named.tmuxConfigurationFile == nil)
@@ -551,8 +547,6 @@ struct CapabilityManifestTests {
         #expect(configured.errors.isEmpty)
         #expect(configured.tmuxConfigurationFile == "/tmp/tmux.conf")
         for environment in [
-            ["LIBTMUX_SOCKET": "name", "LIBTMUX_SOCKET_PATH": "/tmp/mcp.sock"],
-            ["LIBTMUX_SOCKET": ""],
             ["LIBTMUX_SOCKET_PATH": "relative.sock"],
             ["LIBTMUX_TMUX_CONF": "/tmp/legacy.conf"],
         ] {
@@ -749,101 +743,6 @@ struct CapabilityManifestTests {
         #expect(
             disabledBatch.inputSchema["properties"]?["operations"]?["items"]?["not"]
                 == .object([:])
-        )
-    }
-
-    @Test("startup authenticates exactly one default minimal launcher")
-    func startupAuthenticatesDefaultMinimalLauncher() async throws {
-        let root = URL(fileURLWithPath: "/tmp/libtmux-swift-test")
-            .appendingPathComponent("owner-\(UUID().uuidString.prefix(8))")
-        try FileManager.default.createDirectory(
-            at: root,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        // Only the binary is named: `isDefaultDedicatedMinimal` reads the
-        // socket and configuration variables, so the launcher this
-        // authenticates is still the default one, started with the lane's tmux
-        // rather than whichever the host happens to have on PATH.
-        let configuration = ServerConfiguration(
-            environment: ["LIBTMUX_TMUX_BIN": tmuxExecutablePath()]
-        )
-        let socketPath = root.appendingPathComponent("server").path
-        let firstServer = try Server(
-            socketPath: socketPath,
-            tmuxExecutable: configuration.tmuxExecutable,
-            configurationFile: configuration.tmuxConfigurationFile
-        )
-        let secondServer = try Server(
-            socketPath: socketPath,
-            tmuxExecutable: configuration.tmuxExecutable,
-            configurationFile: configuration.tmuxConfigurationFile
-        )
-
-        let pins: [StartupPin]
-        do {
-            async let first = configuration.pinForStartup(
-                server: firstServer,
-                ownerNonce: "11111111111111111111111111111111"
-            )
-            async let second = configuration.pinForStartup(
-                server: secondServer,
-                ownerNonce: "22222222222222222222222222222222"
-            )
-            pins = try await [first, second]
-        } catch {
-            try? await firstServer.killServer()
-            throw error
-        }
-        let retainedOwner = try? await firstServer.option(
-            "@libtmux_mcp_owner",
-            scope: .globalSession
-        )
-        let leakedOwner = try? await firstServer.environmentValue("LIBTMUX_MCP_OWNER")
-        let owner = try #require(pins.first(where: { $0.ownsLaunch }))
-        let observer = try #require(pins.first(where: { !$0.ownsLaunch }))
-        await observer.cleanupOwnedLaunch()
-        let survivedObserver = try await firstServer.isRunning()
-        await owner.cleanupOwnedLaunch()
-        let removedByOwner = !(try await firstServer.isRunning())
-        let replacementNonce = "33333333333333333333333333333333"
-        let replacementSurvived: Bool
-        let retainedReplacementOwner: String?
-        do {
-            try await firstServer.startServer(
-                launchEnvironment: ["LIBTMUX_MCP_OWNER": replacementNonce]
-            )
-            await owner.cleanupOwnedLaunch()
-            retainedReplacementOwner = try await firstServer.option(
-                "@libtmux_mcp_owner",
-                scope: .globalSession
-            )
-            replacementSurvived = try await firstServer.isRunning()
-            try? await firstServer.killServer()
-        } catch {
-            try? await firstServer.killServer()
-            throw error
-        }
-
-        #expect(pins.filter(\.ownsLaunch).count == 1)
-        #expect(pins.filter { $0.provenance.configurationProvenance == "minimal" }.count == 1)
-        #expect(pins.filter { $0.authority.toolsets.contains(.teardown) }.count == 1)
-        #expect(pins.filter { $0.provenance.serverState == "created" }.count == 1)
-        #expect(pins.filter { $0.provenance.serverState == "existing" }.count == 1)
-        #expect(survivedObserver)
-        #expect(removedByOwner)
-        #expect(replacementSurvived)
-        #expect(retainedReplacementOwner == replacementNonce)
-        #expect(leakedOwner == nil)
-        #expect(
-            retainedOwner.map {
-                [
-                    "11111111111111111111111111111111",
-                    "22222222222222222222222222222222",
-                ].contains($0)
-            } == true
         )
     }
 

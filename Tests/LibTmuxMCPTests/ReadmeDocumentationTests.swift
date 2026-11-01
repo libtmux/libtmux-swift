@@ -115,7 +115,7 @@ struct ReadmeDocumentationTests {
                 -- /path/to/libtmux-mcp
             $ claude mcp add tmux -e LIBTMUX_TOOLS=no_such_tool -- /path/to/libtmux-mcp
             $ claude mcp add tmux -e LIBTMUX_SAFETY=full -- /path/to/libtmux-mcp
-            $ claude mcp add tmux -e LIBTMUX_SOCKET=a -e LIBTMUX_SOCKET_PATH=/b -- libtmux-mcp
+            $ claude mcp add tmux -e LIBTMUX_SOCKET_PATH=relative.sock -- libtmux-mcp
             ```
 
             ```json

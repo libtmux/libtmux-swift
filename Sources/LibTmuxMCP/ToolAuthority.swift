@@ -5,18 +5,15 @@ public struct ToolAuthority: Sendable, Hashable {
     public let toolsets: Set<Toolset>
     public let includedTools: Set<String>
     public let excludedTools: Set<String>
-    public let usedExplicitToolsets: Bool
 
     public init(
         toolsets: Set<Toolset>,
         includedTools: Set<String> = [],
-        excludedTools: Set<String> = [],
-        usedExplicitToolsets: Bool = true
+        excludedTools: Set<String> = []
     ) {
         self.toolsets = toolsets
         self.includedTools = includedTools
         self.excludedTools = excludedTools
-        self.usedExplicitToolsets = usedExplicitToolsets
     }
 
     func resolve(_ definitions: [ToolDefinition]) -> [ToolDefinition] {

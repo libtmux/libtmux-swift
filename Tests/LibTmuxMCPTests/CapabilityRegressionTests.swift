@@ -132,7 +132,7 @@ struct CapabilityRegressionTests {
             caller: nil,
             provenance: ServerProvenance(
                 selector: "path:\(socketPath)",
-                selectionProvenance: "operator-current",
+                selectionProvenance: "socket-path",
                 serverState: "absent",
                 configurationProvenance: "user-configured"
             )
@@ -151,7 +151,7 @@ struct CapabilityRegressionTests {
                 ]))
         #expect(report["connection"]?["socketSelector"]?.stringValue == "path:\(socketPath)")
         #expect(
-            report["connection"]?["socketProvenance"]?.stringValue == "operator-current"
+            report["connection"]?["socketProvenance"]?.stringValue == "socket-path"
         )
         #expect(report["connection"]?["resolvedSocketPath"]?.stringValue == socketPath)
         #expect(report["connection"]?["serverState"]?.stringValue == "absent")

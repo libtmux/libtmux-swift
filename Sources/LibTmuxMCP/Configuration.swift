@@ -27,7 +27,7 @@ public struct ServerProvenance: Sendable, Hashable, Codable {
 
     public static let unknown = ServerProvenance(
         selector: "unknown",
-        selectionProvenance: "operator-current",
+        selectionProvenance: "unknown",
         serverState: "unprobed",
         configurationProvenance: "unknown",
         resolvedSocketPath: nil,
@@ -39,32 +39,11 @@ package struct StartupPin: Sendable {
     package let server: Server
     package let authority: ToolAuthority
     package let provenance: ServerProvenance
-    package let ownsLaunch: Bool
-    private let ownerNonce: String?
-    private let ownedIncarnation: ServerIncarnation?
 
-    package init(
-        server: Server,
-        authority: ToolAuthority,
-        provenance: ServerProvenance,
-        ownsLaunch: Bool,
-        ownerNonce: String?,
-        ownedIncarnation: ServerIncarnation?
-    ) {
+    package init(server: Server, authority: ToolAuthority, provenance: ServerProvenance) {
         self.server = server
         self.authority = authority
         self.provenance = provenance
-        self.ownsLaunch = ownsLaunch
-        self.ownerNonce = ownerNonce
-        self.ownedIncarnation = ownedIncarnation
-    }
-
-    package func cleanupOwnedLaunch() async {
-        guard ownsLaunch, let ownerNonce, let ownedIncarnation,
-            (try? await server.option("@libtmux_mcp_owner", scope: .globalSession))
-                == ownerNonce
-        else { return }
-        try? await server.killServer(expecting: ownedIncarnation)
     }
 }
 
@@ -73,12 +52,18 @@ package struct StartupPin: Sendable {
 /// An MCP server is launched by a client that passes no flags, so environment
 /// is the only configuration surface there is. Parsed here rather than in the
 /// executable so a test can check what a given environment produces.
+///
+/// The server is on the socket `LIBTMUX_SOCKET_PATH` names, else on the socket
+/// name `LIBTMUX_SOCKET` gives. With neither, it passes tmux no socket and
+/// tmux picks the server: the one in `TMUX` when the client that launched this
+/// process runs inside tmux, and its default socket otherwise.
 public struct ServerConfiguration: Sendable, Hashable {
+    /// `LIBTMUX_SOCKET`, unless `LIBTMUX_SOCKET_PATH` is set, which wins.
     public let socketName: String?
+    /// `LIBTMUX_SOCKET_PATH`, an absolute path.
     public let socketPath: String?
     public let tmuxExecutable: String
     public let tmuxConfigurationFile: String?
-    public let isDefaultDedicatedMinimal: Bool
     public let authority: ToolAuthority
     public let waitCeiling: Duration
     /// Anything the environment asked for that could not be honoured, to be
@@ -97,30 +82,28 @@ public struct ServerConfiguration: Sendable, Hashable {
         var warnings: [String] = []
         var errors: [String] = []
 
-        let configuredName = environment["LIBTMUX_SOCKET"]
-        let configuredPath = environment["LIBTMUX_SOCKET_PATH"]
-        let configuredConfiguration = environment["LIBTMUX_TMUX_CONFIG"]
-        if configuredPath != nil, configuredName != nil {
-            errors.append("set only one of LIBTMUX_SOCKET_PATH and LIBTMUX_SOCKET")
+        // A variable that is empty or only whitespace counts as unset, each one
+        // on its own. Any other value is used as written.
+        func set(_ name: String) -> String? {
+            environment[name].flatMap {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+            }
         }
-        if configuredName?.isEmpty == true { errors.append("LIBTMUX_SOCKET must not be empty") }
+        let configuredName = set("LIBTMUX_SOCKET")
+        let configuredPath = set("LIBTMUX_SOCKET_PATH")
+        let configuredConfiguration = environment["LIBTMUX_TMUX_CONFIG"]
         if let configuredPath, !configuredPath.hasPrefix("/") {
             errors.append("LIBTMUX_SOCKET_PATH must be an absolute path")
-        }
-        if configuredPath?.isEmpty == true {
-            errors.append("LIBTMUX_SOCKET_PATH must not be empty")
         }
         if let configuredConfiguration, !configuredConfiguration.hasPrefix("/") {
             errors.append("LIBTMUX_TMUX_CONFIG must be a nonempty absolute path")
         }
-        self.isDefaultDedicatedMinimal =
-            configuredPath == nil && configuredName == nil && configuredConfiguration == nil
         self.socketPath = configuredPath
-        self.socketName = configuredPath == nil ? (configuredName ?? "libtmux-mcp") : nil
+        // Both set: the path wins, as it does in the Python library, and tmux
+        // ignores `-L` beside `-S` in any case.
+        self.socketName = configuredPath == nil ? configuredName : nil
         self.tmuxExecutable = environment["LIBTMUX_TMUX_BIN"] ?? "tmux"
-        self.tmuxConfigurationFile =
-            configuredConfiguration
-            ?? (isDefaultDedicatedMinimal ? Self.bundledMinimalConfiguration : nil)
+        self.tmuxConfigurationFile = configuredConfiguration
 
         if environment.keys.contains("LIBTMUX_TMUX_CONF") {
             errors.append("LIBTMUX_TMUX_CONF is retired; use LIBTMUX_TMUX_CONFIG")
@@ -177,8 +160,7 @@ public struct ServerConfiguration: Sendable, Hashable {
         self.authority = ToolAuthority(
             toolsets: errors.isEmpty ? toolsets : [],
             includedTools: errors.isEmpty ? included : [],
-            excludedTools: errors.isEmpty ? excluded : [],
-            usedExplicitToolsets: explicitToolsets
+            excludedTools: errors.isEmpty ? excluded : []
         )
 
         let rawCeiling = environment["LIBTMUX_MCP_WAIT_MAX_SECONDS"]
@@ -212,10 +194,6 @@ public struct ServerConfiguration: Sendable, Hashable {
         self.errors = errors
     }
 
-    private static var bundledMinimalConfiguration: String? {
-        Bundle.module.url(forResource: "minimal", withExtension: "conf")?.path
-    }
-
     private static func parseList(
         _ value: String?,
         variable: String,
@@ -233,90 +211,41 @@ public struct ServerConfiguration: Sendable, Hashable {
         return tokens
     }
 
-    private func authorityForStartup(ownsLaunch: Bool) -> ToolAuthority {
-        guard !authority.usedExplicitToolsets, isDefaultDedicatedMinimal, ownsLaunch else {
-            return authority
-        }
-        return ToolAuthority(
-            toolsets: authority.toolsets.union([.teardown]),
-            includedTools: authority.includedTools,
-            excludedTools: authority.excludedTools,
-            usedExplicitToolsets: false
-        )
-    }
-
-    private func externalProvenance(
-        wasRunning: Bool,
-        resolvedSocketPath: String?
-    ) -> ServerProvenance {
-        return ServerProvenance(
-            selector: socketPath.map { "path:\($0)" }
-                ?? "name:\(socketName ?? "default")",
-            selectionProvenance: "operator-current",
-            serverState: wasRunning ? "existing" : "absent",
-            configurationProvenance: wasRunning ? "unknown" : "user-configured",
-            resolvedSocketPath: resolvedSocketPath,
-            attachCommand: attachCommand()
-        )
-    }
-
-    package func pinForStartup(
-        server suppliedServer: Server? = nil,
-        ownerNonce: String = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            .lowercased()
-    ) async throws(TmuxError) -> StartupPin {
+    package func pinForStartup(server suppliedServer: Server? = nil) async throws(TmuxError)
+        -> StartupPin
+    {
         let server: Server
         if let suppliedServer {
             server = suppliedServer
         } else {
             server = try makeServer()
         }
-
-        guard isDefaultDedicatedMinimal else {
-            let wasRunning = try await server.isRunning()
-            let resolvedSocketPath =
-                if wasRunning {
-                    try await server.incarnation().socketPath
-                } else {
-                    socketPath
-                }
-            return StartupPin(
-                server: server,
-                authority: authority,
-                provenance: externalProvenance(
-                    wasRunning: wasRunning,
-                    resolvedSocketPath: resolvedSocketPath
-                ),
-                ownsLaunch: false,
-                ownerNonce: nil,
-                ownedIncarnation: nil
-            )
-        }
-
-        try await server.startServer(
-            launchEnvironment: ["LIBTMUX_MCP_OWNER": ownerNonce]
-        )
-        let ownsLaunch =
-            try await server.option("@libtmux_mcp_owner", scope: .globalSession) == ownerNonce
-        let incarnation = try await server.incarnation()
-        let resolvedSocketPath = incarnation.socketPath
-        let pinnedProvenance = ServerProvenance(
-            selector: "name:\(socketName ?? "default")",
-            selectionProvenance: "default-dedicated",
-            serverState: ownsLaunch ? "created" : "existing",
-            configurationProvenance: ownsLaunch ? "minimal" : "unknown",
-            resolvedSocketPath: resolvedSocketPath,
-            attachCommand: attachCommand()
-        )
+        let wasRunning = try await server.isRunning()
+        let resolvedSocketPath =
+            if wasRunning {
+                try await server.incarnation().socketPath
+            } else {
+                socketPath
+            }
         return StartupPin(
             server: server,
-            authority: authorityForStartup(ownsLaunch: ownsLaunch),
-            provenance: pinnedProvenance,
-            ownsLaunch: ownsLaunch,
-            ownerNonce: ownsLaunch ? ownerNonce : nil,
-            ownedIncarnation: ownsLaunch ? incarnation : nil
+            authority: authority,
+            provenance: ServerProvenance(
+                selector: socketPath.map { "path:\($0)" } ?? socketName.map { "name:\($0)" }
+                    ?? Self.tmuxChoice,
+                selectionProvenance: socketPath != nil
+                    ? "socket-path" : socketName != nil ? "socket-name" : Self.tmuxChoice,
+                serverState: wasRunning ? "existing" : "absent",
+                configurationProvenance: wasRunning ? "unknown" : "user-configured",
+                resolvedSocketPath: resolvedSocketPath,
+                attachCommand: attachCommand(
+                    runningAt: wasRunning ? resolvedSocketPath : nil)
+            )
         )
     }
+
+    /// What names a server that tmux picks, in a selector and in a provenance.
+    private static let tmuxChoice = "tmux-choice"
 
     public func makeServer() throws(TmuxError) -> Server {
         if let socketPath {
@@ -335,8 +264,15 @@ public struct ServerConfiguration: Sendable, Hashable {
                 configurationFile: tmuxConfigurationFile
             )
         }
-        return try Server(
-            socketName: socketName ?? "default",
+        if let socketName {
+            return try Server(
+                socketName: socketName,
+                tmuxExecutable: tmuxExecutable,
+                configurationFile: tmuxConfigurationFile
+            )
+        }
+        return Server(
+            endpoint: .tmuxChoice,
             tmuxExecutable: tmuxExecutable,
             configurationFile: tmuxConfigurationFile
         )
@@ -344,14 +280,22 @@ public struct ServerConfiguration: Sendable, Hashable {
 
     public var endpointSummary: String {
         socketPath.map { "socket path \($0)" }
-            ?? "socket name \(socketName ?? "default")"
+            ?? socketName.map { "socket name \($0)" }
+            ?? "the server tmux picks"
     }
 
-    private func attachCommand() -> String {
+    /// The command that joins this server from a shell.
+    ///
+    /// A server tmux picked is named by the socket it turned out to be on once
+    /// it runs, because the shell the command is pasted into may hold a
+    /// different `TMUX` or `TMUX_TMPDIR` and pick another server.
+    private func attachCommand(runningAt resolved: String?) -> String {
         let endpoint =
-            socketPath.map { "-S \(Self.shellQuote($0))" }
-            ?? "-L \(Self.shellQuote(socketName ?? "default"))"
-        return "\(Self.shellQuote(tmuxExecutable)) -N \(endpoint) attach"
+            socketPath.map { " -S \(Self.shellQuote($0))" }
+            ?? socketName.map { " -L \(Self.shellQuote($0))" }
+            ?? resolved.map { " -S \(Self.shellQuote($0))" }
+            ?? ""
+        return "\(Self.shellQuote(tmuxExecutable)) -N\(endpoint) attach"
     }
 
     private static func shellQuote(_ value: String) -> String {

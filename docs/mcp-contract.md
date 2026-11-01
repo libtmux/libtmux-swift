@@ -14,21 +14,29 @@ and what a response is bounded by. Each tool's own contract is on its page at
 
 ## Default launch and teardown
 
-The default launch uses the dedicated `libtmux-mcp` socket and minimal config.
-It adds teardown only when the daemon retains this process's launch nonce from
-that config. Explicit sockets, explicit configs, and existing daemons never gain
-implicit teardown authority.
+With neither `LIBTMUX_SOCKET_PATH` nor `LIBTMUX_SOCKET` set, the server passes
+tmux no `-L` and no `-S`, and tmux picks the server: the one in `TMUX` when the
+client that started the server runs inside tmux, and its default socket
+otherwise. The server starts no daemon of its own and loads no configuration of
+its own, so a launch that finds no server reports `serverState` `absent` and
+starts none.
 
-Unknown names and empty list tokens fail before the socket is opened. When stdio
-ends, the process removes only the default daemon whose launch nonce and
-incarnation still match; existing and replacement daemons remain.
+`LIBTMUX_SOCKET_PATH` is passed as `-S` and `LIBTMUX_SOCKET` as `-L`. When both
+are set the path wins and the name is ignored, without an error. A variable
+that is empty or only whitespace counts as unset, each one on its own, so a
+blank path leaves a set name in force. The path has to be absolute; the refusal
+names the variable and never its value.
 
-The default adds `teardown` only when the server retains this process's launch
-nonce from the bundled minimal configuration. Existing servers and explicit
-socket or configuration selections require an explicit `teardown` choice.
+`tmux://capabilities` reports what chose the socket as `socket-path`,
+`socket-name` or `tmux-choice`, in `socketProvenance`. A `tmux-choice` launch
+reports the socket it reached in `resolvedSocketPath` once a server is running
+there, and an empty string until then. Its `attachCommand` names that socket
+with `-S`, because the shell it is pasted into may hold another `TMUX`, and
+names none until a server runs.
 
-When stdio ends, the process removes only a default daemon whose launch nonce
-and incarnation still match; existing and replacement daemons remain.
+No launch adds `teardown`. Unknown names and empty list tokens fail before the
+socket is opened. When stdio ends, the process exits and leaves the server as it
+found it.
 
 ## Pane modes
 

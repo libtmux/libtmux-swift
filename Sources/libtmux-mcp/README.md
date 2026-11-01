@@ -59,6 +59,12 @@ $ claude mcp add tmux \
 The server takes no flags. Which tmux it talks to is environment, so a client
 config is where you say so.
 
+With neither socket variable set, the server passes tmux no socket and tmux
+picks the server: the one in `TMUX` when the client that started the server
+runs inside tmux, and its default socket otherwise.
+
+A variable that is empty or only whitespace counts as unset.
+
 ### `mcpServers`: the JSON form
 
 Other clients take a JSON configuration:
@@ -87,9 +93,9 @@ end.
 
 | Variable | Default | What it selects |
 | --- | --- | --- |
-| `LIBTMUX_SOCKET` | `libtmux-mcp` | The socket *name*, resolved inside `TMUX_TMPDIR` |
-| `LIBTMUX_SOCKET_PATH` | none | An absolute socket path; mutually exclusive with `LIBTMUX_SOCKET` |
-| `LIBTMUX_TMUX_CONFIG` | bundled minimal config on the default socket | An absolute tmux configuration path |
+| `LIBTMUX_SOCKET_PATH` | none | An absolute socket path, passed to tmux as `-S`; wins when `LIBTMUX_SOCKET` is also set |
+| `LIBTMUX_SOCKET` | none | The socket *name*, passed as `-L` and resolved inside `TMUX_TMPDIR` |
+| `LIBTMUX_TMUX_CONFIG` | none | An absolute tmux configuration path |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
 | `LIBTMUX_TOOLSETS` | `inspect,manage,execute` | Any comma-separated combination of `inspect`, `manage`, `execute`, and `teardown`; empty selects none |
 | `LIBTMUX_TOOLS` | none | Exact tool names added after toolset expansion |
@@ -111,8 +117,8 @@ libtmux.org, and the [tool index][ref-mcp-tools] lists them all.
 | `execute` | Starts or drives pane processes | [`create_session`] [`create_window`] [`paste_text`] [`respawn_pane`] [`run_shell_command`] [`send_keys`] [`send_keys_batch`] [`set_synchronize_panes`] [`split_window`] |
 | `teardown` | Deletes tmux state | [`clear_pane_scrollback`] [`kill_pane`] [`kill_session`] [`kill_window`] |
 
-- **Default.** `inspect`, `manage`, and `execute`; `teardown` joins only for a
-  default daemon this process launched.
+- **Default.** `inspect`, `manage`, and `execute`. `teardown` joins only when
+  you name it.
 - **Trust.** Grant `execute` only to clients trusted to act as the tmux user;
   [toolset selection][ref-mcp-topics] covers the rest.
 - **Teardown.** The configured default leaves out the `teardown` tools, and an
@@ -162,13 +168,10 @@ capability rows.
 
 ## Startup
 
-- **Teardown.** The default adds `teardown` only when the server retains this
-  process's launch nonce from the bundled minimal configuration. Existing
-  servers and explicit socket or configuration selections need an explicit
-  choice.
-- **Shutdown.** When stdio ends, the process removes only a default daemon whose
-  launch nonce and incarnation still match; existing and replacement daemons
-  remain.
+- **Teardown.** No default launch adds `teardown`; name it in
+  `LIBTMUX_TOOLSETS`.
+- **Shutdown.** When stdio ends, the process exits and leaves the tmux server as
+  it found it.
 
 The full text is in
 [`docs/mcp-contract.md`][r-docs-mcp-contract-md-default-launch-and-teardown].
