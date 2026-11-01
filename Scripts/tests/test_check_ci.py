@@ -280,3 +280,99 @@ def test_a_matrix_that_ignores_the_plan_is_flagged(tree: Tree, name: str) -> Non
         "matrix:\n        tmux: [x]",
     )
     assert tree.flags(f"the {name} job does not take its matrix from the plan")
+
+
+WRAPPER = "Scripts/apt-get.sh"
+
+
+def apt_workflow(run: str) -> str:
+    """Return a one-step workflow whose script is `run`."""
+    return (
+        "name: Synthetic\n"
+        "on: push\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    steps:\n"
+        "      - name: Install libevent\n"
+        "        run: |\n"
+        f"          {run}\n"
+    )
+
+
+def test_a_raw_apt_get_in_a_script_is_flagged() -> None:
+    """The message names the file, the job and the step, and the fix."""
+    assert CHECK.check_apt(apt_workflow("sudo apt-get update"), "x.yml") == [
+        (
+            "x.yml:9 job build, step 'Install libevent' calls apt-get directly; "
+            f"run it through {WRAPPER}"
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("run", "tool"),
+    [
+        ("apt-get update", "apt-get"),
+        ("sudo -E apt-get install --yes libevent-dev", "apt-get"),
+        ("DEBIAN_FRONTEND=noninteractive sudo apt-get install -y x", "apt-get"),
+        ("sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y x", "apt-get"),
+        ("make && sudo apt-get update", "apt-get"),
+        ("sudo apt install --yes libevent-dev", "apt"),
+    ],
+)
+def test_every_spelling_of_a_raw_call_is_flagged(run: str, tool: str) -> None:
+    """With or without sudo, options and variables, apt-get and apt are caught."""
+    problems = CHECK.check_apt(apt_workflow(run), "x.yml")
+    assert len(problems) == 1
+    assert f"calls {tool} directly; run it through {WRAPPER}" in problems[0]
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        f"./{WRAPPER} update",
+        f"sudo ./{WRAPPER} install --yes libevent-dev",
+        "# sudo apt-get update",
+        "apt-cache policy libevent-dev",
+        "echo apt-get is wrapped",
+    ],
+)
+def test_the_wrapper_and_comments_are_not_flagged(run: str) -> None:
+    """The wrapper, a comment and another apt tool all pass."""
+    assert CHECK.check_apt(apt_workflow(run), "x.yml") == []
+
+
+def test_a_step_name_is_not_a_script() -> None:
+    """Only `run` scripts are scanned, so a name or a comment may say apt-get."""
+    text = apt_workflow(f"./{WRAPPER} update").replace(
+        "Install libevent", "sudo apt-get update"
+    )
+    assert CHECK.check_apt(text, "x.yml") == []
+
+
+def test_a_raw_apt_get_in_ci_is_flagged(tree: Tree) -> None:
+    """Undoing the wrapper in ci.yml fails the check, once per call."""
+    tree.edit(CI, f"./{WRAPPER} update", "sudo apt-get update", 5)
+    flagged = [p for p in tree.problems() if "calls apt-get directly" in p]
+    assert len(flagged) == 5
+    assert all(p.startswith(f"{CI}:") for p in flagged)
+    assert all(p.endswith(f"run it through {WRAPPER}") for p in flagged)
+
+
+def test_a_raw_apt_get_in_a_composite_action_is_flagged(tree: Tree) -> None:
+    """An action's steps are scanned too; a repository without one passes."""
+    action = tree.root / ".github/actions/deps/action.yml"
+    action.parent.mkdir(parents=True)
+    action.write_text(
+        "name: deps\n"
+        "runs:\n"
+        "  using: composite\n"
+        "  steps:\n"
+        "    - name: Install\n"
+        "      shell: bash\n"
+        "      run: sudo apt-get install --yes libevent-dev\n"
+    )
+    assert tree.flags(
+        ".github/actions/deps/action.yml:7 step 'Install' calls apt-get directly"
+    )
