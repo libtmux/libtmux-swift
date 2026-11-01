@@ -3,24 +3,35 @@ import LibTmux
 import TmuxWorkspace
 
 enum WorkspaceCommands {
+    /// The server a command acts on.
+    ///
+    /// The flags come first, then `LIBTMUX_SOCKET_PATH`, then `LIBTMUX_SOCKET`.
+    /// With none of them, a command that acts on the pane it runs in
+    /// (`followingPane`) takes the socket `TMUX` names, and any other passes
+    /// tmux no socket at all. tmux then follows `TMUX` inside tmux and uses its
+    /// default socket outside it, so a command that names no server reaches the
+    /// one a shell in the same place would.
     static func server(
         _ socket: SocketOptions, configuration: String? = nil, colors256: Bool = false,
-        context: CLIContext
+        followingPane: Bool = false, context: CLIContext
     ) throws -> Server {
-        let endpoint: Endpoint
+        var endpoint: Endpoint
         if let path = socket.path {
             endpoint = try Endpoint(socketPath: DocumentStore(context: context).path(path).path)
         } else if let name = socket.name {
             endpoint = try Endpoint(socketName: name)
-        } else if let inherited = context.environment["TMUX"] {
-            guard let tmux = TmuxContext(parsing: inherited) else {
-                throw CLIError(
-                    "usage", "TMUX does not contain a valid socket, PID and session index.",
-                    status: 2)
-            }
-            endpoint = try Endpoint(socketPath: tmux.socketPath)
         } else {
-            throw CLIError("usage", "Select a tmux endpoint with -S or -L outside tmux.", status: 2)
+            endpoint = try Endpoint(environment: context.environment)
+            if followingPane, endpoint == .tmuxChoice,
+                let inherited = context.environment["TMUX"], !inherited.isEmpty
+            {
+                guard let tmux = TmuxContext(parsing: inherited) else {
+                    throw CLIError(
+                        "usage", "TMUX does not contain a valid socket, PID and session index.",
+                        status: 2)
+                }
+                endpoint = try Endpoint(socketPath: tmux.socketPath)
+            }
         }
         return Server(
             endpoint: endpoint, tmuxExecutable: context.environment["LIBTMUX_TMUX_BIN"] ?? "tmux",
@@ -91,6 +102,8 @@ enum WorkspaceCommands {
         }
         let server = try server(
             command.socket, configuration: command.configurationFile, colors256: command.colors256,
+            followingPane: command.append
+                || (!command.detached && !(context.environment["TMUX"] ?? "").isEmpty),
             context: context)
         // Context is resolved — and a cross-server load refused — before
         // anything touches the selected server, including layout validation.
@@ -458,6 +471,7 @@ enum WorkspaceCommands {
         switch endpoint {
         case let .socketPath(path): arguments += ["-S", path]
         case let .socketName(name): arguments += ["-L", name]
+        case .tmuxChoice: break
         }
         return arguments + ["attach-session", "-t", session]
     }
@@ -739,7 +753,8 @@ enum WorkspaceCommands {
                 "freeze needs a destination: pass --save-to, or --json/--ndjson to print the workspace.",
                 status: 2)
         }
-        let server = try server(command.socket, context: context)
+        let server = try server(
+            command.socket, followingPane: command.sessionName == nil, context: context)
         let snapshot: Snapshot
         do {
             snapshot = try await emptyTolerantSnapshot(server)

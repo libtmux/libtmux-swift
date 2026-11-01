@@ -8,12 +8,14 @@ import Foundation
 /// actor that every copy shares, so two copies of the same server coordinate
 /// with each other rather than racing.
 ///
-/// Addressing a server does not start it, and every command carries the endpoint, so no call
-/// reaches a server you did not name. What a call returns — a ``Session``, ``Window``, ``Pane``, or
-/// ``Client`` — is a value as it stood when tmux was asked, and it carries no operations: to act on
-/// one, pass it to a method here. A method that changes what a value names refuses the value,
-/// rather than acting on whatever tmux has since given that ID, if it came from another server
-/// (``TmuxError/foreignServerValue``) or from a daemon that has been replaced
+/// Addressing a server does not start it. Every command carries the endpoint you gave, so no call
+/// reaches a server you did not name. Name none, with
+/// ``Server/init(tmuxExecutable:configurationFile:environment:)``, and tmux picks the server itself
+/// unless `LIBTMUX_SOCKET` or `LIBTMUX_SOCKET_PATH` names one. What a call returns — a ``Session``,
+/// ``Window``, ``Pane``, or ``Client`` — is a value as it stood when tmux was asked, and it carries
+/// no operations: to act on one, pass it to a method here. A method that changes what a value names
+/// refuses the value, rather than acting on whatever tmux has since given that ID, if it came from
+/// another server (``TmuxError/foreignServerValue``) or from a daemon that has been replaced
 /// (``TmuxError/serverRestarted``), or if its ID no longer names the object it described
 /// (``TmuxError/staleServerValue``). The last two are checked inside the tmux command that acts.
 ///
@@ -22,8 +24,9 @@ import Foundation
 /// A tmux server does a great many things, so this type has a great many methods. They fall into a
 /// few groups:
 ///
-/// **Connecting.** ``Server/init(socketPath:tmuxExecutable:configurationFile:)`` and
-/// ``Server/init(socketName:tmuxExecutable:configurationFile:)`` address a server without starting
+/// **Connecting.** ``Server/init(socketPath:tmuxExecutable:configurationFile:)``,
+/// ``Server/init(socketName:tmuxExecutable:configurationFile:)`` and
+/// ``Server/init(tmuxExecutable:configurationFile:environment:)`` address a server without starting
 /// it. ``Server/endpoint`` and ``Server/tmuxExecutable`` say what was addressed, and
 /// ``Server/mode`` how commands reach it. A program running inside tmux finds its server with
 /// ``TmuxContext/current(environment:)`` and ``TmuxContext/server(tmuxExecutable:)``, and
@@ -153,8 +156,9 @@ import Foundation
 /// which runs one tmux command, and ``Server/run(_:)-(TmuxCommandList)``, which runs several in one
 /// invocation. Both hand back a ``TmuxReply``: a nonzero status is a reply, not an error.
 public struct Server: Sendable, Hashable {
-    /// Where this server listens. Every command carries it, so no call can
-    /// reach the ambient server by accident.
+    /// Where this server listens. Every command carries it, so a call reaches the
+    /// server you named, and the one tmux picks only when this is
+    /// ``Endpoint/tmuxChoice``.
     public let endpoint: Endpoint
     let tmuxExecutablePath: String
     let clientArguments: [String]
@@ -208,6 +212,43 @@ public struct Server: Sendable, Hashable {
     ) throws(TmuxError) {
         self.init(
             endpoint: try Endpoint(socketName: socketName),
+            tmuxExecutable: tmuxExecutable,
+            configurationFile: configurationFile
+        )
+    }
+
+    /// A server on the socket the environment names, else on the one tmux picks.
+    ///
+    /// `LIBTMUX_SOCKET_PATH` names a socket path, passed to tmux as `-S`.
+    /// Otherwise `LIBTMUX_SOCKET` names a socket name, passed as `-L`. With
+    /// neither set the server's ``endpoint`` is ``Endpoint/tmuxChoice``: tmux is
+    /// passed no socket and chooses the server itself, the one in `TMUX` inside
+    /// tmux and the default socket in `TMUX_TMPDIR` elsewhere. The path wins when
+    /// both variables are set, as it does for the Python library. A variable that
+    /// is empty or only whitespace counts as unset, each one on its own, so a
+    /// blank path leaves a set name in force; any other value is used as written.
+    ///
+    /// Name a socket with ``init(socketPath:tmuxExecutable:configurationFile:)``
+    /// or ``init(socketName:tmuxExecutable:configurationFile:)`` when the answer
+    /// must not depend on the environment; those leave both variables unread.
+    /// Only the two variables are read from `environment`. Every tmux process the
+    /// server starts inherits the process's own environment, `TMUX` included.
+    ///
+    /// ```swift
+    /// let server = try Server()
+    /// let sessions = try await server.sessions()
+    /// ```
+    ///
+    /// - Parameter environment: where to read the two variables from.
+    /// - Throws: ``TmuxError/invalidEndpoint(_:)`` for a socket path that is too
+    ///   long. The error names the length and never the value.
+    public init(
+        tmuxExecutable: String = "tmux",
+        configurationFile: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws(TmuxError) {
+        self.init(
+            endpoint: try Endpoint(environment: environment),
             tmuxExecutable: tmuxExecutable,
             configurationFile: configurationFile
         )
@@ -290,16 +331,6 @@ public struct Server: Sendable, Hashable {
         }
         try await runtime.requireFeatures(for: rawArguments)
         return try await connection.reply(to: rawArguments)
-    }
-
-    package func run(
-        _ command: TmuxCommand,
-        launchEnvironment: [String: String]
-    ) async throws(TmuxError) -> TmuxReply {
-        try await runtime.run(
-            rawArguments: command.argumentVector,
-            environmentOverrides: launchEnvironment
-        )
     }
 
     func versionCheck() async throws(TmuxError) -> (version: ServerVersion, live: Bool) {
@@ -656,19 +687,14 @@ actor ServerRuntime {
 
     func run(
         rawArguments: [String],
-        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit,
-        environmentOverrides: [String: String] = [:]
+        perStreamOutputLimit: Int = defaultTmuxReplyByteLimit
     ) async throws(TmuxError) -> TmuxReply {
         guard perStreamOutputLimit >= 0 else {
             throw .invocationFailed(reason: "output limit cannot be negative")
         }
         try requireTmuxCommandFits(rawArguments)
         guard checkingVersions else {
-            return try await send(
-                rawArguments,
-                perStreamOutputLimit: perStreamOutputLimit,
-                environmentOverrides: environmentOverrides
-            )
+            return try await send(rawArguments, perStreamOutputLimit: perStreamOutputLimit)
         }
         var retried = false
         while true {
@@ -680,8 +706,7 @@ actor ServerRuntime {
                     // for a release floor to protect. `-N` keeps the client
                     // from starting the server it was asked to stop.
                     return try await send(
-                        ["-N"] + rawArguments, perStreamOutputLimit: perStreamOutputLimit,
-                        environmentOverrides: environmentOverrides)
+                        ["-N"] + rawArguments, perStreamOutputLimit: perStreamOutputLimit)
                 }
             }
             let (checked, live) = try await checkVersion()
@@ -693,8 +718,7 @@ actor ServerRuntime {
                 // A daemon that vanished after the check must not be restarted
                 // by a client whose release was never checked.
                 (live ? ["-N"] : []) + fenced,
-                perStreamOutputLimit: perStreamOutputLimit,
-                environmentOverrides: environmentOverrides
+                perStreamOutputLimit: perStreamOutputLimit
             )
             if Support.Versions.isRefusal(reply, marker: marker) {
                 // Nothing ran. The daemon is not the one that was checked,
@@ -826,20 +850,17 @@ actor ServerRuntime {
 
     private func send(
         _ rawArguments: [String],
-        perStreamOutputLimit: Int,
-        environmentOverrides: [String: String] = [:]
+        perStreamOutputLimit: Int
     ) async throws(TmuxError) -> TmuxReply {
         // Copied out of isolation before the await so the actor is not held for
         // the lifetime of a tmux process.
         let transport = self.transport
         let executable = tmuxExecutable
         let arguments = clientArguments + endpoint.addressArguments + rawArguments
-        var environment = TmuxProcessEnvironment.variables()
-        environment.merge(environmentOverrides) { _, override in override }
         let reply = try await transport.run(
             executable: executable,
             arguments: arguments,
-            environment: environment,
+            environment: TmuxProcessEnvironment.variables(),
             perStreamOutputLimit: perStreamOutputLimit
         )
         try requireReplyFitsLimit(reply, perStreamOutputLimit)

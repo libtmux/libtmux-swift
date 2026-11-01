@@ -75,7 +75,15 @@ $ tmux-workspace load \
 ```
 
 It prints `example  created`, and `tmux -L project attach` joins the session.
-Outside tmux, `load` refuses to run without `-S` or `-L`.
+
+With neither `-S` nor `-L`, a command uses the socket `LIBTMUX_SOCKET_PATH`
+names, else the one `LIBTMUX_SOCKET` names.
+
+With neither variable it passes tmux no socket, and tmux picks the server: the
+one you are inside, and its default socket outside tmux.
+
+Outside tmux that default is your own server unless the environment says
+otherwise. The flags come first, and `-S` beats `-L`.
 
 ## Install
 
@@ -188,7 +196,8 @@ $ tmux-workspace load \
 ```
 
 - **Needs a pane.** It requires a valid `TMUX` and `TMUX_PANE`, and never starts
-  a different server.
+  a different server. With no `-S`, `-L` or socket variable it acts on the
+  socket `TMUX` names.
 - **Index collisions.** An explicit `window_index` already in the session fails
   the load and creates nothing.
 - **With `-d`.** `-d` takes precedence over `--append`.

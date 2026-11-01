@@ -29,8 +29,14 @@ struct OutputOptions: ParsableArguments, Sendable {
 }
 
 struct SocketOptions: ParsableArguments, Sendable {
-    @Option(name: .customShort("S"), help: "tmux socket path.") var path: String?
-    @Option(name: .customShort("L"), help: "tmux socket name.") var name: String?
+    @Option(
+        name: .customShort("S"),
+        help: "tmux socket path. Env: LIBTMUX_SOCKET_PATH; else tmux picks the server.")
+    var path: String?
+    @Option(
+        name: .customShort("L"),
+        help: "tmux socket name. Env: LIBTMUX_SOCKET, after the path; else tmux picks the server.")
+    var name: String?
 
     func validate() throws {
         if path != nil && name != nil {

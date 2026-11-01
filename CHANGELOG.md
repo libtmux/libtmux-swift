@@ -10,7 +10,50 @@ changelog marks each break. Pin an exact version to avoid one.
 
 ## [Unreleased]
 
+### Added
+
+- `Server()` builds a server that passes tmux neither `-L` nor `-S`, so tmux
+  picks the server: the one in `TMUX` inside tmux, and its default socket
+  elsewhere. It takes `tmuxExecutable`, `configurationFile` and `environment`,
+  the last being where the two variables are read from. `LIBTMUX_SOCKET_PATH`
+  (passed as `-S`) or `LIBTMUX_SOCKET` (passed as `-L`) names another, the path
+  wins when both are set, and a variable that is empty or only whitespace counts
+  as unset. `Server(socketPath:)` and `Server(socketName:)` leave both
+  variables unread. (#93)
+
 ### Changed
+
+- **Breaking.** `Endpoint` gained a `tmuxChoice` case, which is the
+  `Server.endpoint` of a server that names no socket. A `switch` over
+  `Endpoint` that lists only `.socketName` and `.socketPath` stops compiling;
+  add a case for it, and read a socket from an endpoint only when it has one.
+  (#93)
+
+- `tmux-workspace` with no `-S` or `-L` uses the socket `LIBTMUX_SOCKET_PATH`
+  and then `LIBTMUX_SOCKET` name, and with neither passes tmux no socket, where
+  it used to pass the `TMUX` socket as `-S` and, outside tmux, refused to run.
+  Outside tmux it now acts on tmux's default socket, which is your own server
+  unless the environment says otherwise; name `-L` for a server of its own. An
+  attached `load` inside tmux, `load --append` and `freeze` without a session
+  name still use the `TMUX` socket, and `shell` passes tmuxp a socket a variable
+  chose, because tmuxp reads neither variable. (#93)
+
+- **Breaking.** `libtmux-mcp` with neither socket variable passes tmux no
+  socket and serves
+  the server tmux picks, where it used to start a daemon of its own on the
+  socket `libtmux-mcp`, from a bundled configuration, grant it `teardown` and
+  stop it when stdio ended. That daemon, the bundled configuration and the
+  default `teardown` are gone; name `teardown` in `LIBTMUX_TOOLSETS` to grant
+  it. Setting both variables is no longer an error: the path wins. An empty
+  variable no longer fails startup, it counts as unset. `tmux://capabilities`
+  reports `socket-path`, `socket-name` or `tmux-choice` as `socketProvenance`,
+  where it said `operator-current` or `default-dedicated`, and names the
+  socket in `attachCommand` once a server runs. (#93)
+
+- **Breaking.** `ServerConfiguration` no longer has an
+  `isDefaultDedicatedMinimal` property, and its `socketName` is `nil` unless
+  `LIBTMUX_SOCKET` is set, where it was `libtmux-mcp`. `ToolAuthority` no
+  longer takes or stores `usedExplicitToolsets`; drop the argument. (#93)
 
 - This package's own test run must be started with `Scripts/swift-test`, which
   takes `swift test`'s arguments. It removes `TMUX`, `TMUX_PANE` and every

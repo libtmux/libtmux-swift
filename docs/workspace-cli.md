@@ -15,10 +15,14 @@ acts on when a command does something unexpected.
 
 ## load
 
-`load` creates sessions on an explicit `-S` or `-L` endpoint, or the inherited
-`TMUX` socket. Outside tmux, this checkpoint requires an endpoint. An endpoint
-that names a different server than the inherited `TMUX` is refused before
-anything is built, whether or not that server is already running.
+`load` creates sessions on the socket `-S` names, else the one `-L` names, else
+the one `LIBTMUX_SOCKET_PATH` and then `LIBTMUX_SOCKET` name. With none of them,
+a load that acts on the current pane, an attached load inside tmux or
+`--append`, uses the socket `TMUX` names. Any other load passes tmux no socket,
+so tmux picks the server: the one in `TMUX` inside tmux, and its default socket
+outside it. Nothing is refused for want of an endpoint. A socket that names a
+different server than the inherited `TMUX` is refused before anything is built,
+whether or not that server is already running, unless the load is detached.
 
 Human calls with a foreground terminal attach to the last loaded workspace.
 Inside tmux, loading a new session prompts to switch, load detached, append or
@@ -109,8 +113,9 @@ the load and creates nothing.
 `freeze [SESSION]` captures current pane commands and directories, window names,
 indexes, focus, layouts, local session/window options and session environment
 values, including embedded newlines. An explicit name or ID takes precedence.
-Otherwise it authenticates the current pane's tmux context or selects the sole
-session.
+Otherwise it authenticates the current pane's tmux context, which for this
+command is the socket `TMUX` names when no flag or socket variable chose one, or
+selects the sole session.
 
 With several sessions, a human caller can choose; machine calls require an
 explicit target. A stale or foreign pane context fails.
@@ -222,7 +227,10 @@ to named path/environment fields; it is not a general output redactor.
 
 `shell` delegates Python-specific evaluation to tmuxp 1.74.0 using
 `TMUX_WORKSPACE_PYTHON` (default `python3`). It checks that version before
-execution and uses the selected native tmux executable and explicit endpoint.
+execution and uses the selected native tmux executable. It passes `-S` or `-L`
+on when a flag or a socket variable chose one, because tmuxp reads neither
+variable; with none, tmuxp follows `TMUX` inside tmux and uses its default
+socket outside it.
 Backend selectors and startup/vi-mode toggles retain their command meanings; the
 last paired toggle wins.
 

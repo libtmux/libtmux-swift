@@ -50,19 +50,25 @@ a newer view.
 
 ## Quick start
 
-With tmux already running on its default socket, list its sessions. This is the
-whole program:
+With tmux already running, list its sessions. This is the whole program:
 
 ```swift
 import LibTmux
 
-let server = try Server(socketName: "default")
+let server = try Server()
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
 ```
 
-A [`Server`][api-server] addresses a tmux socket by name, and
+A [`Server`][api-server] built with no socket passes tmux neither `-L` nor
+`-S`, so tmux picks the server: the one you are inside, and its default socket
+elsewhere.
+
+`LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET` names another, and
+`Server(socketPath:)` or `Server(socketName:)` names one in code and leaves
+both variables unread.
+
 [`Server.sessions()`][api-server-sessions] asks it for every session. It runs on
 Linux, including WSL, and on macOS (best effort, no CI),
 with tmux 3.3a through 3.8, and master.
@@ -686,10 +692,10 @@ parse the executable runs before it opens a socket.
 
 | Variable | Default | What it selects |
 | --- | --- | --- |
-| `LIBTMUX_SOCKET` | `libtmux-mcp` | Plain tmux socket name |
-| `LIBTMUX_SOCKET_PATH` | — | Absolute socket path, mutually exclusive with `LIBTMUX_SOCKET` |
-| `LIBTMUX_TMUX_CONFIG` | bundled minimal config | Absolute tmux configuration path |
-| `LIBTMUX_TOOLSETS` | depends on server provenance | Comma-separated subset of the four toolsets; empty selects none |
+| `LIBTMUX_SOCKET_PATH` | — | Absolute socket path, passed to tmux as `-S`; wins when `LIBTMUX_SOCKET` is also set |
+| `LIBTMUX_SOCKET` | — | Plain tmux socket name, passed to tmux as `-L` |
+| `LIBTMUX_TMUX_CONFIG` | none | Absolute tmux configuration path |
+| `LIBTMUX_TOOLSETS` | `inspect,manage,execute` | Comma-separated subset of the four toolsets; empty selects none |
 | `LIBTMUX_TOOLS` | empty | Exact names added after toolset expansion |
 | `LIBTMUX_EXCLUDE_TOOLS` | empty | Exact names removed last, including nested authority |
 | `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
@@ -697,17 +703,22 @@ parse the executable runs before it opens a socket.
 
 What to know about startup:
 
-- **Default launch.** The dedicated `libtmux-mcp` socket and the minimal config.
-- **Teardown.** Added only when the daemon retains this process's launch nonce
-  from that config. Explicit sockets, configs, and existing daemons never gain
-  it.
+- **Default launch.** With neither socket variable set, tmux is passed no
+  socket and picks the server: the one in `TMUX` when the client that started
+  this process runs inside tmux, and its default socket otherwise.
+- **Nothing of its own.** The server starts no daemon and loads no
+  configuration of its own.
+- **Teardown.** In no default launch. Name `teardown` in `LIBTMUX_TOOLSETS` to
+  grant it.
 - **Bad names.** Unknown names and empty list tokens fail before the socket is
   opened.
-- **Shutdown.** When stdio ends, the process removes only the default daemon
-  whose launch nonce and incarnation still match.
+- **Shutdown.** When stdio ends, the process exits and leaves the tmux server as
+  it found it.
 - **Socket names.** `LIBTMUX_SOCKET` is a name, and tmux resolves a name inside
   `TMUX_TMPDIR`. Set that in the same `env` block when your tmux keeps its
   sockets somewhere else.
+- **Blank values.** A variable that is empty or only whitespace counts as unset,
+  each one on its own, so a blank path leaves a set name in force.
 - **stderr.** Anything for a human goes there, because stdout is the protocol
   and a stray line corrupts it.
 
@@ -726,9 +737,8 @@ withholds:
 
 The registry holds every tool under exactly one toolset. By default:
 
-- **A configured executable** exposes `inspect`, `manage`, and `execute`.
-- **An authenticated daemon** started from the bundled minimal configuration
-  also receives `teardown`.
+- **A launch** exposes `inspect`, `manage`, and `execute`. `teardown` is
+  granted only by naming it in `LIBTMUX_TOOLSETS`.
 
 | Tool | What it answers or does |
 | --- | --- |

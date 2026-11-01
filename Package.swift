@@ -82,8 +82,7 @@ let package = Package(
         .target(
             name: "LibTmuxMCP",
             dependencies: ["LibTmux"],
-            exclude: ["AGENTS.md", "CLAUDE.md", "README.md"],
-            resources: [.copy("minimal.conf")]
+            exclude: ["AGENTS.md", "CLAUDE.md", "README.md"]
         ),
         .executableTarget(
             name: "libtmux-mcp",

@@ -37,6 +37,9 @@ struct QuickStartTests {
         )
 
         let root = try #require(namedSocketRoot)
+        // The example names no socket, so tmux gives it the default one under
+        // the `TMUX_TMPDIR` below: the socket named `default`, which is where
+        // this server is started.
         let server = try Server(socketName: "default", tmuxExecutable: tmuxExecutablePath())
         _ = try await server.run([
             TmuxCommand("set-option", ["-g", "default-shell", "/bin/sh"]),

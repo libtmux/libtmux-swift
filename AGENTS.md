@@ -46,10 +46,12 @@ touch the suite:
 - Never remove anything under `/tmp/libtmux-*` that is not one of these two
   roots. Those belong to other ports, and a running server may be behind them.
 
-`Server` has no default endpoint, so this is a convention about *callers*
-rather than a setting: a socket path is chosen at every call site that creates
-one. `Scripts/check_socket_namespace.py` is what makes it fail rather than be
-remembered — `libtmux-ts` gates the same invariant the same way — and
+`Server()` names no socket, and tmux picks the server it reaches, so this is a
+convention about *callers* rather than a setting: a socket is chosen at every
+call site that creates one. `Scripts/check_socket_namespace.py` is what makes it
+fail rather than be remembered, and it refuses a `Server()` outside `Sources/`
+that is not listed with its reason — `libtmux-ts` gates the same invariant the
+same way — and
 [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) covers what that gate can
 and cannot see.
 
