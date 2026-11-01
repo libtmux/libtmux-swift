@@ -47,9 +47,9 @@ ALLOWED = {
     ("Tests/LibTmuxTests/CommandListTests.swift", "/tmp/lt-empty"),
     # Identity and equality over endpoints; no server is ever started.
     ("Tests/LibTmuxTests/ServerTests.swift", "/tmp/libtmux-value"),
-    # The consumer example addresses tmux's conventional socket; listing does
-    # not start it, and its test creates this name only under guarded TMUX_TMPDIR.
-    ("Examples/Sources/QuickStart/main.swift", "default"),
+    # The test starts the server on tmux's conventional socket that the consumer
+    # example then finds, and it creates this name only under a guarded
+    # TMUX_TMPDIR.
     ("Examples/Tests/ExampleTests/QuickStartTests.swift", "default"),
 }
 
@@ -59,6 +59,10 @@ AMBIENT_ALLOWED = {
     # Reads the endpoint a configuration chose from an environment the test
     # wrote out; no command is sent to the server it builds.
     ("Tests/LibTmuxMCPTests/SocketSelectionTests.swift", "makeServer()"),
+    # The program a reader runs first. `QuickStartTests` runs it with a
+    # `TMUX_TMPDIR` under the suite root and no `TMUX`, so the server tmux
+    # picks for it is the one that test started.
+    ("Examples/Sources/QuickStart/main.swift", "Server()"),
     # Compiled, never executed: it shows a reader the call, and the example is
     # only non-nil inside tmux.
     ("Examples/Sources/ExampleCode/Snapshots.swift", "TmuxContext.current()"),

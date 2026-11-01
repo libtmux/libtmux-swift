@@ -16,14 +16,21 @@ You address a server, ask it what exists, and send it commands. Everything you
 get back is a value — a `Session` you hold is what the server looked like when
 you asked, not a live handle that changes under you. Ask again for a newer view.
 
-With tmux already running on its default socket:
+With tmux already running:
 
 ```swift
-let server = try Server(socketName: "default")
+let server = try Server()
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
 ```
+
+A server built with no socket passes tmux neither `-L` nor `-S`, so tmux picks
+the server: the one you are inside, and its default socket elsewhere.
+`LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET` names another, and
+``Server/init(socketPath:tmuxExecutable:configurationFile:)`` or
+``Server/init(socketName:tmuxExecutable:configurationFile:)`` names one in code
+and leaves both variables unread.
 
 Names follow tmux where tmux has one. ``Session``, ``Window``, ``Pane``, and
 ``Client`` are what tmux calls them, so they are what they are called here. A

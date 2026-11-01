@@ -33,18 +33,21 @@ One dependency ([swift-subprocess][]), and the only product most callers need.
 
 ## Quick start
 
-With tmux already running on its default socket:
+With tmux already running:
 
 ```swift
 import LibTmux
 
-let server = try Server(socketName: "default")
+let server = try Server()
 for session in try await server.sessions() {
     print(session.name, session.windowCount)
 }
 ```
 
-A [`Server`][api-server] addresses a tmux socket by name, and
+A [`Server`][api-server] built with no socket passes tmux neither `-L` nor
+`-S`, so tmux picks the server: the one you are inside, and its default socket
+elsewhere. `LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET` names another.
+
 [`Server.sessions()`][api-server-sessions] asks it for every session. It prints
 one line per session: the name, then the window count.
 
