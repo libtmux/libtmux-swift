@@ -69,9 +69,11 @@ These cases widen the predicate rather than failing:
   predicate entirely.
 - A glob operator whose text contains a backslash. `fnmatch` reads a backslash
   as its own escape, with no portable way to spell a literal one.
-- A text literal containing non-ASCII characters or `#`. Swift's canonical
-  string equivalence and tmux's format escaping prevent a byte comparison
-  from asking the same question; the literal is matched here instead.
+- A text literal containing non-ASCII characters, `#`, or one of three ASCII
+  characters that a non-ASCII scalar is canonically equal to: `K`, `;` and the
+  backtick. Swift's canonical string equivalence and tmux's format
+  escaping prevent a byte comparison from asking the same question; the literal
+  is matched here instead.
 
 ``Server/clients(where:)`` is the exception that pushes nothing: tmux only
 grew `list-clients -f` in 3.4, and a server has one client per attachment, so

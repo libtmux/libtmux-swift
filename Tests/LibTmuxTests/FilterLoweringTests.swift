@@ -292,6 +292,73 @@ struct FilterLoweringTests {
         }
     }
 
+    /// Scalars outside ASCII whose canonical decomposition is ASCII only, with
+    /// the ASCII text they decompose to.
+    private static func asciiAliases() -> [Unicode.Scalar: String] {
+        var found: [Unicode.Scalar: String] = [:]
+        for value in UInt32(0x80)...0x10_FFFF {
+            guard let scalar = Unicode.Scalar(value) else { continue }
+            let decomposed = String(scalar).decomposedStringWithCanonicalMapping
+            if decomposed.unicodeScalars.allSatisfy(\.isASCII) { found[scalar] = decomposed }
+        }
+        return found
+    }
+
+    @Test("every ASCII character a non-ASCII scalar is equal to is kept off the byte path")
+    func canonicallyAliasedASCIIIsComplete() {
+        let aliases = Self.asciiAliases()
+        // Swift agrees with the decomposition data about what these equal.
+        for (scalar, ascii) in aliases {
+            #expect(String(scalar) == ascii, "U+\(String(scalar.value, radix: 16)) != \(ascii)")
+        }
+        let aliased = Set(aliases.values.flatMap { $0.unicodeScalars })
+        #expect(aliased == FilterLowering.canonicallyAliasedASCII)
+        #expect(aliased == ["K", ";", "`"])
+        for scalar in aliased {
+            #expect(!FilterLowering.comparableAsBytes(String(scalar)))
+            #expect(!FilterLowering.comparableAsBytes("ab" + String(scalar)))
+        }
+        // The rest of ASCII still compares as bytes, bar the hash.
+        #expect(FilterLowering.comparableAsBytes("k:a"))
+        #expect(FilterLowering.comparableAsBytes("plain-name_1"))
+    }
+
+    @Test("an ASCII literal another scalar is equal to is never a byte comparison")
+    func aliasedLiteralsStayLocal() throws {
+        for literal in ["K", ";", "`", "name-K"] {
+            let equals = try FilterExpr<Window>.where(\.name, .equals(literal))
+            #expect(equals.tmuxPredicate == "1", "\(literal) lowered to \(equals.tmuxPredicate)")
+            #expect(!equals.isFullyLowered)
+            let oneOf = try FilterExpr<Window>.where(\.name, .isIn(["a", literal]))
+            #expect(oneOf.tmuxPredicate == "1")
+            let prefix = try FilterExpr<Window>.where(\.name, .hasPrefix(literal))
+            #expect(prefix.tmuxPredicate == "1")
+        }
+        let plain = try FilterExpr<Window>.where(\.name, .equals("k"))
+        #expect(plain.isFullyLowered)
+    }
+
+    @Test("a window named with KELVIN SIGN is found by an equality on K")
+    func kelvinSignIsFoundByK() async throws {
+        try await withTmuxServer { server in
+            try await pinWindowNames(server)
+            let session = try await server.newSession(named: "kelvin")
+            let kelvin = "\u{212A}"
+            let window = try await server.newWindow(in: session, named: kelvin)
+            #expect(kelvin == "K")
+            for operation: FilterOperator<String> in [
+                .equals("K"), .isIn(["x", "K"]), .hasPrefix("K"), .contains("K"),
+            ] {
+                let expression = try FilterExpr<Window>.where(\.name, operation)
+                let local = try await server.windows().filter(expression)
+                let lowered = try await server.windows(where: expression)
+                #expect(
+                    local.map(\.id).contains(window.window.id), "\(operation) misses it locally")
+                #expect(lowered.map(\.id) == local.map(\.id), "\(operation) dropped the window")
+            }
+        }
+    }
+
     @Test("a glob is pushed down but never negated")
     func globsAreNotExact() throws {
         // tmux globs over bytes and Swift matches characters, so `e*` finds the
