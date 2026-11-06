@@ -1,8 +1,9 @@
 /// Everything a tmux operation can fail with.
 ///
 /// ``Server/run(_:)-(TmuxCommand)`` hands every tmux status back as a
-/// ``TmuxReply``. Higher-level operations that promise a decoded value throw
-/// ``commandFailed(command:exitCode:reason:)`` when tmux rejects that read.
+/// ``TmuxReply``. Higher-level operations that promise a decoded value or a
+/// completed change throw ``commandFailed(command:exitCode:reason:)`` when tmux
+/// rejects the read or the write.
 public enum TmuxError: Error, Sendable, Hashable {
     /// The tmux client process was never started, so the requested command
     /// cannot have reached a daemon.

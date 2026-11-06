@@ -103,15 +103,16 @@ extension Server {
     /// Every option set in one exact table.
     ///
     /// Reports what tmux has actually been told, not the built-in defaults —
-    /// a fresh server's session table is legitimately empty.
+    /// a fresh server's session table is legitimately empty. A table tmux
+    /// rejects, such as the options of a server that is not running, throws
+    /// ``TmuxError/commandFailed(command:exitCode:reason:)`` instead of
+    /// reading as empty.
     public func options(
         _ scope: OptionScope
     ) async throws(TmuxError) -> [TmuxOption] {
-        let reply = try await runOptionCommand(
-            TmuxCommand("show-options", scope.selectorArguments),
-            in: scope
-        )
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-options", scope.selectorArguments)
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text.split(separator: "\n").map { line in
             let (name, value) = splitOnFirstSpace(String(line))
             return TmuxOption(name: name, value: value, scope: scope)
@@ -139,19 +140,18 @@ extension Server {
     ///
     /// Skips the presence check ``option(_:scope:)`` pays for, so a caller
     /// walking a listing does not re-read the whole table once per name.
-    /// Reports `nil` for a name tmux does not answer for.
+    /// Reports `nil` for a name tmux does not know (`invalid option`); any
+    /// other rejection throws.
     package func optionValue(
         _ name: String,
         scope: OptionScope
     ) async throws(TmuxError) -> String? {
-        let reply = try await runOptionCommand(
-            TmuxCommand(
-                "show-options",
-                scope.selectorArguments + ["-v", name]
-            ),
-            in: scope
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand("show-options", scope.selectorArguments + ["-v", name])
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else {
+            if isUnknownOption(reply) { return nil }
+            throw reply.failure(for: command)
+        }
         var value = reply.text
         if value.hasSuffix("\n") { value.removeLast() }
         return value
@@ -162,14 +162,13 @@ extension Server {
         _ name: String,
         scope: OptionScope
     ) async throws(TmuxError) -> String? {
-        let reply = try await runOptionCommand(
-            TmuxCommand(
-                "show-options",
-                ["-A"] + scope.selectorArguments + ["-v", name]
-            ),
-            in: scope
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand(
+            "show-options", ["-A"] + scope.selectorArguments + ["-v", name])
+        let reply = try await runOptionCommand(command, in: scope)
+        guard reply.isSuccess else {
+            if isUnknownOption(reply) { return nil }
+            throw reply.failure(for: command)
+        }
         var value = reply.text
         if value.hasSuffix("\n") { value.removeLast() }
         return value
@@ -217,12 +216,15 @@ extension Server {
     ///
     /// `show-hooks` lists every hook name tmux knows, most with nothing bound.
     /// Only the bound ones are reported here — an unbound name is not a hook,
-    /// it is a place one could go.
+    /// it is a place one could go. A session tmux does not have throws
+    /// ``TmuxError/commandFailed(command:exitCode:reason:)``, which is not the
+    /// same answer as a session with no hooks.
     public func hooks(
         _ scope: HookScope = .global
     ) async throws(TmuxError) -> [TmuxHook] {
-        let reply = try await run(TmuxCommand("show-hooks", scope.arguments))
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-hooks", scope.arguments)
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text.split(separator: "\n").compactMap { line in
             let (label, command) = splitOnFirstSpace(String(line))
             guard !command.isEmpty else { return nil }
@@ -295,6 +297,12 @@ extension Server {
         }
         return try await runGuarded(command, by: [guardedValue])
     }
+}
+
+/// Whether a `show-options -v` rejection is tmux saying the name is not an
+/// option it holds, which is the answer `nil` stands for.
+private func isUnknownOption(_ reply: TmuxReply) -> Bool {
+    reply.errorText.hasPrefix("invalid option")
 }
 
 /// tmux prints `name value`, and a value may contain spaces, so only the first

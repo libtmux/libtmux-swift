@@ -2,14 +2,16 @@ extension Server {
     // MARK: Buffers
 
     /// The server's paste buffers, most recent first.
+    ///
+    /// A server with no buffers answers an empty list. A server tmux cannot
+    /// reach throws ``TmuxError/commandFailed(command:exitCode:reason:)``.
     public func buffers() async throws(TmuxError) -> [TmuxBuffer] {
-        let reply = try await run(
-            TmuxCommand(
-                "list-buffers",
-                ["-F", "#{buffer_name}\(FormatProjection.separator)#{buffer_size}"]
-            )
+        let command = TmuxCommand(
+            "list-buffers",
+            ["-F", "#{buffer_name}\(FormatProjection.separator)#{buffer_size}"]
         )
-        guard reply.isSuccess else { return [] }
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         let projection = FormatProjection([
             FormatField("buffer_name"), FormatField("buffer_size", .integer),
         ])
@@ -48,15 +50,20 @@ extension Server {
     public func buffer(named name: String? = nil) async throws(TmuxError) -> String? {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        let reply = try await runInOwnProcess(
-            rawArguments: TmuxCommand("show-buffer", arguments).argumentVector
-        )
-        guard reply.isSuccess else { return nil }
+        let command = TmuxCommand("show-buffer", arguments)
+        let reply = try await runInOwnProcess(rawArguments: command.argumentVector)
+        guard reply.isSuccess else {
+            // `no buffer NAME`, or `no buffers` when none is named and none exist.
+            if reply.errorText.hasPrefix("no buffer") { return nil }
+            throw reply.failure(for: command)
+        }
         var text = reply.text
         if text.hasSuffix("\n") { text.removeLast() }
         return text
     }
 
+    /// Deletes a buffer. A buffer tmux does not have throws
+    /// ``TmuxError/commandFailed(command:exitCode:reason:)``.
     public func deleteBuffer(named name: String) async throws(TmuxError) {
         try await expectSuccess(TmuxCommand("delete-buffer", ["-b", name]))
     }

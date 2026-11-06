@@ -129,7 +129,7 @@ extension Server {
     func expectSuccess(_ command: TmuxCommand) async throws(TmuxError) {
         let reply = try await run(command)
         guard reply.isSuccess else {
-            throw .invocationFailed(reason: reply.errorText)
+            throw reply.failure(for: command)
         }
     }
 
@@ -139,7 +139,7 @@ extension Server {
     ) async throws(TmuxError) {
         let reply = try await runGuarded(command, by: values)
         guard reply.isSuccess else {
-            throw .invocationFailed(reason: reply.errorText)
+            throw reply.failure(for: command)
         }
     }
 }
