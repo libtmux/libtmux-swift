@@ -390,6 +390,12 @@ public struct Server: Sendable, Hashable {
     /// A nonzero status is a reply, not an error: `has-session` answers a
     /// question with its exit code, and a rejected command carries its reason
     /// on standard error. Each output stream is capped at 1 MiB.
+    ///
+    /// The arguments reach tmux as given, so an argument ending in `;` ends
+    /// the command there and the next argument runs as a command of its own.
+    /// Spell a literal trailing semicolon `\;`. The typed calls, such as
+    /// ``setOption(_:to:scope:)`` and ``setBuffer(_:named:)``, do that for the
+    /// text they are given.
     public func run(_ command: TmuxCommand) async throws(TmuxError) -> TmuxReply {
         try await run(rawArguments: command.argumentVector)
     }

@@ -363,7 +363,7 @@ extension Server {
         if let values {
             reply = try await runGuarded(command, by: values, checkingTargets: false)
         } else {
-            reply = try await run(rawArguments: command.argumentVector)
+            reply = try await run(rawArguments: command.argumentsSpelledAsData.argumentVector)
         }
         guard reply.isSuccess else { return nil }
         var text = reply.text
@@ -395,7 +395,7 @@ extension Server {
     public func format(_ template: String) async throws(TmuxError) -> String? {
         let reply = try await run(
             rawArguments: TmuxCommand("display-message", ["-p", template])
-                .argumentVector
+                .argumentsSpelledAsData.argumentVector
         )
         guard reply.isSuccess else { return nil }
         var text = reply.text

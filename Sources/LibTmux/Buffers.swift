@@ -26,13 +26,17 @@ extension Server {
     }
 
     /// Puts text into a named buffer.
+    ///
+    /// The contents and the name are data: text ending in `;` is stored whole.
     public func setBuffer(
         _ contents: String,
         named name: String? = nil
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("set-buffer", arguments + ["--", contents]))
+        try await expectSuccess(
+            TmuxCommand("set-buffer", arguments + ["--", contents]).argumentsSpelledAsData
+        )
     }
 
     /// Reads a buffer's contents, or `nil` if no such buffer exists.
@@ -49,7 +53,8 @@ extension Server {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
         let reply = try await runInOwnProcess(
-            rawArguments: TmuxCommand("show-buffer", arguments).argumentVector
+            rawArguments: TmuxCommand("show-buffer", arguments).argumentsSpelledAsData
+                .argumentVector
         )
         guard reply.isSuccess else { return nil }
         var text = reply.text
@@ -58,7 +63,9 @@ extension Server {
     }
 
     public func deleteBuffer(named name: String) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("delete-buffer", ["-b", name]))
+        try await expectSuccess(
+            TmuxCommand("delete-buffer", ["-b", name]).argumentsSpelledAsData
+        )
     }
 
     /// Fills a buffer from a file, letting tmux read it.
@@ -78,7 +85,10 @@ extension Server {
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("load-buffer", arguments + [tmuxLiteralArgument(path)]))
+        try await expectSuccess(
+            TmuxCommand("load-buffer", arguments + [tmuxLiteralArgument(path)])
+                .argumentsSpelledAsData
+        )
     }
 
     /// Writes a buffer to a file, letting tmux do the writing.
@@ -92,7 +102,10 @@ extension Server {
     ) async throws(TmuxError) {
         var arguments: [String] = []
         if let name { arguments += ["-b", name] }
-        try await expectSuccess(TmuxCommand("save-buffer", arguments + [tmuxLiteralArgument(path)]))
+        try await expectSuccess(
+            TmuxCommand("save-buffer", arguments + [tmuxLiteralArgument(path)])
+                .argumentsSpelledAsData
+        )
     }
 
     /// Pastes a buffer into a pane.

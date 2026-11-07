@@ -147,7 +147,7 @@ extension Server {
         let reply = try await runOptionCommand(
             TmuxCommand(
                 "show-options",
-                scope.selectorArguments + ["-v", name]
+                scope.selectorArguments + ["-v", optionArgument(name, in: scope)]
             ),
             in: scope
         )
@@ -165,7 +165,7 @@ extension Server {
         let reply = try await runOptionCommand(
             TmuxCommand(
                 "show-options",
-                ["-A"] + scope.selectorArguments + ["-v", name]
+                ["-A"] + scope.selectorArguments + ["-v", optionArgument(name, in: scope)]
             ),
             in: scope
         )
@@ -176,6 +176,9 @@ extension Server {
     }
 
     /// Sets an option.
+    ///
+    /// The name and the value are data: one ending in `;` is the name or the
+    /// value, and never ends the command.
     @discardableResult
     public func setOption(
         _ name: String,
@@ -185,7 +188,9 @@ extension Server {
         try await runOptionCommand(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments + [name, tmuxArgumentData(value)]
+                scope.selectorArguments + [
+                    optionArgument(name, in: scope), tmuxArgumentData(value),
+                ]
             ),
             in: scope
         )
@@ -207,7 +212,7 @@ extension Server {
         try await runOptionCommand(
             TmuxCommand(
                 "set-option",
-                scope.selectorArguments + ["-u", name]
+                scope.selectorArguments + ["-u", optionArgument(name, in: scope)]
             ),
             in: scope
         )
@@ -257,7 +262,7 @@ extension Server {
     ) async throws(TmuxError) -> TmuxReply {
         let slot = index.map { "\(name)[\($0)]" } ?? name
         return try await run(
-            TmuxCommand("set-hook", scope.arguments + [slot, command])
+            TmuxCommand("set-hook", scope.arguments + [slot, command]).argumentsSpelledAsData
         )
     }
 
@@ -272,7 +277,9 @@ extension Server {
         _ name: String,
         in scope: HookScope = .global
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(TmuxCommand("set-hook", scope.arguments + ["-u", name]))
+        try await run(
+            TmuxCommand("set-hook", scope.arguments + ["-u", name]).argumentsSpelledAsData
+        )
     }
 
     /// Runs a hook's commands now, without waiting for what would trigger it.
@@ -283,7 +290,15 @@ extension Server {
         _ name: String,
         in scope: HookScope = .global
     ) async throws(TmuxError) -> TmuxReply {
-        try await run(TmuxCommand("set-hook", scope.arguments + ["-R", name]))
+        try await run(
+            TmuxCommand("set-hook", scope.arguments + ["-R", name]).argumentsSpelledAsData
+        )
+    }
+
+    /// An option name as the command will carry it. A guarded request quotes
+    /// the name itself, so only a name that travels as argv is escaped.
+    private func optionArgument(_ name: String, in scope: OptionScope) -> String {
+        scope.guardedValue == nil ? tmuxArgumentData(name) : name
     }
 
     private func runOptionCommand(
