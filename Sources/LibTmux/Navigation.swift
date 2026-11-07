@@ -323,7 +323,7 @@ extension Server {
 
     /// Loads a tmux configuration file into the running server.
     public func sourceFile(_ path: String) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("source-file", [path]))
+        try await expectSuccess(TmuxCommand("source-file", [path]).argumentsSpelledAsData)
     }
 
     /// Throws unless a server is listening.
