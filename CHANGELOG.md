@@ -18,6 +18,13 @@ products, such as documentation, CI and release tooling, are listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `Server.environment(_:)` lists a variable whose value holds a newline as one
+  variable with that value, the same one `Server.environmentValue(_:in:)`
+  returns. It read the text after the newline as a second variable that did not
+  exist, and cut the first value short, under a UTF-8 tmux client. (#120)
+
 ## [0.1.1] - 2026-11-01
 
 ### Added
