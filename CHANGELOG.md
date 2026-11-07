@@ -33,6 +33,10 @@ products, such as documentation, CI and release tooling, are listed here.
   session, window and pane scope. It stored a backslash before the `;`
   (`hello\;`), because the value was escaped for argv and then quoted again by
   the guard that scope adds. Server and global scopes were not affected. (#119)
+- `Server.environment(_:)` lists a variable whose value holds a newline as one
+  variable with that value, the same one `Server.environmentValue(_:in:)`
+  returns. It read the text after the newline as a second variable that did not
+  exist, and cut the first value short, under a UTF-8 tmux client. (#120)
 
 ## [0.1.1] - 2026-11-01
 
