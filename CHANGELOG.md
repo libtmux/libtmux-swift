@@ -18,6 +18,13 @@ products, such as documentation, CI and release tooling, are listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `Server.setOption(_:to:scope:)` stores a value ending in `;` as written at
+  session, window and pane scope. It stored a backslash before the `;`
+  (`hello\;`), because the value was escaped for argv and then quoted again by
+  the guard that scope adds. Server and global scopes were not affected. (#119)
+
 ## [0.1.1] - 2026-11-01
 
 ### Added

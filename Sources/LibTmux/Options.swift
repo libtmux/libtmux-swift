@@ -176,17 +176,20 @@ extension Server {
     }
 
     /// Sets an option.
+    ///
+    /// The value is stored as given at every scope, including one ending in `;`.
     @discardableResult
     public func setOption(
         _ name: String,
         to value: String,
         scope: OptionScope = .server
     ) async throws(TmuxError) -> TmuxReply {
-        try await runOptionCommand(
-            TmuxCommand(
-                "set-option",
-                scope.selectorArguments + [name, tmuxArgumentData(value)]
-            ),
+        // A server or global scope sends argv, where a trailing `;` ends the
+        // command. A guarded scope quotes the value as a command string, and
+        // escaping it as well would store the backslash.
+        let argument = scope.guardedValue == nil ? tmuxArgumentData(value) : value
+        return try await runOptionCommand(
+            TmuxCommand("set-option", scope.selectorArguments + [name, argument]),
             in: scope
         )
     }
