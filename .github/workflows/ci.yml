@@ -80,10 +80,10 @@ jobs:
   # suite cannot say because it would be refused too. They are part of the
   # whole table, so only a tag and a full-scope dispatch run them.
   refusal:
-    name: ubuntu-latest / tmux ${{ matrix.tmux }} (refused)
+    name: ubuntu-24.04 / tmux ${{ matrix.tmux }} (refused)
     needs: plan
     if: needs.plan.outputs.refusal_planned == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     timeout-minutes: 30
