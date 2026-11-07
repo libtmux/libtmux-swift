@@ -178,7 +178,8 @@ extension Server {
     /// Sets an option.
     ///
     /// The name and the value are data: one ending in `;` is the name or the
-    /// value, and never ends the command.
+    /// value, and never ends the command. The value is stored as given at
+    /// every scope.
     @discardableResult
     public func setOption(
         _ name: String,
@@ -189,7 +190,7 @@ extension Server {
             TmuxCommand(
                 "set-option",
                 scope.selectorArguments + [
-                    optionArgument(name, in: scope), tmuxArgumentData(value),
+                    optionArgument(name, in: scope), optionArgument(value, in: scope),
                 ]
             ),
             in: scope
@@ -295,10 +296,12 @@ extension Server {
         )
     }
 
-    /// An option name as the command will carry it. A guarded request quotes
-    /// the name itself, so only a name that travels as argv is escaped.
-    private func optionArgument(_ name: String, in scope: OptionScope) -> String {
-        scope.guardedValue == nil ? tmuxArgumentData(name) : name
+    /// An option name or value as the command will carry it. A server or
+    /// global scope sends argv, where a trailing `;` ends the command, so the
+    /// text is escaped. A guarded request quotes it as a command string
+    /// itself, and escaping it as well would store the backslash.
+    private func optionArgument(_ text: String, in scope: OptionScope) -> String {
+        scope.guardedValue == nil ? tmuxArgumentData(text) : text
     }
 
     private func runOptionCommand(
