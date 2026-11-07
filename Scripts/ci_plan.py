@@ -30,7 +30,7 @@ SWIFT_PATTERN = re.compile(r"\d{1,2}\.\d{1,2}(\.\d{1,2})?")
 
 SCOPES = ("edges", "full", "custom")
 TMATE_MODES = ("off", "before-tests", "on-failure")
-OS = "ubuntu-latest"
+OS = "ubuntu-24.04"
 
 # GitHub rejects a matrix over 256 jobs; a dispatch that asks for more than
 # this is a typo or a loop, and it is cheaper to refuse it here.
