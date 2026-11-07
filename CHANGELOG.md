@@ -18,6 +18,18 @@ products, such as documentation, CI and release tooling, are listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `Server.setOption(_:to:scope:)`, `Server.setBuffer(_:named:)` and the other
+  typed calls that hand caller text to tmux unguarded keep a trailing `;` as
+  data. tmux ended the command at an argument ending in `;`, so
+  `setOption("mouse;", to: "kill-server")` ran `kill-server`, and
+  `setBuffer("hello;")` stored `hello`. The option, buffer, environment, hook
+  and wait-channel names, the buffer and file paths, `sourceFile(_:)`, and the
+  `format(_:)` template are covered. `Server.run(_:)` is unchanged: its
+  arguments reach tmux as given, so spell a literal trailing `;` as `\;`.
+  (#118)
+
 ## [0.1.1] - 2026-11-01
 
 ### Added
