@@ -107,6 +107,18 @@ func tmuxArgumentData(_ value: String) -> String {
     return String(value.dropLast()) + "\\" + TmuxCommandList.separator
 }
 
+extension TmuxCommand {
+    /// The command with every argument spelled by ``tmuxArgumentData(_:)``.
+    ///
+    /// For a typed call that runs unguarded and carries caller text: tmux reads
+    /// an argument ending in `;` as the end of the command, wherever the
+    /// argument sits. A guarded request quotes the command as a string instead,
+    /// and escaping there would store the backslash.
+    var argumentsSpelledAsData: TmuxCommand {
+        TmuxCommand(name, arguments.map(tmuxArgumentData))
+    }
+}
+
 private func splitTmuxArgumentCommands(_ arguments: [String]) -> [[String]] {
     // tmux's argv parser makes a trailing `;` structural and `\;` literal.
     // Recreate that result before quoting the control command line.

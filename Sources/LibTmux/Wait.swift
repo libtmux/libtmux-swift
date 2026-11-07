@@ -33,7 +33,8 @@ extension Server {
     public func wait(for channel: String) async throws(TmuxError) {
         let before = try await serverProcessID()
         let reply = try await runInOwnProcess(
-            rawArguments: TmuxCommand("wait-for", ["--", channel]).argumentVector
+            rawArguments: TmuxCommand("wait-for", ["--", channel]).argumentsSpelledAsData
+                .argumentVector
         )
         guard reply.isSuccess else {
             throw .invocationFailed(reason: reply.errorText)
@@ -52,6 +53,8 @@ extension Server {
     /// an unpaired signal is worth avoiding — what a later wait does depends
     /// on how many went unmatched, not how many were sent.
     public func signal(_ channel: String) async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("wait-for", ["-S", "--", channel]))
+        try await expectSuccess(
+            TmuxCommand("wait-for", ["-S", "--", channel]).argumentsSpelledAsData
+        )
     }
 }

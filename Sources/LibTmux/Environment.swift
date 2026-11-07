@@ -65,7 +65,8 @@ extension Server {
     public func environment(
         _ scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> [TmuxEnvironmentVariable] {
-        let reply = try await run(TmuxCommand("show-environment", scope.arguments))
+        let reply = try await run(
+            TmuxCommand("show-environment", scope.arguments).argumentsSpelledAsData)
         guard reply.isSuccess else { return [] }
         return reply.text
             .split(separator: "\n", omittingEmptySubsequences: true)
@@ -82,7 +83,7 @@ extension Server {
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> String? {
         let command = TmuxCommand("show-environment", scope.arguments + ["--", name])
-        let reply = try await run(command)
+        let reply = try await run(command.argumentsSpelledAsData)
         guard reply.isSuccess else {
             if reply.errorText == "unknown variable: \(name)" { return nil }
             throw reply.failure(for: command)
@@ -106,7 +107,7 @@ extension Server {
     ) async throws(TmuxError) -> TmuxReply {
         // run(_:) hands argv to tmux, which ends a command at a trailing `;`.
         // A guarded request is quoted as a command string and needs no escape.
-        try await run(setEnvironmentCommand(name, to: tmuxArgumentData(value), in: scope))
+        try await run(setEnvironmentCommand(name, to: value, in: scope).argumentsSpelledAsData)
     }
 
     /// Unsets a variable, leaving no trace of it.
@@ -121,6 +122,7 @@ extension Server {
     ) async throws(TmuxError) -> TmuxReply {
         try await run(
             TmuxCommand("set-environment", scope.arguments + ["-u", name])
+                .argumentsSpelledAsData
         )
     }
 
@@ -133,6 +135,7 @@ extension Server {
     ) async throws(TmuxError) -> TmuxReply {
         try await run(
             TmuxCommand("set-environment", scope.arguments + ["-r", name])
+                .argumentsSpelledAsData
         )
     }
 }
