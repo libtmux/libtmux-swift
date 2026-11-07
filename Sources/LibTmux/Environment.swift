@@ -62,11 +62,16 @@ extension Server {
     }
 
     /// Every variable in an environment, in the order tmux printed them.
+    ///
+    /// A session tmux does not have throws
+    /// ``TmuxError/commandFailed(command:exitCode:reason:)``, which is not the
+    /// same answer as a session with no variables.
     public func environment(
         _ scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> [TmuxEnvironmentVariable] {
-        let reply = try await run(TmuxCommand("show-environment", scope.arguments))
-        guard reply.isSuccess else { return [] }
+        let command = TmuxCommand("show-environment", scope.arguments)
+        let reply = try await run(command)
+        guard reply.isSuccess else { throw reply.failure(for: command) }
         return reply.text
             .split(separator: "\n", omittingEmptySubsequences: true)
             .compactMap { TmuxEnvironmentVariable(line: String($0)) }

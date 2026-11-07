@@ -35,15 +35,25 @@ enum FilterLowering {
         return String(out)
     }
 
+    /// The ASCII scalars that a non-ASCII scalar is canonically equivalent to,
+    /// so Swift's `==` reads that scalar as the ASCII one: U+212A KELVIN SIGN
+    /// is `K`, U+037E GREEK QUESTION MARK is `;`, and U+1FEF GREEK VARIA is
+    /// a backtick. Each is a singleton canonical decomposition.
+    ///
+    /// The standard library does not expose decomposition data, so this is
+    /// written out, and a test walks every scalar to show the list is complete.
+    static let canonicallyAliasedASCII: Set<Unicode.Scalar> = ["K", ";", "`"]
+
     /// Whether tmux comparing this literal byte for byte asks the same question
     /// Swift does.
     ///
-    /// Two reasons it may not, and both silently drop rows rather than failing:
+    /// Three reasons it may not, and each silently drops rows rather than
+    /// failing:
     ///
     /// Swift's `==` is canonical equivalence, so `caf\u{e9}` and `cafe\u{301}`
-    /// are one string in Swift and two different byte sequences to tmux. A
-    /// pure-ASCII literal cannot be canonically equal to anything but itself,
-    /// which is what makes the two agree.
+    /// are one string in Swift and two different byte sequences to tmux. For
+    /// an ASCII literal the two agree, except where a non-ASCII scalar
+    /// decomposes to one of its characters: see `canonicallyAliasedASCII`.
     ///
     /// A `#` is excluded as well. It is tmux's escape character, but the escape
     /// has an exception: in `##[` the run is kept rather than collapsed,
@@ -51,7 +61,9 @@ enum FilterLowering {
     /// therefore right in every position, so a literal carrying one is matched
     /// at home instead.
     static func comparableAsBytes(_ literal: String) -> Bool {
-        literal.unicodeScalars.allSatisfy { $0.isASCII && $0 != "#" }
+        literal.unicodeScalars.allSatisfy {
+            $0.isASCII && $0 != "#" && !canonicallyAliasedASCII.contains($0)
+        }
     }
 
     /// Escapes a string so tmux's `m` modifier matches it literally, or `nil`

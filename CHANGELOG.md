@@ -18,6 +18,32 @@ products, such as documentation, CI and release tooling, are listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking.** `Server.options(_:)`, `Server.hooks(_:)`,
+  `Server.environment(_:)` and `Server.buffers()` throw
+  `TmuxError.commandFailed` when tmux rejects the command, where they returned
+  `[]`. A hook or environment table of a session that does not exist, or of a
+  server that is not running, no longer reads as empty. A table that holds
+  nothing still returns `[]`. Handle the throw where an empty list stood for
+  "tmux could not answer". `option(_:scope:)`, `environmentValue(_:in:)` and
+  `buffer(named:)` still return `nil` for a name that is not set.
+- Writes that tmux rejects, such as `Server.deleteBuffer(named:)`, throw
+  `TmuxError.commandFailed` rather than `invocationFailed`, which is left for a
+  command that got no usable reply. A `catch` on `invocationFailed` for a
+  rejected write now needs `commandFailed`.
+
+### Fixed
+
+- A task cancelled while a `Server` waits on its first tmux version probe
+  resumes at once and throws `TmuxError.cancelled`, where it stayed suspended
+  until tmux exited and then threw `invocationFailed`. Other callers sharing
+  that probe keep waiting.
+- `Server.windows(where:)` and the other filtered listings no longer drop a row
+  whose text Swift reads as equal to a literal containing `K`, `;` or a
+  backtick: `.equals("K")` now finds a window named with U+212A. Such a literal
+  is matched here instead of in tmux.
+
 ## [0.1.1] - 2026-11-01
 
 ### Added

@@ -739,6 +739,7 @@ actor ServerRuntime {
     /// What the executable reports, read once an endpoint has no daemon.
     private var executableVersion: ServerVersion?
     private var probing: Task<ServerVersion?, any Error>?
+    private var probeCallers = 0
 
     init(
         endpoint: Endpoint,
@@ -883,7 +884,9 @@ actor ServerRuntime {
     ///
     /// Callers that arrive while a probe is in flight share its answer, so
     /// the first batch of concurrent commands spends one process on the version
-    /// check rather than one each.
+    /// check rather than one each. A caller that is cancelled stops waiting at
+    /// once and throws ``TmuxError/cancelled``; the probe goes on for the
+    /// others, and ends only when the last caller has left.
     private func probeDaemon() async throws(TmuxError) -> ServerVersion? {
         let task: Task<ServerVersion?, any Error>
         if let probing {
@@ -892,11 +895,26 @@ actor ServerRuntime {
             task = Task { try await self.probeDaemonOnce() }
             probing = task
         }
-        defer { if probing == task { probing = nil } }
-        do {
-            return try await task.value
-        } catch {
-            throw normalizedTmuxError(error)
+        probeCallers += 1
+        let waiter = ProbeWaiter()
+        let relay = Task { waiter.settle(.finished(await task.result)) }
+        let outcome = await waiter.wait()
+        probeCallers -= 1
+        switch outcome {
+        case let .finished(result):
+            relay.cancel()
+            if probing == task { probing = nil }
+            do {
+                return try result.get()
+            } catch {
+                throw normalizedTmuxError(error)
+            }
+        case .cancelled:
+            if probeCallers == 0 {
+                task.cancel()
+                if probing == task { probing = nil }
+            }
+            throw .cancelled
         }
     }
 
@@ -934,5 +952,55 @@ actor ServerRuntime {
         )
         try requireReplyFitsLimit(reply, perStreamOutputLimit)
         return reply
+    }
+}
+
+/// Hands one caller the shared version probe's outcome, or cancellation,
+/// whichever comes first.
+///
+/// Awaiting a `Task`'s value does not end when the awaiting task is cancelled,
+/// so a caller waits here instead and the probe's own task settles it.
+private final class ProbeWaiter: @unchecked Sendable {
+    enum Outcome: Sendable {
+        case finished(Result<ServerVersion?, any Error>)
+        case cancelled
+    }
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Outcome, Never>?
+    private var outcome: Outcome?
+
+    func wait() async -> Outcome {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if let outcome {
+                    lock.unlock()
+                    continuation.resume(returning: outcome)
+                } else if Task.isCancelled {
+                    outcome = .cancelled
+                    lock.unlock()
+                    continuation.resume(returning: .cancelled)
+                } else {
+                    self.continuation = continuation
+                    lock.unlock()
+                }
+            }
+        } onCancel: {
+            settle(.cancelled)
+        }
+    }
+
+    func settle(_ outcome: Outcome) {
+        lock.lock()
+        guard self.outcome == nil else {
+            lock.unlock()
+            return
+        }
+        self.outcome = outcome
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: outcome)
     }
 }

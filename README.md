@@ -1075,9 +1075,12 @@ body returns, throws, or the process is killed. Guide:
 
 ## Support and status
 
-The library works and its suite runs against every supported tmux release on
-every push, but the API has had no outside use and names are still moving.
-Expect to update code when you update the package.
+The library works. Its suite runs against the oldest and newest released tmux
+on every push and pull request, and against the whole table when a release is
+tagged.
+
+The API has had no outside use and names are still moving. Expect to update
+code when you update the package.
 
 - **The public API can change in any release.** Releases are numbered `0.1.N`,
   each increments `N`, and the changelog marks each break.

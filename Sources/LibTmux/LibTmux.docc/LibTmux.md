@@ -42,7 +42,10 @@ A tmux command that runs and reports a nonzero status is a *reply*, not an
 error. `has-session` answers a question with its exit code, and a rejected
 command explains itself on standard error — so
 ``Server/run(_:)-(TmuxCommand)`` hands both back rather than throwing.
-``TmuxError`` covers only the cases where no usable reply exists at all.
+The operations built on it that promise a value or a completed change turn a
+rejection into ``TmuxError/commandFailed(command:exitCode:reason:)``, so a
+listing that tmux refused is not mistaken for an empty one. ``TmuxError``
+otherwise covers the cases where no usable reply exists at all.
 
 ## Topics
 
