@@ -38,9 +38,21 @@ struct TrailingSemicolonTests {
             #expect(value == "body")
             let listed = try await server.buffers().map(\.name).contains("name;")
             #expect(listed)
+        }
+    }
+
+    @Test(
+        "deleteBuffer removes the one buffer whose name ends in a semicolon",
+        .enabled(if: laneSupportsNamedBufferEditing, "named-buffer deletion needs tmux 3.4"))
+    func deleteBufferNameKeepsItsSemicolon() async throws {
+        try await withTmuxServer { server in
+            try await server.setBuffer("body", named: "name;")
+            try await server.setBuffer("other", named: "name")
             try await server.deleteBuffer(named: "name;")
             let afterDelete = try await server.buffer(named: "name;")
             #expect(afterDelete == nil)
+            let other = try await server.buffer(named: "name")
+            #expect(other == "other")
         }
     }
 
