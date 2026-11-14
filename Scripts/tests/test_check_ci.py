@@ -120,11 +120,11 @@ def test_a_page_without_the_range_is_flagged(tree: Tree) -> None:
 
 
 @pytest.mark.parametrize("page", CHECK.FLOOR_PAGES)
-def test_a_readme_may_leave_out_the_range(tree: Tree, page: str) -> None:
-    """A README states a floor, so a range is not required of it."""
+def test_a_readme_without_the_floor_is_flagged(tree: Tree, page: str) -> None:
+    """The floor is the one claim a README must make about tmux."""
     path = tree.root / page
-    path.write_text(CHECK.RANGE_CLAIM.sub("3.3a or newer", path.read_text()))
-    assert tree.problems() == []
+    path.write_text(path.read_text().replace("tmux 3.3a or newer", "a recent tmux"))
+    assert tree.flags(f"{page} does not say tmux 3.3a or newer")
 
 
 @pytest.mark.parametrize("page", CHECK.FLOOR_PAGES)

@@ -27,8 +27,8 @@ RANGE_PAGES = (
     "Sources/LibTmux/LibTmux.docc/PlatformSupport.md",
     "Sources/LibTmux/LibTmux.docc/LibTmux.md",
 )
-# READMEs state a floor a reader can act on, not the range CI happens to run. A
-# range they do state still has to match the manifest.
+# READMEs state the floor a reader can act on, "tmux 3.3a or newer", not the
+# range CI happens to run. A range they do state still has to match the manifest.
 FLOOR_PAGES = (
     "README.md",
     "Sources/TmuxWorkspaceCLI/README.md",
@@ -174,8 +174,11 @@ def check_docs(root: pathlib.Path, manifest: object) -> list[str]:
             if (first, last, name) != (*ends, preview)
         ]
 
+    floor = f"tmux {ends[0]} or newer"
     for page in FLOOR_PAGES:
         text = _squash((root / page).read_text())
+        if floor not in text:
+            problems.append(f"{page} does not say {floor}")
         problems += [
             f"{page} says tmux {first} through {last}, and {name}, "
             f"not {ends[0]} through {ends[1]}, and {preview}"
