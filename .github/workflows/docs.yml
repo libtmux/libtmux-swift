@@ -52,7 +52,7 @@ jobs:
   # A pull request builds `latest` without publishing; this port has no
   # preview role.
   build:
-    uses: libtmux/docs/.github/workflows/port-docs.yml@a914a82442dbd1be9d7b799d3019db203474ade3
+    uses: libtmux/docs/.github/workflows/port-docs.yml@52613b6fc99c645a86b068d33c7a6d9d3299b8fd
     with:
       port: swift
       source-ref: ${{ inputs.source-ref }}
@@ -78,7 +78,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@a914a82442dbd1be9d7b799d3019db203474ade3
+    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@52613b6fc99c645a86b068d33c7a6d9d3299b8fd
     with:
       # Unprefixed by locale: reusable-deploy prepends <locale>/ itself when
       # `port` is set, so this becomes en/swift/<version>.
