@@ -7,9 +7,7 @@ lives here, and [`Scripts/check_examples.py`](../Scripts/check_examples.py)
 fails the build when a documented block appears in no file below.
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 41
-62 documented examples mapped to consumer sources
-55 have live-test call sites
+$ python3 Scripts/check_examples.py
 ```
 
 ## Why this is its own package
@@ -41,6 +39,10 @@ public func travelling(_ server: Server) async throws -> [Pane] {
 The two middle lines are what the README shows. The signature and the `return`
 are not, which is the point: the example is a function so that a test can call
 it.
+
+A fence may open with `import` lines, so a reader can paste it into a file. The
+lines after them must match an example as above, and each `import` must be one
+that example's file makes.
 
 An example is one **unit**, and a unit is one function. A new `func` starts a
 new unit, so a block spanning two functions matches neither. `main.swift` has
@@ -101,12 +103,16 @@ Three things fail quietly, and all three have cost time:
 - **A line inserted into the middle of a quoted span breaks the match**, even
   though both the example and the page still read correctly on their own.
 
-Six documented blocks compile without counting as executed. Two are import-only
-product examples. The process-global `SIGPIPE` example appears here and in
-DocC, backed by one function intentionally not run because the test harness has
-already chosen that disposition. `TmuxContext.current()` is only non-nil inside
-a pane, and the regular-expression filter has no example test. The quick start
-is top-level code, but its test spawns it, so it does count as executed.
+Some documented blocks compile without counting as executed:
+
+- **Import-only** product examples.
+- **The process-global `SIGPIPE` example,** which the test harness has already
+  decided.
+- **`TmuxContext.current()`,** which is only non-nil inside a pane.
+- **The regular-expression filter,** which has no example test.
+
+The quick start is top-level code, but its test spawns it, so it counts as
+executed.
 
 Every test here provisions servers through the same fixture as the main suite,
 so every socket stays under `/tmp/libtmux-swift-test/`.
