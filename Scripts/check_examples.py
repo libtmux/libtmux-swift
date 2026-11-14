@@ -19,7 +19,9 @@ compile and execute.
     python3 Scripts/check_examples.py --min-executed <count>
 
 Matching is by line sequence after removing each block's own indentation, so an
-example may be shown on its own and kept inside a function.
+example may be shown on its own and kept inside a function. A block may open
+with `import` lines, so a reader can paste it into a file: the lines after them
+must match as above, and each `import` must be one the same file makes.
 """
 
 from __future__ import annotations
@@ -60,6 +62,7 @@ MANIFEST_EXCERPTS = {
 
 FENCE = re.compile(r"```swift\n(.*?)```", re.DOTALL)
 FUNCTION = re.compile(r"^(?:public )?func (\w+)")
+IMPORT = re.compile(r"^import \w+$")
 
 
 def lines_of(text: str) -> list[str]:
@@ -76,24 +79,59 @@ def contains(snippet: list[str], block: list[str]) -> bool:
     return False
 
 
-def units() -> dict[str, list[str]]:
-    """Map each example's name to the lines it is written on.
+def units() -> tuple[dict[str, list[str]], dict[str, set[str]]]:
+    """Map each example's name to its lines, and to the imports of its file.
 
     A unit is one function, because that is what a test can call. Top-level code
     has no function to name, so `main.swift` takes the name of the executable it
     builds — which a test runs rather than calls.
     """
     found: dict[str, list[str]] = {}
+    imports: dict[str, set[str]] = {}
     for path in sorted(EXAMPLES.rglob("*.swift")):
         current = path.parent.name if path.name == "main.swift" else path.stem
+        names = {current}
         found.setdefault(current, [])
-        for line in path.read_text().splitlines():
+        lines = path.read_text().splitlines()
+        for line in lines:
             match = FUNCTION.match(line)
             if match:
                 current = match.group(1)
+                names.add(current)
                 found.setdefault(current, [])
             found[current].append(line.rstrip())
-    return found
+        file_imports = {line.strip() for line in lines if IMPORT.match(line.strip())}
+        for name in names:
+            imports.setdefault(name, set()).update(file_imports)
+    return found, imports
+
+
+def homes_of(
+    wanted: list[str],
+    written: dict[str, list[str]],
+    imports: dict[str, set[str]],
+) -> list[str]:
+    """Name the examples that contain `wanted`.
+
+    A block that opens with `import` lines matches when the lines after them are
+    in an example and every `import` is one that example's file makes.
+    """
+    homes = [name for name, body in written.items() if contains(body, wanted)]
+    if homes:
+        return homes
+    opening = 0
+    while opening < len(wanted) and IMPORT.match(wanted[opening]):
+        opening += 1
+    rest = wanted[opening:]
+    while rest and not rest[0]:
+        rest = rest[1:]
+    if not opening or not rest:
+        return []
+    return [
+        name
+        for name, body in written.items()
+        if contains(body, rest) and set(wanted[:opening]) <= imports[name]
+    ]
 
 
 def called() -> set[str]:
@@ -117,7 +155,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
-    written = units()
+    written, imports = units()
     if not written:
         print(f"no examples in {EXAMPLES}", file=sys.stderr)
         return 1
@@ -132,7 +170,7 @@ def main() -> int:
                 continue
             total += 1
             wanted = lines_of(block)
-            homes = [name for name, body in written.items() if contains(body, wanted)]
+            homes = homes_of(wanted, written, imports)
             if not homes:
                 missing.setdefault(document, []).append(wanted)
             elif any(name in invoked for name in homes):
