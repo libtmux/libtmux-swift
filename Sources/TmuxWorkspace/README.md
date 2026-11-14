@@ -61,16 +61,12 @@ window and its panes. Build it on a [`Server`][api-server]:
 let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
-`WorkspaceTests` builds this value on a fixture server and asserts tmux ends up
-with the `work` session, its `editor` and `logs` windows, and two panes in
+It builds the `work` session with `editor` and `logs` windows, and two panes in
 `editor`.
 
-Swift has no namespaces worth the name, so the module carries the prefix that
-says which `Workspace` this is, and the type keeps the verb. The rest of the
-family names it the same way:
-
-- [`tmux-workspace`][rs] in Rust, [`@libtmux/workspace`][ts] in TypeScript
-- [`libtmux-workspace`][java] in Java, [`LibTmux.Workspace`][cs] in C#
+The same workspace in other ports: [`tmux-workspace`][rs] in Rust,
+[`@libtmux/workspace`][ts] in TypeScript, [`libtmux-workspace`][java] in Java,
+and [`LibTmux.Workspace`][cs] in C#.
 
 ## Build a session
 
@@ -104,12 +100,10 @@ each window's desired pane count and shares the native core and MCP grammar:
 
 ### [`Workspace.decode(yaml:)`][api-workspace-decode-yaml]: read a tmuxp file
 
-A workspace described in Swift or read from JSON needs no parser, so none is
-pulled in by default, and [`Workspace.decode(json:)`][api-workspace-decode-json]
-always exists.
-
+A workspace written in Swift or read from JSON needs no parser, and
+[`Workspace.decode(json:)`][api-workspace-decode-json] always exists.
 [`decode(yaml:)`][api-workspace-decode-yaml], and the [Yams][] dependency behind
-it, appears only when the `YAMLWorkspaces` trait is enabled:
+it, appear only when the `YAMLWorkspaces` trait is enabled:
 
 ```swift
 .package(
@@ -118,8 +112,6 @@ it, appears only when the `YAMLWorkspaces` trait is enabled:
     traits: ["YAMLWorkspaces"]
 )
 ```
-
-With the trait off, nothing here resolves Yams at all.
 
 ## Which of tmuxp this covers
 
@@ -134,10 +126,9 @@ subset need no translation:
 Unknown keys are ignored. tmuxp's plugins, before/after hooks, environment
 inheritance, and other runtime behavior are not modelled.
 
-The suite compares JSON and YAML forms of selected upstream examples. The
-fixtures cover representative data shapes and leave the rest of tmuxp's
-features untested; see
-[their notice][r-tests-tmuxworkspacetests-fixtures-notice-md].
+Fixtures compare JSON and YAML forms of selected tmuxp examples; [their
+notice][r-tests-tmuxworkspacetests-fixtures-notice-md] says what they leave
+untested.
 
 ## From a shell
 

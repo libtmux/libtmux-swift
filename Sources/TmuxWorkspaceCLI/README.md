@@ -77,14 +77,12 @@ $ tmux-workspace load \
 
 It prints `example  created`, and `tmux -L project attach` joins the session.
 
-With neither `-S` nor `-L`, a command uses the socket `LIBTMUX_SOCKET_PATH`
-names, else the one `LIBTMUX_SOCKET` names.
+Which socket a command uses:
 
-With neither variable it passes tmux no socket, and tmux picks the server: the
-one you are inside, and its default socket outside tmux.
-
-Outside tmux that default is your own server unless the environment says
-otherwise. The flags come first, and `-S` beats `-L`.
+- **Flags first,** and `-S` beats `-L`.
+- **Then the environment:** `LIBTMUX_SOCKET_PATH`, else `LIBTMUX_SOCKET`.
+- **Otherwise** tmux picks: the server you are inside, else its default socket,
+  which outside tmux is your own server.
 
 ## Install
 
@@ -435,7 +433,7 @@ $ python3 Scripts/check_workspace_terminal.py "$HOME/.local/bin/tmux-workspace"
 ### `benchmark_workspace_cli.py`: compare with tmuxp
 
 This compares startup, discovery, search, cold-server load, and YAML capture
-with tmuxp 1.74.0 installed in the selected Python interpreter:
+with the tmuxp installed in the selected Python interpreter:
 
 ```console
 $ python3 Scripts/benchmark_workspace_cli.py \
@@ -467,10 +465,10 @@ $ python3 Scripts/benchmark_workspace_cli.py \
 
 ## Support and status
 
-- **Swift 6.2**, and tmux **3.3a through 3.8, and master**, on Linux, including
-  WSL, and macOS. CI runs Ubuntu only: 3.3a and 3.8 on every push, and every
-  release in the range when a release is tagged. macOS is best effort.
-- **tmuxp 1.74.0** only for [`shell`][ref-cli-shell] and the benchmark.
+- **Swift 6.2 or newer** and **tmux 3.3a or newer**, on Linux (WSL included)
+  and macOS. macOS is best effort.
+- **tmuxp** is needed only for [`shell`][ref-cli-shell] and the benchmark, which
+  check its version.
 - **Unsettled surface.** Any release may change the command surface; pin an
   exact version.
 

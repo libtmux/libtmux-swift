@@ -54,12 +54,11 @@ public func useEmbeddedTools(on server: Server) async throws(ToolError) -> Int {
 }
 ```
 
-`MCPEmbeddingTests` runs this against a fixture server and asserts it lists the
-fixture's one pane. It prints each tool's name and summary.
+It prints each tool's name and summary, and returns the pane count.
 
-- **Default.** `TmuxTools(server:)` exposes the 18 `inspect` tools.
-- **The registry** has 45: 18 `inspect`, 14 `manage`, nine `execute`, and four
-  `teardown`.
+- **Default.** `TmuxTools(server:)` exposes the `inspect` tools.
+- **The registry** puts every tool in one of four toolsets: `inspect`,
+  `manage`, `execute`, and `teardown`.
 - **No authorization.** Toolsets choose which tools a client can call. Every
   call still runs as the tmux user.
 
@@ -76,8 +75,7 @@ let authority = ToolAuthority(
 let tools = TmuxTools(server: server, authority: authority)
 ```
 
-`MCPEmbeddingTests` asserts this exposes only [`create_window`] and
-[`list_sessions`].
+This exposes only [`create_window`] and [`list_sessions`].
 
 - **Inclusions** apply after toolset expansion.
 - **Exclusions** apply last, and also remove names from aggregate authority.
@@ -141,8 +139,7 @@ mentions a mode, so it works the same directly or over a connection.
 - **`force=true`** bypasses only an exact caller-pane match.
 - **Synchronized panes.** `send_keys` reserves every configured member through
   dispatch, and [`send_keys_batch`] checks each row on its own. The returned
-  `resolvedPaneIds` lists the members that were checked; it does not confirm
-  delivery.
+  `resolvedPaneIds` were checked; they do not confirm delivery.
 
 ### [`paste_text`] and [`run_shell_command`]: one buffer, one subshell
 
@@ -167,9 +164,8 @@ A tool has three code-native declarations, and tests hold them together:
   capability fields, and handler;
 - an exact structured result schema in `CapabilityOutputSchemas`.
 
-`CapabilityManifestTests` rejects a missing row, a schema/sink or tmux-format
-control mismatch, undeclared nested authority, invalid recursive input or
-output, or drift between registration metadata and the capability resource.
+`CapabilityManifestTests` fails when one of the three is missing or disagrees
+with the others.
 
 ## Reference
 

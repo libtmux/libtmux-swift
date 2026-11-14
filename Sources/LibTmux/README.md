@@ -11,8 +11,7 @@
 
 # [`LibTmux`][mod-libtmux]
 
-The library. Servers, sessions, windows, panes and clients as values, with
-options, hooks, formats, filtering, snapshots and streaming over them.
+The library. Servers, sessions, windows, panes, and clients as plain values.
 
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/swift/)
 [![Swift Package Index](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Flibtmux%2Flibtmux-swift%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/libtmux/libtmux-swift)
@@ -44,27 +43,24 @@ for session in try await server.sessions() {
 }
 ```
 
-A [`Server`][api-server] built with no socket passes tmux neither `-L` nor
-`-S`, so tmux picks the server: the one you are inside, and its default socket
-elsewhere. `LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET` names another.
-
-[`Server.sessions()`][api-server-sessions] asks it for every session. It prints
-one line per session: the name, then the window count.
+- **Which server.** A [`Server`][api-server] built with no socket lets tmux
+  pick: the one you are inside, else its default socket.
+- **Name another** with `LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET`.
+- **Output.** [`Server.sessions()`][api-server-sessions] prints one line per
+  session: its name, then its window count.
 
 ## Values you hold
 
 Everything that comes back is a value. A [`Session`][api-session] you hold is
-what the server reported when you asked, and it stays that way when tmux
-changes. Ask again for a newer view.
+what tmux reported when you asked. Ask again for a newer view.
 
 - **Sendable and Codable.** [`Session`][api-session], [`Window`][api-window],
   [`Pane`][api-pane], [`Client`][api-client], and [`Snapshot`][api-snapshot]
   values can cross tasks and encode.
 - **One actor.** The mutable part, the process boundary and the live
   connection, sits behind an actor the value shares.
-- **Input state.** [`Pane`][api-pane] also projects
-  [`Pane.isDead`][api-pane-isdead], the exact
-  [`Pane.modeCount`][api-pane-modecount], and effective
+- **Input state.** [`Pane`][api-pane] projects [`Pane.isDead`][api-pane-isdead],
+  [`Pane.modeCount`][api-pane-modecount], and
   [`Pane.isSynchronized`][api-pane-issynchronized].
 - **Malformed fails.** A missing or malformed value fails decoding; none
   becomes a writable default.
@@ -78,13 +74,12 @@ changes. Ask again for a newer view.
 array of values:
 
 ```swift
+import LibTmux
+
 let sessions = try await server.sessions()
 let windows = try await server.windows()
 let panes = try await server.panes()
 ```
-
-`QueryingTests` runs this on a fixture server and asserts one session, one
-window, and one pane.
 
 ### [`Pane`][api-pane]: what is running in it
 
@@ -97,9 +92,10 @@ for pane in try await server.panes() {
 }
 ```
 
-It prints one line per pane: the id, the command, and the path. The [repository
-README](../../README.md) builds from here to changing, waiting, and
-[modes][ref-concept-transports].
+It prints one line per pane: the id, the command, and the path.
+
+More: the [repository README](../../README.md) builds from here to changing,
+waiting, and [modes][ref-concept-transports].
 
 ## What is in here
 
@@ -132,12 +128,12 @@ filtering, snapshots, and streaming over them. Reference: the
 [`TmuxVersion`][api-tmuxversion] compares properly:
 
 ```swift
+import LibTmux
+
 if try await server.version() < TmuxVersion(major: 3, minor: 4) {
     print("this release predates the behaviour relied on below")
 }
 ```
-
-`PlatformSupportTests` runs this against a fixture server.
 
 ### [`TmuxWorkspace`][dir-tmuxworkspace]: workspaces from Swift
 
@@ -150,6 +146,8 @@ Reference: the [API pages][ref-ws-reference] and
 [Workspaces][r-readme-md-workspaces-from-a-file-or-from-swift]:
 
 ```swift
+import TmuxWorkspace
+
 let session = try await WorkspaceBuilder.build(workspace, on: server)
 ```
 
@@ -182,14 +180,14 @@ state, unless a [`ToolAuthority`][api-toolauthority] says otherwise. This one
 exposes [`create_window`] and [`list_sessions`] and nothing else:
 
 ```swift
+import LibTmuxMCP
+
 let authority = ToolAuthority(
     toolsets: [],
     includedTools: ["create_window", "list_sessions"]
 )
 let tools = TmuxTools(server: server, authority: authority)
 ```
-
-`MCPEmbeddingTests` asserts the exact selection exposes only those two tools.
 
 ### [`libtmux-mcp`][dir-libtmux-mcp]: the MCP server
 
@@ -214,7 +212,6 @@ Provisions a private tmux server for a test or benchmark and reaps it when the
 body returns, throws, or the process is killed. Guide:
 [Testing with libtmux][ref-guide-testing]. The example is under
 [Testing your own code][r-readme-md-testing-your-own-code].
-
 
 ## Documentation
 

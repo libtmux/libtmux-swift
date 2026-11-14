@@ -57,13 +57,11 @@ $ claude mcp add tmux \
 ```
 
 The server takes no flags. Which tmux it talks to is environment, so a client
-config is where you say so.
+config is where you say so:
 
-With neither socket variable set, the server passes tmux no socket and tmux
-picks the server: the one in `TMUX` when the client that started the server
-runs inside tmux, and its default socket otherwise.
-
-A variable that is empty or only whitespace counts as unset.
+- **No socket variable.** tmux picks the server: the one in `TMUX` when the
+  launching client is inside tmux, else its default socket.
+- **A blank variable** counts as unset.
 
 ### `mcpServers`: the JSON form
 
@@ -83,13 +81,8 @@ Other clients take a JSON configuration:
 }
 ```
 
-The test suite passes every `LIBTMUX_` setting in these configurations and in
-the `claude mcp add` commands through
-[`ServerConfiguration`][api-serverconfiguration], the parse the executable runs
-at startup. A renamed variable or an unknown tool name fails there.
-
-The [client guide][ref-mcp-guide] walks through a private tmux server end to
-end.
+More: the [client guide][ref-mcp-guide] walks through a private tmux server end
+to end.
 
 | Variable | Default | What it selects |
 | --- | --- | --- |
@@ -205,7 +198,6 @@ $ printf '%s\n' \
 
 [MCP]: https://modelcontextprotocol.io
 [spi-mcp]: https://swiftpackageindex.com/libtmux/libtmux-swift/documentation/libtmuxmcp
-[api-serverconfiguration]: https://libtmux.org/en/swift/latest/mcp/reference/serverconfiguration/
 [api-tmuxtools]: https://libtmux.org/en/swift/latest/mcp/reference/tmuxtools/
 [api-toolset]: https://libtmux.org/en/swift/latest/mcp/reference/toolset/
 [mod-libtmux-mcp]: https://libtmux.org/en/swift/latest/mcp/

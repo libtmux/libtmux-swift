@@ -40,17 +40,18 @@ holds one session, `bootstrap`, and `CancellationTests` makes this assertion.
   exhaust processes or pseudo-terminals.
 - **Reaped.** The reaper refuses paths outside this port's test and development
   roots.
-- **Held to the sandbox.** This package's own test runs need
-  `Scripts/swift-test`. Your tests are held to it only if they set
-  `LIBTMUX_TEST_SANDBOX`, and then fail while `TMUX`, `TMUX_PANE` or
-  `LIBTMUX_SOCKET*` is set.
+- **Held to the sandbox** only if you set `LIBTMUX_TEST_SANDBOX`: then a test
+  fails while `TMUX`, `TMUX_PANE` or `LIBTMUX_SOCKET*` is set. This package's
+  own runs use `Scripts/swift-test`.
 
 ## Choose the tmux
 
-This product starts a real tmux and mocks nothing. The selected executable comes
-from `LIBTMUX_TMUX_BIN`, then the first `tmux` on `PATH`, then the usual
-installed locations. [`tmuxExecutablePath`][api-tmuxexecutablepath] reports the
-one a run resolved.
+This product starts a real tmux and mocks nothing:
+
+- **Order.** `LIBTMUX_TMUX_BIN`, then the first `tmux` on `PATH`, then the usual
+  installed locations.
+- **Which ran.** [`tmuxExecutablePath`][api-tmuxexecutablepath] reports the one
+  a run resolved.
 
 ## Named sockets
 
@@ -71,6 +72,7 @@ before the process starts, and
 - [Testing with libtmux][ref-guide-testing]: an isolated server and how to
   check cleanup failures
 - [`Server`][api-server] is the type the body receives
+
 [api-namedsocketsavailable]: https://libtmux.org/en/swift/latest/reference/namedsocketsavailable/
 [api-server-sessions]: <https://libtmux.org/en/swift/latest/reference/server-sessions()/>
 [api-server]: https://libtmux.org/en/swift/latest/reference/server/
