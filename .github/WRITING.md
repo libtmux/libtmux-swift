@@ -47,52 +47,88 @@ claims that could fail, then let them be checked.
 | "various fixes" | name the components |
 | "we added…" | "`Server` now…" |
 
-## README
+## README shape
 
-The README is a technical product sheet, not a landing page. It answers, in
-this order: what is this, can I use it, show me, what are the constraints,
-where do I go deeper.
+The README is a technical product sheet, not a landing page. A reader should
+get it from the highway: short headings, bullets, one runnable example per
+step. It answers, in this order: what is this, can I use it, show me, what are
+the constraints, where do I go deeper.
 
+- **The header** is the logo block, the centred title, and a badge row: CI, the
+  registry version, libtmux.org, license. A badge or link to a registry or
+  libtmux.org page that does not answer 200 stays out.
 - **The first paragraph says what the package provides and for whom.** No
   adjectives that a reader would have to take on trust.
 - **A compiling example above the fold.** Swift readers judge an API surface in
   ten seconds — argument labels, `async`/`await`, value semantics, `Sendable`
   posture. That block is the real description.
-- **Two badges.** They report CI state, which is a fact. A wall of shields is
-  decoration.
 - **The API warning states the same terms every port states**, word for word:
   "Releases are numbered `0.1.N`, and each release increments `N`. The API is
   not settled: any release may change or remove exported identifiers, and the
   changelog marks each break. Pin an exact version to avoid one."
-- **Compatibility is first-class content**, not a footnote: the toolchain
-  floor, the platforms, the tmux range, and what the stability promise covers.
-- **Non-goals get their own sentences.** They answer the architectural question
-  behind the issues nobody has filed yet.
+- **Quick start first, then tasks in the reader's words.** One `##` section per
+  task, ordered from first use to deeper use: "Find sessions, windows, and
+  panes", not "Querying".
+- **A `###` heading is an API and its job.** The API is linked to its
+  libtmux.org page, then a colon and what it does in plain words: the heading
+  for `Server.sessions()` reads "`Server.sessions()`: what tmux has now", with
+  the API name linked.
+- **Under a heading:** a line or two naming the call and its linked siblings,
+  the example, what it prints, at most one short note, and a `More:` link to
+  the guide.
+- **No paragraph over three lines, and no walls.** A list of facts is a bullet
+  list. A prose block is at most 240 characters once its markup is removed, and
+  `Scripts/check_readme_links.py` fails a longer one in a product README. Detail
+  a caller does not need to run the package goes in [`docs/`](../docs/) or on
+  libtmux.org, linked from a short bullet.
+- **No feature inventory.** The sections and their examples show what exists.
+- **Requirements are floors a reader can act on:** "tmux 3.3a or newer", "Swift
+  6.2 or newer". No patch versions of the toolchain that built it, no CI matrix,
+  no kernel or libc trivia in the README; link the page that holds it. A feature
+  that needs a particular release says so beside that feature.
+- **Cut what a reader would assume or never need:** that examples are tested,
+  how the docs are built, what the checks cover, and words such as "evidence",
+  "qualified", and "contract".
+- **Products:** a table, then one heading per product that links its directory
+  on `master`, a one-line description, and a link line for the reference,
+  registry, and changelog.
+- **"What it leaves out" and "Support and status"** are short bold-lead bullets.
+  Non-goals get their own sentences; they answer the question behind the issues
+  nobody has filed yet.
 - **Stable, literal headings.** "Install", "Requirements", "Tests" retrieve;
   "Getting going" and "A few knobs" do not.
-- **Quick start first, then tasks in the reader's words.** One `##` section per
-  task, ordered from first use to deeper use. Under it, one `###` per API,
-  headed by the linked API and what it does: ``### [`Server.sessions()`][ref]:
-  what tmux has now``.
-- **Each subsection builds one step.** One or two sentences naming the call and
-  its linked siblings, a short example the Examples package runs, where it runs
-  and what it prints, then at most one short note.
 - **Link the API where it is named.** Every API, MCP tool, and CLI command links
   to its libtmux.org page on its first mention in each section, with the
   definitions collected at the foot of the file. A code fence holds no link.
-- **No walls.** A prose block is at most 240 characters once its markup is
-  removed, and `Scripts/check_readme_links.py` fails a longer one in a product
-  README. A contract a caller must know is a few bullets that each link the
-  full text on libtmux.org, or in [`docs/`](../docs/) where no page exists.
 
-Two rules are enforced rather than trusted:
+What the examples must do:
 
-- Every `swift` fence in `README.md` or the DocC catalogue must also exist as a
-  file under `Examples/Sources/`. `Scripts/check_examples.py` fails otherwise,
-  so a documented example is compiled code and most of it is run.
+- **Start with their imports,** so a reader can paste one into a file and run
+  it. The first example of each section shows its `import` lines; later ones in
+  the section may continue from it.
+- **Start and clean up their own tmux server through the library,** never with
+  `tmux` or `rm` in the shell. `withTmuxServer` from `TmuxFixture` provisions a
+  private server and reaps it, and the whole programs under `Examples/Sources/`
+  do the same. When a step cannot be done through the library, say so under
+  "What it leaves out" and keep the shell step.
+- **Come from a file CI runs.** Every `swift` fence in `README.md`, a product
+  README, or the DocC catalogue must also exist as a file under
+  `Examples/Sources/`. `Scripts/check_examples.py` fails otherwise, so a
+  documented example is compiled code and most of it is run. A fence may open
+  with `import` lines; each must be one that file makes.
+- **Show the features the port has,** each under an API-linked heading: filters
+  (`FilterExpr`), command lists (`TmuxCommandList`), modes and their cost
+  (`TmuxMode`), and control mode (`Server.connected(attachingTo:_:)`). There is
+  no query planner or `explain` to show; a section for one waits for an API.
+
+Two more rules are enforced rather than trusted:
+
 - Every `exact:` pin must name the version in `LibTmuxVersion.current`, and
   every `from:` bound a final release no newer than it.
   `Scripts/check_version.py` fails otherwise.
+- A README must say "tmux" and the oldest release in `Scripts/tmux-matrix.json`
+  followed by "or newer", and a tmux range it states must match the manifest.
+  `Scripts/check_ci.py` fails otherwise.
 
 Quoting a command's output in the README makes that output a claim. Run the
 command and paste what it printed; do not remember it.
