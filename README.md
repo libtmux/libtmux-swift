@@ -254,6 +254,14 @@ try await server.run("tail -f /tmp/build.log", in: pane)
 Whole programs: [new session][ex-new-session], [new window][ex-new-window],
 [split pane][ex-split-pane].
 
+- **Rename and remove.** [`Server.rename(_:to:)`][api-server-rename-to] renames a
+  session or window, [`Server.kill(_:)`][api-server-kill] removes a session,
+  window, or pane, and [`Server.killServer()`][api-server-killserver] ends the
+  server.
+- **Options and hooks.** [`Server.option(_:scope:)`][api-server-option-scope]
+  reads an option back. [`Server.setHook(_:to:at:in:)`][api-server-sethook-to-at-in]
+  binds a hook and [`Server.hooks(_:)`][api-server-hooks] lists them.
+
 ### [`Server.capture(_:)`][api-server-capture-includinghistory]: read a pane back
 
 Read a pane back the way a person would:
@@ -263,6 +271,29 @@ let lines = try await server.capture(pane)
 ```
 
 Whole program: [capture][ex-capture].
+
+### [`Server.sendKeys(_:to:literally:)`][api-server-sendkeys-to-literally]: type into a pane
+
+A key name such as `Enter` is a key press; `literally: true` types it as text:
+
+```swift
+import LibTmux
+
+try await server.sendKeys(["echo hello", "Enter"], to: pane)
+try await server.sendKeys(["Enter"], to: pane, literally: true)
+```
+
+### [`Server.resize(_:by:toward:)`][api-server-resize-by-toward]: move a pane's edge
+
+[`Server.resize(_:width:height:)`][api-server-resize-width-height] sets a size
+outright. A right-hand pane grows when its edge moves `.left`:
+
+```swift
+import LibTmux
+
+try await server.resize(pane, width: 30)
+try await server.resize(pane, by: 5, toward: .left)
+```
 
 ### [`TmuxCommandList`][api-tmuxcommandlist]: several changes, one process
 
@@ -1123,17 +1154,26 @@ MIT. See [LICENSE][r-license].
 [api-server-capture-includinghistory]: <https://libtmux.org/en/swift/latest/reference/server-capture(_-includinghistory-)/>
 [api-server-connected-attachingto]: <https://libtmux.org/en/swift/latest/reference/server-connected(attachingto-_-)/>
 [api-server-hassession]: <https://libtmux.org/en/swift/latest/reference/server-hassession(_-)/>
+[api-server-hooks]: <https://libtmux.org/en/swift/latest/reference/server-hooks(_-)/>
+[api-server-kill]: <https://libtmux.org/en/swift/latest/reference/server-kill(_-)/>
+[api-server-killserver]: <https://libtmux.org/en/swift/latest/reference/server-killserver()/>
 [api-server-mode]: https://libtmux.org/en/swift/latest/reference/server-mode/
 [api-server-newsession-named-startdirectory-windowname-width-height]: <https://libtmux.org/en/swift/latest/reference/server-newsession(named-startdirectory-windowname-width-height-)/>
 [api-server-newwindow-in-named-startdirectory]: <https://libtmux.org/en/swift/latest/reference/server-newwindow(in-named-startdirectory-)/>
+[api-server-option-scope]: <https://libtmux.org/en/swift/latest/reference/server-option(_-scope-)/>
 [api-server-panes-where]: <https://libtmux.org/en/swift/latest/reference/server-panes(where-)/>
 [api-server-panes]: <https://libtmux.org/en/swift/latest/reference/server-panes()/>
 [api-server-refresh]: <https://libtmux.org/en/swift/latest/reference/server-refresh(_-)/>
+[api-server-rename-to]: <https://libtmux.org/en/swift/latest/reference/server-rename(_-to-)/>
+[api-server-resize-by-toward]: <https://libtmux.org/en/swift/latest/reference/server-resize(_-by-toward-)/>
+[api-server-resize-width-height]: <https://libtmux.org/en/swift/latest/reference/server-resize(_-width-height-)/>
 [api-server-run-in]: <https://libtmux.org/en/swift/latest/reference/server-run(_-in-)/>
 [api-server-run]: <https://libtmux.org/en/swift/latest/reference/server-run(_-)/>
 [api-server-selectlayout]: <https://libtmux.org/en/swift/latest/reference/server-selectlayout(_-_-)/>
+[api-server-sendkeys-to-literally]: <https://libtmux.org/en/swift/latest/reference/server-sendkeys(_-to-literally-)/>
 [api-server-session-named]: <https://libtmux.org/en/swift/latest/reference/server-session(named-)/>
 [api-server-sessions]: <https://libtmux.org/en/swift/latest/reference/server-sessions()/>
+[api-server-sethook-to-at-in]: <https://libtmux.org/en/swift/latest/reference/server-sethook(_-to-at-in-)/>
 [api-server-setoption-to-scope]: <https://libtmux.org/en/swift/latest/reference/server-setoption(_-to-scope-)/>
 [api-server-shellinvocation]: https://libtmux.org/en/swift/latest/reference/server-shellinvocation/
 [api-server-snapshot]: <https://libtmux.org/en/swift/latest/reference/server-snapshot()/>
