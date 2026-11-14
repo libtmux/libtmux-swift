@@ -22,13 +22,18 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+# Pages that state the whole range the manifest runs.
 RANGE_PAGES = (
-    "README.md",
     "Sources/LibTmux/LibTmux.docc/PlatformSupport.md",
     "Sources/LibTmux/LibTmux.docc/LibTmux.md",
+)
+# READMEs state a floor a reader can act on, not the range CI happens to run. A
+# range they do state still has to match the manifest.
+FLOOR_PAGES = (
+    "README.md",
     "Sources/TmuxWorkspaceCLI/README.md",
 )
-EDGE_PAGES = ("README.md", ".github/CONTRIBUTING.md")
+EDGE_PAGES = (".github/CONTRIBUTING.md",)
 CONTRIBUTING = ".github/CONTRIBUTING.md"
 WORKFLOWS = ".github/workflows"
 ACTIONS = ".github/actions"
@@ -166,6 +171,15 @@ def check_docs(root: pathlib.Path, manifest: object) -> list[str]:
             f"{page} says tmux {first} through {last}, and {name}, "
             f"not {ends[0]} through {ends[1]}, and {preview}"
             for first, last, name in stated
+            if (first, last, name) != (*ends, preview)
+        ]
+
+    for page in FLOOR_PAGES:
+        text = _squash((root / page).read_text())
+        problems += [
+            f"{page} says tmux {first} through {last}, and {name}, "
+            f"not {ends[0]} through {ends[1]}, and {preview}"
+            for first, last, name in RANGE_CLAIM.findall(text)
             if (first, last, name) != (*ends, preview)
         ]
 

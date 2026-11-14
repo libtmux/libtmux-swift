@@ -32,6 +32,7 @@ CHECK = load("check_ci", "check_ci.py")
 ROOT = Path(__file__).resolve().parents[2]
 COPIED = (
     *CHECK.RANGE_PAGES,
+    *CHECK.FLOOR_PAGES,
     CHECK.CONTRIBUTING,
     "Scripts/tmux-matrix.json",
     ".github/workflows/ci.yml",
@@ -109,13 +110,28 @@ def test_a_page_with_another_range_is_flagged(tree: Tree) -> None:
 
 
 def test_a_page_without_the_range_is_flagged(tree: Tree) -> None:
-    """A page must state the range at all."""
+    """A DocC page must state the range at all."""
     tree.edit(
-        "Sources/TmuxWorkspaceCLI/README.md",
-        "**3.3a through 3.8, and master**",
-        "**3.3a and newer**",
+        "Sources/LibTmux/LibTmux.docc/PlatformSupport.md",
+        "3.3a through 3.8, and master",
+        "3.3a and newer",
     )
-    assert tree.flags("TmuxWorkspaceCLI/README.md does not say tmux 3.3a through 3.8")
+    assert tree.flags("PlatformSupport.md does not say tmux 3.3a through 3.8")
+
+
+@pytest.mark.parametrize("page", CHECK.FLOOR_PAGES)
+def test_a_readme_may_leave_out_the_range(tree: Tree, page: str) -> None:
+    """A README states a floor, so a range is not required of it."""
+    path = tree.root / page
+    path.write_text(CHECK.RANGE_CLAIM.sub("3.3a or newer", path.read_text()))
+    assert tree.problems() == []
+
+
+@pytest.mark.parametrize("page", CHECK.FLOOR_PAGES)
+def test_a_readme_with_another_range_is_flagged(tree: Tree, page: str) -> None:
+    """A range a README does state has to match the manifest."""
+    tree.append(page, "\nIt runs on tmux 3.3a through 3.7b, and master.\n")
+    assert tree.flags(f"{page} says tmux 3.3a through 3.7b")
 
 
 def test_a_stale_table_row_is_flagged(tree: Tree) -> None:
@@ -130,8 +146,8 @@ def test_a_stale_table_row_is_flagged(tree: Tree) -> None:
 
 def test_a_page_without_the_edges_is_flagged(tree: Tree) -> None:
     """The page must say what a push tests."""
-    tree.edit("README.md", "3.3a and 3.8", "3.3a and 3.7", 2)
-    assert tree.flags("README.md does not say a push tests the edges")
+    tree.edit(".github/CONTRIBUTING.md", "3.3a and 3.8", "3.3a and 3.7")
+    assert tree.flags("CONTRIBUTING.md does not say a push tests the edges")
 
 
 def test_a_page_without_a_refusal_cell_is_flagged(tree: Tree) -> None:
