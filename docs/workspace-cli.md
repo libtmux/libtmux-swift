@@ -154,12 +154,11 @@ does not launch Python.
 
 `convert` preserves document mapping values, including extension fields.
 Conversion defaults to the opposite input format. Human conversion previews that
-format;
-
-`-y` writes it beside the input. `--save-to` selects an explicit destination,
-`--workspace-format` selects JSON or YAML, and `--force` permits replacement of
-an existing file. Machine conversion without a destination returns the document
-without writing a file; an explicit destination returns a versioned save result.
+format, and `-y` writes it beside the input. `--save-to` selects an explicit
+destination, `--workspace-format` selects JSON or YAML, and `--force` permits
+replacement of an existing file. Machine conversion without a destination
+returns the document without writing a file; an explicit destination returns a
+versioned save result.
 
 ## import
 
@@ -213,8 +212,7 @@ The command preserves the editor's exit status.
 
 Human terminal calls inherit the terminal; machine calls capture child
 stdout/stderr in the result and limit each stream to one MiB. Cancellation
-terminates a captured child's process group. Interactive job control and
-descendant cleanup need broader validation.
+terminates a captured child's process group.
 
 ## debug-info
 
@@ -239,9 +237,7 @@ final result. Captured calls stream output while the child runs, with a one MiB
 limit per stream. Human output preserves line breaks and tabs, escaping other
 terminal controls.
 
-Interactive backends require a terminal. The live bridge test is enabled by
-setting `TMUX_WORKSPACE_TEST_PYTHON` to the compatible interpreter. Optional
-interactive backend packages still need broader verification.
+Interactive backends require a terminal.
 
 ## Machine output
 
