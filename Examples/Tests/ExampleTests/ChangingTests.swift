@@ -43,6 +43,29 @@ struct ChangingTests {
         }
     }
 
+    @Test("sendKeys presses Enter for a key name and types it for a literal one")
+    func sendKeysTypesIntoAPane() async throws {
+        try await withTmuxServer { server in
+            let pane = try #require(try await server.panes().first)
+            try await typeIntoAPane(server, pane)
+            let typed = try await waitUntil {
+                let lines = try await server.capture(pane)
+                return lines.contains("hello") && lines.contains { $0.hasSuffix("Enter") }
+            }
+            #expect(typed, "the pane never showed the output and the typed word")
+        }
+    }
+
+    @Test("resize sets a pane's width and then moves its edge")
+    func resizeMovesAPaneEdge() async throws {
+        try await withTmuxServer { server in
+            let first = try #require(try await server.panes().first)
+            let pane = try await server.split(first, direction: .right)
+            let resized = try #require(try await moveAPaneEdge(server, pane))
+            #expect(resized.width == 35)
+        }
+    }
+
     @Test("a command list spends one invocation on all of it")
     func aCommandListSpendsOneInvocation() async throws {
         try await withTmuxServer { server in

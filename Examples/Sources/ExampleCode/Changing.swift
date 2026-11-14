@@ -17,6 +17,17 @@ public func readBackWhatAPanePrinted(_ server: Server, _ pane: Pane) async throw
     return lines
 }
 
+public func typeIntoAPane(_ server: Server, _ pane: Pane) async throws {
+    try await server.sendKeys(["echo hello", "Enter"], to: pane)
+    try await server.sendKeys(["Enter"], to: pane, literally: true)
+}
+
+public func moveAPaneEdge(_ server: Server, _ pane: Pane) async throws -> Pane? {
+    try await server.resize(pane, width: 30)
+    try await server.resize(pane, by: 5, toward: .left)
+    return try await server.refresh(pane)
+}
+
 public func spendOneProcessOnAllOfIt(_ server: Server) async throws {
     var plan = TmuxCommandList()
     for name in ["edit", "test", "logs"] {
