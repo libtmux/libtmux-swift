@@ -9,7 +9,7 @@ DerivedData/
 *.xcodeproj/
 *.xcworkspace/
 
-# The tooling under Scripts/ and scripts/ is Python.
+# The tooling under scripts/ is Python.
 .venv/
 __pycache__/
 *.py[cod]

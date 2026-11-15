@@ -1076,7 +1076,7 @@ More: [CI and running against any tmux](.github/CONTRIBUTING.md#running-ci-again
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
 | [`Tools/McpSwap/`](Tools/McpSwap/) | The private native MCP config swap utility; its nested package is not shipped |
-| `Scripts/` | The Python tooling CI runs |
+| `scripts/` | The Python tooling CI runs, one directory per script |
 
 ## Related projects
 

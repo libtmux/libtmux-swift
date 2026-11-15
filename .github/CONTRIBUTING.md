@@ -23,7 +23,8 @@ $ export PATH="$(mise where swift)/usr/bin:$PATH"
 ```
 
 `scripts/update_mode_matrix/update_mode_matrix.py` reads `$SWIFT` for the same
-reason.
+reason. The scripts under `scripts/` run with [uv](https://docs.astral.sh/uv/),
+which reads the dependencies each one declares in its header.
 
 SwiftPM compiles with one job per core, and the suite starts a tmux server per
 case on top of that, so a full run makes the machine it is running on unusable
@@ -356,12 +357,33 @@ $ swift package \
     --target LibTmuxMCP
 ```
 
-Python under `Scripts/` is held to the ruff configuration beside it, in
-`Scripts/.ruff.toml`. CI pins the action version deliberately — 0.16.3 broke a
-lane on an unrelated commit:
+The support scripts under `scripts/` are typed Python, and
+[`SCRIPTS.md`](SCRIPTS.md) says what may stay there. `pyproject.toml` holds the
+ruff, ty and pytest settings, and `uv.lock` pins the tools, so a new release of
+one cannot turn CI red on a commit that touched no Python. Check formatting:
 
 ```console
-$ ruff check Scripts/
+$ uv run --group dev ruff format --check scripts
+```
+
+Lint:
+
+```console
+$ uv run --group dev ruff check scripts
+```
+
+Type-check:
+
+```console
+$ uv run --group dev ty check
+```
+
+Run the scripts' own tests, with doctests collected. The leak tests in
+`scripts/swift_test` start a tmux, the one `LIBTMUX_TMUX_BIN` names or else the
+first on `PATH`:
+
+```console
+$ uv run --group dev pytest
 ```
 
 Every documented example maps to consumer source, and the floor keeps its
@@ -462,12 +484,6 @@ The generated tables still match what the benchmark measures:
 
 ```console
 $ uv run scripts/update_mode_matrix/update_mode_matrix.py --check
-```
-
-The Python tooling has its own suite:
-
-```console
-$ python3 -m pytest Scripts/tests -q
 ```
 
 None of these catch a symbol that exists only on a newer macOS than the package
