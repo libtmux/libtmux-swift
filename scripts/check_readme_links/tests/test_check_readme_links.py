@@ -5,7 +5,7 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
-CHECK = runpy.run_path(Path(__file__).parents[1] / "check_readme_links.py")
+CHECK = runpy.run_path(str(Path(__file__).parents[1] / "check_readme_links.py"))
 
 check = CHECK["check"]
 ROOT = CHECK["ROOT"]

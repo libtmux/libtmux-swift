@@ -358,7 +358,7 @@ product README runs past 240 characters. The check reads the tree rather than
 the network, so it passes before the documentation publishes:
 
 ```console
-$ python3 Scripts/check_readme_links.py
+$ uv run scripts/check_readme_links/check_readme_links.py
 ```
 
 Every socket this repository names by literal lives under one of this port's

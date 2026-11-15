@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Require every README link that points into this project to resolve.
 
 A README link is a claim about where something lives. Three kinds go stale
@@ -21,7 +25,7 @@ against the tree, with no network, so it can run on every push:
 That the page answers 200 once published is a separate fact: the documentation
 workflow publishes after a merge, so this gate cannot wait on it.
 
-    python3 Scripts/check_readme_links.py
+    uv run scripts/check_readme_links/check_readme_links.py
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 SITE = "https://libtmux.org/en/swift/latest/"
 TREE = re.compile(

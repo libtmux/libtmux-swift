@@ -78,7 +78,7 @@ the constraints, where do I go deeper.
   the guide.
 - **No paragraph over three lines, and no walls.** A list of facts is a bullet
   list. A prose block is at most 240 characters once its markup is removed, and
-  `Scripts/check_readme_links.py` fails a longer one in a product README. Detail
+  `scripts/check_readme_links/check_readme_links.py` fails a longer one in a product README. Detail
   a caller does not need to run the package goes in [`docs/`](../docs/) or on
   libtmux.org, linked from a short bullet.
 - **No feature inventory.** The sections and their examples show what exists.
