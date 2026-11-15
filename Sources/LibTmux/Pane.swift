@@ -1,6 +1,88 @@
 /// A tmux pane, as it was when the listing was read.
 ///
 /// A pane belongs to one window; session membership runs through ``WindowLink``.
+///
+/// A pane has no operations of its own. What you do with one is a method on ``Server``, and each
+/// takes the pane as an argument.
+///
+/// ## What is on here
+///
+/// The calls that take a pane fall into a few groups. A method that changes one refuses a value from
+/// another server (``TmuxError/foreignServerValue``), from a daemon that has been replaced
+/// (``TmuxError/serverRestarted``), or whose ID no longer names it (``TmuxError/staleServerValue``).
+///
+/// **Reading it.** The ID stays with the pane when it moves between windows, and the index does not.
+/// The command and the path follow the process in the pane, so they change as the user works.
+///
+/// - Identity: ``Pane/id``, ``Pane/incarnation``, ``Pane/windowID``, ``Pane/index``
+/// - Size and edges: ``Pane/width``, ``Pane/height``, ``Pane/isAtTop``, ``Pane/isAtBottom``,
+///   ``Pane/isAtLeft``, ``Pane/isAtRight``
+/// - What it runs: ``Pane/currentCommand``, ``Pane/currentPath``, ``Pane/isDead``
+/// - State: ``Pane/isActive``, ``Pane/isInputOff``, ``Pane/modeCount``, ``Pane/isSynchronized``
+///
+/// **Finding it.** A lookup answers `nil` when tmux does not have the pane. A refresh re-reads what
+/// the pane reports about itself, such as its size and what runs in it, and answers `nil` once the
+/// pane has gone.
+///
+/// - By ID: ``Server/pane(_:)``
+/// - Re-read a value you hold: ``Server/refresh(_:)-(Pane)``
+/// - Every pane: ``Server/panes()``, ``Server/panes(where:)``
+/// - Panes of a window: ``Snapshot/panes(of:)-(Window)``
+///
+/// **Sending input.** Keys are sent as named keys such as `Enter` unless you ask for them literally,
+/// which is the choice for anything that came from a user. Running a command line types it and then
+/// presses Enter.
+///
+/// - Send keys: ``Server/sendKeys(_:to:literally:)``
+/// - Run a command line: ``Server/run(_:in:)``
+/// - Spell this tmux for the pane: ``Server/shellInvocation``
+///
+/// **Reading output.** A plain capture returns one string per row, and its source read is capped at
+/// 1 MiB. The bounded forms return a ``PaneCapture`` that counts the older rows they left out, and an
+/// incremental capture continues from where an earlier one stopped.
+///
+/// - Visible rows, or with history: ``Server/capture(_:includingHistory:)``
+/// - Newest rows only: ``Server/capture(_:includingHistory:maximumLines:)``
+/// - A range of rows:
+///   ``Server/captureRange(_:startingAt:endingAt:joiningWrappedLines:maximumLines:)``
+/// - Continue from a cursor: ``Server/capture(_:since:limit:)``
+/// - Wait for a match:
+///   ``Server/waitForOutput(in:matching:stoppingAt:requiringFreshOutput:startingAt:timeout:tailLimit:)``
+///
+/// **Splitting and arranging.** A split returns the new pane and divides the pane you name. Giving
+/// neither dimension to a resize does nothing. Joining moves a pane into another window, and rotating
+/// keeps every ID and changes the indices.
+///
+/// - Split: ``Server/split(_:direction:size:startDirectory:environment:shell:)``
+/// - Set the size: ``Server/resize(_:width:height:)``
+/// - Move one boundary: ``Server/resize(_:by:toward:)``
+/// - Zoom: ``Server/toggleZoom(_:)``
+/// - Exchange two panes: ``Server/swap(_:with:)-(Pane,Pane)``
+/// - Move it into another window: ``Server/join(_:into:direction:size:)``
+/// - Move it into a window of its own: ``Server/breakPane(_:from:named:)``
+/// - Make it active: ``Server/select(_:)-(Pane)``, ``Server/selectLastPane(in:)``
+///
+/// **Modes, titles and history.** Cancelling modes clears every mode on the pane, not only copy
+/// mode. Clearing history leaves the visible screen as it is. Piping expands the command as a tmux
+/// format first, so a `#(...)` in it runs.
+///
+/// - Copy mode: ``Server/enterCopyMode(_:)``, ``Server/cancelModes(in:)``
+/// - Scrollback: ``Server/clearHistory(_:)``
+/// - Title: ``Server/setTitle(_:of:)``
+/// - Copy its output to a command: ``Server/pipe(_:to:)``
+///
+/// **Changing it.** Restarting repeats the command the pane was created with unless you give another,
+/// and kills what is still running by default.
+///
+/// - Restart: ``Server/respawn(_:running:killingExisting:startDirectory:)``
+/// - Destroy it: ``Server/kill(_:)-(Pane)``
+///
+/// **Options.** An option call takes an ``OptionScope``. The pane scope reads and writes the pane's
+/// own table. tmux keeps no hook table for a pane.
+///
+/// - Scope: ``OptionScope/pane(_:)``
+/// - Read: ``Server/options(_:)``, ``Server/option(_:scope:)``, ``Server/resolvedOption(_:scope:)``
+/// - Write: ``Server/setOption(_:to:scope:)``, ``Server/unsetOption(_:scope:)``
 public struct Pane: Sendable, Hashable, Codable, Identifiable {
     /// tmux's own pane id — `%0`, `%1`.
     public let id: PaneID
