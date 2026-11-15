@@ -162,9 +162,9 @@ handed over — as argv, or as a line written to a control client. Neither count
 needs the library's cooperation, which is what keeps them evidence.
 
 The table below is written by that benchmark rather than transcribed from it —
-`Scripts/update_mode_matrix.py` refreshes it, and `--check` says whether it has
-gone stale. Both counts are recorded because both are exact and repeat every
-run. The benchmark also reports timings, which are medians that move with the
+`scripts/update_mode_matrix/update_mode_matrix.py` refreshes it, and `--check`
+says whether it has gone stale. Both counts are recorded because both are exact
+and repeat every run. The benchmark also reports timings, which are medians that move with the
 machine; run it yourself for those.
 
 <!-- mode-matrix:start -->

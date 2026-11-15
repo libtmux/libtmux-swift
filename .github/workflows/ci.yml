@@ -371,7 +371,7 @@ jobs:
       # was committed with is checked here too, where it can be reproduced.
       - name: Check shebanged files are executable
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: python3 Scripts/check_script_modes.py
+        run: uv run scripts/check_script_modes/check_script_modes.py
 
       # A pin that names a version nobody tagged sends a reader nowhere, and
       # the release workflow refuses a tag this file disagrees with.
@@ -423,7 +423,7 @@ jobs:
           SLUG: ${{ matrix.slug }}
         run: |
           export LIBTMUX_TMUX_BIN="${HOME}/tmux-${SLUG}/bin/tmux"
-          python3 Scripts/update_mode_matrix.py --check
+          uv run scripts/update_mode_matrix/update_mode_matrix.py --check
 
       # The trait is off by default, so this proves the configuration a consumer
       # gets without asking for anything still compiles. Resolved-version

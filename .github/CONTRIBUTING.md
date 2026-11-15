@@ -22,7 +22,8 @@ Swift is installed through mise, and a plain shell will not find it:
 $ export PATH="$(mise where swift)/usr/bin:$PATH"
 ```
 
-`Scripts/update_mode_matrix.py` reads `$SWIFT` for the same reason.
+`scripts/update_mode_matrix/update_mode_matrix.py` reads `$SWIFT` for the same
+reason.
 
 SwiftPM compiles with one job per core, and the suite starts a tmux server per
 case on top of that, so a full run makes the machine it is running on unusable
@@ -413,7 +414,7 @@ Every tracked file with a shebang is executable in git, so a script that CI
 invokes directly does not fail only there:
 
 ```console
-$ python3 Scripts/check_script_modes.py
+$ uv run scripts/check_script_modes/check_script_modes.py
 ```
 
 Every `exact:` pin in the documentation names the version the package claims,
@@ -441,7 +442,7 @@ $ uv run scripts/changelogs/changelogs.py check
 The generated tables still match what the benchmark measures:
 
 ```console
-$ python3 Scripts/update_mode_matrix.py --check
+$ uv run scripts/update_mode_matrix/update_mode_matrix.py --check
 ```
 
 The Python tooling has its own suite:
@@ -496,7 +497,7 @@ ways an example fails quietly. Read it before adding or moving one.
 ## Measured claims are generated
 
 The mode matrix in `README.md` and `Modes.md` is written by the benchmark
-through `Scripts/update_mode_matrix.py`:
+through `scripts/update_mode_matrix/update_mode_matrix.py`:
 
 ```console
 $ swift run --package-path Benchmarks libtmux-bench --markdown

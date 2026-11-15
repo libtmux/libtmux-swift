@@ -423,8 +423,9 @@ Asides differ by renderer, and both forms are correct in their own place:
 uses DocC's own (`> Important:`). Do not carry one into the other's file.
 
 Content between `<!-- ...:start -->` and `<!-- ...:end -->` is generated. Never
-edit it by hand; run the generator. `Scripts/update_mode_matrix.py --check`
-fails when the table has drifted, and CI runs that check.
+edit it by hand; run the generator.
+`scripts/update_mode_matrix/update_mode_matrix.py --check` fails when the table
+has drifted, and CI runs that check.
 
 ## Code blocks
 

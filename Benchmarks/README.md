@@ -54,16 +54,17 @@ $ LIBTMUX_TMUX_BIN=~/tmux-3.4/bin/tmux swift run --package-path Benchmarks libtm
 ## The tables in the documents are generated
 
 Never edit the table between the `<!-- mode-matrix:start -->` and
-`<!-- mode-matrix:end -->` markers. `Scripts/update_mode_matrix.py` writes it
-from this benchmark's own output, and CI fails when what is committed has
-drifted from what the code now does:
+`<!-- mode-matrix:end -->` markers.
+`scripts/update_mode_matrix/update_mode_matrix.py` writes it from this
+benchmark's own output, and CI fails when what is committed has drifted from
+what the code now does:
 
 ```console
-$ python3 Scripts/update_mode_matrix.py
+$ uv run scripts/update_mode_matrix/update_mode_matrix.py
 ```
 
 ```console
-$ python3 Scripts/update_mode_matrix.py --check
+$ uv run scripts/update_mode_matrix/update_mode_matrix.py --check
 ```
 
 [readme]: ../README.md

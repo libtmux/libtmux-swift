@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Require every tracked file with a shebang to be executable in git.
 
 A shebang on a file nothing can run is a script that only works when someone
@@ -11,7 +15,7 @@ therefore what CI lints, rather than the mode this working tree happens to have.
 The two differ whenever `core.fileMode` is off or a file arrives through a
 patch.
 
-    python3 Scripts/check_script_modes.py
+    uv run scripts/check_script_modes/check_script_modes.py
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ import pathlib
 import subprocess
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 EXECUTABLE = "100755"
 

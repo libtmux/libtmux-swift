@@ -27,6 +27,10 @@ exclude-newer = "3 days"
 
 [tool.pytest.ini_options]
 testpaths = ["scripts"]
+# A test that imports its script by name finds it here.
+pythonpath = [
+  "scripts/update_mode_matrix",
+]
 addopts = [
   "--doctest-modules",
   "--import-mode=importlib",
@@ -79,6 +83,9 @@ convention = "numpy"
 [tool.ty.environment]
 python-version = "3.12"
 python-platform = "all"
+extra-paths = [
+  "scripts/update_mode_matrix",
+]
 
 [tool.ty.src]
 include = ["scripts"]
