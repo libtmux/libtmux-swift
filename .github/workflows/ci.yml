@@ -464,9 +464,9 @@ jobs:
           mkdir -p "$(dirname "$binary")"
           install -m 755 .build/debug/tmux-workspace "$binary"
           tmux="${HOME}/tmux-${SLUG}/bin/tmux"
-          python3 Scripts/check_workspace_terminal.py "$binary"
-          python3 Scripts/check_workspace_progress.py "$binary" "$tmux"
-          python3 Scripts/check_workspace_attach.py "$binary" "$tmux"
+          uv run scripts/check_workspace/check_workspace_terminal.py "$binary"
+          uv run scripts/check_workspace/check_workspace_progress.py "$binary" "$tmux"
+          uv run scripts/check_workspace/check_workspace_attach.py "$binary" "$tmux"
 
       # `Package.resolved` tracks a superset that includes Yams even when the
       # trait is off, and a trait-off `swift test` resolves without it and

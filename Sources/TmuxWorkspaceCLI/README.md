@@ -424,10 +424,12 @@ The [inspect with MCP guide][ref-ws-inspect-mcp] walks through it, and the
 
 ### `check_workspace_terminal.py`: terminal handoff
 
-This verifies terminal handoff against the installed executable:
+This verifies terminal handoff against the installed executable, from a
+checkout of this repository:
 
 ```console
-$ python3 Scripts/check_workspace_terminal.py "$HOME/.local/bin/tmux-workspace"
+$ uv run scripts/check_workspace/check_workspace_terminal.py \
+    "$HOME/.local/bin/tmux-workspace"
 ```
 
 ## What it leaves out

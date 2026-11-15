@@ -1,4 +1,18 @@
-"""Verify native workspace attachment and explicit terminal choices."""
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Verify native workspace attachment and explicit terminal choices.
+
+The arguments are the staged `tmux-workspace` executable (`<cli>`), the tmux to
+run it against, and optionally the names of the choices to check:
+
+    uv run scripts/check_workspace/check_workspace_attach.py <cli> <tmux> [name ...]
+
+Each choice runs against a private temporary directory under
+`/tmp/libtmux-swift-dev/` and prints one JSON line when all pass.
+"""
 
 from __future__ import annotations
 
@@ -10,17 +24,13 @@ import signal
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 from owned_terminal import Terminal
 
-binary = str(Path(sys.argv[1]).resolve())
-tmux = str(Path(sys.argv[2]).resolve())
-base = Path("/tmp/libtmux-swift-dev")
-base.mkdir(exist_ok=True)
 
-
-def release_key(token):
+def release_key(token: str) -> tuple[int, int, str, tuple[int, int]]:
     """Order a tmux version the way the library does.
 
     `next-X.Y` ranks below `X.Y-rc`, which ranks below `X.Y-rcN`, which
@@ -44,11 +54,6 @@ def release_key(token):
     return (int(match.group(1)), int(match.group(2)), match.group(3), rank)
 
 
-# tmux 3.8 removed the `active-pane` client flag, so a client cannot be made
-# independent there.
-HAS_ACTIVE_PANE_FLAG = release_key(
-    subprocess.check_output([tmux, "-V"], text=True).split()[-1]
-) < release_key("3.8")
 NEEDS_ACTIVE_PANE_FLAG = {
     "independent-yes",
     "independent-detached",
@@ -58,7 +63,7 @@ NEEDS_ACTIVE_PANE_FLAG = {
 }
 
 
-def check(choice):
+def check(choice: str, binary: str, tmux: str, base: Path) -> None:
     """Exercise one load choice against an owned terminal and server."""
     independent = choice in [
         "independent-yes",
@@ -455,45 +460,62 @@ def check(choice):
                 owner.close()
 
 
-checks = []
-for choice in sys.argv[3:] or [
-    "outside-detach",
-    "outside-int",
-    "outside-term",
-    "outside-malformed",
-    "detached",
-    "append",
-    "switch",
-    "yes",
-    "eof",
-    "quit",
-    "interrupt",
-    "ambiguous",
-    "ambiguous-yes",
-    "foreign",
-    "spoofed-pane",
-    "stale-client",
-    "independent-yes",
-    "independent-detached",
-    "independent-append",
-    "independent-other-window",
-    "gained-independent",
-    "session-fallback",
-]:
-    if choice in NEEDS_ACTIVE_PANE_FLAG and not HAS_ACTIVE_PANE_FLAG:
-        print(
-            f"{choice}: skipped, this tmux has no active-pane flag",
-            file=sys.stderr,
-        )
-        continue
-    check(choice)
-    checks.append(choice)
+def main(argv: Sequence[str] | None = None) -> int:
+    """Check the choices named in `argv`, or every choice, and print the result."""
+    arguments = sys.argv[1:] if argv is None else list(argv)
+    binary = str(Path(arguments[0]).resolve())
+    tmux = str(Path(arguments[1]).resolve())
+    base = Path("/tmp/libtmux-swift-dev")
+    base.mkdir(exist_ok=True)
+    # tmux 3.8 removed the `active-pane` client flag, so a client cannot be made
+    # independent there.
+    has_active_pane_flag = release_key(
+        subprocess.check_output([tmux, "-V"], text=True).split()[-1]
+    ) < release_key("3.8")
+    checks = []
+    for choice in arguments[2:] or [
+        "outside-detach",
+        "outside-int",
+        "outside-term",
+        "outside-malformed",
+        "detached",
+        "append",
+        "switch",
+        "yes",
+        "eof",
+        "quit",
+        "interrupt",
+        "ambiguous",
+        "ambiguous-yes",
+        "foreign",
+        "spoofed-pane",
+        "stale-client",
+        "independent-yes",
+        "independent-detached",
+        "independent-append",
+        "independent-other-window",
+        "gained-independent",
+        "session-fallback",
+    ]:
+        if choice in NEEDS_ACTIVE_PANE_FLAG and not has_active_pane_flag:
+            print(
+                f"{choice}: skipped, this tmux has no active-pane flag",
+                file=sys.stderr,
+            )
+            continue
+        check(choice, binary, tmux, base)
+        checks.append(choice)
 
-print(
-    json.dumps(
-        {
-            "tmux": subprocess.check_output([tmux, "-V"], text=True).strip(),
-            "passed": checks,
-        }
+    print(
+        json.dumps(
+            {
+                "tmux": subprocess.check_output([tmux, "-V"], text=True).strip(),
+                "passed": checks,
+            }
+        )
     )
-)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

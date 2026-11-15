@@ -137,16 +137,17 @@ on every platform and tmux version. Run these after the trait-on test build;
 they create and clean up private sockets under `/tmp/libtmux-swift-dev/`:
 
 ```console
-$ python3 Scripts/check_workspace_terminal.py .build/debug/tmux-workspace
+$ uv run scripts/check_workspace/check_workspace_terminal.py \
+    .build/debug/tmux-workspace
 ```
 
 ```console
-$ python3 Scripts/check_workspace_progress.py \
+$ uv run scripts/check_workspace/check_workspace_progress.py \
     .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
 ```
 
 ```console
-$ python3 Scripts/check_workspace_attach.py \
+$ uv run scripts/check_workspace/check_workspace_attach.py \
     .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
 ```
 

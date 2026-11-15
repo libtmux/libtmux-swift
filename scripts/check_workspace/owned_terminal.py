@@ -13,20 +13,22 @@ import pty
 import select
 import signal
 import time
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 
 
 class Terminal:
     """Own and reap one process with a controlling terminal."""
 
-    def __init__(self, arguments, environment):
+    def __init__(self, arguments: list[str], environment: Mapping[str, str]) -> None:
+        """Fork `arguments` under a pty with `environment`."""
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.execve(arguments[0], arguments, environment)
-        self.status = None
+        self.status: int | None = None
         self.content = bytearray()
 
-    def pump(self):
+    def pump(self) -> None:
         """Read available output and observe process exit."""
         if select.select([self.fd], [], [], 0.01)[0]:
             with suppress(OSError):
@@ -37,7 +39,7 @@ class Terminal:
             if ended:
                 self.status = os.waitstatus_to_exitcode(status)
 
-    def until(self, predicate):
+    def until(self, predicate: Callable[[], bool]) -> None:
         """Wait for a fixture condition with bounded terminal output."""
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
@@ -47,11 +49,11 @@ class Terminal:
             assert self.status is None, (self.status, bytes(self.content))
         raise AssertionError(bytes(self.content))
 
-    def send(self, value):
+    def send(self, value: bytes) -> None:
         """Write terminal input."""
         os.write(self.fd, value)
 
-    def close(self):
+    def close(self) -> None:
         """Terminate and reap the owned child before closing its terminal."""
         if self.status is None:
             with suppress(ProcessLookupError):
