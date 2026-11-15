@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).parents[2]
-GATE = runpy.run_path(str(ROOT / "Scripts" / "changelogs.py"))
+ROOT = Path(__file__).parents[3]
+GATE = runpy.run_path(str(Path(__file__).parents[1] / "changelogs.py"))
 PRODUCTS = GATE["PRODUCTS"]
 WORKSPACE = PRODUCTS["TmuxWorkspace"]
 MCP = PRODUCTS["LibTmuxMCP"]

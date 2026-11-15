@@ -37,6 +37,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install the pinned Python tool runner
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.0"
+
       # A dry run has no tag to read, so it checks the version the package
       # declares — which is the one a tag would have to match anyway.
       - name: Resolve the version under release
@@ -72,7 +77,7 @@ jobs:
           # then in each product's, so the notes are the sections a reader of
           # those files already has. The script refuses a version any of them
           # has no section for, and a release that says nothing anywhere.
-          if ! python3 Scripts/changelogs.py notes "$VERSION" > notes.md; then
+          if ! uv run scripts/changelogs/changelogs.py notes "$VERSION" > notes.md; then
             echo "::error::the changelogs do not describe $VERSION; see above"
             exit 1
           fi

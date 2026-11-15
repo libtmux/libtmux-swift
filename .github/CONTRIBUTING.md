@@ -435,7 +435,7 @@ Each product keeps its changelog, opening with its own name and holding an
 two beside the sources are also excluded from their targets in `Package.swift`:
 
 ```console
-$ python3 Scripts/changelogs.py check
+$ uv run scripts/changelogs/changelogs.py check
 ```
 
 The generated tables still match what the benchmark measures:
@@ -549,7 +549,7 @@ is missing:
   `TmuxWorkspace`.`` under its heading. Those lines become the release notes,
   the root section first and then each product's under its name, so a file
   with no section for the version, or no entry anywhere, fails the release
-  rather than publishing one. `python3 Scripts/changelogs.py notes <version>`
+  rather than publishing one. `uv run scripts/changelogs/changelogs.py notes <version>`
   prints them.
 
 Rehearse before tagging. This runs every check and stops before publishing, so

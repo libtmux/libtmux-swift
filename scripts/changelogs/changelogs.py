@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Hold every product to a changelog of its own, and build release notes from them.
 
 Each public product keeps a `CHANGELOG.md`: `LibTmux` at the repository root,
@@ -19,8 +23,8 @@ file, so `check` holds each claim that can be answered from the checkout:
 a version, then each product's, under a heading naming it. It refuses a version
 that any file has no section for.
 
-    python3 Scripts/changelogs.py check
-    python3 Scripts/changelogs.py notes 0.1.1
+    uv run scripts/changelogs/changelogs.py check
+    uv run scripts/changelogs/changelogs.py notes 0.1.1
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ import re
 import sys
 from collections.abc import Iterator
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 PRODUCTS = {
     "LibTmux": "CHANGELOG.md",
