@@ -5,6 +5,8 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
+import pytest
+
 GATE = runpy.run_path(str(Path(__file__).parents[1] / "check_continuations.py"))
 
 GUARDED = """actor Doorbell {
@@ -30,7 +32,9 @@ UNGUARDED = """actor Doorbell {
 """
 
 
-def findings(source: str, tmp_path: Path, monkeypatch) -> list[tuple[int, str]]:
+def findings(
+    source: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[int, str]]:
     """Scan one Swift file's worth of source, rooted at a temporary tree.
 
     `runpy.run_path` hands back a copy of the module namespace, so the root the
@@ -41,17 +45,23 @@ def findings(source: str, tmp_path: Path, monkeypatch) -> list[tuple[int, str]]:
     return GATE["unguarded"]("Sample.swift")
 
 
-def test_a_handler_above_the_continuation_passes(tmp_path, monkeypatch) -> None:
+def test_a_handler_above_the_continuation_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The shape every guarded call in this repository is written in."""
     assert findings(GUARDED, tmp_path, monkeypatch) == []
 
 
-def test_a_bare_continuation_is_reported(tmp_path, monkeypatch) -> None:
+def test_a_bare_continuation_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The defect: cancelling this resumes nothing and the caller never returns."""
     assert findings(UNGUARDED, tmp_path, monkeypatch) == [(3, "wait")]
 
 
-def test_a_distant_handler_does_not_count(tmp_path, monkeypatch) -> None:
+def test_a_distant_handler_does_not_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A handler far above may guard a sibling call rather than this one.
 
     Reporting it is the safe direction: the answer is to move the handler or to
@@ -67,7 +77,9 @@ def test_a_distant_handler_does_not_count(tmp_path, monkeypatch) -> None:
     assert findings(source, tmp_path, monkeypatch) == [(8, "wait")]
 
 
-def test_the_finding_names_the_function_not_the_line(tmp_path, monkeypatch) -> None:
+def test_the_finding_names_the_function_not_the_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The allowlist keys on the name, so edits above a park are not findings."""
     padded = "// a comment\n" * 5 + UNGUARDED
 

@@ -93,7 +93,7 @@ def check(choice: str, binary: str, tmux: str, base: Path) -> None:
             environment.pop(name, None)
         terminals = []
 
-        def command(*arguments, endpoint=socket):
+        def command(*arguments: str, endpoint: str = socket) -> str:
             """Run tmux against an explicit fixture endpoint."""
             result = subprocess.run(
                 [tmux, "-f", "/dev/null", "-S", endpoint, *arguments],
@@ -105,7 +105,7 @@ def check(choice: str, binary: str, tmux: str, base: Path) -> None:
             )
             return result.stdout.strip()
 
-        def clients():
+        def clients() -> list[list[str]]:
             """Read client names, process IDs and sessions."""
             return [
                 line.split("\t")
@@ -116,11 +116,11 @@ def check(choice: str, binary: str, tmux: str, base: Path) -> None:
                 ).splitlines()
             ]
 
-        def sessions():
+        def sessions() -> list[str]:
             """Read the fixture session names."""
             return command("list-sessions", "-F", "#{session_name}").splitlines()
 
-        def terminal(arguments):
+        def terminal(arguments: list[str]) -> Terminal:
             """Track an owned terminal for cleanup."""
             result = Terminal(arguments, environment)
             terminals.append(result)

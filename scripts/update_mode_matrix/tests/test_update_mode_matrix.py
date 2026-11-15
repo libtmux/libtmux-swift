@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -42,7 +43,7 @@ class Benchmark:
         self.stderr = "the counts varied between runs\n"
 
 
-def fake_run(stdout: str, returncode: int = 0):
+def fake_run(stdout: str, returncode: int = 0) -> Callable[..., Benchmark]:
     """Return a `subprocess.run` that answers as the benchmark would."""
 
     def run(*_arguments: object, **_options: object) -> Benchmark:

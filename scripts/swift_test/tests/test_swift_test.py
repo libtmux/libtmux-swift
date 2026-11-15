@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -213,8 +214,11 @@ def is_tmux_server(pid: int) -> bool:
     return shown.stdout.strip().startswith("tmux")
 
 
+Leaker = tuple[Path, Path, Path]
+
+
 @pytest.fixture
-def leaker():
+def leaker() -> Iterator[Leaker]:
     """Put a leaking `swift` on PATH and stop any server it started afterwards.
 
     The wrapper is given a parent of its own to make its directory in, so the
@@ -245,7 +249,7 @@ def leaker():
 
 
 def leak_run(
-    leaker: tuple[Path, Path, Path],
+    leaker: Leaker,
     mode: str,
     client: str | None = None,
     **extra: str,
@@ -520,7 +524,7 @@ def test_a_relative_directory_is_refused_before_swift_runs(
 
 
 @needs_tmux
-def test_a_server_the_run_left_fails_the_run_and_is_stopped(leaker) -> None:
+def test_a_server_the_run_left_fails_the_run_and_is_stopped(leaker: Leaker) -> None:
     """Removing a live server's socket strands it, so the wrapper stops it first."""
     finished, pid = leak_run(leaker, "leak")
 
@@ -537,7 +541,7 @@ def test_a_server_the_run_left_fails_the_run_and_is_stopped(leaker) -> None:
     ("mode", "named"), [("custom", "custom.sock"), ("nested", "deep/er/custom.sock")]
 )
 def test_a_server_on_a_socket_the_run_named_is_found_and_stopped(
-    leaker, mode: str, named: str
+    leaker: Leaker, mode: str, named: str
 ) -> None:
     """A socket given with -S inside the sandbox is a leak wherever it sits."""
     finished, pid = leak_run(leaker, mode)
@@ -551,7 +555,7 @@ def test_a_server_on_a_socket_the_run_named_is_found_and_stopped(
 
 
 @needs_tmux
-def test_a_failing_run_that_also_leaked_keeps_its_status(leaker) -> None:
+def test_a_failing_run_that_also_leaked_keeps_its_status(leaker: Leaker) -> None:
     """The child's own failure is not hidden by the leak, and the server still goes."""
     finished, pid = leak_run(leaker, "custom", RECORD_STATUS="7")
 
@@ -562,7 +566,7 @@ def test_a_failing_run_that_also_leaked_keeps_its_status(leaker) -> None:
 
 
 @needs_tmux
-def test_a_run_that_stops_its_own_server_passes(leaker) -> None:
+def test_a_run_that_stops_its_own_server_passes(leaker: Leaker) -> None:
     """Control: the same server, stopped by the run, is not reported."""
     finished, pid = leak_run(leaker, "clean")
 
@@ -574,7 +578,7 @@ def test_a_run_that_stops_its_own_server_passes(leaker) -> None:
 
 
 @needs_tmux
-def test_a_socket_file_nothing_listens_on_is_not_a_leak(leaker) -> None:
+def test_a_socket_file_nothing_listens_on_is_not_a_leak(leaker: Leaker) -> None:
     """A server that exited leaves its socket file behind, wherever it was."""
     finished, _ = leak_run(leaker, "stale")
 
@@ -584,7 +588,7 @@ def test_a_socket_file_nothing_listens_on_is_not_a_leak(leaker) -> None:
 
 
 @needs_tmux
-def test_a_link_to_a_socket_outside_the_sandbox_is_left_alone(leaker) -> None:
+def test_a_link_to_a_socket_outside_the_sandbox_is_left_alone(leaker: Leaker) -> None:
     """The scan does not follow links, so it never stops a server it did not own."""
     finished, pid = leak_run(leaker, "link")
 
@@ -596,7 +600,7 @@ def test_a_link_to_a_socket_outside_the_sandbox_is_left_alone(leaker) -> None:
 
 
 @needs_tmux
-def test_a_server_that_takes_a_moment_to_stop_is_waited_for(leaker) -> None:
+def test_a_server_that_takes_a_moment_to_stop_is_waited_for(leaker: Leaker) -> None:
     """The check retries for a few seconds, so a slow stop is not called a failure."""
     finished, pid = leak_run(leaker, "custom", client="slow")
 
@@ -614,7 +618,7 @@ def test_a_server_that_takes_a_moment_to_stop_is_waited_for(leaker) -> None:
     [("noop", "custom", "custom.sock"), ("mismatch", "leak", "default")],
 )
 def test_a_server_that_is_not_stopped_keeps_its_directory_and_fails(
-    leaker, client: str, mode: str, named: str
+    leaker: Leaker, client: str, mode: str, named: str
 ) -> None:
     """A stop that did not work is caught: the server still answers, so nothing goes."""
     finished, pid = leak_run(leaker, mode, client=client)
@@ -628,7 +632,7 @@ def test_a_server_that_is_not_stopped_keeps_its_directory_and_fails(
 
 
 @pytest.fixture
-def short_parent():
+def short_parent() -> Iterator[Path]:
     """Make a parent directory with a short path, for the length tests."""
     parent = Path(tempfile.mkdtemp(prefix="sw-"))
     yield parent

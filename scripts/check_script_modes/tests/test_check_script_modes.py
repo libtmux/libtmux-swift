@@ -12,7 +12,9 @@ SCRIPT = Path(__file__).parents[1] / "check_script_modes.py"
 SHEBANG = "#!/bin/sh\necho hello\n"
 
 
-def run_gate(tmp_path: Path, files: dict[str, str], executable: set[str]):
+def run_gate(
+    tmp_path: Path, files: dict[str, str], executable: set[str]
+) -> subprocess.CompletedProcess[str]:
     """Run the gate over a temporary repository that tracks `files`.
 
     The gate reads the mode git recorded, so each file is added to the index

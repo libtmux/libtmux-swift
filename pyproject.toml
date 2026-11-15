@@ -68,10 +68,15 @@ extend-select = [
   "RUF",    # ruff-specific rules
   "D",      # pydocstyle
   "FA100",  # future annotations
+  "ANN",    # flake8-annotations
 ]
 ignore = [
   "COM812", # missing trailing comma, conflicts with the formatter
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests build JSON documents from literals, which `Any` types honestly.
+"scripts/**/tests/*.py" = ["ANN401"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
