@@ -37,7 +37,9 @@ what the plan expected.
 states a tmux range the manifest does not, when `ci.yml` carries a version list
 of its own, or when the structure the plan relies on has been undone: an input
 spliced into a script, an unpinned tmate step, a job missing from `required`, a
-workflow that no longer runs on a tag.
+workflow that no longer runs on a tag, a raw `apt-get` call, a shared action that
+is not pinned to a full commit, or a job that builds tmux without the shared
+`build-tmux` action.
 
 ```console
 $ uv run scripts/ci_plan/check_ci.py

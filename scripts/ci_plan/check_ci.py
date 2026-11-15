@@ -11,7 +11,9 @@ a version list of its own, and when the workflow structure the plan relies on
 has been undone: a dispatch input spliced into a script, a tmate step that is
 not pinned or not limited to the actor, an aggregate job that forgot a job, a
 workflow that no longer runs on a tag, a script that calls apt-get or apt
-without `Scripts/apt-get.sh`.
+instead of the shared apt-get action, a shared action that is not pinned to a
+full commit, and a test or refusal job that builds tmux without the shared
+build-tmux action.
 
     uv run scripts/ci_plan/check_ci.py
 """
@@ -49,18 +51,21 @@ TMATE = re.compile(r"uses:\s*mxschmitt/action-tmate@(\S+)")
 SPLICED = re.compile(
     r"\$\{\{[^}]*\b("
     r"inputs\.|github\.event\.inputs|needs\.plan\.outputs"
-    r"|matrix\.(?:tmux|slug|ref|source|client|client_slug|swift|tmate)"
+    r"|matrix\.(?:tmux|ref|client|swift|tmate)"
     r"|steps\.[\w-]+\.outputs"
     r")"
 )
 RUN_KEY = re.compile(r"^(\s*)(?:- )?run:\s*(.*)$")
 # `apt-get` or `apt` where a command starts: after a separator, a shell keyword,
 # or `sudo`/`env`, their options and any VAR=value words. A path such as
-# `./Scripts/apt-get.sh` and `apt-cache` do not match.
+# `./tools/apt-get.sh` and `apt-cache` do not match.
 RAW_APT = re.compile(
     r"(?:^|[;&|({]|\b(?:then|do|else|sudo|env|exec|time)\b)"
     r"(?:\s+(?:-\S+|\w+=\S*))*\s*(apt-get|apt)(?![\w./-])"
 )
+# A step that uses an action of the shared libtmux/.github repository.
+SHARED_ACTION = re.compile(r"uses:\s*libtmux/\.github/actions/([\w-]+)@(\S+)")
+BUILD_TMUX = "libtmux/.github/actions/build-tmux@"
 STEP_START = re.compile(r"^(\s*)- (?:name|id|if|uses|run|env|with|shell):")
 JOB_ID = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 
@@ -148,9 +153,19 @@ def check_apt(text: str, name: str) -> list[str]:
         if call:
             problems.append(
                 f"{name}:{number} {_where(lines, number)} calls {call[1]} directly; "
-                "run it through Scripts/apt-get.sh"
+                "use the shared apt-get action of libtmux/.github"
             )
     return problems
+
+
+def check_shared_actions(text: str, name: str) -> list[str]:
+    """Return each shared action a workflow or action pins to less than a commit."""
+    return [
+        f"{name} uses libtmux/.github/actions/{found[1]} at {found[2]}, "
+        "not a full commit"
+        for found in SHARED_ACTION.finditer(_code(text))
+        if re.fullmatch(r"[0-9a-f]{40}", found[2]) is None
+    ]
 
 
 def check_docs(root: pathlib.Path, manifest: plan.Manifest) -> list[str]:
@@ -260,6 +275,10 @@ def check_ci(text: str, manifest: plan.Manifest) -> list[str]:
         wanted = f"matrix: ${{{{ fromJSON(needs.plan.outputs.{name}) }}}}"
         if wanted not in jobs.get(name, ""):
             problems.append(f"the {name} job does not take its matrix from the plan")
+        if BUILD_TMUX not in _code(jobs.get(name, "")):
+            problems.append(
+                f"the {name} job does not build tmux with the shared build-tmux action"
+            )
 
     aggregate = jobs.get("required", "")
     listed = set(re.findall(r"(?m)^      - ([\w-]+)$", aggregate.split("steps:")[0]))
@@ -307,7 +326,9 @@ def check(root: pathlib.Path) -> list[str]:
         *sorted((root / ACTIONS).glob("*/action.y*ml")),
     ]
     for path in scripts:
-        problems += check_apt(path.read_text(), str(path.relative_to(root)))
+        label = str(path.relative_to(root))
+        problems += check_apt(path.read_text(), label)
+        problems += check_shared_actions(path.read_text(), label)
     return problems
 
 

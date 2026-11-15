@@ -8,6 +8,7 @@ guard that cannot fail is not guarding anything.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -283,7 +284,7 @@ def test_a_matrix_that_ignores_the_plan_is_flagged(tree: Tree, name: str) -> Non
     assert tree.flags(f"the {name} job does not take its matrix from the plan")
 
 
-WRAPPER = "Scripts/apt-get.sh"
+FIX = "use the shared apt-get action of libtmux/.github"
 
 
 def apt_workflow(run: str) -> str:
@@ -304,10 +305,7 @@ def apt_workflow(run: str) -> str:
 def test_a_raw_apt_get_in_a_script_is_flagged() -> None:
     """The message names the file, the job and the step, and the fix."""
     assert CHECK.check_apt(apt_workflow("sudo apt-get update"), "x.yml") == [
-        (
-            "x.yml:9 job build, step 'Install libevent' calls apt-get directly; "
-            f"run it through {WRAPPER}"
-        )
+        f"x.yml:9 job build, step 'Install libevent' calls apt-get directly; {FIX}"
     ]
 
 
@@ -326,39 +324,40 @@ def test_every_spelling_of_a_raw_call_is_flagged(run: str, tool: str) -> None:
     """With or without sudo, options and variables, apt-get and apt are caught."""
     problems = CHECK.check_apt(apt_workflow(run), "x.yml")
     assert len(problems) == 1
-    assert f"calls {tool} directly; run it through {WRAPPER}" in problems[0]
+    assert f"calls {tool} directly; {FIX}" in problems[0]
 
 
 @pytest.mark.parametrize(
     "run",
     [
-        f"./{WRAPPER} update",
-        f"sudo ./{WRAPPER} install --yes libevent-dev",
         "# sudo apt-get update",
         "apt-cache policy libevent-dev",
         "echo apt-get is wrapped",
+        "./tools/apt-get.sh update",
     ],
 )
-def test_the_wrapper_and_comments_are_not_flagged(run: str) -> None:
-    """The wrapper, a comment and another apt tool all pass."""
+def test_comments_and_other_apt_tools_are_not_flagged(run: str) -> None:
+    """A comment, another apt tool and a path that ends in apt-get.sh all pass."""
     assert CHECK.check_apt(apt_workflow(run), "x.yml") == []
 
 
 def test_a_step_name_is_not_a_script() -> None:
     """Only `run` scripts are scanned, so a name or a comment may say apt-get."""
-    text = apt_workflow(f"./{WRAPPER} update").replace(
-        "Install libevent", "sudo apt-get update"
-    )
+    text = apt_workflow("echo ready").replace("Install libevent", "sudo apt-get update")
     assert CHECK.check_apt(text, "x.yml") == []
 
 
 def test_a_raw_apt_get_in_ci_is_flagged(tree: Tree) -> None:
-    """Undoing the wrapper in ci.yml fails the check, once per call."""
-    tree.edit(CI, f"./{WRAPPER} update", "sudo apt-get update", 5)
+    """A step that calls apt-get in ci.yml fails the check."""
+    tree.append(
+        CI,
+        "\n  extra:\n    runs-on: ubuntu-24.04\n    steps:\n"
+        "      - name: Install\n        run: sudo apt-get update\n",
+    )
     flagged = [p for p in tree.problems() if "calls apt-get directly" in p]
-    assert len(flagged) == 5
-    assert all(p.startswith(f"{CI}:") for p in flagged)
-    assert all(p.endswith(f"run it through {WRAPPER}") for p in flagged)
+    assert len(flagged) == 1
+    assert flagged[0].startswith(f"{CI}:")
+    assert flagged[0].endswith(FIX)
 
 
 def test_a_raw_apt_get_in_a_composite_action_is_flagged(tree: Tree) -> None:
@@ -377,3 +376,58 @@ def test_a_raw_apt_get_in_a_composite_action_is_flagged(tree: Tree) -> None:
     assert tree.flags(
         ".github/actions/deps/action.yml:7 step 'Install' calls apt-get directly"
     )
+
+
+def test_the_shared_actions_are_pinned_in_this_repository(tree: Tree) -> None:
+    """Every `libtmux/.github` action in ci.yml names a full commit."""
+    text = (tree.root / CI).read_text()
+    assert "libtmux/.github/actions/build-tmux@" in text
+    assert CHECK.check_shared_actions(text, CI) == []
+
+
+@pytest.mark.parametrize("ref", ["main", "v1", "30f81842b1e6", "g" * 40])
+def test_a_shared_action_that_is_not_a_full_commit_is_flagged(ref: str) -> None:
+    """A branch, a tag or an abbreviated commit can move under the workflow."""
+    text = (
+        "steps:\n"
+        f"  - uses: libtmux/.github/actions/apt-get@{ref}\n"
+        "    with:\n"
+        "      args: install --yes tmux\n"
+    )
+    assert CHECK.check_shared_actions(text, "x.yml") == [
+        f"x.yml uses libtmux/.github/actions/apt-get at {ref}, not a full commit"
+    ]
+
+
+def test_a_comment_that_names_an_unpinned_action_is_not_flagged() -> None:
+    """Only a `uses:` line is a use."""
+    text = "# uses: libtmux/.github/actions/apt-get@main\n"
+    assert CHECK.check_shared_actions(text, "x.yml") == []
+
+
+def test_an_unpinned_shared_action_in_ci_is_flagged(tree: Tree) -> None:
+    """Moving the build-tmux pin to a branch fails the check."""
+    path = tree.root / CI
+    path.write_text(
+        re.sub(
+            r"(libtmux/\.github/actions/build-tmux@)[0-9a-f]{40}",
+            r"\1main",
+            path.read_text(),
+            count=1,
+        )
+    )
+    assert tree.flags("libtmux/.github/actions/build-tmux at main, not a full commit")
+
+
+@pytest.mark.parametrize("name", ["test", "refusal"])
+def test_a_job_that_builds_tmux_itself_is_flagged(tree: Tree, name: str) -> None:
+    """Both jobs take their tmux from the shared action."""
+    path = tree.root / CI
+    parts = re.split(r"(?m)^(  [a-z]+:\s*)$", path.read_text())
+    rebuilt = []
+    for index, part in enumerate(parts):
+        if index > 1 and parts[index - 1].strip() == f"{name}:":
+            part = part.replace("build-tmux@", "build-tmux-local@")
+        rebuilt.append(part)
+    path.write_text("".join(rebuilt))
+    assert tree.flags(f"the {name} job does not build tmux with the shared")

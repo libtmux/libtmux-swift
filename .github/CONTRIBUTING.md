@@ -250,11 +250,13 @@ a release, a tag, a branch or a 40-hex commit from
 $ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.6b,master
 ```
 
-A release in the table keeps its tarball. Anything else is resolved to a commit
-and built from it, and `master` here is the current tip, not the pinned commit
-the full table tests. `swift` repeats each tmux ref once per toolchain.
-`scope=full` runs the whole table, the pinned master and the refusal cells, as a
-tag does.
+CI builds tmux with the shared `build-tmux` action of `libtmux/.github`. A
+release it pins builds from its checksummed archive. Anything else is resolved
+to a commit and built from it, and `master` here is the current tip, not the
+pinned commit the full table tests. A new release's checksum goes to
+`libtmux/.github`, and its version to the manifest. `swift` repeats each tmux
+ref once per toolchain. `scope=full` runs the whole table, the pinned master and
+the refusal cells, as a tag does.
 
 ```console
 $ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.8 -f swift=6.1,6.2
@@ -265,9 +267,8 @@ $ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.8 -f swif
 failing leg, and `tmate=before-tests` opens one before the build and tests. Only
 the account that dispatched the run can connect, so it needs a public SSH key on
 its GitHub profile. The plan accepts a session on exactly one leg, which means
-one `tmux-ref` and at most one `swift`. The build is in `~/tmux-<ref>`, shortened to 12
-characters for a commit, and `LIBTMUX_TMUX_BIN` points the suite at its
-`bin/tmux`.
+one `tmux-ref` and at most one `swift`. The build step prints the install
+prefix, and `LIBTMUX_TMUX_BIN` points the suite at its `bin/tmux`.
 
 ```console
 $ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.7b -f tmate=on-failure

@@ -68,11 +68,10 @@ class Manifest(NamedTuple):
 
 
 class Ref(NamedTuple):
-    """One tmux to test: what to call it, what to resolve, how to build it."""
+    """One tmux to test: what to call it and the ref the build action takes."""
 
     name: str
     ref: str
-    source: str
 
 
 class Plan(NamedTuple):
@@ -239,24 +238,17 @@ def _swifts(text: str, manifest: Manifest) -> list[str]:
     return versions or [manifest.swift]
 
 
-def _slug(ref: str) -> str:
-    if SHA_PATTERN.fullmatch(ref):
-        return ref[:12]
-    return re.sub(r"[^A-Za-z0-9._-]", "-", ref)
-
-
 def named_ref(manifest: Manifest, name: str, *, pinned: bool) -> Ref:
-    """Say how a name from the manifest or a person is built.
+    """Say which ref builds a name from the manifest or a person.
 
-    A release in the manifest keeps its tarball. The pinned preview commit is
-    what `full` scope tests, so an upstream break reds nothing unrelated; a
-    `custom` run that names the preview wants the tip instead.
+    The pinned preview commit is what `full` scope tests, so an upstream break
+    reds nothing unrelated; a `custom` run that names the preview wants the tip
+    instead. Anything else builds as named: the build action takes a release, a
+    tag, a branch or a commit.
     """
-    if name in manifest.released:
-        return Ref(name, name, "release")
     if pinned and name in manifest.preview:
-        return Ref(name, manifest.preview[name], "git")
-    return Ref(name, name, "git")
+        return Ref(name, manifest.preview[name])
+    return Ref(name, name)
 
 
 def chosen_refs(manifest: Manifest, scope: str, refs: list[str]) -> list[Ref]:
@@ -293,16 +285,13 @@ def client_for(manifest: Manifest, name: str) -> str:
 
 def _leg(build: Ref, swift: str, manifest: Manifest) -> dict[str, object]:
     client = client_for(manifest, build.name)
-    own = build.source == "release" and build.name == client
+    own = build.name == client
     stack = swift == manifest.swift
     return {
         "os": OS,
         "tmux": build.name,
-        "slug": _slug(build.name),
         "ref": build.ref,
-        "source": build.source,
         "client": "" if own else client,
-        "client_slug": _slug(build.name) if own else client,
         "swift": swift,
         "repo_checks": stack and build.name == manifest.newest,
         "version_checks": stack and build.name == manifest.version_checks,

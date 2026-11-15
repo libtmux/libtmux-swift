@@ -101,31 +101,19 @@ def check_dispatch_custom() -> None:
         tmux_ref=f" 1.1a, main,{SHA},1.1a,feature/x ",
     )
     assert tmux_of(result) == ["1.1a", "main", SHA, "feature/x"]
-    assert leg(result, SHA)["slug"] == "a" * 12
-    assert leg(result, "feature/x")["slug"] == "feature-x"
     assert not result.refusal_planned
 
 
 def check_full_pins_the_preview() -> None:
     """Check that the whole table tests the pinned commit, not the tip."""
     main = leg(make(event="push", ref_type="tag"), "main")
-    assert (main["ref"], main["source"]) == (PIN, "git")
+    assert main["ref"] == PIN
 
 
 def check_custom_preview_is_the_tip() -> None:
     """Check that naming the preview in a custom run asks for its tip."""
     result = make(event="workflow_dispatch", scope="custom", tmux_ref="main")
-    assert (leg(result, "main")["ref"], leg(result, "main")["source"]) == (
-        "main",
-        "git",
-    )
-
-
-def check_releases_keep_their_tarball() -> None:
-    """Check that a release in the manifest is built from its tarball."""
-    result = make(event="workflow_dispatch", scope="custom", tmux_ref="1.1,9.9")
-    assert leg(result, "1.1")["source"] == "release"
-    assert leg(result, "9.9")["source"] == "git"
+    assert leg(result, "main")["ref"] == "main"
 
 
 def check_edges_are_first_and_last_release() -> None:
@@ -159,13 +147,10 @@ def check_version_checks_need_their_release() -> None:
 def check_client_rule() -> None:
     """Check that the client is the legacy tmux up to the cutoff, current above."""
     full = make(event="workflow_dispatch", scope="full")
-    assert (leg(full, "1.0")["client"], leg(full, "1.0")["client_slug"]) == ("", "1.0")
-    assert (leg(full, "1.1")["client"], leg(full, "1.1")["client_slug"]) == (
-        "1.0",
-        "1.0",
-    )
+    assert leg(full, "1.0")["client"] == ""
+    assert leg(full, "1.1")["client"] == "1.0"
     assert leg(full, "1.1a")["client"] == "1.0"
-    assert (leg(full, "2.0")["client"], leg(full, "2.0")["client_slug"]) == ("", "2.0")
+    assert leg(full, "2.0")["client"] == ""
     assert leg(full, "2.1")["client"] == "2.0"
     assert leg(full, "main")["client"] == "2.0"
     custom = make(event="workflow_dispatch", scope="custom", tmux_ref=f"{SHA},1.1b")
@@ -278,11 +263,6 @@ def pinned_refs(manifest: Any, scope: str, refs: list[str]) -> list[Any]:
     return [PLAN.named_ref(manifest, name, pinned=True) for name in names]
 
 
-def every_ref_is_git(manifest: Any, name: str, *, pinned: bool) -> Any:
-    """Stand in for a plan that builds every release from a clone."""
-    return PLAN.Ref(name, name, "git")
-
-
 def edges_instead(manifest: Any, scope: str, refs: list[str]) -> list[Any]:
     """Stand in for a plan that ignores the scope and always runs the edges."""
     names = [manifest.oldest, manifest.newest]
@@ -318,7 +298,6 @@ MUTANTS: dict[Callable[[], None], tuple[str, object]] = {
     check_dispatch_custom: ("chosen_refs", edges_instead),
     check_full_pins_the_preview: ("chosen_refs", unpinned_refs),
     check_custom_preview_is_the_tip: ("chosen_refs", pinned_refs),
-    check_releases_keep_their_tarball: ("named_ref", every_ref_is_git),
     check_edges_are_first_and_last_release: (
         "chosen_refs",
         newest_is_second_release,

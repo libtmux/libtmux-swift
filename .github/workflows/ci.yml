@@ -105,55 +105,24 @@ jobs:
         with:
           version: "0.12.0"
 
-      # tmux 3.0a and 3.1c link the full libevent, which the runner image does
-      # not carry, and a cached build installs nothing else.
-      - name: Install the libevent runtime
-        run: |
-          ./Scripts/apt-get.sh update
-          ./Scripts/apt-get.sh install --yes --no-install-recommends libevent-2.1-7t64
-
-      - name: Restore tmux ${{ matrix.tmux }}
-        id: tmux-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/tmux-${{ matrix.tmux }}
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Install build dependencies
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
-        run: |
-          ./Scripts/apt-get.sh update
-          ./Scripts/apt-get.sh install --yes --no-install-recommends \
-            bison libevent-dev libncurses-dev pkg-config
-
+      # The install prefix stays short: cases type the tmux path into a pane,
+      # and a long path wraps the command line they type.
       - name: Build tmux ${{ matrix.tmux }}
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
-        env:
-          VERSION: ${{ matrix.tmux }}
-        run: |
-          python3 Scripts/tmux_ref.py build --source release \
-            --ref "$VERSION" --prefix "$HOME/tmux-$VERSION"
+        id: tmux
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          ref: ${{ matrix.tmux }}
+          prefix: /home/runner/tmux-${{ matrix.tmux }}
 
       # tmux 3.0a and 3.1c keep the client's stdout open from the daemon, so
       # the refusal also runs with a client that is at the floor: the old
       # binary as its own client only exercises the client rejecting -N.
-      - name: Restore the tmux ${{ matrix.client }} client
-        id: client-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/tmux-${{ matrix.client }}
-          key: tmux-${{ matrix.client }}-${{ runner.os }}-${{ runner.arch }}
-
       - name: Build the tmux ${{ matrix.client }} client
-        if: steps.client-cache.outputs.cache-hit != 'true'
-        env:
-          CLIENT: ${{ matrix.client }}
-        run: |
-          ./Scripts/apt-get.sh update
-          ./Scripts/apt-get.sh install --yes --no-install-recommends \
-            bison libevent-dev libncurses-dev pkg-config
-          python3 Scripts/tmux_ref.py build --source release \
-            --ref "$CLIENT" --prefix "$HOME/tmux-$CLIENT"
+        id: client
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          ref: ${{ matrix.client }}
+          prefix: /home/runner/tmux-${{ matrix.client }}
 
       - name: Restore the SwiftPM cache
         uses: actions/cache@v6
@@ -172,11 +141,9 @@ jobs:
           # The refusal cases are skipped on a supported release, so the run
           # names what it must have exercised and fails when it did not.
           LIBTMUX_EXPECT_REFUSAL: "1"
-          VERSION: ${{ matrix.tmux }}
-          CLIENT: ${{ matrix.client }}
+          LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
+          LIBTMUX_TMUX_CLIENT_BIN: ${{ steps.client.outputs.binary }}
         run: |
-          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${VERSION}/bin/tmux"
-          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-${CLIENT}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
           "$LIBTMUX_TMUX_CLIENT_BIN" -V
           scripts/swift_test/swift_test.py --force-resolved-versions --filter VersionCheck
@@ -214,65 +181,29 @@ jobs:
         with:
           version: "0.12.0"
 
-      # A release tarball never changes, so the version and the runner are the
-      # whole key; anything else is keyed on the commit it resolves to.
-      - name: Resolve tmux ${{ matrix.tmux }}
-        id: tmux-ref
-        env:
-          SOURCE: ${{ matrix.source }}
-          TMUX_REF: ${{ matrix.ref }}
-        run: |
-          python3 Scripts/tmux_ref.py resolve --source "$SOURCE" "$TMUX_REF" \
-            --github-output "$GITHUB_OUTPUT"
-
-      # Several jobs building the same releases from source is most of this
-      # workflow's runtime.
-      - name: Restore tmux ${{ matrix.tmux }}
-        id: tmux-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/tmux-${{ matrix.slug }}
-          key: tmux-${{ steps.tmux-ref.outputs.key }}-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Install build dependencies (Linux)
-        if: runner.os == 'Linux' && steps.tmux-cache.outputs.cache-hit != 'true'
-        run: |
-          ./Scripts/apt-get.sh update
-          ./Scripts/apt-get.sh install --yes --no-install-recommends \
-            automake autoconf bison libevent-dev libncurses-dev pkg-config
-
+      # A release in the table builds from its checksummed archive, and any
+      # other ref from the commit it resolves to. The action caches the build
+      # and installs what it links. The install prefix stays short: cases type
+      # the tmux path into a pane, and a long path wraps the command line they
+      # type, which changes what the capture cases read back.
       - name: Build tmux ${{ matrix.tmux }}
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
-        env:
-          SOURCE: ${{ matrix.source }}
-          BUILD_REF: ${{ steps.tmux-ref.outputs.sha || matrix.ref }}
-          SLUG: ${{ matrix.slug }}
-        run: |
-          python3 Scripts/tmux_ref.py build --source "$SOURCE" \
-            --ref "$BUILD_REF" --prefix "$HOME/tmux-$SLUG"
+        id: tmux
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          ref: ${{ matrix.ref }}
+          prefix: /home/runner/tmux-${{ matrix.tmux }}
 
       # A second, older tmux as the client, so the suite also runs a client
       # that reports another release than the daemon it talks to. tmux clients
       # and daemons speak one protocol only within a range: a 3.3a client
       # cannot talk to a 3.6 or newer daemon, so `plan` picks the client.
-      - name: Restore the tmux ${{ matrix.client }} client
-        id: client-cache
-        if: matrix.client != ''
-        uses: actions/cache@v6
-        with:
-          path: ~/tmux-${{ matrix.client }}
-          key: tmux-${{ matrix.client }}-${{ runner.os }}-${{ runner.arch }}
-
       - name: Build the tmux ${{ matrix.client }} client
-        if: matrix.client != '' && steps.client-cache.outputs.cache-hit != 'true'
-        env:
-          CLIENT: ${{ matrix.client }}
-        run: |
-          ./Scripts/apt-get.sh update
-          ./Scripts/apt-get.sh install --yes --no-install-recommends \
-            automake autoconf bison libevent-dev libncurses-dev pkg-config
-          python3 Scripts/tmux_ref.py build --source release \
-            --ref "$CLIENT" --prefix "$HOME/tmux-$CLIENT"
+        id: client
+        if: matrix.client != ''
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          ref: ${{ matrix.client }}
+          prefix: /home/runner/tmux-${{ matrix.client }}
 
       # Resolving fetches five repositories on every run, and a clone that
       # times out fails a lane that has nothing wrong with it.
@@ -321,27 +252,14 @@ jobs:
       # run a tmux binary stay on the release they were written against, which
       # the whole table includes and a push does not.
 
-      # Pinned, because the action defaults to whatever ruff released most
-      # recently and lints an unchanged tree against it. 0.16.3 added a rule
-      # this tooling does not satisfy and turned CI red on a commit that
-      # touched no Python. Everything else here is pinned — the Swift
-      # toolchain, the tmux tags, the resolved dependencies — for the reason
-      # this demonstrates.
-      - name: Lint the Python tooling
-        if: runner.os == 'Linux' && matrix.repo_checks
-        uses: astral-sh/ruff-action@v4.1.0
-        with:
-          version: "0.16.1"
-          args: check Scripts/
-
-      - name: Test the Python tooling
-        if: runner.os == 'Linux' && matrix.repo_checks
-        run: |
-          python3 -m pip install --quiet pytest
-          python3 -m pytest Scripts/tests -q
-
+      # ruff, ty and pytest come from uv.lock, so a new release of any of them
+      # cannot turn CI red on a commit that touched no Python. The leak tests
+      # start the leg's tmux, so they run against the release under test
+      # instead of whatever the runner carries.
       - name: Check the scripts
         if: runner.os == 'Linux' && matrix.repo_checks
+        env:
+          LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
         run: |
           uv run --locked --group dev ruff format --check scripts
           uv run --locked --group dev ruff check scripts
@@ -431,10 +349,8 @@ jobs:
       - name: Check the mode matrix is current
         if: runner.os == 'Linux' && matrix.version_checks
         env:
-          SLUG: ${{ matrix.slug }}
-        run: |
-          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${SLUG}/bin/tmux"
-          uv run scripts/update_mode_matrix/update_mode_matrix.py --check
+          LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
+        run: uv run scripts/update_mode_matrix/update_mode_matrix.py --check
 
       # The trait is off by default, so this proves the configuration a consumer
       # gets without asking for anything still compiles. Resolved-version
@@ -444,14 +360,12 @@ jobs:
 
       - name: Test
         env:
-          SLUG: ${{ matrix.slug }}
-          CLIENT_SLUG: ${{ matrix.client_slug }}
-        run: |
           # Every test resolves its tmux through this, so the whole suite runs
           # against the release being exercised rather than whatever the runner
-          # happens to ship.
-          export LIBTMUX_TMUX_BIN="${HOME}/tmux-${SLUG}/bin/tmux"
-          export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-${CLIENT_SLUG}/bin/tmux"
+          # happens to ship. A leg that has no separate client is its own.
+          LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
+          LIBTMUX_TMUX_CLIENT_BIN: ${{ steps.client.outputs.binary || steps.tmux.outputs.binary }}
+        run: |
           "$LIBTMUX_TMUX_BIN" -V
           # The script clears TMUX, TMUX_PANE and LIBTMUX_SOCKET* and gives each
           # run its own TMUX_TMPDIR, where tmux resolves a socket *name*. Doing
@@ -468,16 +382,15 @@ jobs:
 
       - name: Test the staged workspace CLI
         env:
-          SLUG: ${{ matrix.slug }}
+          TMUX_BIN: ${{ steps.tmux.outputs.binary }}
         run: |
           set -euo pipefail
           binary="${RUNNER_TEMP}/workspace-cli/bin/tmux-workspace"
           mkdir -p "$(dirname "$binary")"
           install -m 755 .build/debug/tmux-workspace "$binary"
-          tmux="${HOME}/tmux-${SLUG}/bin/tmux"
           uv run scripts/check_workspace/check_workspace_terminal.py "$binary"
-          uv run scripts/check_workspace/check_workspace_progress.py "$binary" "$tmux"
-          uv run scripts/check_workspace/check_workspace_attach.py "$binary" "$tmux"
+          uv run scripts/check_workspace/check_workspace_progress.py "$binary" "$TMUX_BIN"
+          uv run scripts/check_workspace/check_workspace_attach.py "$binary" "$TMUX_BIN"
 
       # `Package.resolved` tracks a superset that includes Yams even when the
       # trait is off, and a trait-off `swift test` resolves without it and
