@@ -417,6 +417,10 @@ public struct Server: Sendable, Hashable {
         await runtime.daemonIsGone()
     }
 
+    func endpointState() async throws(TmuxError) -> ServerRuntime.EndpointState {
+        try await runtime.endpointState()
+    }
+
     func requireCommandFeatures(_ rawArguments: [String]) async throws(TmuxError) {
         try await runtime.requireFeatures(for: rawArguments)
     }
@@ -826,15 +830,38 @@ actor ServerRuntime {
     /// itself have to talk to the daemon it is asking about, and `-N` keeps it
     /// from starting a replacement.
     func daemonIsGone() async -> Bool {
-        guard
-            let reply = try? await send(
-                ["-N", "list-sessions", "-F", "#{session_id}"],
-                perStreamOutputLimit: 4096)
-        else { return false }
-        guard reply.exitCode != 0 else { return false }
-        return Support.Versions.isAbsentEndpoint(reply)
-            || reply.errorText.contains("server exited unexpectedly")
-            || reply.errorText.contains("lost server")
+        switch try? await endpointState() {
+        case .unreachable?, .closing?: true
+        default: false
+        }
+    }
+
+    /// What a client that skips the version check finds at the endpoint.
+    ///
+    /// A daemon that has been told to exit keeps its listening socket until the
+    /// process is gone, and closes each connection it accepts, so a client sees
+    /// ``closing`` rather than ``unreachable`` for as long as that takes.
+    enum EndpointState: Equatable {
+        /// Nothing listens, in tmux's own words for it.
+        case unreachable
+        /// The connection was accepted and dropped, as an exiting daemon does.
+        case closing
+        /// A daemon answered.
+        case answering
+        /// tmux said something else; the text is what it said.
+        case unclear(String)
+    }
+
+    func endpointState() async throws(TmuxError) -> EndpointState {
+        let reply = try await send(
+            ["-N", "list-sessions", "-F", "#{session_id}"], perStreamOutputLimit: 4096)
+        if reply.exitCode == 0 { return .answering }
+        if Support.Versions.isAbsentEndpoint(reply) { return .unreachable }
+        let text = reply.errorText
+        if text.contains("server exited unexpectedly") || text.contains("lost server") {
+            return .closing
+        }
+        return .unclear(text.isEmpty ? "exit status \(reply.exitCode)" : text)
     }
 
     /// Refuses a literal batch the checked release cannot run safely.

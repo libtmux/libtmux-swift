@@ -304,8 +304,35 @@ extension Server {
         try await expectSuccess(TmuxCommand("start-server"))
     }
 
+    /// Stops the daemon, and returns once nothing at the endpoint accepts a connection.
+    ///
+    /// tmux answers `kill-server` before the daemon has exited. Until it has, it
+    /// still accepts a connection and closes it at once, so a command sent in
+    /// that gap, such as the `new-session` that replaces the daemon, fails with
+    /// `server exited unexpectedly` instead of starting a new one. This waits
+    /// for that gap to close, so the next command finds no daemon and starts a
+    /// replacement.
+    ///
+    /// A reply that is itself the dropped connection counts as stopped, if the
+    /// endpoint then goes quiet.
+    ///
+    /// - Throws: ``TmuxError/invocationFailed(reason:)`` when tmux refuses
+    ///   `kill-server`, such as when no daemon is running, and when the daemon is
+    ///   still accepting connections ten seconds later. ``TmuxError/cancelled``
+    ///   when the task is cancelled during the wait.
     public func killServer() async throws(TmuxError) {
-        try await expectSuccess(TmuxCommand("kill-server"))
+        try await killServer(stopWithin: Self.stopTimeout)
+    }
+
+    /// How long `killServer()` waits for the daemon to stop accepting connections.
+    ///
+    /// A daemon with nothing left to wait for exits within milliseconds; the
+    /// bound is for one that cannot, so the call reports it rather than waiting
+    /// on it.
+    static var stopTimeout: Duration { .seconds(10) }
+
+    func killServer(stopWithin timeout: Duration) async throws(TmuxError) {
+        try await requireStopped(after: try await run(TmuxCommand("kill-server")), within: timeout)
     }
 
     package func killServer(
@@ -316,8 +343,45 @@ extension Server {
             expecting: incarnation,
             perStreamOutputLimit: 4_096
         )
-        guard reply.isSuccess else {
+        try await requireStopped(after: reply, within: Self.stopTimeout)
+    }
+
+    /// Accepts a `kill-server` reply once the endpoint stops accepting connections.
+    private func requireStopped(
+        after reply: TmuxReply,
+        within timeout: Duration
+    ) async throws(TmuxError) {
+        let dropped = !reply.isSuccess && reply.errorText.contains("server exited unexpectedly")
+        guard reply.isSuccess || dropped else {
             throw .invocationFailed(reason: reply.errorText)
+        }
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        var lastUnclear: String?
+        while true {
+            switch try await endpointState() {
+            case .unreachable:
+                return
+            case .answering:
+                // An exiting daemon drops every connection, so this answer comes
+                // from a daemon started since, and the one that was killed has gone.
+                // A dropped reply with a live daemon behind it proves nothing.
+                if dropped { throw .invocationFailed(reason: reply.errorText) }
+                return
+            case .closing:
+                lastUnclear = nil
+            case .unclear(let text):
+                lastUnclear = text
+            }
+            guard ContinuousClock.now < deadline else {
+                throw .invocationFailed(
+                    reason: lastUnclear
+                        ?? "the daemon was still accepting connections after kill-server")
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(10))
+            } catch {
+                throw .cancelled
+            }
         }
     }
 
