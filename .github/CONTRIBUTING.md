@@ -427,7 +427,7 @@ Every symbol a changelog names on a type this package declares still exists on
 it, in the root `CHANGELOG.md` and in the one beside each product's sources:
 
 ```console
-$ python3 Scripts/check_changelog_symbols.py
+$ uv run scripts/check_changelog_symbols/check_changelog_symbols.py
 ```
 
 Each product keeps its changelog, opening with its own name and holding an

@@ -5,7 +5,7 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
-GATE = runpy.run_path(Path(__file__).parents[1] / "check_changelog_symbols.py")
+GATE = runpy.run_path(str(Path(__file__).parents[1] / "check_changelog_symbols.py"))
 
 
 def declarations(source: str, tmp_path: Path) -> dict[str, set[str]]:

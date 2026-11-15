@@ -1,5 +1,9 @@
-#!/usr/bin/env python3
-"""Check that every symbol `CHANGELOG.md` names still exists.
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+r"""Check that every symbol `CHANGELOG.md` names still exists.
 
 A changelog entry leads with an identifier, which makes it the one document
 that goes stale silently: a renamed type or a method attributed to the wrong
@@ -15,8 +19,9 @@ and an unqualified method name has no owner to check against.
 Every changelog is read: the root file and the one beside each product's
 sources, since an entry moved to a product file goes stale the same way.
 
-    python3 Scripts/check_changelog_symbols.py
-    python3 Scripts/check_changelog_symbols.py --changelog CHANGELOG.md
+    uv run scripts/check_changelog_symbols/check_changelog_symbols.py
+    uv run scripts/check_changelog_symbols/check_changelog_symbols.py \
+        --changelog CHANGELOG.md
 """
 
 from __future__ import annotations
