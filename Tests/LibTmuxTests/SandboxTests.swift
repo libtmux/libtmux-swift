@@ -10,8 +10,8 @@ import Testing
     import Glibc
 #endif
 
-/// A run started some other way than `Scripts/swift-test` fails here, naming the
-/// script, and is refused by the first fixture it reaches.
+/// A run started some other way than `scripts/swift_test/swift_test.py` fails
+/// here, naming the script, and is refused by the first fixture it reaches.
 @Suite("test sandbox", .timeLimit(.minutes(5)))
 struct SandboxTests {
     private static let selectors = [
@@ -22,12 +22,13 @@ struct SandboxTests {
         Dictionary(uniqueKeysWithValues: selectors.map { ($0, "decoy-\($0)") })
     }
 
-    @Test("the run was started by Scripts/swift-test")
+    @Test("the run was started by scripts/swift_test/swift_test.py")
     func theRunIsSandboxed() {
         let findings = sandboxViolations()
+        let listed = findings.joined(separator: "; ")
         #expect(
             findings.isEmpty,
-            "start the suite with Scripts/swift-test: \(findings.joined(separator: "; "))")
+            "start the suite with scripts/swift_test/swift_test.py: \(listed)")
     }
 
     @Test("a client the library starts is handed no selector and the sandbox directory")
@@ -149,7 +150,7 @@ struct SandboxTests {
             try requireEnteredSandbox(in: ambient.merging([sandboxMarker: "/tmp"]) { $1 })
         }
         #expect(throws: SandboxViolation.self) { try requireSandbox(in: ambient) }
-        #expect(SandboxViolation(findings: ["TMUX is set"]).description.contains("swift-test"))
+        #expect(SandboxViolation(findings: ["TMUX is set"]).description.contains("swift_test.py"))
     }
 
     @Test("this package's own fixture refuses an unwrapped run, and its first entry is live")
@@ -295,9 +296,9 @@ private func withScratchDirectory<Result>(
 private enum BareClientError: Error { case cannotStart }
 
 /// Runs `body` with a bare client and always stops what it started, waiting for
-/// each server to be gone: `Scripts/swift-test` calls a server still listening
-/// when the run ends a leak, and one told to exit is still listening for a
-/// moment.
+/// each server to be gone: `scripts/swift_test/swift_test.py` calls a server
+/// still listening when the run ends a leak, and one told to exit is still
+/// listening for a moment.
 private func withBareClient(
     named name: String,
     insideRunDirectory: Bool,

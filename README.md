@@ -1051,18 +1051,18 @@ Real tmux, no mocks: one private socket per case, and servers are reaped even
 when a run is killed.
 
 ```console
-$ Scripts/swift-test --traits YAMLWorkspaces
+$ scripts/swift_test/swift_test.py --traits YAMLWorkspaces
 ```
 
-- **`Scripts/swift-test`** is `swift test` with `TMUX`, `TMUX_PANE`, and
-  `LIBTMUX_SOCKET*` removed and a private `TMUX_TMPDIR`, so a run from inside
-  tmux cannot reach that tmux.
+- **`scripts/swift_test/swift_test.py`** is `swift test` with `TMUX`,
+  `TMUX_PANE`, and `LIBTMUX_SOCKET*` removed and a private `TMUX_TMPDIR`, so a
+  run from inside tmux cannot reach that tmux.
 - **The YAML tests** run only with the trait, so the command names it.
 
 Point the suite at a particular tmux to test against it:
 
 ```console
-$ LIBTMUX_TMUX_BIN=/path/to/tmux Scripts/swift-test
+$ LIBTMUX_TMUX_BIN=/path/to/tmux scripts/swift_test/swift_test.py
 ```
 
 More: [CI and running against any tmux](.github/CONTRIBUTING.md#running-ci-against-any-tmux).

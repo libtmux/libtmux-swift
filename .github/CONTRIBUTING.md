@@ -37,12 +37,16 @@ $ swift build --jobs 5 --force-resolved-versions
 Hosted CI gets a runner to itself and should keep the default; this is for a
 machine someone is also working on. Serial tests are worth pairing with it —
 they keep a loaded machine from being the reason a timing case fails — and one
-lock file keeps two runs from overlapping. `Scripts/swift-test` stands where
-`swift test` does, and the next section says why:
+lock file keeps two runs from overlapping.
+`scripts/swift_test/swift_test.py` stands where `swift test` does, and the next
+section says why:
 
 ```console
 $ nice -n 10 flock /tmp/libtmux-swift-test/.swift.lock \
-    Scripts/swift-test --jobs 5 --no-parallel --force-resolved-versions
+    scripts/swift_test/swift_test.py \
+    --jobs 5 \
+    --no-parallel \
+    --force-resolved-versions
 ```
 
 That the default configuration builds is its own check, because the trait-on
@@ -65,10 +69,10 @@ toolchain every command is prefixed `xcrun`.
 The suite runs against real tmux — no mocks of the server — one private socket
 per case, with servers reaped even when a run is killed outright.
 
-Start it with `Scripts/swift-test`, which takes the same arguments as
-`swift test`. tmux follows an inherited `TMUX` to the server its caller is
-inside, ahead of `TMUX_TMPDIR`, and `TMUX_PANE` and the `LIBTMUX_SOCKET*`
-variables pick a pane and a socket for the executables. A suite started from a
+Start it with `scripts/swift_test/swift_test.py`, which takes the same
+arguments as `swift test` and runs with `uv`. tmux follows an inherited `TMUX`
+to the server its caller is inside, ahead of `TMUX_TMPDIR`, and `TMUX_PANE` and
+the `LIBTMUX_SOCKET*` variables pick a pane and a socket for the executables. A suite started from a
 tmux pane would reach that server as soon as one case named no socket, so the
 script removes them and gives the run a fresh owner-only `TMUX_TMPDIR` under
 `/tmp/libtmux-swift-test/`, removed when the run ends. It marks the run in
@@ -84,15 +88,17 @@ three seconds that each stopped server no longer accepts a connection, and fails
 the run naming those sockets even when the tests passed. A socket file nothing
 listens on is not a leak. A case that starts a server, on tmux's default socket
 or one it names with `-S`, stops it and waits for it to go. If a server cannot
-be stopped the directory stays. Checking takes `python3`.
+be stopped the directory stays.
 
 The `YAMLWorkspaces` trait is off by default; the YAML reader and the tests
 that exercise it come with it. A bare
-`Scripts/swift-test --force-resolved-versions` passes while covering less,
-which is why the gate names the trait:
+`scripts/swift_test/swift_test.py --force-resolved-versions` passes while
+covering less, which is why the gate names the trait:
 
 ```console
-$ Scripts/swift-test --traits YAMLWorkspaces --force-resolved-versions
+$ scripts/swift_test/swift_test.py \
+    --traits YAMLWorkspaces \
+    --force-resolved-versions
 ```
 
 The named-socket cases resolve a socket *name*, which tmux looks up inside
@@ -120,14 +126,16 @@ than whichever one `PATH` finds first:
 
 ```console
 $ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux \
-    Scripts/swift-test \
+    scripts/swift_test/swift_test.py \
     --force-resolved-versions
 ```
 
 The examples are their own package and are run separately:
 
 ```console
-$ Scripts/swift-test --package-path Examples --force-resolved-versions
+$ scripts/swift_test/swift_test.py \
+    --package-path Examples \
+    --force-resolved-versions
 ```
 
 `Tools/McpSwap` starts no tmux, so its suite runs as plain `swift test`.
@@ -181,8 +189,8 @@ $ .build/debug/tmux-workspace freeze dev --json
 $ tmux -S "$LIBTMUX_SOCKET_PATH" kill-server
 ```
 
-The test suite does not read `.env`: `Scripts/swift-test` removes the variables
-before anything runs.
+The test suite does not read `.env`: `scripts/swift_test/swift_test.py` removes
+the variables before anything runs.
 
 ## Flaky, or broken?
 
@@ -196,7 +204,12 @@ a wrong value, and the commit touched nothing the case reads. Re-running the one
 case in a loop is cheaper than another round of CI:
 
 ```console
-$ for _ in $(seq 20); do Scripts/swift-test --force-resolved-versions --filter observersDoNotDivideNotifications || break; done
+$ for _ in $(seq 20); do \
+    scripts/swift_test/swift_test.py \
+        --force-resolved-versions \
+        --filter observersDoNotDivideNotifications \
+        || break; \
+  done
 ```
 
 Every suite carries `.timeLimit(.minutes(5))`, and that number is a backstop

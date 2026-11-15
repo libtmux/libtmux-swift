@@ -120,7 +120,8 @@ struct KillServerTests {
 /// so a round fails rarely. Pin the run to one core beside a busy loop to
 /// widen it:
 ///
-///     LIBTMUX_TEST_SLOW=1 taskset -c 0 Scripts/swift-test --filter replacementAfterKillServer
+///     LIBTMUX_TEST_SLOW=1 taskset -c 0 \
+///         scripts/swift_test/swift_test.py --filter replacementAfterKillServer
 @Suite("killing the server against tmux", .timeLimit(.minutes(5)))
 struct KillServerLoopTests {
     @Test(

@@ -6,7 +6,8 @@ import Foundation
     import Glibc
 #endif
 
-/// The variable `Scripts/swift-test` sets to the directory it gave the run.
+/// The variable `scripts/swift_test/swift_test.py` sets to the directory it gave
+/// the run.
 ///
 /// Its presence is how a run says it was started by that script. This
 /// package's own runs must carry it; a package that takes `TmuxFixture` as a
@@ -75,7 +76,7 @@ struct SandboxViolation: Error, Sendable, CustomStringConvertible {
 
     var description: String {
         "the run is not sandboxed: " + findings.joined(separator: "; ")
-            + ". Start it with Scripts/swift-test."
+            + ". Start it with scripts/swift_test/swift_test.py."
     }
 }
 
@@ -94,7 +95,7 @@ func requireSandbox(
 }
 
 /// ``requireSandbox(in:)`` for a run that says it was started by
-/// `Scripts/swift-test`, and nothing for any other.
+/// `scripts/swift_test/swift_test.py`, and nothing for any other.
 func requireEnteredSandbox(
     in environment: [String: String] = ProcessInfo.processInfo.environment
 ) throws(SandboxViolation) {
@@ -128,11 +129,11 @@ func isTestRunner(_ arguments: [String] = CommandLine.arguments) -> Bool {
 /// What the fixture requires of a run.
 ///
 /// Every test run of this package's own sources must have been started by
-/// `Scripts/swift-test`, so a bare `swift test` fails at the first fixture it
-/// reaches instead of running with whatever the shell holds. Anything else is
-/// held to it only if it carries the marker: a package that depends on this
-/// one, and a program that embeds the fixture, such as the examples a reader
-/// runs with `swift run`.
+/// `scripts/swift_test/swift_test.py`, so a bare `swift test` fails at the first
+/// fixture it reaches instead of running with whatever the shell holds. Anything
+/// else is held to it only if it carries the marker: a package that depends on
+/// this one, and a program that embeds the fixture, such as the examples a
+/// reader runs with `swift run`.
 func requireFixtureSandbox(
     compiledAt path: String = fixtureSourcePath,
     running arguments: [String] = CommandLine.arguments,

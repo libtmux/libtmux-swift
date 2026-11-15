@@ -100,6 +100,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install the pinned Python tool runner
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.0"
+
       # tmux 3.0a and 3.1c link the full libevent, which the runner image does
       # not carry, and a cached build installs nothing else.
       - name: Install the libevent runtime
@@ -174,7 +179,7 @@ jobs:
           export LIBTMUX_TMUX_CLIENT_BIN="${HOME}/tmux-${CLIENT}/bin/tmux"
           "$LIBTMUX_TMUX_BIN" -V
           "$LIBTMUX_TMUX_CLIENT_BIN" -V
-          Scripts/swift-test --force-resolved-versions --filter VersionCheck
+          scripts/swift_test/swift_test.py --force-resolved-versions --filter VersionCheck
 
   test:
     name: ${{ matrix.os }} / tmux ${{ matrix.tmux }} / swift ${{ matrix.swift }}
@@ -456,10 +461,10 @@ jobs:
           # The examples are their own package, so the root invocation does not
           # reach them. Their resolved-version flag enforces
           # `Examples/Package.resolved` and leaves the root lock alone.
-          Scripts/swift-test --package-path Examples --force-resolved-versions
+          scripts/swift_test/swift_test.py --package-path Examples --force-resolved-versions
           # Named rather than left to the default: the YAML reader and the six
           # tests behind it are only built when the trait is on.
-          Scripts/swift-test --traits YAMLWorkspaces --force-resolved-versions
+          scripts/swift_test/swift_test.py --traits YAMLWorkspaces --force-resolved-versions
 
       - name: Test the staged workspace CLI
         env:

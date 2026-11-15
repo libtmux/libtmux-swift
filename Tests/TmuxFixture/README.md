@@ -42,7 +42,7 @@ holds one session, `bootstrap`, and `CancellationTests` makes this assertion.
   roots.
 - **Held to the sandbox** only if you set `LIBTMUX_TEST_SANDBOX`: then a test
   fails while `TMUX`, `TMUX_PANE` or `LIBTMUX_SOCKET*` is set. This package's
-  own runs use `Scripts/swift-test`.
+  own runs use `scripts/swift_test/swift_test.py`.
 
 ## Choose the tmux
 

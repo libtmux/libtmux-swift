@@ -89,7 +89,7 @@ $ uv run scripts/check_examples/check_examples.py
 Compile and run them for real:
 
 ```console
-$ Scripts/swift-test --package-path Examples
+$ scripts/swift_test/swift_test.py --package-path Examples
 ```
 
 Three things fail quietly, and all three have cost time:
@@ -141,7 +141,10 @@ The native test suite spawns the compiled entry points and checks their exact
 output against the manifest:
 
 ```console
-$ Scripts/swift-test --package-path Examples --jobs 5 --force-resolved-versions \
+$ scripts/swift_test/swift_test.py \
+    --package-path Examples \
+    --jobs 5 \
+    --force-resolved-versions \
     --filter ApiExamplesTests
 ```
 

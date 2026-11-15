@@ -1,6 +1,6 @@
-"""Tests for the wrapper that runs the suite without ambient tmux selectors.
+"""Tests for the script that runs the suite without ambient tmux selectors.
 
-The wrapper is run against a stand-in for `swift`, never the suite. Most
+The script is run against a stand-in for `swift`, never the suite. Most
 stand-ins record their arguments, the names of the variables they were handed
 and a few booleans about them, never a value, so no failure here can print part
 of an environment. The leak tests use a stand-in that starts a real tmux on the
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -20,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-WRAPPER = Path(__file__).parents[1] / "swift-test"
+WRAPPER = Path(__file__).parents[1] / "swift_test.py"
 
 ROOT = Path("/tmp/libtmux-swift-test")
 
@@ -109,7 +110,7 @@ def run(
         **(environment or {}),
     }
     finished = subprocess.run(
-        [str(WRAPPER), *arguments],
+        [sys.executable, str(WRAPPER), *arguments],
         env=env,
         capture_output=True,
         text=True,
@@ -143,6 +144,11 @@ nested)
 clean)
     start
     "$TMUX_UNDER_TEST" kill-server
+    pid=$(cat "$PID_FILE")
+    waited=0
+    while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 1000000 ]; do
+        waited=$((waited + 1))
+    done
     ;;
 stale)
     bind "$sockets/stale"
@@ -263,7 +269,11 @@ def leak_run(
         **extra,
     }
     finished = subprocess.run(
-        [str(WRAPPER)], env=env, capture_output=True, text=True, check=False
+        [sys.executable, str(WRAPPER)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     text = pid_file.read_text(encoding="utf-8").strip() if pid_file.exists() else ""
     return finished, int(text) if text.isdigit() else None
@@ -357,6 +367,40 @@ def test_arguments_and_the_exit_status_pass_through(
 
     assert seen.arguments == ["test", "--traits", "YAMLWorkspaces", "--filter", "a b"]
     assert finished.returncode == 7
+    assert after - before == set()
+
+
+@pytest.mark.parametrize(
+    ("sent", "status"), [(signal.SIGINT, 130), (signal.SIGTERM, 143)]
+)
+def test_a_signal_ends_the_run_after_swift_and_the_directory_is_removed(
+    tmp_path: Path, stand_in: Path, sent: signal.Signals, status: int
+) -> None:
+    """The run waits for `swift test`, cleans up, then exits 128 plus the signal."""
+    release = tmp_path / "release"
+    os.mkfifo(release)
+    blocker = stand_in / "swift"
+    blocker.write_text(
+        '#!/bin/sh\necho started\nread _ < "$RELEASE"\n', encoding="utf-8"
+    )
+    before = set(ROOT.iterdir()) if ROOT.exists() else set()
+
+    with subprocess.Popen(
+        [sys.executable, str(WRAPPER)],
+        env={
+            "PATH": f"{stand_in}{os.pathsep}/usr/bin{os.pathsep}/bin",
+            "RELEASE": str(release),
+        },
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as running:
+        assert running.stdout is not None
+        assert running.stdout.readline() == "started\n"
+        running.send_signal(sent)
+        release.write_text("go\n", encoding="utf-8")
+        assert running.wait(timeout=10) == status
+
+    after = set(ROOT.iterdir()) if ROOT.exists() else set()
     assert after - before == set()
 
 
