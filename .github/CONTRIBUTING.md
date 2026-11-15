@@ -509,12 +509,6 @@ Never edit the table between its markers. `update_mode_matrix.py --check` fails
 when it has drifted, and CI runs that check, so a hand-typed number is caught
 rather than believed.
 
-`Scripts/benchmark_workspace_cli.py` compares an installed release
-`tmux-workspace` against tmuxp on startup, discovery, cold-server load and
-YAML capture. Like the mode matrix's own numbers, a live timing run is not
-part of the CI gate; the full invocation is in
-[`Sources/TmuxWorkspaceCLI/README.md`](../Sources/TmuxWorkspaceCLI/README.md).
-
 ## Pull requests
 
 One subject per pull request. Unrelated cleanup found along the way belongs in

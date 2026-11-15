@@ -430,27 +430,6 @@ This verifies terminal handoff against the installed executable:
 $ python3 Scripts/check_workspace_terminal.py "$HOME/.local/bin/tmux-workspace"
 ```
 
-### `benchmark_workspace_cli.py`: compare with tmuxp
-
-This compares startup, discovery, search, cold-server load, and YAML capture
-with the tmuxp installed in the selected Python interpreter:
-
-```console
-$ python3 Scripts/benchmark_workspace_cli.py \
-    "$HOME/.local/bin/tmux-workspace" \
-    --tmux tmux \
-    --python python3 \
-    --samples 5 \
-    --output workspace-cli-benchmark.json
-```
-
-- **What it measures.** Private sockets, with topology and directories checked
-  outside the timed subprocess, and every sample kept with its median and
-  spread.
-- **What it leaves unmeasured.** Its three blank panes exercise pane creation
-  only; command execution, interactive behavior, and full capture fidelity are
-  not covered.
-
 ## What it leaves out
 
 - **Plugins and some execution settings.** An unsupported execution key fails
@@ -467,8 +446,7 @@ $ python3 Scripts/benchmark_workspace_cli.py \
 
 - **Swift 6.2 or newer** and **tmux 3.3a or newer**, on Linux (WSL included)
   and macOS. macOS is best effort.
-- **tmuxp** is needed only for [`shell`][ref-cli-shell] and the benchmark, which
-  check its version.
+- **tmuxp** is needed only for [`shell`][ref-cli-shell].
 - **Unsettled surface.** Any release may change the command surface; pin an
   exact version.
 
