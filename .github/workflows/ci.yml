@@ -358,7 +358,7 @@ jobs:
       # libtmux port on the machine.
       - name: Check every socket names this port
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: python3 Scripts/check_socket_namespace.py
+        run: uv run scripts/check_socket_namespace/check_socket_namespace.py
 
       # A continuation nobody resumes does not fail slowly, it never returns —
       # and a `.timeLimit` cannot end it, because the limit cancels the case

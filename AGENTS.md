@@ -48,12 +48,12 @@ touch the suite:
 
 `Server()` names no socket, and tmux picks the server it reaches, so this is a
 convention about *callers* rather than a setting: a socket is chosen at every
-call site that creates one. `Scripts/check_socket_namespace.py` is what makes it
-fail rather than be remembered, and it refuses a `Server()` outside `Sources/`
-that is not listed with its reason — `libtmux-ts` gates the same invariant the
-same way — and
-[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) covers what that gate can
-and cannot see.
+call site that creates one.
+`scripts/check_socket_namespace/check_socket_namespace.py` is what makes it fail
+rather than be remembered, and it refuses a `Server()` outside `Sources/` that
+is not listed with its reason — `libtmux-ts` gates the same invariant the same
+way — and [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) covers what that
+gate can and cannot see.
 
 ## Which policy applies
 

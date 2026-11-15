@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Require every socket this repository addresses by literal to name this port.
 
 `AGENTS.md` states the rule in prose: a socket lives under
@@ -7,7 +11,7 @@ because `/tmp` is shared with the other libtmux ports and a sweep by prefix in
 either direction reaps the other's servers. Prose is not a gate — `libtmux-ts`
 enforces the same invariant with a script, and this is the Swift half of it.
 
-    python3 Scripts/check_socket_namespace.py
+    uv run scripts/check_socket_namespace/check_socket_namespace.py
 
 What it can and cannot see. It matches literal `Server(socketPath:)` and
 `Server(socketName:)` calls. A path records its root directly; a name resolves
@@ -33,7 +37,7 @@ import re
 import subprocess
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 # The two roots AGENTS.md sanctions.
 SANCTIONED = ("/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev")

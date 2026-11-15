@@ -137,8 +137,9 @@ def test_the_repository_passes() -> None:
 
 def test_a_planted_construction_fails_the_script(tmp_path: Path) -> None:
     """The script run end to end exits nonzero on a tracked file that has one."""
-    (tmp_path / "Scripts").mkdir()
-    shutil.copy(SCRIPT, tmp_path / "Scripts" / SCRIPT.name)
+    copied = tmp_path / "scripts" / "check_socket_namespace" / SCRIPT.name
+    copied.parent.mkdir(parents=True)
+    shutil.copy(SCRIPT, copied)
     (tmp_path / "Tests").mkdir()
     (tmp_path / "Tests" / "Planted.swift").write_text(
         "let server = Server()\n", encoding="utf-8"
@@ -147,7 +148,7 @@ def test_a_planted_construction_fails_the_script(tmp_path: Path) -> None:
     subprocess.run(["git", "add", "Tests/Planted.swift"], cwd=tmp_path, check=True)
 
     finished = subprocess.run(
-        [sys.executable, str(tmp_path / "Scripts" / SCRIPT.name)],
+        [sys.executable, str(copied)],
         capture_output=True,
         text=True,
         check=False,

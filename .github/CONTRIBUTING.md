@@ -365,7 +365,7 @@ Every socket this repository names by literal lives under one of this port's
 two roots — the invariant itself is in [`AGENTS.md`](../AGENTS.md):
 
 ```console
-$ python3 Scripts/check_socket_namespace.py
+$ uv run scripts/check_socket_namespace/check_socket_namespace.py
 ```
 
 That script reads literal `Server(socketPath:)` and `Server(socketName:)` calls.
