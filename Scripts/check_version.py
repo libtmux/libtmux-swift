@@ -134,8 +134,6 @@ def main() -> int:
     pins = 0
 
     for relative in tracked("*.md", "*.swift"):
-        if relative.startswith("dev/Spikes/"):
-            continue
         for number, pinned in own_pins((ROOT / relative).read_text()):
             pins += 1
             if pinned != version:

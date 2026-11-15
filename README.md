@@ -1077,7 +1077,6 @@ More: [CI and running against any tmux](.github/CONTRIBUTING.md#running-ci-again
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
 | [`Tools/McpSwap/`](Tools/McpSwap/) | The private native MCP config swap utility; its nested package is not shipped |
 | `Scripts/` | The Python tooling CI runs |
-| `dev/Spikes/` | Disposable experiment packages. Not part of a release |
 
 ## Related projects
 

@@ -7,8 +7,8 @@ The package is the repository: `Package.swift` at the root, `Sources/` and
 and cannot be pointed at a subdirectory. Six products ship from it —
 `LibTmux`, `TmuxWorkspace`, `LibTmuxMCP`, the `libtmux-mcp` and
 `tmux-workspace` executables, and
-`TmuxFixture` — and `Examples/`, `Benchmarks/`, and `dev/Spikes/` are
-packages of their own, so the shipped manifest names only what ships.
+`TmuxFixture` — and `Examples/` and `Benchmarks/` are packages of their own,
+so the shipped manifest names only what ships.
 
 How this project writes prose — README, changelog, release notes, commit
 messages, API documentation, and source comments — is set out separately in
@@ -130,9 +130,6 @@ $ Scripts/swift-test --package-path Examples --force-resolved-versions
 ```
 
 `Tools/McpSwap` starts no tmux, so its suite runs as plain `swift test`.
-`dev/Spikes` does start tmux, through its own fixture and
-`dev/Spikes/Scripts/test-spikes.sh`; neither the script nor the canary covers
-it.
 
 CI also copies `tmux-workspace` outside `.build` and runs its terminal checks
 on every platform and tmux version. Run these after the trait-on test build;

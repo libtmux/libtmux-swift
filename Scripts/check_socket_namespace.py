@@ -24,8 +24,6 @@ It also reads the constructors that name no socket at all: `Server()` or
 each follows `TMUX`, `LIBTMUX_SOCKET*` or tmux's default socket, so a test that
 calls one drives whichever server the developer is inside. They are looked for
 outside `Sources/`, where the shipped executables use them on purpose.
-
-`dev/Spikes/` is excluded: it is scratch work that CI does not build.
 """
 
 from __future__ import annotations
@@ -198,8 +196,6 @@ def main() -> int:
     checked = 0
 
     for relative in tracked_swift_files():
-        if relative.startswith("dev/Spikes/"):
-            continue
         checked += 1
         failures.extend(scan(relative, (ROOT / relative).read_text()))
 

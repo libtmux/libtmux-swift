@@ -6,7 +6,6 @@
 # Nothing named in `Package.swift` may appear in this list. `Tests/` holds the
 # `TmuxFixture` target and `Snippets/` holds the snippet targets, so ignoring
 # either produces an archive whose manifest names sources that are not there.
-dev/ export-ignore
 Scripts/ export-ignore
 Benchmarks/ export-ignore
 .github/ export-ignore

@@ -1,7 +1,7 @@
 version: 2
 updates:
   # The root package is the only one with external dependencies. Benchmarks and
-  # Examples reach the library by path, and dev/Spikes is export-ignored.
+  # Benchmarks and Examples reach the library by path.
   - package-ecosystem: "swift"
     directory: "/"
     schedule:

@@ -1,5 +1,5 @@
-# SwiftPM build products and local state. `.build` matches at any depth, so
-# the spike package's own build directory is covered too.
+# SwiftPM build products and local state. `.build` matches at any depth, so a
+# nested package's build directory is covered too.
 .build/
 .swiftpm/
 *.doccarchive
@@ -8,12 +8,6 @@
 DerivedData/
 *.xcodeproj/
 *.xcworkspace/
-
-# Resolved versions are committed for the package itself — it ships an
-# executable, and pinning is what makes a CI failure reproducible. The spike
-# package resolves whatever is current on purpose: it exists to find out how
-# something behaves today.
-dev/Spikes/Package.resolved
 
 # The tooling under Scripts/ is Python.
 __pycache__/
