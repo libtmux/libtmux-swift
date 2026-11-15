@@ -365,7 +365,7 @@ jobs:
       # and then waits for it. Six hours of one lane were spent that way.
       - name: Check every continuation answers cancellation
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: python3 Scripts/check_continuations.py
+        run: uv run scripts/check_continuations/check_continuations.py
 
       # Ruff reports EXE001 on the runner but not locally, so the mode a file
       # was committed with is checked here too, where it can be reproduced.

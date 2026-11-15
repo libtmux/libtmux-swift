@@ -381,7 +381,7 @@ against it — so deliberate exceptions are listed beside their reason.
 Every continuation the library suspends can be resumed by cancelling it:
 
 ```console
-$ python3 Scripts/check_continuations.py
+$ uv run scripts/check_continuations/check_continuations.py
 ```
 
 A continuation nobody resumes is not a slow call, it is one that never returns,

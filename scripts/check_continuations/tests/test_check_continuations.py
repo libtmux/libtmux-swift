@@ -5,7 +5,7 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
-GATE = runpy.run_path(Path(__file__).parents[1] / "check_continuations.py")
+GATE = runpy.run_path(str(Path(__file__).parents[1] / "check_continuations.py"))
 
 GUARDED = """actor Doorbell {
     func wait() async -> Wake {

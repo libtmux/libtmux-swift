@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Require every suspended continuation in `Sources/` to answer cancellation.
 
 A continuation nobody resumes is not a slow call, it is a call that never
@@ -13,7 +17,7 @@ CI lane spent six hours there and was killed with no failure to read. A
 deadline inside the library has the same shape. The gate exists because the
 symptom points at whatever was scheduled next rather than at the park.
 
-    python3 Scripts/check_continuations.py
+    uv run scripts/check_continuations/check_continuations.py
 
 What it can and cannot see. It requires `withTaskCancellationHandler` to open
 within a few lines above the continuation, which is how every guarded call in
@@ -34,7 +38,7 @@ import re
 import subprocess
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 CONTINUATION = re.compile(r"\bwith(?:Checked|Unsafe)(?:Throwing)?Continuation\b")
 HANDLER = re.compile(r"\bwithTaskCancellationHandler\b")
