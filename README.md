@@ -959,8 +959,6 @@ body returns, throws, or the process is killed. Guide:
   tmux reported when it was read. Ask again, or subscribe, to see a change.
 - **Python's query list and exception hierarchy.** Results are plain arrays, and
   one typed [`TmuxError`][api-tmuxerror] replaces the hierarchy.
-- **Everything Python libtmux does.** `Scripts/parity_report.py` names each
-  divergence from its recorded API.
 - **A signal disposition.** The library does not set `SIGPIPE`; see
   [Platform notes](#platform-notes).
 - **A settled API.** Names are still moving; see
@@ -1077,7 +1075,6 @@ More: [CI and running against any tmux](.github/CONTRIBUTING.md#running-ci-again
 | [`Tests/`][tests] | The suite, and the [`TmuxFixture`][mod-tmuxfixture] product every suite provisions servers through |
 | [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
 | [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
-| [`Parity/`][parity] | What Python libtmux exposes, recorded, and what this port does about each of it |
 | [`Tools/McpSwap/`](Tools/McpSwap/) | The private native MCP config swap utility; its nested package is not shipped |
 | `Scripts/` | The Python tooling CI runs |
 | `dev/Spikes/` | Disposable experiment packages. Not part of a release |
@@ -1125,7 +1122,6 @@ MIT. See [LICENSE][r-license].
 [tests]: Tests/
 [examples]: Examples/
 [benchmarks]: Benchmarks/
-[parity]: Parity/
 [p-lib]: Sources/LibTmux/
 [p-ws]: Sources/TmuxWorkspace/
 [p-mcp]: Sources/LibTmuxMCP/

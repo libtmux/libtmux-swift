@@ -8,7 +8,6 @@
 # either produces an archive whose manifest names sources that are not there.
 dev/ export-ignore
 Scripts/ export-ignore
-Parity/ export-ignore
 Benchmarks/ export-ignore
 .github/ export-ignore
 .gitattributes export-ignore

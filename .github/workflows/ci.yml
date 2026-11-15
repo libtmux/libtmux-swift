@@ -318,41 +318,11 @@ jobs:
           version: "0.16.1"
           args: check Scripts/
 
-      # The parity manifests are data this repository ships a claim about, and
-      # nothing else in CI reads them. This catches a corrupted manifest or a
-      # report that stopped running.
-      #
-      - name: Check the parity report runs
-        if: runner.os == 'Linux' && matrix.repo_checks
-        run: python3 Scripts/parity_report.py
-
       - name: Test the Python tooling
         if: runner.os == 'Linux' && matrix.repo_checks
         run: |
-          python3 -m pip install --quiet pytest tomlkit
+          python3 -m pip install --quiet pytest
           python3 -m pytest Scripts/tests -q
-
-      # The manifests name the libtmux commit they describe, so the checkout to
-      # verify against is read out of them rather than pinned twice. The parity
-      # authorities are pytest files in this repository: they observe libtmux's
-      # behaviour so a contract calling itself inherited has something
-      # executable behind the claim, and this is where that gets run.
-      - name: Check the parity manifests against libtmux
-        if: runner.os == 'Linux' && matrix.version_checks
-        env:
-          SLUG: ${{ matrix.slug }}
-        run: |
-          set -euo pipefail
-          export PATH="${HOME}/tmux-${SLUG}/bin:${PATH}"
-          commit=$(python3 -c "import json; print(json.load(open('Parity/python-public-api.json'))['pythonSource']['commit'])")
-          git clone --quiet --filter=blob:none \
-            https://github.com/tmux-python/libtmux.git "${RUNNER_TEMP}/libtmux"
-          git -C "${RUNNER_TEMP}/libtmux" checkout --quiet --detach "$commit"
-          python3 -m pip install --quiet pytest tomlkit --editable "${RUNNER_TEMP}/libtmux"
-          export LIBTMUX_PYTHON_REPO="${RUNNER_TEMP}/libtmux"
-          python3 -m pytest Scripts/parity dev/Spikes/PythonTests -q
-          python3 Scripts/extract-python-parity.py --check \
-            --python-repo "${LIBTMUX_PYTHON_REPO}"
 
       # The examples package compiles every documented example, so one that no
       # longer builds fails the job below. This checks the other half: that the

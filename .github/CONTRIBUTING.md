@@ -277,9 +277,8 @@ cancel the push run on its branch, and another dispatch does not cancel it.
 
 Each of these gates CI, and each can fail. Build and test run on every cell of
 the matrix; the tooling checks run once, on the cell with the newest released
-tmux. The two that run a tmux binary, the parity manifests and the mode matrix,
-run on tmux 3.7b, which a tag and a full-scope dispatch include and a push does
-not.
+tmux. The one that runs a tmux binary, the mode matrix, runs on tmux 3.7b,
+which a tag and a full-scope dispatch include and a push does not.
 
 CI runs Linux only. macOS is supported on a best-effort basis, and CI coverage
 for it is highly limited: no job builds or tests there, so a macOS-only
@@ -448,23 +447,11 @@ The generated tables still match what the benchmark measures:
 $ python3 Scripts/update_mode_matrix.py --check
 ```
 
-The parity report runs, sorting Python libtmux's API into covered, declined,
-and pending:
-
-```console
-$ python3 Scripts/parity_report.py
-```
-
 The Python tooling has its own suite:
 
 ```console
 $ python3 -m pytest Scripts/tests -q
 ```
-
-CI additionally checks the parity manifests against a real libtmux checkout,
-cloned at the commit recorded in `Parity/python-public-api.json`. Reproducing
-that locally needs the checkout; the check itself is
-`Scripts/extract-python-parity.py --check --python-repo <path>`.
 
 None of these catch a symbol that exists only on a newer macOS than the package
 supports — `Package.swift` says 13, and a Linux compiler has no availability to
@@ -521,11 +508,6 @@ $ swift run --package-path Benchmarks libtmux-bench --markdown
 Never edit the table between its markers. `update_mode_matrix.py --check` fails
 when it has drifted, and CI runs that check, so a hand-typed number is caught
 rather than believed.
-
-`Scripts/parity_report.py` sorts Python libtmux's API into covered, declined,
-and pending. Record a divergence in the table it belongs to rather than leaving
-it to read as an omission, and keep the module-wide rules off format fields —
-counting those as covered restates a curated subset as parity.
 
 `Scripts/benchmark_workspace_cli.py` compares an installed release
 `tmux-workspace` against tmuxp on startup, discovery, cold-server load and
