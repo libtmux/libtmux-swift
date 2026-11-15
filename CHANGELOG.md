@@ -20,6 +20,14 @@ products, such as documentation, CI and release tooling, are listed here.
 
 ### Fixed
 
+- `Server.killServer()` returns once the daemon has stopped accepting
+  connections. tmux answers `kill-server` before the daemon exits and drops
+  every connection it accepts until then, so a `new-session` sent straight
+  after it started no replacement and failed with `server exited unexpectedly`.
+  A `kill-server` reply that is itself the dropped connection no longer throws
+  once the endpoint is quiet. The call throws
+  `TmuxError.invocationFailed(reason:)` if the daemon is still accepting
+  connections after ten seconds.
 - `Server.setOption(_:to:scope:)`, `Server.setBuffer(_:named:)` and the other
   typed calls that hand caller text to tmux unguarded keep a trailing `;` as
   data. tmux ended the command at an argument ending in `;`, so
