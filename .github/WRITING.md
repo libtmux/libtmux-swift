@@ -113,7 +113,7 @@ What the examples must do:
   "What it leaves out" and keep the shell step.
 - **Come from a file CI runs.** Every `swift` fence in `README.md`, a product
   README, or the DocC catalogue must also exist as a file under
-  `Examples/Sources/`. `Scripts/check_examples.py` fails otherwise, so a
+  `Examples/Sources/`. `scripts/check_examples/check_examples.py` fails otherwise, so a
   documented example is compiled code and most of it is run. A fence may open
   with `import` lines; each must be one that file makes.
 - **Show the features the port has,** each under an API-linked heading: filters

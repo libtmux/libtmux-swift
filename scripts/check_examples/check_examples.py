@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Map every documented Swift example to consumer code and live-test call sites.
 
 A README snippet is prose until something builds it. An example can name a
@@ -15,8 +19,8 @@ Every example lives in a function, so a call from `Examples/Tests/` identifies
 the examples the live suite reaches. Running that suite is what proves they
 compile and execute.
 
-    python3 Scripts/check_examples.py
-    python3 Scripts/check_examples.py --min-executed <count>
+    uv run scripts/check_examples/check_examples.py
+    uv run scripts/check_examples/check_examples.py --min-executed <count>
 
 Matching is by line sequence after removing each block's own indentation, so an
 example may be shown on its own and kept inside a function. A block may open
@@ -32,7 +36,7 @@ import re
 import sys
 import textwrap
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXAMPLES = ROOT / "Examples" / "Sources"
 TESTS = ROOT / "Examples" / "Tests"
 DOCUMENTS = [
@@ -52,7 +56,7 @@ MANIFEST_EXCERPTS = {
     '.product(name: "TmuxWorkspace", package: "libtmux-swift")',
     '.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")',
     (
-        '.package(\n'
+        ".package(\n"
         '    url: "https://github.com/libtmux/libtmux-swift.git",\n'
         '    from: "0.1.0",\n'
         '    traits: ["YAMLWorkspaces"]\n'

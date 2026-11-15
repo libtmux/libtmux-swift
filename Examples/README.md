@@ -3,11 +3,11 @@
 Every Swift example in the documentation, as code the compiler accepts. A
 snippet on a page is prose until something builds it — it can name an API that
 was renamed, or quietly keep compiling while it stops being true — so each one
-lives here, and [`Scripts/check_examples.py`](../Scripts/check_examples.py)
+lives here, and [`scripts/check_examples/check_examples.py`](../scripts/check_examples/check_examples.py)
 fails the build when a documented block appears in no file below.
 
 ```console
-$ python3 Scripts/check_examples.py
+$ uv run scripts/check_examples/check_examples.py
 ```
 
 ## Why this is its own package
@@ -83,7 +83,7 @@ Two more things the check does not do:
 Edit the code here, never the block on the page, then bring the check across:
 
 ```console
-$ python3 Scripts/check_examples.py
+$ uv run scripts/check_examples/check_examples.py
 ```
 
 Compile and run them for real:

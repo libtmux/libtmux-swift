@@ -343,7 +343,7 @@ jobs:
       # that drifted — and that the number of them actually run has not slid.
       - name: Check documented examples are mapped
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: python3 Scripts/check_examples.py --min-executed 40
+        run: uv run scripts/check_examples/check_examples.py --min-executed 40
 
       # A README link is a claim about where something lives, and a moved
       # directory or a renamed type breaks it without touching the page. This

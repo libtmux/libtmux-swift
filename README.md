@@ -1042,7 +1042,7 @@ $ swift package --disable-sandbox preview-documentation --target LibTmux
 Check that each example on this page is in `Examples/`:
 
 ```console
-$ python3 Scripts/check_examples.py
+$ uv run scripts/check_examples/check_examples.py
 ```
 
 ## Tests

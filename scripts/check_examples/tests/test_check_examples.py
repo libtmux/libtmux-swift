@@ -5,7 +5,7 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
-CHECK_EXAMPLES = runpy.run_path(Path(__file__).parents[1] / "check_examples.py")
+CHECK_EXAMPLES = runpy.run_path(str(Path(__file__).parents[1] / "check_examples.py"))
 
 
 def test_product_readmes_are_scanned() -> None:

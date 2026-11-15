@@ -349,7 +349,7 @@ live-test call sites from sliding. The trait-on test later compiles and runs
 that package:
 
 ```console
-$ python3 Scripts/check_examples.py --min-executed 40
+$ uv run scripts/check_examples/check_examples.py --min-executed 40
 ```
 
 Every link in a README or under `docs/` that points into this repository or at
@@ -461,7 +461,7 @@ bitten: it needs macOS 15.
 Anything inside a `swift` fenced block in the top-level `README.md`, a product
 README under `Sources/`, or the DocC catalogue must also appear in a file under
 `Examples/Sources/`. Add the example there rather than writing it twice —
-`Scripts/check_examples.py` fails when a fence appears in no example.
+`scripts/check_examples/check_examples.py` fails when a fence appears in no example.
 
 `Examples/` is a package of its own that depends on this one, so an example
 reaches the library the way a reader does: through the products, with no
@@ -478,7 +478,7 @@ code actually executes.
 Edit the example, never the block on the page, then run the check:
 
 ```console
-$ python3 Scripts/check_examples.py
+$ uv run scripts/check_examples/check_examples.py
 ```
 
 Console commands in the Markdown are held to the code the same way. The suite
