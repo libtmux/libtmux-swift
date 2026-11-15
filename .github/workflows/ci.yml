@@ -198,6 +198,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install the pinned Python tool runner
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.0"
+
       # A release tarball never changes, so the version and the runner are the
       # whole key; anything else is keyed on the commit it resolves to.
       - name: Resolve tmux ${{ matrix.tmux }}
@@ -324,6 +329,14 @@ jobs:
           python3 -m pip install --quiet pytest
           python3 -m pytest Scripts/tests -q
 
+      - name: Check the scripts
+        if: runner.os == 'Linux' && matrix.repo_checks
+        run: |
+          uv run --locked --group dev ruff format --check scripts
+          uv run --locked --group dev ruff check scripts
+          uv run --locked --group dev ty check
+          uv run --locked --group dev pytest
+
       # The examples package compiles every documented example, so one that no
       # longer builds fails the job below. This checks the other half: that the
       # examples on the page are the ones in the package, rather than copies
@@ -364,7 +377,7 @@ jobs:
       # the release workflow refuses a tag this file disagrees with.
       - name: Check every version pin agrees
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: python3 Scripts/check_version.py
+        run: uv run scripts/check_version/check_version.py
 
       # The tmux versions CI runs come from Scripts/tmux-matrix.json. This fails
       # when the README, the DocC pages or CONTRIBUTING say something else, or

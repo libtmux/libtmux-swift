@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Require every version this package claims to be the one it is.
 
 `LibTmuxVersion.current` is the source. A reader is told to depend on a
@@ -14,7 +18,7 @@ exists, and a stale one sends a reader to a version that does not:
 Only pins naming this repository are that claim. A nested package pinning a
 third-party dependency is held at its own upstream version, and passes through.
 
-    python3 Scripts/check_version.py
+    uv run scripts/check_version/check_version.py
 
 The tag itself is checked at release time rather than here: this runs on a
 working tree that has no tag yet, and the workflow that cuts the release is
@@ -28,7 +32,7 @@ import re
 import subprocess
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "Sources/LibTmux/LibTmuxVersion.swift"
 
 DECLARED = re.compile(r'static let current = "([^"]+)"')

@@ -5,7 +5,7 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
-CHECK_VERSION = runpy.run_path(Path(__file__).parents[1] / "check_version.py")
+CHECK_VERSION = runpy.run_path(str(Path(__file__).parents[1] / "check_version.py"))
 
 OWN_PINS = CHECK_VERSION["own_pins"]
 

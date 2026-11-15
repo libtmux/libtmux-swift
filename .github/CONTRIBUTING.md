@@ -420,7 +420,7 @@ Every `exact:` pin in the documentation names the version the package claims,
 and every `from:` bound names a final release no newer than it:
 
 ```console
-$ python3 Scripts/check_version.py
+$ uv run scripts/check_version/check_version.py
 ```
 
 Every symbol a changelog names on a type this package declares still exists on
@@ -542,7 +542,7 @@ is missing:
 
 - Set `LibTmuxVersion.current` to the version being tagged. Every `exact:` pin
   in the documentation names it, and every `from:` bound is a final release no
-  newer than it. `Scripts/check_version.py` fails when one is not.
+  newer than it. `scripts/check_version/check_version.py` fails when one is not.
 - Rename `## [Unreleased]` to `## [<version>] - <date>` in `CHANGELOG.md` and
   in the changelog of each other product, and open a fresh `## [Unreleased]`
   above it in each. A product with nothing to say gets ``No entries for

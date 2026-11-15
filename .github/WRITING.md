@@ -125,7 +125,7 @@ Two more rules are enforced rather than trusted:
 
 - Every `exact:` pin must name the version in `LibTmuxVersion.current`, and
   every `from:` bound a final release no newer than it.
-  `Scripts/check_version.py` fails otherwise.
+  `scripts/check_version/check_version.py` fails otherwise.
 - A README must say "tmux" and the oldest release in `Scripts/tmux-matrix.json`
   followed by "or newer", and a tmux range it states must match the manifest.
   `Scripts/check_ci.py` fails otherwise.
