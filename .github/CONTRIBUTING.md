@@ -264,13 +264,17 @@ The dispatch form is only available once `ci.yml` carries the inputs on the
 default branch. This prints the legs a dispatch would run, without a runner:
 
 ```console
-$ python3 Scripts/ci_plan.py matrix --event workflow_dispatch --scope custom --tmux-ref 3.6b,master
+$ uv run scripts/ci_plan/ci_plan.py matrix \
+    --event workflow_dispatch \
+    --scope custom \
+    --tmux-ref 3.6b,master
 ```
 
-The tmux versions CI runs come from one manifest, `Scripts/tmux-matrix.json`.
-Adding a release there is the whole change to CI, and `Scripts/check_ci.py`
-names each page that has to say so. Each dispatch is its own run: it does not
-cancel the push run on its branch, and another dispatch does not cancel it.
+The tmux versions CI runs come from one manifest,
+`scripts/ci_plan/tmux-matrix.json`. Adding a release there is the whole change
+to CI, and `scripts/ci_plan/check_ci.py` names each page that has to say so.
+Each dispatch is its own run: it does not cancel the push run on its branch, and
+another dispatch does not cancel it.
 
 ## Checks that must pass
 

@@ -1,7 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Check that the docs and the workflows follow the CI manifest.
 
-`Scripts/tmux-matrix.json` is the one list of tmux versions. This fails when a
+`scripts/ci_plan/tmux-matrix.json` is the one list of tmux versions. This fails when a
 page states a range or a table the manifest does not, when the workflow carries
 a version list of its own, and when the workflow structure the plan relies on
 has been undone: a dispatch input spliced into a script, a tmate step that is
@@ -9,18 +13,19 @@ not pinned or not limited to the actor, an aggregate job that forgot a job, a
 workflow that no longer runs on a tag, a script that calls apt-get or apt
 without `Scripts/apt-get.sh`.
 
-    python3 Scripts/check_ci.py
+    uv run scripts/ci_plan/check_ci.py
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+import ci_plan as plan
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 # Pages that state the whole range the manifest runs.
 RANGE_PAGES = (
@@ -58,15 +63,6 @@ RAW_APT = re.compile(
 )
 STEP_START = re.compile(r"^(\s*)- (?:name|id|if|uses|run|env|with|shell):")
 JOB_ID = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
-
-
-def _load_plan() -> object:
-    path = pathlib.Path(__file__).with_name("ci_plan.py")
-    spec = importlib.util.spec_from_file_location("ci_plan", path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def _squash(text: str) -> str:
@@ -118,9 +114,10 @@ def _where(lines: list[str], number: int) -> str:
     start = next(
         (i for i in range(number - 1, -1, -1) if STEP_START.match(lines[i])), None
     )
-    if start is None:
+    opening = None if start is None else STEP_START.match(lines[start])
+    if start is None or opening is None:
         return "outside a step"
-    indent = len(STEP_START.match(lines[start])[1])
+    indent = len(opening[1])
     named = re.compile(rf"^ {{{indent}}}(?:- |  )name:\s*(.*?)\s*$")
     end = next(
         (i for i in range(start + 1, len(lines)) if STEP_START.match(lines[i])),
@@ -156,7 +153,7 @@ def check_apt(text: str, name: str) -> list[str]:
     return problems
 
 
-def check_docs(root: pathlib.Path, manifest: object) -> list[str]:
+def check_docs(root: pathlib.Path, manifest: plan.Manifest) -> list[str]:
     """Return where a page disagrees with the manifest."""
     problems: list[str] = []
     preview = next(iter(manifest.preview))
@@ -211,7 +208,10 @@ def check_docs(root: pathlib.Path, manifest: object) -> list[str]:
 
 
 def _check_tmate_step(step: str) -> str:
-    pin = TMATE.search(step)[1]
+    found = TMATE.search(step)
+    if found is None:
+        return "not an action-tmate step"
+    pin = found[1]
     if re.fullmatch(r"[0-9a-f]{40}", pin) is None:
         return f"action-tmate is pinned to {pin}, not a full commit"
     if "limit-access-to-actor: true" not in step:
@@ -223,7 +223,7 @@ def _check_tmate_step(step: str) -> str:
     return ""
 
 
-def check_ci(text: str, manifest: object) -> list[str]:
+def check_ci(text: str, manifest: plan.Manifest) -> list[str]:
     """Return what is wrong with ci.yml."""
     code = _code(text)
     problems: list[str] = [
@@ -293,8 +293,7 @@ def check_ci(text: str, manifest: object) -> list[str]:
 
 def check(root: pathlib.Path) -> list[str]:
     """Return every disagreement between the manifest, the docs and the workflows."""
-    plan = _load_plan()
-    manifest = plan.load_manifest(root / "Scripts/tmux-matrix.json")
+    manifest = plan.load_manifest(root / "scripts/ci_plan/tmux-matrix.json")
     problems = check_docs(root, manifest)
     workflows = root / WORKFLOWS
     problems += check_ci((workflows / "ci.yml").read_text(), manifest)
@@ -317,7 +316,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=pathlib.Path, default=ROOT)
     args = parser.parse_args(argv)
-    plan = _load_plan()
     try:
         problems = check(args.root.resolve())
     except (plan.PlanError, OSError, ValueError) as error:

@@ -1,14 +1,18 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 r"""Plan the tmux axis of the CI matrix from one manifest and the triggering event.
 
-`Scripts/tmux-matrix.json` is the only list of tmux versions CI uses. A push or
+`scripts/ci_plan/tmux-matrix.json` is the only list of tmux versions CI uses. A push or
 pull request runs its first and last released entries; a tag, a `schedule` run
 and a dispatch with `scope: full` run all of it, the pinned `master` and the
 refusal cells; a dispatch with `scope: custom` runs the refs it names. Nothing
 here touches the network, so the same plan can be reproduced locally:
 
-    python3 Scripts/ci_plan.py matrix --event push
-    python3 Scripts/ci_plan.py matrix --event workflow_dispatch --scope custom \
+    uv run scripts/ci_plan/ci_plan.py matrix --event push
+    uv run scripts/ci_plan/ci_plan.py matrix --event workflow_dispatch --scope custom \
         --tmux-ref 3.6b,master --tmate on-failure
 """
 
@@ -19,6 +23,7 @@ import json
 import pathlib
 import re
 import sys
+from collections.abc import Mapping
 from typing import NamedTuple
 
 MANIFEST_PATH = pathlib.Path(__file__).with_name("tmux-matrix.json")
@@ -174,7 +179,7 @@ def parse_manifest(raw: dict[str, object]) -> Manifest:
     if not isinstance(swift, str) or SWIFT_PATTERN.fullmatch(swift) is None:
         message = "the manifest needs 'swift' such as 6.2"
         raise PlanError(message)
-    if checks not in released:
+    if not isinstance(checks, str) or checks not in released:
         message = "'version_checks' must name a released tmux"
         raise PlanError(message)
     return Manifest(released, preview, refused, clients, swift, checks)
@@ -388,7 +393,7 @@ def expected_result(job: str, *, refusal_planned: bool) -> str:
 
 
 def verify_needs(
-    needs: dict[str, dict[str, object]], *, refusal_planned: bool
+    needs: Mapping[str, Mapping[str, object]], *, refusal_planned: bool
 ) -> list[str]:
     """Return what is wrong with the results the aggregate job saw."""
     problems = []

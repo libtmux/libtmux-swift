@@ -30,6 +30,7 @@ testpaths = ["scripts"]
 # A test that imports its script by name finds it here.
 pythonpath = [
   "scripts/check_workspace",
+  "scripts/ci_plan",
   "scripts/update_mode_matrix",
 ]
 addopts = [
@@ -86,6 +87,7 @@ python-version = "3.12"
 python-platform = "all"
 extra-paths = [
   "scripts/check_workspace",
+  "scripts/ci_plan",
   "scripts/update_mode_matrix",
 ]
 

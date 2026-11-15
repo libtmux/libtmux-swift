@@ -7,34 +7,19 @@ guard that cannot fail is not guarding anything.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import shutil
-import sys
 from pathlib import Path
-from typing import Any
 
+import check_ci as CHECK
 import pytest
 
-
-def load(name: str, filename: str) -> Any:
-    """Import a script from `Scripts/` under `name`."""
-    path = Path(__file__).parents[1] / filename
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-CHECK = load("check_ci", "check_ci.py")
-
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 COPIED = (
     *CHECK.RANGE_PAGES,
     *CHECK.FLOOR_PAGES,
     CHECK.CONTRIBUTING,
-    "Scripts/tmux-matrix.json",
+    "scripts/ci_plan/tmux-matrix.json",
     ".github/workflows/ci.yml",
     ".github/workflows/release.yml",
     ".github/workflows/docs.yml",
@@ -89,7 +74,7 @@ def test_the_repository_agrees_with_its_manifest(tree: Tree) -> None:
 
 def test_a_new_release_in_the_manifest_reaches_the_pages(tree: Tree) -> None:
     """Adding 3.9 without editing the docs names what is out of date."""
-    path = tree.root / "Scripts/tmux-matrix.json"
+    path = tree.root / "scripts/ci_plan/tmux-matrix.json"
     manifest = json.loads(path.read_text())
     manifest["released"].append("3.9")
     path.write_text(json.dumps(manifest))
@@ -184,8 +169,8 @@ def test_an_input_spliced_into_a_script_is_flagged(tree: Tree, spliced: str) -> 
     """Inputs and the values derived from them reach scripts through env only."""
     tree.edit(
         CI,
-        "          python3 Scripts/ci_plan.py verify",
-        f"          echo {spliced}\n          python3 Scripts/ci_plan.py verify",
+        "          uv run scripts/ci_plan/ci_plan.py verify",
+        f"          echo {spliced}\n          uv run scripts/ci_plan/ci_plan.py verify",
     )
     assert tree.flags("splices an input into a script")
 

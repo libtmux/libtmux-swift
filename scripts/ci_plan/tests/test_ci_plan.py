@@ -7,29 +7,16 @@ nothing about the rule it is named for.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import ci_plan as PLAN
 import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-
-def load(name: str, filename: str) -> Any:
-    """Import a script from `Scripts/` under `name`."""
-    path = Path(__file__).parents[1] / filename
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-PLAN = load("ci_plan", "ci_plan.py")
 
 REAL_LEG = PLAN._leg
 PIN = "b" * 40
@@ -373,7 +360,7 @@ def test_every_check_has_a_mutant() -> None:
 @pytest.mark.parametrize(
     ("check", "removed"),
     list(MUTANTS.items()),
-    ids=[check.__name__ for check in MUTANTS],
+    ids=[getattr(check, "__name__", repr(check)) for check in MUTANTS],
 )
 def test_removing_the_rule_fails_its_check(
     check: Callable[[], None],
