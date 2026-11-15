@@ -60,6 +60,8 @@ and cannot see.
 - Documentation, user-facing text, `CHANGELOG.md`, release notes, commit
   messages, DocC, doc comments, and source comments:
   [`.github/WRITING.md`](.github/WRITING.md)
+- Support scripts: what may stay, their language, layout and checks:
+  [`.github/SCRIPTS.md`](.github/SCRIPTS.md)
 - Building, running the tests, the checks that must pass, pull requests,
   review, releases, and compatibility:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
