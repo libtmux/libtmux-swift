@@ -154,13 +154,10 @@ def check(choice: str, binary: str, tmux: str, base: Path) -> None:
                 file.write_text(json.dumps(document))
                 files.append(str(file))
             if choice == "session-fallback":
-                # A second client is attached to the same session, on a
-                # different window than the invoking pane's - not
-                # "independent"/active-pane flagged, just an ordinary client
-                # parked elsewhere. Nothing makes this pane that client's
-                # active pane, so the exact-match set is empty and load must
-                # fall back to the only client attached to its session
-                # rather than refusing one that would work.
+                # A second, ordinary client on a different window of the same
+                # session. Nothing makes this pane its active pane, so the
+                # exact-match set is empty and load falls back to the only
+                # client attached to the session rather than refusing.
                 other_window_index = command(
                     "new-window", "-d", "-t", "=keeper:", "-P", "-F", "#{window_index}"
                 )

@@ -5,9 +5,8 @@
 # ///
 """Map every documented Swift example to consumer code and live-test call sites.
 
-A README snippet is prose until something builds it. An example can name a
-package identity SwiftPM does not use, or compile with a warning, and a reader
-cannot tell either from the page.
+An example can name a package identity SwiftPM does not use, or compile with a
+warning, and a reader cannot tell either from the page.
 
 `Examples/` is a package of its own that depends on this one, so
 `swift test --package-path Examples` compiles it the way a reader does: through
@@ -47,8 +46,7 @@ DOCUMENTS = [
 
 # Excerpts from a consumer's `Package.swift`. They are Swift, and they are
 # fenced as Swift so they highlight, but none is a statement that can compile on
-# its own. Listed rather than detected, so the next one has to be a decision
-# somebody made rather than a heuristic somebody's example happened to match.
+# its own. Listed rather than detected, so adding one is explicit.
 MANIFEST_EXCERPTS = {
     '.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")',
     '.product(name: "LibTmux", package: "libtmux-swift")',

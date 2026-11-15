@@ -8,8 +8,7 @@
 `AGENTS.md` states the rule in prose: a socket lives under
 `/tmp/libtmux-swift-test/` or `/tmp/libtmux-swift-dev/`, never anywhere else,
 because `/tmp` is shared with the other libtmux ports and a sweep by prefix in
-either direction reaps the other's servers. Prose is not a gate — `libtmux-ts`
-enforces the same invariant with a script, and this is the Swift half of it.
+either direction reaps the other's servers. This script enforces the rule.
 
     uv run scripts/check_socket_namespace/check_socket_namespace.py
 
@@ -19,8 +18,7 @@ inside `TMUX_TMPDIR`, so the suite gates that part through
 `namedSocketsAvailable` and this check requires the name to identify this port.
 It cannot tell a server that was addressed from one that was started — nothing
 reaches the filesystem until a command runs against it, and that is a runtime
-fact. The exceptions below therefore stay explicit decisions rather than
-patterns that happen to pass.
+fact. The exceptions below are therefore listed explicitly.
 
 It also reads the constructors that name no socket at all: `Server()` or
 `Server(tmuxExecutable:)`, `TmuxContext.current()` with no environment, and
@@ -43,7 +41,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SANCTIONED = ("/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev")
 
 # Addressed but never started, or a path the reader owns rather than one this
-# repository creates. Each is a decision, not a heuristic.
+# repository creates.
 ALLOWED = {
     # "an empty list is a no-op that never invokes tmux" — nothing is spawned.
     ("Tests/LibTmuxTests/CommandListTests.swift", "/tmp/lt-empty"),

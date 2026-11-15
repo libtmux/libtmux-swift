@@ -5,17 +5,16 @@
 # ///
 """Require every suspended continuation in `Sources/` to answer cancellation.
 
-A continuation nobody resumes is not a slow call, it is a call that never
-returns. Cancellation does not reach it on its own: `Task.cancel()` sets a flag
-and resumes nothing, so a caller parked in `withCheckedContinuation` stays
-parked for as long as the process lives.
+A continuation nobody resumes is a call that never returns. Cancellation does
+not reach it on its own: `Task.cancel()` sets a flag and resumes nothing, so a
+caller parked in `withCheckedContinuation` stays parked for as long as the
+process lives.
 
 That failure hides, because the usual ways of bounding a wait cannot end it.
 Swift Testing's `.timeLimit` cancels the case and then waits for it to return,
-so a parked continuation turns a slow test into a run that cannot finish: one
-CI lane spent six hours there and was killed with no failure to read. A
-deadline inside the library has the same shape. The gate exists because the
-symptom points at whatever was scheduled next rather than at the park.
+so a parked continuation turns a slow test into a run that cannot finish and
+leaves no failure to read. A deadline inside the library has the same shape.
+The symptom points at whatever was scheduled next rather than at the park.
 
     uv run scripts/check_continuations/check_continuations.py
 
@@ -24,8 +23,7 @@ within a few lines above the continuation, which is how every guarded call in
 this repository is written. It cannot follow a handler installed further away,
 and it cannot see one installed by the *caller* — releasing the park from the
 call site is legitimate, and `OrderedOutbound` does exactly that. Those are
-listed below with the code that releases them, so each is a decision on the
-record rather than a shape that happens to pass.
+listed below with the code that releases them.
 
 `Tests/` is not scanned. A test that parks fails itself; this is about the
 library, where the caller is someone else's program.

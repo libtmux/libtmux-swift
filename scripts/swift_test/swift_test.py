@@ -253,8 +253,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     os.environ["TMUX_TMPDIR"] = str(directory)
     os.environ["LIBTMUX_TEST_SANDBOX"] = str(directory)
 
-    # A signal waits for `swift test` to end, as it did when this was `sh`, and
-    # then ends the run with 128 plus its number after the cleanup below.
+    # A signal waits for `swift test` to end, then ends the run with 128 plus
+    # its number after the cleanup below.
     received: list[int] = []
     for number in (signal.SIGINT, signal.SIGTERM):
         signal.signal(number, lambda caught, _frame: received.append(caught))

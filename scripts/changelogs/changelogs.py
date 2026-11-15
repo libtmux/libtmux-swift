@@ -8,8 +8,8 @@
 Each public product keeps a `CHANGELOG.md`: `LibTmux` at the repository root,
 which also lists the changes that span products, and `TmuxWorkspace` and
 `LibTmuxMCP` beside their sources. The products share one version, so every file
-has a section for every release. Nothing else noticed a product losing its
-file, so `check` holds each claim that can be answered from the checkout:
+has a section for every release. `check` holds each claim that can be answered
+from the checkout:
 
 - the file exists;
 - it opens with the name of the product it belongs to, so another product's

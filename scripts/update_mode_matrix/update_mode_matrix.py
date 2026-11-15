@@ -5,10 +5,9 @@
 # ///
 """Put the benchmark's own numbers into the documentation.
 
-A table copied by hand is right on the day it is copied. This runs the
-benchmark and splices what it prints between the markers in every file that
-carries them, so the documented process counts are the ones the code actually
-produces.
+A table copied by hand goes stale. This runs the benchmark and splices what it
+prints between the markers in every file that carries them, so the documented
+process counts are the ones the code actually produces.
 
 Rewrite the tables:
 
@@ -20,10 +19,9 @@ Fail if any is stale:
 
 Several pages show these numbers because they are read by different people in
 different places, and each takes the tables its own subject calls for. All are
-written from one benchmark run — a second copy maintained by hand is the one
-that goes stale.
+written from one benchmark run, so no page keeps a hand-maintained copy.
 
-Only stable work counts are written — processes, round trips, and captures.
+Only stable work counts are written: processes, round trips, and captures.
 They repeat every run; the timings alongside them are medians that move with
 the machine, and pinning those would make the check fail for reasons that say
 nothing about the code.
