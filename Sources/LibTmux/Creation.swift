@@ -239,7 +239,8 @@ extension Server {
     ///
     /// - Parameters:
     ///   - window: the window to split. tmux splits whichever of its panes is
-    ///     active; name a pane instead with ``split(_:direction:size:startDirectory:)``.
+    ///     active; name a pane instead with
+    ///     ``split(_:direction:size:startDirectory:environment:shell:)``.
     ///   - direction: which side of that pane the new one takes. Defaults to
     ///     ``PaneDirection/below``, so that this and `tmux split-window` with
     ///     no flags do the same thing.
@@ -247,6 +248,11 @@ extension Server {
     ///     tmux halves it.
     ///   - startDirectory: where the new pane starts. Omitted, tmux uses
     ///     the pane's own.
+    ///   - environment: variables set for this one split, passed as tmux's
+    ///     `-e`.
+    ///   - shell: the command the new pane runs, as tmux's trailing
+    ///     shell-command on `split-window`. Omitted, tmux runs the pane's
+    ///     default shell.
     public func splitWindow(
         _ window: Window,
         direction: PaneDirection = .below,
@@ -268,8 +274,8 @@ extension Server {
 
     /// Splits one pane, returning the pane that appeared.
     ///
-    /// The same call as ``splitWindow(_:direction:size:startDirectory:)`` with
-    /// the ambiguity removed: a window has an active pane and tmux splits that
+    /// The same call as ``splitWindow(_:direction:size:startDirectory:environment:shell:)``
+    /// with the ambiguity removed: a window has an active pane and tmux splits that
     /// one, which is what you want interactively and rarely what you want when
     /// building a layout. `environment` and `shell` reach only this one split,
     /// the same as tmux's own `-e` and trailing shell-command on

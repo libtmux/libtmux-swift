@@ -308,7 +308,11 @@ public struct Server: Sendable, Hashable {
     /// let sessions = try await server.sessions()
     /// ```
     ///
-    /// - Parameter environment: where to read the two variables from.
+    /// - Parameters:
+    ///   - tmuxExecutable: the tmux to run; a bare name is resolved to a path.
+    ///   - configurationFile: a configuration file passed to tmux as `-f`.
+    ///     Omitted, tmux reads its own default.
+    ///   - environment: where to read the two variables from.
     /// - Throws: ``TmuxError/invalidEndpoint(_:)`` for a socket path that is too
     ///   long. The error names the length and never the value.
     public init(
