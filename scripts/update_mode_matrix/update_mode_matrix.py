@@ -7,7 +7,7 @@
 
 A table copied by hand goes stale. This runs the benchmark and splices what it
 prints between the markers in every file that carries them, so the documented
-process counts are the ones the code actually produces.
+process counts are the ones the code produces.
 
 Rewrite the tables:
 
@@ -44,8 +44,8 @@ HEADER = (
 )
 
 #: Which file gets which tables. A page shows the comparison it is about, so
-#: the streaming page carries only the streaming one rather than a copy of
-#: everything the benchmark measures.
+#: the streaming page carries the streaming one and not a copy of everything
+#: the benchmark measures.
 TARGETS = {
     DOCC / "Modes.md": ("mode-matrix", ("modes", "noticing")),
     ROOT / "README.md": ("mode-matrix", ("modes", "noticing")),
@@ -56,8 +56,8 @@ TARGETS = {
 
 def measured() -> dict[str, str]:
     """Run the benchmark and return each table it prints, by name."""
-    # `swift` is not always on PATH — a toolchain manager may front it — so
-    # the command is overridable rather than assumed.
+    # A toolchain manager may front `swift`, so it can be off PATH; `SWIFT`
+    # names the command.
     swift = shlex.split(os.environ.get("SWIFT", "swift"))
     result = subprocess.run(
         [

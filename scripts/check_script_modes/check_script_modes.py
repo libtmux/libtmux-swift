@@ -7,13 +7,11 @@
 
 A shebang on a file nothing can run is a script that only works when someone
 remembers to say `python3` in front of it. Ruff reports this as EXE001 on the
-runner but not reliably on a developer machine, so this gate exists rather than
-deferring to it.
+runner but not reliably on a developer machine, so this gate checks it itself.
 
 It reads the mode git *recorded*, which is what a checkout produces and
-therefore what CI lints, rather than the mode this working tree happens to have.
-The two differ whenever `core.fileMode` is off or a file arrives through a
-patch.
+therefore what CI lints, not the mode this working tree has. The two differ
+whenever `core.fileMode` is off or a file arrives through a patch.
 
     uv run scripts/check_script_modes/check_script_modes.py
 """

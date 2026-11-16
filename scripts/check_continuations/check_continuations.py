@@ -5,25 +5,24 @@
 # ///
 """Require every suspended continuation in `Sources/` to answer cancellation.
 
-A continuation nobody resumes is a call that never returns. Cancellation does
-not reach it on its own: `Task.cancel()` sets a flag and resumes nothing, so a
-caller parked in `withCheckedContinuation` stays parked for as long as the
-process lives.
+`Task.cancel()` sets a flag and resumes nothing, so a caller parked in
+`withCheckedContinuation` stays parked until something resumes it, for as long
+as the process lives.
 
-That failure hides, because the usual ways of bounding a wait cannot end it.
-Swift Testing's `.timeLimit` cancels the case and then waits for it to return,
-so a parked continuation turns a slow test into a run that cannot finish and
-leaves no failure to read. A deadline inside the library has the same shape.
-The symptom points at whatever was scheduled next rather than at the park.
+The usual ways of bounding a wait cannot end it. Swift Testing's `.timeLimit`
+cancels the case and then waits for it to return, so a parked continuation turns
+a slow test into a run that cannot finish and leaves no failure to read. A
+deadline inside the library has the same shape. The failure shows up at whatever
+was scheduled after the park.
 
     uv run scripts/check_continuations/check_continuations.py
 
-What it can and cannot see. It requires `withTaskCancellationHandler` to open
-within a few lines above the continuation, which is how every guarded call in
-this repository is written. It cannot follow a handler installed further away,
-and it cannot see one installed by the *caller* — releasing the park from the
-call site is legitimate, and `OrderedOutbound` does exactly that. Those are
-listed below with the code that releases them.
+It requires `withTaskCancellationHandler` to open within a few lines above the
+continuation, which is how every guarded call in this repository is written. It
+does not follow a handler installed further away, and it does not see one
+installed by the *caller*. Releasing the park from the call site is legitimate,
+and `OrderedOutbound` does exactly that; those continuations are listed below
+with the code that releases them.
 
 `Tests/` is not scanned. A test that parks fails itself; this is about the
 library, where the caller is someone else's program.
@@ -47,7 +46,7 @@ DECLARATION = re.compile(r"^\s*(?:@\w+\s+)*(?:\w+\s+)*(?:func|var)\s+(\w+)")
 # argument list without allowing a handler from an unrelated scope to count.
 HANDLER_REACH = 3
 
-# Continuations released by their caller rather than by a handler of their own.
+# Continuations released by their caller, with no handler of their own.
 # Each names the code that resumes it, because that is the thing a reviewer has
 # to check when either side changes.
 ALLOWED = {

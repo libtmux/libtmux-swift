@@ -20,9 +20,9 @@ third-party dependency is held at its own upstream version, and passes through.
 
     uv run scripts/check_version/check_version.py
 
-The tag itself is checked at release time rather than here: this runs on a
-working tree that has no tag yet, and the workflow that cuts the release is
-where a mismatch has to stop something.
+The tag itself is checked at release time: this runs on a working tree that has
+no tag yet, and the workflow that cuts the release is where a mismatch has to
+stop something.
 """
 
 from __future__ import annotations
@@ -43,10 +43,10 @@ URL = re.compile(r'url:\s*"([^"]+)"')
 PACKAGE = re.compile(r"\.package\(")
 
 # The repository a documentation pin is a claim about. A manifest pinning a
-# third-party dependency exactly makes a different claim -- which upstream
-# release that dependency is held at -- and this gate is not the one that
-# checks it. A pin outside any `.package(` block is still checked, because a
-# loose `exact:` in prose is telling a reader which tag to depend on.
+# third-party dependency exactly makes a different claim, the upstream release
+# that dependency is held at, and this gate does not check it. A pin outside
+# any `.package(` block is still checked, because a loose `exact:` in prose
+# tells a reader which tag to depend on.
 OWN_PACKAGE = "libtmux/libtmux-swift"
 
 

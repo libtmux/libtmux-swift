@@ -23,8 +23,9 @@ person does; that shell is the thing under test, not a stand-in.
 
 CI copies the executable out of `.build` and runs each check on every leg of the
 `test` job, passing the executable and the tmux under test. Each check makes its
-sockets under `/tmp/libtmux-swift-dev/` and removes them. A maintainer runs them
-after a trait-on build:
+sockets under `/tmp/libtmux-swift-dev/` and removes them.
+
+A maintainer runs them after a trait-on build:
 
 ```console
 $ uv run scripts/check_workspace/check_workspace_terminal.py \

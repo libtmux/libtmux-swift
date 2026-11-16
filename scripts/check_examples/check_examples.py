@@ -12,7 +12,7 @@ warning, and a reader cannot tell either from the page.
 `swift test --package-path Examples` compiles it the way a reader does: through
 the products, with no `@testable`. This script does not invoke Swift. It checks
 that each ```swift block in the repository README, product READMEs, and DocC
-catalogue appears there rather than being a copy that drifted away from it.
+catalogue appears there, so no fence is a copy that drifted from it.
 
 Every example lives in a function, so a call from `Examples/Tests/` identifies
 the examples the live suite reaches. Running that suite is what proves they
@@ -46,7 +46,7 @@ DOCUMENTS = [
 
 # Excerpts from a consumer's `Package.swift`. They are Swift, and they are
 # fenced as Swift so they highlight, but none is a statement that can compile on
-# its own. Listed rather than detected, so adding one is explicit.
+# its own. They are listed, so adding one is explicit.
 MANIFEST_EXCERPTS = {
     '.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")',
     '.product(name: "LibTmux", package: "libtmux-swift")',
@@ -86,7 +86,7 @@ def units() -> tuple[dict[str, list[str]], dict[str, set[str]]]:
 
     A unit is one function, because that is what a test can call. Top-level code
     has no function to name, so `main.swift` takes the name of the executable it
-    builds — which a test runs rather than calls.
+    builds, which a test runs and does not call.
     """
     found: dict[str, list[str]] = {}
     imports: dict[str, set[str]] = {}

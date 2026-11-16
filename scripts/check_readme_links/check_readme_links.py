@@ -49,7 +49,7 @@ API_SECTIONS = {
     "mcp/reference/": ("Sources/LibTmuxMCP",),
 }
 
-# Pages in those sections that describe the section rather than one symbol.
+# Pages in those sections that describe the section, not one symbol.
 SECTION_PAGES = {"glossary", "compatibility", "output", "exit-codes"}
 
 TOOLS_SOURCE = "Sources/LibTmuxMCP/ToolOperation.swift"

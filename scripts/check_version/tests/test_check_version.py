@@ -37,7 +37,7 @@ def test_loose_pin_outside_a_package_block_is_still_checked() -> None:
 
 
 def test_a_third_party_block_does_not_shadow_the_next_own_pin() -> None:
-    """Each `.package(` opens a new subject rather than inheriting the last."""
+    """Each `.package(` opens a new subject and does not inherit the last."""
     manifest = """
     .package(url: "https://github.com/mattt/swift-toml.git", exact: "2.0.0")
     .package(

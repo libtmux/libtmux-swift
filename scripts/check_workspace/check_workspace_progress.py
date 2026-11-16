@@ -270,7 +270,7 @@ def check_cancellation(fixture: Fixture, workspace: Path) -> int:
         env=fixture.env,
     ).splitlines()
     # An interruption is not rolled back: the same signal that stopped
-    # the build could just as well stop the cleanup that would follow
+    # the build could also stop the cleanup that would follow
     # it, so the session it created stays in place.
     assert b"keeper" in sessions and b"cancelled" in sessions
     try:

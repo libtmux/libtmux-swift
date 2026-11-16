@@ -3,10 +3,9 @@
 Runs `swift test` with no tmux selector in its environment, and stops any tmux
 server the run leaves behind.
 
-tmux follows an inherited `TMUX` to the server its caller is inside, ahead of
-`TMUX_TMPDIR`, and `TMUX_PANE` and `LIBTMUX_SOCKET*` pick a pane and a socket. A
-suite started from a tmux pane would reach that server as soon as one case named
-no socket. The script:
+tmux follows an inherited `TMUX` to the server its caller is inside, and
+`TMUX_PANE` and `LIBTMUX_SOCKET*` pick a pane and a socket. A suite started from
+a tmux pane reaches that server once one case names no socket. The script:
 
 - removes those variables;
 - gives the run a fresh owner-only `TMUX_TMPDIR` under
@@ -15,10 +14,9 @@ no socket. The script:
 - marks the run in `LIBTMUX_TEST_SANDBOX`, which the fixtures check. A run
   started any other way is refused by the first fixture it reaches.
 
-When the run ends, the script looks for sockets anywhere under that directory
-and stops every server still listening on one. It then waits up to three seconds
-for the socket to stop accepting connections and fails the run, naming the
-sockets, even when the tests passed.
+When the run ends, the script stops every server still listening on a socket
+under that directory, waits up to three seconds for each to stop accepting
+connections, and fails the run, naming the sockets, even when the tests passed.
 
 - A socket file nothing listens on is not a leak.
 - The directory stays while a listener remains.

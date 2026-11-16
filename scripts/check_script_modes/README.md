@@ -1,9 +1,8 @@
 # check_script_modes
 
 Fails when a tracked file that starts with a shebang is not executable in git.
-Ruff reports the same fault as `EXE001` on the runner and not reliably on a
-developer machine, so the gate reads the mode git recorded, which is what a
-checkout produces. A symlink is skipped.
+The gate reads the mode git recorded, which is what a checkout produces; ruff's
+`EXE001` is not reliable on a developer machine. A symlink is skipped.
 
 CI runs it on the repository-checks leg of the `test` job.
 

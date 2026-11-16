@@ -5,14 +5,19 @@ mention them disagree with one manifest.
 
 [`tmux-matrix.json`](tmux-matrix.json) is the only list of tmux versions. It
 names the released versions, the pinned preview commit, the releases the library
-refuses, the client for each daemon and the Swift toolchain. Adding a release
-there is the whole change to CI.
+refuses, the client for each daemon and the Swift toolchain.
+
+Adding a release there is the whole change to CI.
 
 ## Plan the matrix
 
 The `plan` job in `ci.yml` runs the planner and feeds the legs to the `test` and
-`refusal` jobs. A push or pull request gets the oldest and newest release. A tag
-and `scope: full` get the whole table, the pinned preview and the refusal cells.
+`refusal` jobs:
+
+- A push or pull request gets the oldest and newest release.
+- A tag and `scope: full` get the whole table, the pinned preview and the
+  refusal cells.
+
 The same command prints a plan without a runner:
 
 ```console
@@ -33,13 +38,16 @@ what the plan expected.
 
 ## Check the pages and workflows
 
-[`check_ci.py`](check_ci.py) fails when a README, a DocC page or CONTRIBUTING
-states a tmux range the manifest does not, when `ci.yml` carries a version list
-of its own, or when the structure the plan relies on has been undone: an input
-spliced into a script, an unpinned tmate step, a job missing from `required`, a
-workflow that no longer runs on a tag, a raw `apt-get` call, a shared action that
-is not pinned to a full commit, or a job that builds tmux without the shared
-`build-tmux` action.
+[`check_ci.py`](check_ci.py) fails when:
+
+- a README, a DocC page or CONTRIBUTING states a tmux range the manifest does
+  not, or `ci.yml` carries a version list of its own;
+- an input is spliced into a script, a tmate step is unpinned, or a job is
+  missing from `required`;
+- a workflow no longer runs on a tag;
+- a script calls `apt-get` directly, or a shared action is not pinned to a full
+  commit;
+- a job builds tmux without the shared `build-tmux` action.
 
 ```console
 $ uv run scripts/ci_plan/check_ci.py

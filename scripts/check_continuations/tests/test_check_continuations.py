@@ -62,7 +62,7 @@ def test_a_bare_continuation_is_reported(
 def test_a_distant_handler_does_not_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A handler far above may guard a sibling call rather than this one.
+    """A handler far above may guard a sibling call, not this one.
 
     Reporting it is the safe direction: the answer is to move the handler or to
     record the caller that releases the park, and both are readable decisions.

@@ -12,13 +12,12 @@ either direction reaps the other's servers. This script enforces the rule.
 
     uv run scripts/check_socket_namespace/check_socket_namespace.py
 
-What it can and cannot see. It matches literal `Server(socketPath:)` and
-`Server(socketName:)` calls. A path records its root directly; a name resolves
-inside `TMUX_TMPDIR`, so the suite gates that part through
-`namedSocketsAvailable` and this check requires the name to identify this port.
-It cannot tell a server that was addressed from one that was started — nothing
-reaches the filesystem until a command runs against it, and that is a runtime
-fact. The exceptions below are therefore listed explicitly.
+It matches literal `Server(socketPath:)` and `Server(socketName:)` calls. A path
+records its root directly; a name resolves inside `TMUX_TMPDIR`, so the suite
+gates that part through `namedSocketsAvailable` and this check requires the name
+to identify this port. It cannot tell a server that was addressed from one that
+was started, because nothing reaches the filesystem until a command runs
+against it. The exceptions below are listed explicitly for that reason.
 
 It also reads the constructors that name no socket at all: `Server()` or
 `Server(tmuxExecutable:)`, `TmuxContext.current()` with no environment, and
@@ -40,10 +39,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 # The two roots AGENTS.md sanctions.
 SANCTIONED = ("/tmp/libtmux-swift-test", "/tmp/libtmux-swift-dev")
 
-# Addressed but never started, or a path the reader owns rather than one this
-# repository creates.
+# Addressed but never started, or a path the reader owns and this repository
+# does not create.
 ALLOWED = {
-    # "an empty list is a no-op that never invokes tmux" — nothing is spawned.
+    # "an empty list is a no-op that never invokes tmux": nothing is spawned.
     ("Tests/LibTmuxTests/CommandListTests.swift", "/tmp/lt-empty"),
     # Identity and equality over endpoints; no server is ever started.
     ("Tests/LibTmuxTests/ServerTests.swift", "/tmp/libtmux-value"),

@@ -11,8 +11,8 @@ owner still reads fine. `check_examples.py` holds README fences to compiled
 code and `check_version.py` holds the pins to the version; this does the same
 for the ledger.
 
-Only qualified references are checked -- `Owner.member(labels:)` and
-`Owner.member` -- and only when `Owner` is a type this package declares. A bare
+Only qualified references are checked, `Owner.member(labels:)` and
+`Owner.member`, and only when `Owner` is a type this package declares. A bare
 type name would drag in every Swift standard library name a sentence mentions,
 and an unqualified method name has no owner to check against.
 
@@ -90,7 +90,7 @@ def unresolved(paths: list[pathlib.Path], members: dict[str, set[str]]) -> list[
                 if member in members[owner]:
                     continue
                 elsewhere = sorted(o for o, names in members.items() if member in names)
-                hint = f" -- declared on {', '.join(elsewhere)}" if elsewhere else ""
+                hint = f"; declared on {', '.join(elsewhere)}" if elsewhere else ""
                 failures.append(
                     f"{path}:{number}: {owner}.{member} does not exist{hint}"
                 )

@@ -1,15 +1,14 @@
 # check_continuations
 
 Fails when a continuation under `Sources/` can be left parked after its task is
-cancelled. `Task.cancel()` sets a flag and resumes nothing, so a caller parked
-in `withCheckedContinuation` stays parked for the life of the process, and a
-Swift Testing `.timeLimit` cannot end it: the limit cancels the case and then
-waits for it to return.
+cancelled. `Task.cancel()` resumes nothing, so a parked caller stays parked for
+the life of the process, and Swift Testing's `.timeLimit` cannot end it.
 
-The script requires `withTaskCancellationHandler` to open just above each
-continuation. Where the caller releases the park instead, such as
-`OrderedOutbound`, the exception is listed in the script beside the code that
-resumes it. It cannot follow a handler installed further away.
+The script requires `withTaskCancellationHandler` to open within a few lines
+above each continuation, and cannot follow a handler installed further away.
+
+Where the caller releases the park, as `OrderedOutbound` does, the exception is
+listed in the script beside the code that resumes it.
 
 CI runs it on the repository-checks leg of the `test` job.
 
