@@ -61,7 +61,9 @@ gate can and cannot see.
   messages, DocC, doc comments, and source comments:
   [`.github/WRITING.md`](.github/WRITING.md)
 - Support scripts: what may stay, their language, layout and checks:
-  [`.github/SCRIPTS.md`](.github/SCRIPTS.md)
+  [`.github/SCRIPTS.md`](.github/SCRIPTS.md). Each lives in `scripts/<name>/`
+  with a README and tests and runs with `uv`; the commands that check them are
+  in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 - Building, running the tests, the checks that must pass, pull requests,
   review, releases, and compatibility:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
