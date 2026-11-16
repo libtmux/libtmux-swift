@@ -42,3 +42,6 @@ inline (PEP 723) and run scripts with `uv run`.
 
 - GitHub Actions `run:` lines that call one command.
 - Test data that is not a comparison, such as workspace files a loader reads.
+- An interactive `/bin/sh` as the program of a tmux pane, where a check types
+  commands at a prompt as a person does. The shell is part of what the check
+  exercises and no script stands in for tmux.
