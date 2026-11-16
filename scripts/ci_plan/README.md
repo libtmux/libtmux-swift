@@ -49,6 +49,10 @@ what the plan expected.
   commit;
 - a job builds tmux without the shared `build-tmux` action.
 
+It parses `ci.yml` with PyYAML, which the script declares inline (PEP 723). The
+spliced-input and `apt-get` checks read `run:` lines instead, to report the line
+they found.
+
 ```console
 $ uv run scripts/ci_plan/check_ci.py
 ```

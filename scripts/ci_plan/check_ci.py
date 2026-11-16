@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pyyaml"]
 # ///
 """Check that the docs and the workflows follow the CI manifest.
 
@@ -22,8 +22,10 @@ import argparse
 import pathlib
 import re
 import sys
+from typing import Any
 
 import ci_plan as plan
+import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -61,6 +63,8 @@ RAW_APT = re.compile(
     r"(?:^|[;&|({]|\b(?:then|do|else|sudo|env|exec|time)\b)"
     r"(?:\s+(?:-\S+|\w+=\S*))*\s*(apt-get|apt)(?![\w./-])"
 )
+TMATE_ACTION = "mxschmitt/action-tmate@"
+TMATE_INPUT_OPTIONS = ["off", "before-tests", "on-failure"]
 # A step that uses an action of the shared libtmux/.github repository.
 SHARED_ACTION = re.compile(r"uses:\s*libtmux/\.github/actions/([\w-]+)@(\S+)")
 BUILD_TMUX = "libtmux/.github/actions/build-tmux@"
@@ -101,15 +105,36 @@ def _run_bodies(text: str) -> list[tuple[int, str]]:
     return bodies
 
 
-def _jobs(text: str) -> dict[str, str]:
-    """Return each top-level job of a workflow, by id, with its text."""
-    section = text.split("\njobs:\n", 1)[-1]
-    parts = re.split(r"(?m)^  ([A-Za-z0-9_-]+):\s*$", section)
-    return dict(zip(parts[1::2], parts[2::2], strict=True))
+def _workflow(text: str) -> dict[str, Any]:
+    """Parse a workflow, or return an empty one for text that is not a mapping."""
+    loaded = yaml.safe_load(text)
+    return loaded if isinstance(loaded, dict) else {}
 
 
-def _steps(job: str) -> list[str]:
-    return re.split(r"(?m)^      - ", job)[1:]
+def _mapping(value: object) -> dict[str, Any]:
+    """Return `value` when it is a mapping, and an empty one otherwise."""
+    return value if isinstance(value, dict) else {}
+
+
+def _triggers(workflow: dict[str, Any]) -> dict[str, Any]:
+    """Return the `on` mapping; YAML 1.1 reads the key `on` as true."""
+    return _mapping(workflow.get("on", workflow.get(True)))
+
+
+def _jobs(workflow: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return each top-level job of a workflow, by id."""
+    return {name: _mapping(job) for name, job in _mapping(workflow.get("jobs")).items()}
+
+
+def _steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the steps of a job."""
+    steps = job.get("steps")
+    return [_mapping(step) for step in steps] if isinstance(steps, list) else []
+
+
+def _is_tmate(step: dict[str, Any]) -> bool:
+    """Say whether a step runs action-tmate."""
+    return str(step.get("uses", "")).startswith(TMATE_ACTION)
 
 
 def _where(lines: list[str], number: int) -> str:
@@ -220,18 +245,17 @@ def check_docs(root: pathlib.Path, manifest: plan.Manifest) -> list[str]:
     return problems
 
 
-def _check_tmate_step(step: str) -> str:
-    found = TMATE.search(step)
-    if found is None:
+def _check_tmate_step(step: dict[str, Any]) -> str:
+    if not _is_tmate(step):
         return "not an action-tmate step"
-    pin = found[1]
+    pin = str(step["uses"]).removeprefix(TMATE_ACTION)
     if re.fullmatch(r"[0-9a-f]{40}", pin) is None:
         return f"action-tmate is pinned to {pin}, not a full commit"
-    if "limit-access-to-actor: true" not in step:
+    if _mapping(step.get("with")).get("limit-access-to-actor") is not True:
         return "an action-tmate step does not limit access to the actor"
-    if "timeout-minutes:" not in step:
+    if "timeout-minutes" not in step:
         return "an action-tmate step has no timeout-minutes"
-    if "github.event_name == 'workflow_dispatch'" not in step:
+    if "github.event_name == 'workflow_dispatch'" not in str(step.get("if", "")):
         return "an action-tmate step can run outside a workflow_dispatch"
     return ""
 
@@ -254,32 +278,40 @@ def check_ci(text: str, manifest: plan.Manifest) -> list[str]:
         for number, body in _run_bodies(text)
         if SPLICED.search(body)
     ]
-    if not re.search(r'(?m)^    tags: \["\*"\]$', text):
+    workflow = _workflow(text)
+    triggers = _triggers(workflow)
+    if _mapping(triggers.get("push")).get("tags") != ["*"]:
         problems.append("ci.yml does not run on a tag, so a release is not tested")
 
     # GitHub reads a bare `off` as false, in the options and in the default. A
     # default that is not one of the options refuses every dispatch that sets
     # nothing, and a bare pair reaches the plan as `false`.
+    tmate_input = _mapping(
+        _mapping(_mapping(triggers.get("workflow_dispatch")).get("inputs")).get("tmate")
+    )
     if (
-        "options: ['off', before-tests, on-failure]" not in text
-        or "default: 'off'" not in text
+        tmate_input.get("options") != TMATE_INPUT_OPTIONS
+        or tmate_input.get("default") != "off"
     ):
         problems.append(
             "the tmate input must quote 'off': GitHub reads a bare off as false"
         )
 
-    jobs = _jobs(text)
+    jobs = _jobs(workflow)
     for name in ("test", "refusal"):
-        wanted = f"matrix: ${{{{ fromJSON(needs.plan.outputs.{name}) }}}}"
-        if wanted not in jobs.get(name, ""):
+        wanted = f"${{{{ fromJSON(needs.plan.outputs.{name}) }}}}"
+        job = jobs.get(name, {})
+        if _mapping(job.get("strategy")).get("matrix") != wanted:
             problems.append(f"the {name} job does not take its matrix from the plan")
-        if BUILD_TMUX not in _code(jobs.get(name, "")):
+        if not any(
+            str(step.get("uses", "")).startswith(BUILD_TMUX) for step in _steps(job)
+        ):
             problems.append(
                 f"the {name} job does not build tmux with the shared build-tmux action"
             )
 
-    aggregate = jobs.get("required", "")
-    listed = set(re.findall(r"(?m)^      - ([\w-]+)$", aggregate.split("steps:")[0]))
+    needs = jobs.get("required", {}).get("needs", [])
+    listed = {needs} if isinstance(needs, str) else set(needs)
     wanted_jobs = set(jobs) - {"required"}
     problems += [
         f"required does not need {job}" for job in sorted(wanted_jobs - listed)
@@ -289,21 +321,19 @@ def check_ci(text: str, manifest: plan.Manifest) -> list[str]:
         for job in sorted(listed - wanted_jobs)
     ]
 
-    group = re.search(r"(?m)^  group: (.*)$", text.split("concurrency:", 1)[-1])
-    if (
-        not group
-        or "github.run_id" not in group[1]
-        or "workflow_dispatch" not in group[1]
-    ):
+    concurrency = workflow.get("concurrency")
+    group = str(_mapping(concurrency).get("group", ""))
+    if "github.run_id" not in group or "workflow_dispatch" not in group:
         problems.append("the concurrency group does not separate dispatch runs")
 
-    tmate = [step for step in _steps(jobs.get("test", "")) if TMATE.search(step)]
+    tmate = [step for step in _steps(jobs.get("test", {})) if _is_tmate(step)]
     if len(tmate) != 2:
         problems.append(
             "the test job needs a before-tests and an on-failure tmate step"
         )
     problems += [_check_tmate_step(step) for step in tmate]
-    if len(TMATE.findall(code)) != len(tmate):
+    every_tmate = sum(_is_tmate(step) for job in jobs.values() for step in _steps(job))
+    if every_tmate != len(tmate):
         problems.append("action-tmate appears outside the test job")
     return [problem for problem in problems if problem]
 
