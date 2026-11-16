@@ -46,6 +46,20 @@ products, such as documentation, CI and release tooling, are listed here.
   returns. It read the text after the newline as a second variable that did not
   exist, and cut the first value short, under a UTF-8 tmux client. (#120)
 
+### Development
+
+- The support scripts moved from `Scripts/` to `scripts/<name>/`, each with a
+  README and tests. They are typed Python run with `uv`, and CI runs
+  `ruff format`, `ruff check`, `ty` and `pytest` over them.
+- The Python libtmux parity manifests, the tmuxp workspace benchmark, the unused
+  `swift test` observer and the `dev/Spikes` package are deleted.
+- CI builds tmux with the shared `build-tmux` action and installs packages with
+  the shared `apt-get` action of `libtmux/.github`, pinned by commit, in place
+  of a copy of each in this repository.
+- `scripts/swift_test/swift_test.py` passes SIGINT and SIGTERM to `swift test`,
+  and refuses a shared `/tmp/libtmux-swift-test` that another user owns or can
+  write to.
+
 ## [0.1.1] - 2026-11-01
 
 ### Added
