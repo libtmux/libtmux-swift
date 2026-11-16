@@ -136,6 +136,16 @@ jobs:
         with:
           swift-version: ${{ matrix.swift }}
 
+      - name: Report the refused tmux
+        env:
+          LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
+        run: '"$LIBTMUX_TMUX_BIN" -V'
+
+      - name: Report the tmux client
+        env:
+          LIBTMUX_TMUX_CLIENT_BIN: ${{ steps.client.outputs.binary }}
+        run: '"$LIBTMUX_TMUX_CLIENT_BIN" -V'
+
       - name: Test the refusal
         env:
           # The refusal cases are skipped on a supported release, so the run
@@ -143,10 +153,7 @@ jobs:
           LIBTMUX_EXPECT_REFUSAL: "1"
           LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
           LIBTMUX_TMUX_CLIENT_BIN: ${{ steps.client.outputs.binary }}
-        run: |
-          "$LIBTMUX_TMUX_BIN" -V
-          "$LIBTMUX_TMUX_CLIENT_BIN" -V
-          scripts/swift_test/swift_test.py --force-resolved-versions --filter VersionCheck
+        run: scripts/swift_test/swift_test.py --force-resolved-versions --filter VersionCheck
 
   test:
     name: ${{ matrix.os }} / tmux ${{ matrix.tmux }} / swift ${{ matrix.swift }}
@@ -256,15 +263,23 @@ jobs:
       # cannot turn CI red on a commit that touched no Python. The leak tests
       # start the leg's tmux, so they run against the release under test
       # instead of whatever the runner carries.
-      - name: Check the scripts
+      - name: Check the format of the scripts
+        if: runner.os == 'Linux' && matrix.repo_checks
+        run: uv run --locked --group dev ruff format --check scripts
+
+      - name: Lint the scripts
+        if: runner.os == 'Linux' && matrix.repo_checks
+        run: uv run --locked --group dev ruff check scripts
+
+      - name: Check the types of the scripts
+        if: runner.os == 'Linux' && matrix.repo_checks
+        run: uv run --locked --group dev ty check
+
+      - name: Test the scripts
         if: runner.os == 'Linux' && matrix.repo_checks
         env:
           LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
-        run: |
-          uv run --locked --group dev ruff format --check scripts
-          uv run --locked --group dev ruff check scripts
-          uv run --locked --group dev ty check
-          uv run --locked --group dev pytest
+        run: uv run --locked --group dev pytest
 
       # The examples package compiles every documented example, so one that no
       # longer builds fails the job below. This checks the other half: that the
@@ -347,39 +362,57 @@ jobs:
       - name: Build with default traits
         run: swift build --force-resolved-versions
 
-      - name: Test
+      # Every test resolves its tmux through LIBTMUX_TMUX_BIN, so the whole suite
+      # runs against the release being exercised rather than whatever the
+      # runner happens to ship. A leg that has no separate client is its own.
+      - name: Report the tmux under test
         env:
-          # Every test resolves its tmux through this, so the whole suite runs
-          # against the release being exercised rather than whatever the runner
-          # happens to ship. A leg that has no separate client is its own.
+          LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
+        run: '"$LIBTMUX_TMUX_BIN" -V'
+
+      # The script clears TMUX, TMUX_PANE and LIBTMUX_SOCKET* and gives each
+      # run its own TMUX_TMPDIR, where tmux resolves a socket *name*. Doing
+      # that before the process starts keeps the fixture out of `environ`,
+      # which other cases are concurrently reading.
+      #
+      # The examples are their own package, so the root invocation does not
+      # reach them. Their resolved-version flag enforces
+      # `Examples/Package.resolved` and leaves the root lock alone.
+      - name: Test the examples package
+        env:
           LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
           LIBTMUX_TMUX_CLIENT_BIN: ${{ steps.client.outputs.binary || steps.tmux.outputs.binary }}
-        run: |
-          "$LIBTMUX_TMUX_BIN" -V
-          # The script clears TMUX, TMUX_PANE and LIBTMUX_SOCKET* and gives each
-          # run its own TMUX_TMPDIR, where tmux resolves a socket *name*. Doing
-          # that before the process starts keeps the fixture out of `environ`,
-          # which other cases are concurrently reading.
-          #
-          # The examples are their own package, so the root invocation does not
-          # reach them. Their resolved-version flag enforces
-          # `Examples/Package.resolved` and leaves the root lock alone.
-          scripts/swift_test/swift_test.py --package-path Examples --force-resolved-versions
-          # Named rather than left to the default: the YAML reader and the six
-          # tests behind it are only built when the trait is on.
-          scripts/swift_test/swift_test.py --traits YAMLWorkspaces --force-resolved-versions
+        run: scripts/swift_test/swift_test.py --package-path Examples --force-resolved-versions
 
-      - name: Test the staged workspace CLI
+      # Named rather than left to the default: the YAML reader and the six
+      # tests behind it are only built when the trait is on.
+      - name: Test
         env:
+          LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
+          LIBTMUX_TMUX_CLIENT_BIN: ${{ steps.client.outputs.binary || steps.tmux.outputs.binary }}
+        run: scripts/swift_test/swift_test.py --traits YAMLWorkspaces --force-resolved-versions
+
+      - name: Stage the workspace CLI
+        env:
+          STAGED_CLI: ${{ runner.temp }}/workspace-cli/bin/tmux-workspace
+        run: install -D -m 755 .build/debug/tmux-workspace "$STAGED_CLI"
+
+      - name: Test the staged workspace CLI terminal
+        env:
+          STAGED_CLI: ${{ runner.temp }}/workspace-cli/bin/tmux-workspace
+        run: uv run scripts/check_workspace/check_workspace_terminal.py "$STAGED_CLI"
+
+      - name: Test the staged workspace CLI progress
+        env:
+          STAGED_CLI: ${{ runner.temp }}/workspace-cli/bin/tmux-workspace
           TMUX_BIN: ${{ steps.tmux.outputs.binary }}
-        run: |
-          set -euo pipefail
-          binary="${RUNNER_TEMP}/workspace-cli/bin/tmux-workspace"
-          mkdir -p "$(dirname "$binary")"
-          install -m 755 .build/debug/tmux-workspace "$binary"
-          uv run scripts/check_workspace/check_workspace_terminal.py "$binary"
-          uv run scripts/check_workspace/check_workspace_progress.py "$binary" "$TMUX_BIN"
-          uv run scripts/check_workspace/check_workspace_attach.py "$binary" "$TMUX_BIN"
+        run: uv run scripts/check_workspace/check_workspace_progress.py "$STAGED_CLI" "$TMUX_BIN"
+
+      - name: Test the staged workspace CLI attach
+        env:
+          STAGED_CLI: ${{ runner.temp }}/workspace-cli/bin/tmux-workspace
+          TMUX_BIN: ${{ steps.tmux.outputs.binary }}
+        run: uv run scripts/check_workspace/check_workspace_attach.py "$STAGED_CLI" "$TMUX_BIN"
 
       # `Package.resolved` tracks a superset that includes Yams even when the
       # trait is off, and a trait-off `swift test` resolves without it and
