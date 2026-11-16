@@ -1,7 +1,5 @@
 """Tests for the generator that splices benchmark tables into the documents."""
 
-from __future__ import annotations
-
 import subprocess
 import sys
 from collections.abc import Callable

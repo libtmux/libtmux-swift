@@ -5,8 +5,6 @@ thing in a copy of it and expects the guard for that thing to say so, because a
 guard that cannot fail is not guarding anything.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import shutil

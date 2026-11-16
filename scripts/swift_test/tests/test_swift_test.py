@@ -9,8 +9,6 @@ stand-in is a Python program under `stand_ins/`, run with the interpreter that
 runs the tests.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import signal

@@ -1,7 +1,5 @@
 """Tests for the version pin gate."""
 
-from __future__ import annotations
-
 import runpy
 from pathlib import Path
 

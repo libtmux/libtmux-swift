@@ -7,8 +7,6 @@ it whether or not it exited on its own. The checks that start a tmux server
 also stop it with `stop_server`.
 """
 
-from __future__ import annotations
-
 import os
 import pty
 import select

@@ -18,8 +18,6 @@ build-tmux action.
     uv run scripts/ci_plan/check_ci.py
 """
 
-from __future__ import annotations
-
 import argparse
 import pathlib
 import re

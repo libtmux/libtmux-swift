@@ -7,8 +7,6 @@ to start is `TMUX_UNDER_TEST`, and the id of the server it starts goes to
 `PID_FILE`. It exits with `RECORD_STATUS`.
 """
 
-from __future__ import annotations
-
 import os
 import socket
 import subprocess

@@ -28,8 +28,6 @@ workflow publishes after a merge, so this gate cannot wait on it.
     uv run scripts/check_readme_links/check_readme_links.py
 """
 
-from __future__ import annotations
-
 import pathlib
 import re
 import sys

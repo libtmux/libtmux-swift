@@ -5,18 +5,13 @@ with that rule removed, which must fail. A check that passes either way proves
 nothing about the rule it is named for.
 """
 
-from __future__ import annotations
-
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import ci_plan as PLAN
 import pytest
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
 
 REAL_LEG = PLAN._leg
 PIN = "b" * 40

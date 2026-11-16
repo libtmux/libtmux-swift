@@ -8,8 +8,6 @@ print part of an environment. The booleans compare against `EXPECT_PARENT` and
 `INHERITED_TMPDIR`, which the tests set. It exits with `RECORD_STATUS`.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import stat

@@ -6,8 +6,6 @@
   `TMUX_UNDER_TEST`, on the socket after `-S`.
 """
 
-from __future__ import annotations
-
 import os
 import sys
 import time

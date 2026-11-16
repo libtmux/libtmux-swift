@@ -26,8 +26,6 @@ which fails when a tag is not `LibTmuxVersion.current`, and writes
 `version=<version>` to `$GITHUB_OUTPUT` for the steps after it.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import pathlib

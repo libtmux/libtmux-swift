@@ -14,8 +14,6 @@ Each choice runs against a private temporary directory under
 `/tmp/libtmux-swift-dev/` and prints one JSON line when all pass.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import re

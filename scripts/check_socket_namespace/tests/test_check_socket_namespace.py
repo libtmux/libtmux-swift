@@ -1,7 +1,5 @@
 """Tests for the socket namespace gate."""
 
-from __future__ import annotations
-
 import runpy
 import shutil
 import subprocess

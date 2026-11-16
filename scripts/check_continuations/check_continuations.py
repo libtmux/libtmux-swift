@@ -28,8 +28,6 @@ with the code that releases them.
 library, where the caller is someone else's program.
 """
 
-from __future__ import annotations
-
 import pathlib
 import re
 import subprocess

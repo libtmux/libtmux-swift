@@ -12,8 +12,6 @@ workspace appends its own file to an editor's command line, which is ignored.
 - `mark <value>` writes `ran` to `<value>`.
 """
 
-from __future__ import annotations
-
 import os
 import signal
 import sys

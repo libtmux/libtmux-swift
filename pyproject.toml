@@ -68,7 +68,6 @@ extend-select = [
   "PERF",   # perflint
   "RUF",    # ruff-specific rules
   "D",      # pydocstyle
-  "FA100",  # future annotations
   "ANN",    # flake8-annotations
   "C901",   # mccabe complexity
   "PLR0915", # pylint too-many-statements
@@ -83,9 +82,6 @@ ignore = [
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-required-imports = [
-  "from __future__ import annotations",
-]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"

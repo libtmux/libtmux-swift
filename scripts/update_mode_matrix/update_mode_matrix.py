@@ -27,8 +27,6 @@ the machine, and pinning those would make the check fail for reasons that say
 nothing about the code.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import pathlib

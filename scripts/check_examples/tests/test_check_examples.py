@@ -1,7 +1,5 @@
 """Tests for documented example coverage."""
 
-from __future__ import annotations
-
 import runpy
 from pathlib import Path
 

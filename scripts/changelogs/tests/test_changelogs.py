@@ -1,7 +1,5 @@
 """Tests for the changelog gate and the release notes built from it."""
 
-from __future__ import annotations
-
 import re
 import runpy
 import shutil

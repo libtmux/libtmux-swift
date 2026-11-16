@@ -1,7 +1,5 @@
 """Tests for the README link gate."""
 
-from __future__ import annotations
-
 import runpy
 from pathlib import Path
 

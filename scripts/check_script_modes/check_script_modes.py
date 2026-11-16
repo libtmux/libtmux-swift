@@ -16,8 +16,6 @@ whenever `core.fileMode` is off or a file arrives through a patch.
     uv run scripts/check_script_modes/check_script_modes.py
 """
 
-from __future__ import annotations
-
 import pathlib
 import subprocess
 import sys

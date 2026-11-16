@@ -5,8 +5,6 @@ tmux. Against a stand-in that does nothing, each must fail: that is what shows
 they can. CI runs them against the executable it built.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess

@@ -27,8 +27,6 @@ calls one drives whichever server the developer is inside. They are looked for
 outside `Sources/`, where the shipped executables use them on purpose.
 """
 
-from __future__ import annotations
-
 import pathlib
 import re
 import subprocess

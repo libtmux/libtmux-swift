@@ -24,8 +24,6 @@ sources, since an entry moved to a product file goes stale the same way.
         --changelog CHANGELOG.md
 """
 
-from __future__ import annotations
-
 import argparse
 import pathlib
 import re

@@ -11,7 +11,7 @@ tmux follows an inherited `TMUX` to the server its caller is inside, ahead of
 variables choose a socket for `libtmux-mcp`. A suite started from a tmux pane
 therefore reaches the server around it as soon as one case names no socket.
 
-    uv run scripts/swift_test/swift_test.py --traits YAMLWorkspaces
+    scripts/swift_test/swift_test.py --traits YAMLWorkspaces
 
 Arguments go to `swift test` unchanged, and so does its exit status. SIGINT and
 SIGTERM go to `swift test` too; the script waits for it, cleans up, and exits
@@ -35,8 +35,6 @@ The suite reads `LIBTMUX_TEST_SANDBOX` to learn that this script started it. The
 fixture never sets the variables itself: `setenv` writes to `environ` while
 other cases read it to build a tmux environment, and that is a data race.
 """
-
-from __future__ import annotations
 
 import os
 import secrets

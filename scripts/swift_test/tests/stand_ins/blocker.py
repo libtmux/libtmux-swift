@@ -6,8 +6,6 @@ it did. A wrapper that exits before the child ends leaves no such file. With no
 signal it prints `unsignalled` and exits 9 after `PATIENCE` seconds.
 """
 
-from __future__ import annotations
-
 import os
 import signal
 import sys

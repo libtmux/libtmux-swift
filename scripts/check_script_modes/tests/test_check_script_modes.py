@@ -1,7 +1,5 @@
 """Tests for the gate that holds shebanged files to the executable mode."""
 
-from __future__ import annotations
-
 import shutil
 import subprocess
 import sys

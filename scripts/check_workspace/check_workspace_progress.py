@@ -14,8 +14,6 @@ Each check runs against a private temporary directory under
 `/tmp/libtmux-swift-dev/` and prints one JSON line when it passes.
 """
 
-from __future__ import annotations
-
 import errno
 import fcntl
 import json

@@ -27,8 +27,6 @@ with `import` lines, so a reader can paste it into a file: the lines after them
 must match as above, and each `import` must be one the same file makes.
 """
 
-from __future__ import annotations
-
 import argparse
 import pathlib
 import re
