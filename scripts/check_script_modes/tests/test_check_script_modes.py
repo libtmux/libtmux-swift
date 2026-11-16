@@ -9,7 +9,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).parents[1] / "check_script_modes.py"
 
-SHEBANG = "#!/bin/sh\necho hello\n"
+SHEBANG = "#!/usr/bin/env python3\nprint('hello')\n"
 
 
 def run_gate(
