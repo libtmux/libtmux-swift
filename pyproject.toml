@@ -31,6 +31,7 @@ testpaths = ["scripts"]
 pythonpath = [
   "scripts/check_workspace",
   "scripts/ci_plan",
+  "scripts/swift_test",
   "scripts/update_mode_matrix",
 ]
 addopts = [
@@ -93,6 +94,7 @@ python-platform = "all"
 extra-paths = [
   "scripts/check_workspace",
   "scripts/ci_plan",
+  "scripts/swift_test",
   "scripts/update_mode_matrix",
 ]
 

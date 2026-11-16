@@ -13,13 +13,15 @@ therefore reaches the server around it as soon as one case names no socket.
 
     uv run scripts/swift_test/swift_test.py --traits YAMLWorkspaces
 
-Arguments go to `swift test` unchanged, and so does its exit status. Set
-`LIBTMUX_TEST_TMUX_TMPDIR` to an absolute path to put the run's private
-directory under a parent of your own. The script makes a fresh directory inside
-it and removes that directory afterwards. It refuses a parent that is a link, is
-not empty, holds a `tmux-<uid>` entry, or is so long that the default socket
-under it would pass 100 bytes. It never changes the mode of a directory that
-exists.
+Arguments go to `swift test` unchanged, and so does its exit status. SIGINT and
+SIGTERM go to `swift test` too; the script waits for it, cleans up, and exits
+with 128 plus the signal. Set `LIBTMUX_TEST_TMUX_TMPDIR` to an absolute path to
+put the run's private directory under a parent of your own. The script makes a
+fresh directory inside it and removes that directory afterwards. It refuses a
+parent that is a link, is not empty, holds a `tmux-<uid>` entry, or is so long
+that the default socket under it would pass the socket limit. It never changes
+the mode of a directory that exists. The shared root under `/tmp` must belong to
+the caller and be closed to other users, or the run refuses it.
 
 Before the directory goes, the script looks for sockets anywhere under it,
 whoever named them, and stops every server still listening on one, since
@@ -47,11 +49,14 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator, Sequence
+from contextlib import suppress
 from pathlib import Path
 
 ROOT = Path("/tmp/libtmux-swift-test")
 
-# A Unix socket address holds 100 bytes on the platforms this runs on.
+# The longest default socket path a parent may produce. `sun_path` holds 108
+# bytes on Linux and 104 on macOS (unix(7), unix(4)); 100 stays under the
+# shorter one with room for the terminating NUL.
 LIMIT = 100
 
 # How long a stopped server may keep accepting connections.
@@ -59,9 +64,11 @@ STOP_SECONDS = 3.0
 
 NAME_CHARACTERS = string.ascii_letters + string.digits
 
+SIGNALS = (signal.SIGINT, signal.SIGTERM)
+
 
 class RefusedError(Exception):
-    """`LIBTMUX_TEST_TMUX_TMPDIR` names a directory the run will not use."""
+    """The run will not use the directory it was given or found."""
 
 
 def clear_selectors() -> None:
@@ -72,6 +79,24 @@ def clear_selectors() -> None:
         del os.environ[name]
 
 
+def shared_root() -> Path:
+    """Return the shared test root, made owner-only when it does not exist.
+
+    A root another user owns, or one other users can write to, would let them
+    plant the socket directory the run is about to use.
+    """
+    with suppress(FileExistsError):
+        ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    found = ROOT.lstat()
+    if not stat.S_ISDIR(found.st_mode) or found.st_uid != os.getuid():
+        message = f"{ROOT} must be a directory that belongs to the caller"
+        raise RefusedError(message)
+    if found.st_mode & 0o022:
+        message = f"{ROOT} must not be writable by group or others"
+        raise RefusedError(message)
+    return ROOT
+
+
 def parent_directory() -> Path:
     """Return the directory the run's private directory is made in.
 
@@ -80,30 +105,32 @@ def parent_directory() -> Path:
     """
     named = os.environ.get("LIBTMUX_TEST_TMUX_TMPDIR", "")
     if not named:
-        ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
-        return ROOT
+        return shared_root()
+    name = "LIBTMUX_TEST_TMUX_TMPDIR"
     if not named.startswith("/"):
-        message = "must be an absolute path"
+        message = f"{name} must be an absolute path"
         raise RefusedError(message)
     parent = Path(named)
     if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
-        message = "must be a new or empty directory, not a link or a file"
+        message = f"{name} must be a new or empty directory, not a link or a file"
         raise RefusedError(message)
     longest = f"{named}/tmux-XXXXXX/tmux-{os.getuid()}/default"
     if len(longest.encode()) > LIMIT:
-        message = f"is too long: the default socket under it would pass {LIMIT} bytes"
+        message = (
+            f"{name} is too long: the default socket under it would pass {LIMIT} bytes"
+        )
         raise RefusedError(message)
     if parent.is_dir():
         if os.path.lexists(parent / f"tmux-{os.getuid()}"):
-            message = "holds a tmux socket directory"
+            message = f"{name} holds a tmux socket directory"
             raise RefusedError(message)
         try:
             entries = list(parent.iterdir())
         except OSError as error:
-            message = "cannot be read"
+            message = f"{name} cannot be read"
             raise RefusedError(message) from error
         if entries:
-            message = "must be a new or empty directory"
+            message = f"{name} must be a new or empty directory"
             raise RefusedError(message)
     parent.mkdir(parents=True, exist_ok=True)
     return parent
@@ -137,8 +164,8 @@ def sockets_under(directory: Path) -> Iterator[Path]:
 def listening(path: Path) -> bool:
     """Say whether anything accepts a connection on the socket `path`.
 
-    A raw connect rather than a tmux client, which waits on a server that has
-    stopped answering, and this runs when the run is over.
+    A raw connect, because a tmux client waits on a server that has stopped
+    answering, and this runs after the run.
     """
     probe = socket.socket(socket.AF_UNIX)
     probe.settimeout(2)
@@ -226,7 +253,34 @@ def finish(directory: Path, status: int) -> int:
     return status
 
 
-def run_swift(arguments: Sequence[str]) -> int:
+class Interrupts:
+    """The signals the run received, passed on to `swift test` once it exists."""
+
+    def __init__(self) -> None:
+        """Start with nothing received and no child to pass signals to."""
+        self.received: list[int] = []
+        self.child: subprocess.Popen[bytes] | None = None
+        self.sent = 0
+
+    def catch(self, number: int, _frame: object) -> None:
+        """Record a signal and pass it on if the child is running."""
+        self.received.append(number)
+        self.flush()
+
+    def attach(self, child: subprocess.Popen[bytes]) -> None:
+        """Pass on every signal that arrived before the child started."""
+        self.child = child
+        self.flush()
+
+    def flush(self) -> None:
+        """Send the child each signal it has not had."""
+        while self.child is not None and self.sent < len(self.received):
+            number = self.received[self.sent]
+            self.sent += 1
+            self.child.send_signal(number)
+
+
+def run_swift(arguments: Sequence[str], interrupts: Interrupts) -> int:
     """Run `swift test` and return its status, or 128 plus the signal that ended it."""
     try:
         child = subprocess.Popen(["swift", "test", *arguments])
@@ -236,6 +290,7 @@ def run_swift(arguments: Sequence[str]) -> int:
     except PermissionError:
         print("swift-test: swift: permission denied", file=sys.stderr)
         return 126
+    interrupts.attach(child)
     code = child.wait()
     return code if code >= 0 else 128 - code
 
@@ -247,24 +302,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         parent = parent_directory()
     except RefusedError as refused:
-        print(f"swift-test: LIBTMUX_TEST_TMUX_TMPDIR {refused}", file=sys.stderr)
+        print(f"swift-test: {refused}", file=sys.stderr)
         return 2
     directory = make_directory(parent)
     os.environ["TMUX_TMPDIR"] = str(directory)
     os.environ["LIBTMUX_TEST_SANDBOX"] = str(directory)
 
-    # A signal waits for `swift test` to end, then ends the run with 128 plus
-    # its number after the cleanup below.
-    received: list[int] = []
-    for number in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(number, lambda caught, _frame: received.append(caught))
+    # A signal reaches `swift test`, and the run still waits for it to end,
+    # then cleans up and exits with 128 plus the signal's number.
+    interrupts = Interrupts()
+    for number in SIGNALS:
+        signal.signal(number, interrupts.catch)
     try:
-        status = run_swift(arguments)
+        status = run_swift(arguments, interrupts)
     finally:
-        for number in (signal.SIGINT, signal.SIGTERM):
+        for number in SIGNALS:
             signal.signal(number, signal.SIG_DFL)
-    if received:
-        status = 128 + received[0]
+    if interrupts.received:
+        status = 128 + interrupts.received[0]
     return finish(directory, status)
 
 

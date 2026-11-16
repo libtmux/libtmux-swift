@@ -4,7 +4,9 @@ The script is run against a stand-in for `swift`, never the suite. Most
 stand-ins record their arguments, the names of the variables they were handed
 and a few booleans about them, never a value, so no failure here can print part
 of an environment. The leak tests use a stand-in that starts a real tmux on the
-sandbox the wrapper made for it, with no -L or -S, and nothing else.
+sandbox the wrapper made for it, with no -L or -S, and nothing else. Each
+stand-in is a Python program under `stand_ins/`, run with the interpreter that
+runs the tests.
 """
 
 from __future__ import annotations
@@ -21,8 +23,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import swift_test
 
 WRAPPER = Path(__file__).parents[1] / "swift_test.py"
+STAND_INS = Path(__file__).parent / "stand_ins"
 
 ROOT = Path("/tmp/libtmux-swift-test")
 
@@ -33,32 +37,6 @@ DECOYS = {
     "LIBTMUX_SOCKET_PATH": "/decoy/path",
     "LIBTMUX_SOCKET_EXTRA": "decoy-extra",
 }
-
-# What the stand-in writes: its arguments one per line, the mode of the
-# directory TMUX_TMPDIR names, the name of every variable it was handed, a
-# checksum that tells two directories apart, and booleans for the questions the
-# tests ask of TMUX_TMPDIR. The booleans compare against EXPECT_PARENT and
-# INHERITED_TMPDIR, which the tests set.
-RECORDER = """#!/bin/sh
-same() { [ -n "$2" ] && [ "$1" = "$2" ] && echo "flag=$3"; return 0; }
-{
-    printf 'argc=%s\\n' "$#"
-    for argument in "$@"; do printf 'arg=%s\\n' "$argument"; done
-    ls -ld "$TMUX_TMPDIR" 2>/dev/null | cut -d' ' -f1 | sed 's/^/mode=/'
-    env | sed -n 's/^\\([A-Za-z_][A-Za-z0-9_]*\\)=.*/name=\\1/p'
-    printf 'directory_id=%s\\n' "$(printf '%s' "$TMUX_TMPDIR" | cksum | cut -d' ' -f1)"
-    case "$TMUX_TMPDIR" in
-    /tmp/libtmux-swift-test/tmux-??????) echo 'flag=under_root' ;;
-    esac
-    same "$TMUX_TMPDIR" "${LIBTMUX_TEST_SANDBOX:-}" marker_matches
-    case "$TMUX_TMPDIR" in
-    "${EXPECT_PARENT:-/nonexistent}"/tmux-??????) echo 'flag=under_parent' ;;
-    esac
-    same "$TMUX_TMPDIR" "${INHERITED_TMPDIR:-}" inherited
-    [ -d "$TMUX_TMPDIR" ] && echo 'flag=exists'
-} > "$RECORD_TO"
-exit "${RECORD_STATUS:-0}"
-"""
 
 
 class Recorded:
@@ -85,15 +63,24 @@ class Recorded:
                 self.directory_id = value
 
 
+def install(program: str, path: Path) -> Path:
+    """Install the stand-in `program` as the executable `path`.
+
+    The shebang names the interpreter that runs the tests, so a stand-in needs
+    nothing from `PATH`, which the tests restrict.
+    """
+    source = (STAND_INS / f"{program}.py").read_text(encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    return path
+
+
 @pytest.fixture
 def stand_in(tmp_path: Path) -> Path:
     """Put a recording `swift` first on PATH and return its directory."""
-    binaries = tmp_path / "bin"
-    binaries.mkdir()
-    script = binaries / "swift"
-    script.write_text(RECORDER, encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR)
-    return binaries
+    install("recorder", tmp_path / "bin" / "swift")
+    return tmp_path / "bin"
 
 
 def run(
@@ -120,66 +107,6 @@ def run(
     text = record.read_text(encoding="utf-8") if record.exists() else ""
     return finished, Recorded(text)
 
-
-# A stand-in `swift` that does what a case does when it leaks: starts a server,
-# on tmux's default socket, which is under the wrapper's TMUX_TMPDIR because
-# the wrapper removed TMUX, or on a socket it names itself with -S. MODE picks
-# what it does about the server.
-LEAKER = """#!/bin/sh
-sockets="$TMUX_TMPDIR/tmux-$(id -u)"
-start() {
-    "$TMUX_UNDER_TEST" -f /dev/null "$@" new-session -d -s leak -P -F '#{pid}' \\
-        sleep 3600 > "$PID_FILE"
-}
-bind() {
-    mkdir -p "$(dirname "$1")"
-    "$PYTHON" -c 'import socket, sys; socket.socket(1).bind(sys.argv[1])' "$1"
-}
-case "$MODE" in
-leak) start ;;
-custom) start -S "$TMUX_TMPDIR/custom.sock" ;;
-nested)
-    mkdir -p "$TMUX_TMPDIR/deep/er"
-    start -S "$TMUX_TMPDIR/deep/er/custom.sock"
-    ;;
-clean)
-    start
-    "$TMUX_UNDER_TEST" kill-server
-    pid=$(cat "$PID_FILE")
-    waited=0
-    while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 1000000 ]; do
-        waited=$((waited + 1))
-    done
-    ;;
-stale)
-    bind "$sockets/stale"
-    bind "$TMUX_TMPDIR/deep/er/stale.sock"
-    ;;
-link)
-    start -S "$OUTSIDE"
-    ln -s "$OUTSIDE" "$TMUX_TMPDIR/link.sock"
-    ;;
-esac
-exit "${RECORD_STATUS:-0}"
-"""
-
-# Clients that cannot stop a server, put first on PATH and in LIBTMUX_TMUX_BIN.
-# One does nothing and says it worked; the other answers as tmux does when it
-# cannot speak to the daemon.
-NOOP = """#!/bin/sh
-exit 0
-"""
-
-MISMATCH = """#!/bin/sh
-echo "protocol version mismatch (client 9, server 8)" >&2
-exit 1
-"""
-
-# A client that returns at once and stops the server a second later.
-SLOW = """#!/bin/sh
-( sleep 1; exec "$TMUX_UNDER_TEST" -f /dev/null -S "$4" kill-server ) >/dev/null 2>&1 &
-exit 0
-"""
 
 TMUX = os.environ.get("LIBTMUX_TMUX_BIN") or shutil.which("tmux")
 
@@ -227,16 +154,8 @@ def leaker() -> Iterator[Leaker]:
     is read back and, if it is a tmux server and still alive, terminated.
     """
     scratch = Path(tempfile.mkdtemp(prefix="sw-"))
-    binaries = scratch / "bin"
-    binaries.mkdir()
-    script = binaries / "swift"
-    script.write_text(LEAKER, encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR)
-    for name, body in {"noop": NOOP, "mismatch": MISMATCH, "slow": SLOW}.items():
-        client = scratch / name / "tmux"
-        client.parent.mkdir()
-        client.write_text(body, encoding="utf-8")
-        client.chmod(client.stat().st_mode | stat.S_IXUSR)
+    install("leaker", scratch / "bin" / "swift")
+    install("client", scratch / "client" / "tmux")
     parent = scratch / "parent"
     pid_file = scratch / "pid"
     yield scratch, pid_file, parent
@@ -256,19 +175,19 @@ def leak_run(
 ) -> tuple[subprocess.CompletedProcess[str], int | None]:
     """Run the wrapper over the leaking stand-in; return it and the server id.
 
-    With `client`, the wrapper's tmux is the stand-in of that name, which
-    cannot stop a server, both on PATH and in LIBTMUX_TMUX_BIN.
+    With `client`, the wrapper's tmux is the stand-in client in that mode,
+    which cannot stop a server, both on PATH and in LIBTMUX_TMUX_BIN.
     """
     scratch, pid_file, parent = leaker
-    broken = f"{scratch / client}{os.pathsep}" if client else ""
+    broken = f"{scratch / 'client'}{os.pathsep}" if client else ""
     env = {
         "PATH": f"{broken}{scratch / 'bin'}{os.pathsep}/usr/bin{os.pathsep}/bin",
         "MODE": mode,
+        "CLIENT_MODE": client or "",
         "PID_FILE": str(pid_file),
         "OUTSIDE": str(scratch / "outside.sock"),
-        "PYTHON": sys.executable,
         "TMUX_UNDER_TEST": str(TMUX),
-        "LIBTMUX_TMUX_BIN": str(scratch / client / "tmux") if client else str(TMUX),
+        "LIBTMUX_TMUX_BIN": str(scratch / "client" / "tmux") if client else str(TMUX),
         "LIBTMUX_TEST_TMUX_TMPDIR": str(parent),
         **extra,
     }
@@ -377,23 +296,23 @@ def test_arguments_and_the_exit_status_pass_through(
 @pytest.mark.parametrize(
     ("sent", "status"), [(signal.SIGINT, 130), (signal.SIGTERM, 143)]
 )
-def test_a_signal_ends_the_run_after_swift_and_the_directory_is_removed(
+def test_a_signal_reaches_swift_and_the_run_ends_after_it(
     tmp_path: Path, stand_in: Path, sent: signal.Signals, status: int
 ) -> None:
-    """The run waits for `swift test`, cleans up, then exits 128 plus the signal."""
-    release = tmp_path / "release"
-    os.mkfifo(release)
-    blocker = stand_in / "swift"
-    blocker.write_text(
-        '#!/bin/sh\necho started\nread _ < "$RELEASE"\n', encoding="utf-8"
-    )
+    """The signal is forwarded, the run waits for `swift test`, cleans up, then exits.
+
+    The stand-in takes a moment to finish after the signal, and the run exits
+    128 plus the signal only once it has.
+    """
+    install("blocker", stand_in / "swift")
+    finished = tmp_path / "finished"
     before = set(ROOT.iterdir()) if ROOT.exists() else set()
 
     with subprocess.Popen(
         [sys.executable, str(WRAPPER)],
         env={
             "PATH": f"{stand_in}{os.pathsep}/usr/bin{os.pathsep}/bin",
-            "RELEASE": str(release),
+            "FINISHED": str(finished),
         },
         stdout=subprocess.PIPE,
         text=True,
@@ -401,11 +320,44 @@ def test_a_signal_ends_the_run_after_swift_and_the_directory_is_removed(
         assert running.stdout is not None
         assert running.stdout.readline() == "started\n"
         running.send_signal(sent)
-        release.write_text("go\n", encoding="utf-8")
-        assert running.wait(timeout=10) == status
+        code = running.wait(timeout=10)
+        reported = running.stdout.read()
 
     after = set(ROOT.iterdir()) if ROOT.exists() else set()
+    assert reported == f"signalled {sent.value}\n"
+    assert code == status
+    assert finished.exists(), "the run ended before swift did"
     assert after - before == set()
+
+
+@pytest.mark.parametrize("kind", ["group-writable", "link", "file"])
+def test_a_shared_root_the_caller_does_not_own_alone_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """A root others can write to, or that is not a directory, is not used."""
+    root = tmp_path / "root"
+    if kind == "link":
+        (tmp_path / "elsewhere").mkdir()
+        root.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    elif kind == "file":
+        root.write_text("", encoding="utf-8")
+    else:
+        root.mkdir()
+        root.chmod(0o770)
+    monkeypatch.setattr(swift_test, "ROOT", root)
+
+    with pytest.raises(swift_test.RefusedError):
+        swift_test.shared_root()
+
+
+def test_a_shared_root_that_only_the_caller_can_write_is_used(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control: an owner-only root is returned as it is."""
+    monkeypatch.setattr(swift_test, "ROOT", tmp_path / "root")
+
+    assert swift_test.shared_root() == tmp_path / "root"
+    assert modes(tmp_path / "root") == 0o700
 
 
 def modes(path: Path) -> int:
