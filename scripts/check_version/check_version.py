@@ -20,17 +20,21 @@ third-party dependency is held at its own upstream version, and passes through.
 
     uv run scripts/check_version/check_version.py
 
-The tag itself is checked at release time: this runs on a working tree that has
-no tag yet, and the workflow that cuts the release is where a mismatch has to
-stop something.
+The tag itself is checked at release time, because this runs on a working tree
+that has no tag yet. The release workflow runs `--release <ref type> <ref name>`,
+which fails when a tag is not `LibTmuxVersion.current`, and writes
+`version=<version>` to `$GITHUB_OUTPUT` for the steps after it.
 """
 
 from __future__ import annotations
 
+import argparse
+import os
 import pathlib
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "Sources/LibTmux/LibTmuxVersion.swift"
@@ -131,9 +135,42 @@ def floor_problem(bound: str, version: str) -> str | None:
     return None
 
 
-def main() -> int:
+def release(version: str, ref_type: str, ref_name: str) -> int:
+    """Check the ref a release runs on against `version`, and publish `version`.
+
+    A tag has to be the version. Any other ref is a dry run, which has no tag
+    to read and so reports the version the package declares.
+    """
+    if ref_type == "tag" and ref_name != version:
+        print(
+            f"::error::tag {ref_name} but LibTmuxVersion.current is {version}",
+            file=sys.stderr,
+        )
+        return 1
+    if ref_type == "tag":
+        print(f"tag and package agree on {version}")
+    else:
+        print(f"dry run against the declared version {version}")
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with pathlib.Path(output).open("a", encoding="utf-8") as handle:
+            handle.write(f"version={version}\n")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """Report any pin that names a version this package is not."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--release",
+        nargs=2,
+        metavar=("REF_TYPE", "REF_NAME"),
+        help="check a release ref against the declared version instead",
+    )
+    arguments = parser.parse_args(argv)
     version = declared_version()
+    if arguments.release:
+        return release(version, *arguments.release)
     failures: list[str] = []
     pins = 0
 

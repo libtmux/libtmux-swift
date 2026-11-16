@@ -5,6 +5,8 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
+import pytest
+
 CHECK_VERSION = runpy.run_path(str(Path(__file__).parents[1] / "check_version.py"))
 
 OWN_PINS = CHECK_VERSION["own_pins"]
@@ -82,3 +84,45 @@ def test_floor_naming_a_prerelease_or_a_newer_release_fails() -> None:
     assert problem == "is not a final release"
     assert FLOOR_PROBLEM("0.2.0", "0.1.7") == "is newer than 0.1.7"
     assert FLOOR_PROBLEM("0.1.1", "0.1.0-alpha.8") == "is newer than 0.1.0-alpha.8"
+
+
+RELEASE_CHECK = CHECK_VERSION["release"]
+
+
+def test_a_tag_that_is_the_declared_version_passes_and_is_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The steps after the check read the version from `$GITHUB_OUTPUT`."""
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+
+    status = RELEASE_CHECK("0.1.2", "tag", "0.1.2")
+
+    assert status == 0
+    assert output.read_text() == "version=0.1.2\n"
+    assert "agree on 0.1.2" in capsys.readouterr().out
+
+
+def test_a_tag_that_is_not_the_declared_version_fails_and_publishes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A mistyped tag stops here, before it becomes a version someone pins."""
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+
+    status = RELEASE_CHECK("0.1.2", "tag", "0.1.3")
+
+    assert status == 1
+    assert not output.exists()
+    assert "tag 0.1.3 but LibTmuxVersion.current is 0.1.2" in capsys.readouterr().err
+
+
+def test_a_branch_is_a_dry_run_against_the_declared_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dispatch has no tag, so any ref name passes and the declared version wins."""
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+
+    assert RELEASE_CHECK("0.1.2", "branch", "master") == 0
+    assert output.read_text() == "version=0.1.2\n"

@@ -15,6 +15,16 @@ disagrees with `LibTmuxVersion.current`.
 $ uv run scripts/check_version/check_version.py
 ```
 
+The `release` workflow runs the same script with `--release`, which checks the
+tag it runs on against `LibTmuxVersion.current` and writes the version to
+`$GITHUB_OUTPUT`. A ref that is not a tag is a dry run, so it passes:
+
+```console
+$ uv run scripts/check_version/check_version.py \
+    --release branch \
+    master
+```
+
 ## Tests
 
 ```console

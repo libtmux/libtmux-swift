@@ -43,67 +43,51 @@ jobs:
           version: "0.12.0"
 
       # A dry run has no tag to read, so it checks the version the package
-      # declares — which is the one a tag would have to match anyway.
+      # declares, which is the one a tag would have to match anyway.
       - name: Resolve the version under release
         id: version
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          declared=$(sed -n 's/.*static let current = "\([^"]*\)".*/\1/p' \
-            Sources/LibTmux/LibTmuxVersion.swift)
-          if [ -z "$declared" ]; then
-            echo '::error::no `static let current` in LibTmuxVersion.swift'
-            exit 1
-          fi
-          if [ "$REF_TYPE" = "tag" ]; then
-            if [ "$REF_NAME" != "$declared" ]; then
-              echo "::error::tag $REF_NAME but LibTmuxVersion.current is $declared"
-              exit 1
-            fi
-            echo "tag and package agree on $declared"
-          else
-            echo "dry run against the declared version $declared"
-          fi
-          echo "version=$declared" >> "$GITHUB_OUTPUT"
+        run: uv run scripts/check_version/check_version.py --release "$REF_TYPE" "$REF_NAME"
 
+      # From this version's heading to the next one in the root changelog,
+      # then in each product's, so the notes are the sections a reader of
+      # those files already has. The script refuses a version any of them
+      # has no section for, and a release that says nothing anywhere.
       - name: Take the notes from the changelogs
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          # From this version's heading to the next one in the root changelog,
-          # then in each product's, so the notes are the sections a reader of
-          # those files already has. The script refuses a version any of them
-          # has no section for, and a release that says nothing anywhere.
-          if ! uv run scripts/changelogs/changelogs.py notes "$VERSION" > notes.md; then
-            echo "::error::the changelogs do not describe $VERSION; see above"
-            exit 1
-          fi
-          echo "notes:"
-          cat notes.md
+        run: uv run scripts/changelogs/changelogs.py notes "$VERSION" > notes.md
+
+      - name: Show the notes
+        run: cat notes.md
 
       - name: Create the release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && !contains(steps.version.outputs.version, '-')
         env:
           VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          # Anything carrying a prerelease suffix is marked as one, which is
-          # what keeps it out of "latest" for a reader arriving at the
-          # repository. Semver spells that with a hyphen.
-          case "$VERSION" in
-            *-*) prerelease="--prerelease" ;;
-            *) prerelease="" ;;
-          esac
-          # shellcheck disable=SC2086 — empty or one flag.
-          gh release create "$VERSION" \
-            --title "$VERSION" \
-            --notes-file notes.md \
-            --verify-tag \
-            $prerelease
+        run: >-
+          gh release create "$VERSION"
+          --title "$VERSION"
+          --notes-file notes.md
+          --verify-tag
+
+      # A version with a prerelease suffix is marked as one, which keeps it out
+      # of "latest" for a reader arriving at the repository. Semver spells that
+      # with a hyphen.
+      - name: Create the prerelease
+        if: github.ref_type == 'tag' && contains(steps.version.outputs.version, '-')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "$VERSION"
+          --title "$VERSION"
+          --notes-file notes.md
+          --verify-tag
+          --prerelease
 
       - name: Say what a dry run skipped
         if: github.ref_type != 'tag'
