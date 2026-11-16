@@ -10,8 +10,16 @@ they need a controlling terminal, a real signal and a real server.
 | `check_workspace_progress.py` | `load` progress rendering, stream separation, `--json` and `--ndjson` framing, and cancellation |
 | `check_workspace_attach.py` | `load` attach, switch, append and detach choices, with one or several clients attached |
 
-`owned_terminal.py` is the helper the terminal and attach checks share: it forks
-a process under a pty, waits for output and reaps it.
+Two helpers sit beside them:
+
+- `owned_terminal.py` forks a process under a pty, waits for output and reaps
+  it. The checks that start a tmux server stop it with `stop_server`, which
+  waits for the socket to stop accepting connections.
+- `fixture_program.py` is what a check runs as `$EDITOR` or as a workspace's
+  `before_script`, so the checks need no shell script.
+
+The attach check types its commands at an interactive `/bin/sh` in a pane, as a
+person does; that shell is the thing under test, not a stand-in.
 
 CI copies the executable out of `.build` and runs each check on every leg of the
 `test` job, passing the executable and the tmux under test. Each check makes its
@@ -40,8 +48,8 @@ $ uv run scripts/check_workspace/check_workspace_attach.py \
 ## Tests
 
 The tests run each check against an executable that exits at once and require it
-to fail, and cover the terminal helper and the version ordering. The passing
-cases are CI's run against the executable it built.
+to fail, and cover the terminal helper, `stop_server` and the version ordering.
+The passing cases are CI's run against the executable it built.
 
 ```console
 $ uv run --group dev pytest scripts/check_workspace

@@ -3,7 +3,8 @@
 check_workspace_attach.py and check_workspace_terminal.py both drive a
 process through a controlling terminal and need the same three things: fork
 it under a pty, wait for a fixture condition in its output or exit, and reap
-it whether or not it exited on its own.
+it whether or not it exited on its own. The checks that start a tmux server
+also stop it with `stop_server`.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ import os
 import pty
 import select
 import signal
+import socket
+import subprocess
 import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
@@ -65,3 +68,46 @@ class Terminal:
                 os.kill(self.pid, signal.SIGKILL)
                 os.waitpid(self.pid, 0)
         os.close(self.fd)
+
+
+def listening(path: str) -> bool:
+    """Say whether anything accepts a connection on the socket `path`.
+
+    A raw connect, because a tmux client waits on a server that has stopped
+    answering.
+    """
+    probe = socket.socket(socket.AF_UNIX)
+    probe.settimeout(2)
+    try:
+        probe.connect(path)
+    except TimeoutError:
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+    return True
+
+
+def stop_server(
+    tmux: str, path: str, environment: Mapping[str, str], seconds: float = 3
+) -> bool:
+    """Stop the server on the socket `path`, and say whether it stopped.
+
+    `kill-server` returns before the server has left, so this waits up to
+    `seconds` for the socket to stop accepting connections before the
+    directory under it goes.
+    """
+    subprocess.run(
+        [tmux, "-S", path, "kill-server"],
+        env=environment,
+        capture_output=True,
+        check=False,
+        timeout=3,
+    )
+    deadline = time.monotonic() + seconds
+    while listening(path):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+    return True

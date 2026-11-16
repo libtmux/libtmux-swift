@@ -22,6 +22,7 @@ import json
 import os
 import pty
 import select
+import shlex
 import signal
 import struct
 import subprocess
@@ -31,7 +32,13 @@ import termios
 import time
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
+
+from owned_terminal import stop_server
+
+FIXTURE = Path(__file__).with_name("fixture_program.py")
+KEEPER = ["new-session", "-d", "-s", "keeper"]
 
 
 def terminal_call(
@@ -94,6 +101,188 @@ def terminal_call(
         os.close(master)
 
 
+@dataclass
+class Fixture:
+    """What every progress check shares: the executable, tmux and a private root."""
+
+    binary: str
+    tmux: str
+    root: Path
+    env: dict[str, str]
+
+    @property
+    def socket(self) -> str:
+        """Return the socket of the private server."""
+        return str(self.root / "s")
+
+    def load(self, workspace: Path) -> list[str]:
+        """Return the `load` arguments every check starts from."""
+        return ["load", str(workspace), "-d", "-S", self.socket]
+
+    def call(
+        self,
+        workspace: Path,
+        *arguments: str,
+        env: Mapping[str, str] | None = None,
+        size: tuple[int, int] = (24, 80),
+        interrupt: Path | None = None,
+    ) -> tuple[int, bytes, bytes]:
+        """Run `load` on a terminal with the extra `arguments`."""
+        return terminal_call(
+            self.binary,
+            [*self.load(workspace), *arguments],
+            self.env if env is None else env,
+            size=size,
+            interrupt=interrupt,
+        )
+
+
+def write_workspace(path: Path, program: str, *files: Path) -> Path:
+    """Write a workspace whose `before_script` runs the fixture `program`."""
+    command = shlex.join([sys.executable, str(FIXTURE), program, *map(str, files)])
+    path.write_text(
+        json.dumps(
+            {
+                "session_name": "progress",
+                "before_script": command,
+                "windows": [
+                    {"window_name": "one", "panes": [None, None]},
+                    {"window_name": "two", "panes": [None]},
+                ],
+            }
+        )
+    )
+    return path
+
+
+def require_output(code: int, out: bytes, err: bytes) -> None:
+    """Require a clean load whose stdout starts with the script's output."""
+    assert code == 0 and out.startswith(b"OUT\x1b[31m"), (code, out, err)
+
+
+def check_presets(fixture: Fixture, workspace: Path) -> int:
+    """Render every preset: progress on stderr, the script's output on stdout."""
+    presets = ["default", "minimal", "window", "pane", "verbose"]
+    for preset in presets:
+        code, out, err = fixture.call(
+            workspace, "-s", preset, "--progress-format", preset
+        )
+        require_output(code, out, err)
+        assert b"Loading workspace" in err and err.endswith(b"\x1b[0J"), err
+        assert b"\x1b[1;36m" in err and b"ERR" in err
+    return len(presets)
+
+
+def check_sizes(fixture: Fixture, workspace: Path) -> int:
+    """Render on a terminal without a size and on a small one."""
+    sizes = [(0, 0), (6, 20)]
+    for size in sizes:
+        code, out, err = fixture.call(
+            workspace, "-s", f"size{size[0]}", "--progress-lines", "-1", size=size
+        )
+        assert code == 0 and b"Loading" in err and err.endswith(b"\x1b[0J"), (
+            code,
+            out,
+            err,
+        )
+    return len(sizes)
+
+
+def check_disabled(fixture: Fixture, workspace: Path) -> int:
+    """Print no progress under `--no-progress`, `TMUXP_PROGRESS=0` or `TERM=dumb`."""
+    cases = [
+        (["--no-progress"], {}),
+        ([], {"TMUXP_PROGRESS": "0"}),
+        ([], {"TERM": "dumb"}),
+    ]
+    for index, (flags, extra) in enumerate(cases):
+        code, out, err = fixture.call(
+            workspace, "-s", f"disabled{index}", *flags, env=dict(fixture.env, **extra)
+        )
+        assert code == 0 and out.startswith(b"OUT\x1b[31m") and err == b"ERR\r\n", (
+            code,
+            out,
+            err,
+        )
+    return len(cases)
+
+
+def check_hidden(fixture: Fixture, workspace: Path) -> int:
+    """Keep the script's stdout and colour out of stderr at zero progress lines."""
+    code, _, err = fixture.call(
+        workspace, "-s", "hidden", "--progress-lines", "0", "--color", "never"
+    )
+    assert (
+        code == 0 and b"OUT" not in err and b"\x1b[1;36m" not in err and b"ERR" in err
+    )
+    return 1
+
+
+def check_machine_output(fixture: Fixture, workspace: Path) -> int:
+    """Frame `--json` as one document and `--ndjson` as events, with no escapes."""
+    for mode in ["--json", "--ndjson"]:
+        result = subprocess.run(
+            [
+                fixture.binary,
+                *fixture.load(workspace),
+                "-s",
+                mode[2:],
+                mode,
+                "--color",
+                "always",
+            ],
+            env=fixture.env,
+            capture_output=True,
+            timeout=3,
+            check=False,
+        )
+        assert result.returncode == 0 and b"\x1b" not in result.stdout + result.stderr
+        if mode == "--ndjson":
+            records = [json.loads(line) for line in result.stdout.splitlines()]
+            assert sum(row["event"] == "pane-completed" for row in records) == 3
+            ends = sum(row["event"] in ["completed", "failed"] for row in records)
+            assert ends == 1
+            assert records[-1]["event"] == "completed"
+        else:
+            assert json.loads(result.stdout)["status"] == "ok"
+    return 2
+
+
+def check_cancellation(fixture: Fixture, workspace: Path) -> int:
+    """Interrupt a load whose script is running, and require a prompt exit.
+
+    The check requires the script to be stopped and the session to stay.
+    """
+    pid_file = fixture.root / "child"
+    cancelled = write_workspace(fixture.root / "cancel.json", "idle", pid_file)
+    code, out, err = fixture.call(cancelled, "-s", "cancelled", interrupt=pid_file)
+    cleared, separator, diagnostic = err.rpartition(b"\x1b[0J")
+    assert (
+        code == 130
+        and cleared
+        and separator
+        and diagnostic.startswith(b"Error: ")
+        and diagnostic.endswith(b"\r\n")
+        and diagnostic.count(b"\n") == 1
+    ), (code, out, err)
+    sessions = subprocess.check_output(
+        [fixture.tmux, "-S", fixture.socket, "list-sessions", "-F", "#{session_name}"],
+        env=fixture.env,
+    ).splitlines()
+    # An interruption is not rolled back: the same signal that stopped
+    # the build could just as well stop the cleanup that would follow
+    # it, so the session it created stays in place.
+    assert b"keeper" in sessions and b"cancelled" in sessions
+    try:
+        os.kill(int(pid_file.read_text()), 0)
+    except ProcessLookupError:
+        pid_file.unlink()
+    else:
+        message = "bootstrap child survived cancellation"
+        raise AssertionError(message)
+    return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run every progress check against the executable and tmux named in `argv`."""
     arguments = sys.argv[1:] if argv is None else list(argv)
@@ -103,191 +292,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     base.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
         root = Path(directory)
-        socket = str(root / "s")
         env = dict(os.environ, LIBTMUX_TMUX_BIN=tmux, TERM="xterm", HOME=directory)
         for name in [
             "TMUX",
             "TMUX_PANE",
             *(n for n in env if n.startswith("LIBTMUX_SOCKET")),
+            "TMUXP_PROGRESS",
+            "TMUXP_PROGRESS_LINES",
+            "TMUXP_PROGRESS_FORMAT",
+            "NO_COLOR",
         ]:
             env.pop(name, None)
-        env.pop("TMUXP_PROGRESS", None)
-        env.pop("TMUXP_PROGRESS_LINES", None)
-        env.pop("TMUXP_PROGRESS_FORMAT", None)
-        env.pop("NO_COLOR", None)
-        script = root / "script"
-        script.write_text("#!/bin/sh\nprintf 'OUT\\033[31m'\nprintf 'ERR\\n' >&2\n")
-        script.chmod(0o700)
-        workspace = root / "workspace.json"
-        workspace.write_text(
-            json.dumps(
-                {
-                    "session_name": "progress",
-                    "before_script": str(script),
-                    "windows": [
-                        {"window_name": "one", "panes": [None, None]},
-                        {"window_name": "two", "panes": [None]},
-                    ],
-                }
-            )
-        )
+        fixture = Fixture(binary, tmux, root, env)
+        workspace = write_workspace(root / "workspace.json", "report")
         subprocess.run(
-            [
-                tmux,
-                "-f",
-                "/dev/null",
-                "-S",
-                socket,
-                "new-session",
-                "-d",
-                "-s",
-                "keeper",
-            ],
+            [tmux, "-f", "/dev/null", "-S", fixture.socket, *KEEPER],
             env=env,
             check=True,
         )
         checked = 0
-        child_marker = root / "child"
-        load = ["load", str(workspace), "-d", "-S", socket]
+        pid_file = root / "child"
         try:
-            for preset in ["default", "minimal", "window", "pane", "verbose"]:
-                args = [*load, "-s", preset, "--progress-format", preset]
-                code, out, err = terminal_call(binary, args, env)
-                assert code == 0 and out.startswith(b"OUT\x1b[31m"), (code, out, err)
-                assert b"Loading workspace" in err and err.endswith(b"\x1b[0J"), err
-                assert b"\x1b[1;36m" in err and b"ERR" in err
-                checked += 1
-            for size in [(0, 0), (6, 20)]:
-                code, out, err = terminal_call(
-                    binary,
-                    [
-                        *load,
-                        "-s",
-                        f"size{size[0]}",
-                        "--progress-lines",
-                        "-1",
-                    ],
-                    env,
-                    size=size,
-                )
-                assert code == 0 and b"Loading" in err and err.endswith(b"\x1b[0J"), (
-                    code,
-                    out,
-                    err,
-                )
-                checked += 1
-            for flags, extra in [
-                (["--no-progress"], {}),
-                ([], {"TMUXP_PROGRESS": "0"}),
-                ([], {"TERM": "dumb"}),
+            for check in [
+                check_presets,
+                check_sizes,
+                check_disabled,
+                check_hidden,
+                check_machine_output,
+                check_cancellation,
             ]:
-                code, out, err = terminal_call(
-                    binary,
-                    [
-                        *load,
-                        "-s",
-                        f"disabled{checked}",
-                        *flags,
-                    ],
-                    dict(env, **extra),
-                )
-                assert (
-                    code == 0 and out.startswith(b"OUT\x1b[31m") and err == b"ERR\r\n"
-                ), (
-                    code,
-                    out,
-                    err,
-                )
-                checked += 1
-            code, out, err = terminal_call(
-                binary,
-                [
-                    *load,
-                    "-s",
-                    "hidden",
-                    "--progress-lines",
-                    "0",
-                    "--color",
-                    "never",
-                ],
-                env,
-            )
-            assert (
-                code == 0
-                and b"OUT" not in err
-                and b"\x1b[1;36m" not in err
-                and b"ERR" in err
-            )
-            checked += 1
-            for mode in ["--json", "--ndjson"]:
-                result = subprocess.run(
-                    [
-                        binary,
-                        *load,
-                        "-s",
-                        mode[2:],
-                        mode,
-                        "--color",
-                        "always",
-                    ],
-                    env=env,
-                    capture_output=True,
-                    timeout=3,
-                    check=False,
-                )
-                assert (
-                    result.returncode == 0
-                    and b"\x1b" not in result.stdout + result.stderr
-                )
-                records = (
-                    [json.loads(line) for line in result.stdout.splitlines()]
-                    if mode == "--ndjson"
-                    else [json.loads(result.stdout)]
-                )
-                if mode == "--ndjson":
-                    assert sum(row["event"] == "pane-completed" for row in records) == 3
-                    assert (
-                        sum(row["event"] in ["completed", "failed"] for row in records)
-                        == 1
-                    )
-                    assert records[-1]["event"] == "completed"
-                else:
-                    assert records[0]["status"] == "ok"
-                checked += 1
-            script.write_text(
-                f"#!/bin/sh\nprintf '%s' $$ > '{child_marker}'\nexec sleep 30\n"
-            )
-            code, out, err = terminal_call(
-                binary,
-                [*load, "-s", "cancelled"],
-                env,
-                interrupt=child_marker,
-            )
-            cleared, separator, diagnostic = err.rpartition(b"\x1b[0J")
-            assert (
-                code == 130
-                and cleared
-                and separator
-                and diagnostic.startswith(b"Error: ")
-                and diagnostic.endswith(b"\r\n")
-                and diagnostic.count(b"\n") == 1
-            ), (code, out, err)
-            sessions = subprocess.check_output(
-                [tmux, "-S", socket, "list-sessions", "-F", "#{session_name}"], env=env
-            ).splitlines()
-            # An interruption is not rolled back: the same signal that stopped
-            # the build could just as well stop the cleanup that would follow
-            # it, so the session it created stays in place.
-            assert b"keeper" in sessions and b"cancelled" in sessions
-            child = int(child_marker.read_text())
-            try:
-                os.kill(child, 0)
-            except ProcessLookupError:
-                child_marker.unlink()
-            else:
-                message = "bootstrap child survived cancellation"
-                raise AssertionError(message)
-            checked += 1
+                checked += check(fixture, workspace)
             print(
                 json.dumps(
                     {
@@ -300,16 +334,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
         finally:
-            subprocess.run(
-                [tmux, "-S", socket, "kill-server"],
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-            if child_marker.exists():
+            stop_server(tmux, fixture.socket, env)
+            if pid_file.exists():
                 with suppress(ProcessLookupError):
-                    os.kill(int(child_marker.read_text()), signal.SIGKILL)
+                    os.kill(int(pid_file.read_text()), signal.SIGKILL)
     return 0
 
 

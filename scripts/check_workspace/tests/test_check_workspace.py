@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import os
 import shutil
-import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import check_workspace_attach as attach
 import check_workspace_progress as progress
 import check_workspace_terminal as terminal
 import pytest
-from owned_terminal import Terminal
+from owned_terminal import Terminal, listening, stop_server
 
 PLAIN = {"PATH": "/usr/bin:/bin"}
 
@@ -26,12 +27,11 @@ needs_tmux = pytest.mark.skipif(TMUX is None, reason="needs a tmux")
 
 
 @pytest.fixture
-def stand_in(tmp_path: Path) -> str:
+def stand_in() -> str:
     """Return an executable that exits 1 at once, whatever it is asked."""
-    script = tmp_path / "tmux-workspace"
-    script.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR)
-    return str(script)
+    found = shutil.which("false")
+    assert found is not None, "needs a `false` on PATH"
+    return found
 
 
 def test_release_key_orders_builds_the_way_the_library_does() -> None:
@@ -57,9 +57,8 @@ def test_release_key_refuses_a_token_that_is_not_a_version(
 
 def test_a_terminal_relays_input_and_reports_the_exit_status() -> None:
     """The helper forks under a pty, feeds it input and reads what comes back."""
-    owned = Terminal(
-        ["/bin/sh", "-c", 'read line; printf "got:%s\\n" "$line"; exit 3'], PLAIN
-    )
+    program = "print('got:' + input()); raise SystemExit(3)"
+    owned = Terminal([sys.executable, "-c", program], PLAIN)
     try:
         owned.send(b"hello\n")
         owned.until(lambda: owned.status is not None)
@@ -72,7 +71,7 @@ def test_a_terminal_relays_input_and_reports_the_exit_status() -> None:
 
 def test_a_terminal_that_exits_early_fails_the_wait() -> None:
     """The defect the helper exists to name: the process ended before the cue."""
-    owned = Terminal(["/bin/sh", "-c", "exit 0"], PLAIN)
+    owned = Terminal([sys.executable, "-c", "pass"], PLAIN)
     try:
         with pytest.raises(AssertionError):
             owned.until(lambda: False)
@@ -82,7 +81,7 @@ def test_a_terminal_that_exits_early_fails_the_wait() -> None:
 
 def test_closing_a_terminal_reaps_a_child_that_is_still_running() -> None:
     """Nothing is left behind for the next case to find."""
-    owned = Terminal(["/bin/sh", "-c", "exec sleep 30"], PLAIN)
+    owned = Terminal([sys.executable, "-c", "import time; time.sleep(30)"], PLAIN)
 
     owned.close()
 
@@ -114,3 +113,33 @@ def test_the_attach_check_fails_against_an_executable_that_does_nothing(
     """The load never builds the session, so the choice's outcome is wrong."""
     with pytest.raises(AssertionError):
         attach.main([stand_in, str(TMUX), "detached"])
+
+
+@needs_tmux
+def test_stop_server_returns_once_the_socket_stops_accepting(tmp_path: Path) -> None:
+    """The directory under a socket is safe to remove when this says True."""
+    socket = str(tmp_path / "s")
+    subprocess.run(
+        [str(TMUX), "-f", "/dev/null", "-S", socket, "new-session", "-d"],
+        env=PLAIN,
+        check=True,
+    )
+    assert listening(socket)
+
+    assert stop_server(str(TMUX), socket, PLAIN)
+    assert not listening(socket)
+
+
+@needs_tmux
+def test_stop_server_says_so_when_the_server_keeps_running(tmp_path: Path) -> None:
+    """A client that cannot stop the server leaves it listening, and it says so."""
+    socket = str(tmp_path / "s")
+    subprocess.run(
+        [str(TMUX), "-f", "/dev/null", "-S", socket, "new-session", "-d"],
+        env=PLAIN,
+        check=True,
+    )
+    try:
+        assert not stop_server(shutil.which("true") or "true", socket, PLAIN, 0.2)
+    finally:
+        assert stop_server(str(TMUX), socket, PLAIN)
