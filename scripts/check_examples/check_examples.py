@@ -146,6 +146,24 @@ def called() -> set[str]:
     return set(re.findall(r"\b(\w+)\s*\(", text)) | set(re.findall(r'"(\w+)"', text))
 
 
+def report_missing(missing: dict[pathlib.Path, list[list[str]]]) -> None:
+    """Print each documented example no consumer file contains."""
+    print(
+        f"{sum(len(b) for b in missing.values())} documented example(s) that "
+        f"no file in {EXAMPLES.relative_to(ROOT)} contains:",
+        file=sys.stderr,
+    )
+    for document, blocks in missing.items():
+        print(f"\n  {document.relative_to(ROOT)}:", file=sys.stderr)
+        for block in blocks:
+            for line in block:
+                print(f"    {line}", file=sys.stderr)
+    print(
+        "\nAdd each to a file under Examples/Sources/ instead of writing it twice.",
+        file=sys.stderr,
+    )
+
+
 def main() -> int:
     """Report any documented example absent from the consumer package."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -179,21 +197,7 @@ def main() -> int:
                 executed += 1
 
     if missing:
-        print(
-            f"{sum(len(b) for b in missing.values())} documented example(s) that "
-            f"no file in {EXAMPLES.relative_to(ROOT)} contains:",
-            file=sys.stderr,
-        )
-        for document, blocks in missing.items():
-            print(f"\n  {document.relative_to(ROOT)}:", file=sys.stderr)
-            for block in blocks:
-                for line in block:
-                    print(f"    {line}", file=sys.stderr)
-        print(
-            "\nAdd each to a file under Examples/Sources/ rather than writing it "
-            "twice.",
-            file=sys.stderr,
-        )
+        report_missing(missing)
         return 1
 
     print(f"{total} documented examples mapped to consumer sources")

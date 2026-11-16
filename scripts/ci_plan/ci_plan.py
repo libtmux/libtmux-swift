@@ -23,7 +23,7 @@ import json
 import pathlib
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import NamedTuple
 
 MANIFEST_PATH = pathlib.Path(__file__).with_name("tmux-matrix.json")
@@ -144,12 +144,26 @@ def _preview(raw: dict[str, object], released: tuple[str, ...]) -> dict[str, str
     return preview
 
 
+def _clients(raw: dict[str, object], released: Sequence[str]) -> dict[str, str]:
+    """Return the `clients` table after checking each role names a release."""
+    clients = raw.get("clients")
+    wanted = {"legacy", "legacy_through", "current"}
+    if not isinstance(clients, dict) or set(clients) != wanted:
+        message = f"the manifest needs 'clients' with {', '.join(sorted(wanted))}"
+        raise PlanError(message)
+    for role in ("legacy", "current"):
+        if clients[role] not in released:
+            message = f"the {role} client {clients[role]!r} must be a released tmux"
+            raise PlanError(message)
+    version_key(clients["legacy_through"])
+    return clients
+
+
 def parse_manifest(raw: dict[str, object]) -> Manifest:
     """Validate a decoded manifest and return it."""
     released = _strings(raw, "released")
     refused = _strings(raw, "refused")
     preview = _preview(raw, released)
-    clients = raw.get("clients")
     swift = raw.get("swift")
     checks = raw.get("version_checks")
     if not released:
@@ -166,15 +180,7 @@ def parse_manifest(raw: dict[str, object]) -> Manifest:
         if version_key(version) >= keys[0]:
             message = f"refusal cell {version} is not below the floor {released[0]}"
             raise PlanError(message)
-    wanted = {"legacy", "legacy_through", "current"}
-    if not isinstance(clients, dict) or set(clients) != wanted:
-        message = f"the manifest needs 'clients' with {', '.join(sorted(wanted))}"
-        raise PlanError(message)
-    for role in ("legacy", "current"):
-        if clients[role] not in released:
-            message = f"the {role} client {clients[role]!r} must be a released tmux"
-            raise PlanError(message)
-    version_key(clients["legacy_through"])
+    clients = _clients(raw, released)
     if not isinstance(swift, str) or SWIFT_PATTERN.fullmatch(swift) is None:
         message = "the manifest needs 'swift' such as 6.2"
         raise PlanError(message)

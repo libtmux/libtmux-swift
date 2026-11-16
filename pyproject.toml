@@ -70,6 +70,8 @@ extend-select = [
   "D",      # pydocstyle
   "FA100",  # future annotations
   "ANN",    # flake8-annotations
+  "C901",   # mccabe complexity
+  "PLR0915", # pylint too-many-statements
 ]
 ignore = [
   "COM812", # missing trailing comma, conflicts with the formatter
