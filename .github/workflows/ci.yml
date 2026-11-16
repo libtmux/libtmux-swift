@@ -386,11 +386,11 @@ jobs:
       # rewrites the file to drop that pin. Checking the committed file is what
       # catches the drift, because a run that already has it never restores it;
       # the diff beside it catches a step here rewriting the lock instead.
+      - name: Check the resolved versions pin Yams
+        run: uv run scripts/check_resolved_pins/check_resolved_pins.py
+
       - name: Check the resolved versions did not drift
-        run: |
-          set -euo pipefail
-          jq -e '.pins[] | select(.identity == "yams")' Package.resolved > /dev/null
-          git diff --exit-code Package.resolved Examples/Package.resolved
+        run: git diff --exit-code Package.resolved Examples/Package.resolved
 
       - name: Debug session after a failure
         if: failure() && github.event_name == 'workflow_dispatch' && matrix.tmate == 'on-failure'
