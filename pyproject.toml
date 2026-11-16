@@ -30,6 +30,7 @@ exclude-newer = "3 days"
 testpaths = ["scripts"]
 # A test that imports its script by name finds it here.
 pythonpath = [
+  "scripts/build_docs",
   "scripts/check_workspace",
   "scripts/ci_plan",
   "scripts/swift_test",
@@ -91,6 +92,7 @@ convention = "numpy"
 python-version = "3.12"
 python-platform = "all"
 extra-paths = [
+  "scripts/build_docs",
   "scripts/check_workspace",
   "scripts/ci_plan",
   "scripts/swift_test",

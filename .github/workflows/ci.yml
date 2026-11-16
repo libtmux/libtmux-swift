@@ -330,18 +330,7 @@ jobs:
 
       - name: Build documentation
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: |
-          set -euo pipefail
-          : > docs.log
-          for target in LibTmux TmuxWorkspace LibTmuxMCP; do
-            swift package --force-resolved-versions generate-documentation \
-              --target "$target" 2>&1 | tee -a docs.log
-          done
-          if rg -q 'warning:' docs.log; then
-            echo "::error::DocC reported warnings"
-            rg -A3 'warning:' docs.log
-            exit 1
-          fi
+        run: uv run scripts/build_docs/build_docs.py
 
       # The documented process and round-trip counts are the benchmark's own
       # output. If they have drifted from what the code now does, the table is
