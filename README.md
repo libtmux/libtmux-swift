@@ -30,7 +30,6 @@ back. Every call throws [`TmuxError`][api-tmuxerror].
 - **Values.** A `Session` you hold is what tmux reported when you asked. Ask
   again for a newer view.
 
-> [!WARNING]
 > Releases are numbered `0.1.N`, and each release increments `N`. The API is
 > not settled: any release may change or remove exported identifiers, and the
 > [changelog](CHANGELOG.md) marks each break. Pin an exact version to avoid one.
@@ -91,7 +90,6 @@ Depend on a release from `0.1.0` on:
 .product(name: "LibTmux", package: "libtmux-swift")
 ```
 
-> [!NOTE]
 > This page documents `master`, which may be ahead of the latest release. A
 > release tag's README matches that release. To compile this page's examples,
 > depend on `master`:
