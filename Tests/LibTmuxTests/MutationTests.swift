@@ -279,12 +279,18 @@ struct MutationTests {
 
             // A start directory is expanded the same way, and there `#(...)`
             // runs rather than merely substituting.
-            let directory = NSTemporaryDirectory() + "libtmux-swift-test-dir-#H"
+            let directory = NSTemporaryDirectory() + "libtmux-swift-test-\(UUID().uuidString)-#H"
             try FileManager.default.createDirectory(
                 atPath: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(atPath: directory) }
+            let ready = "cwd-ready-\(UUID().uuidString)"
             let placed = try await server.newWindow(
-                in: session, named: "cwd", startDirectory: directory)
+                in: session,
+                named: "cwd",
+                startDirectory: directory,
+                shell: "\(server.shellInvocation) wait-for -S \(ready); exec /bin/cat"
+            )
+            try await server.wait(for: ready)
             let currentDirectory = try #require(
                 try await server.format("#{pane_current_path}", for: placed.link))
             let resolved = { (path: String) in
