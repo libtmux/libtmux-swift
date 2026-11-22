@@ -22,24 +22,24 @@ dev = [
 package = false
 # Lock only releases at least three days old, so a release that broke a rule
 # or a check is not the one CI picks up on its first day. A project setting
-# overrides a contributor's own uv configuration, so `uv lock --check` gives the
-# same answer on every machine. A relative value needs uv 0.9.17 or newer.
+# overrides a contributor's own uv configuration, so
+# `uv lock --project scripts --check` gives the same answer on every machine.
+# A relative value needs uv 0.9.17 or newer.
 exclude-newer = "3 days"
 
 [tool.pytest.ini_options]
-testpaths = ["scripts"]
+testpaths = ["."]
 # A test that imports its script by name finds it here.
 pythonpath = [
-  "scripts/build_docs",
-  "scripts/check_resolved_pins",
-  "scripts/check_workspace",
-  "scripts/ci_plan",
-  "scripts/swift_test",
-  "scripts/update_mode_matrix",
+  "build_docs",
+  "check_resolved_pins",
+  "check_workspace",
+  "ci_plan",
+  "swift_test",
+  "update_mode_matrix",
 ]
 addopts = [
   "--doctest-modules",
-  "--import-mode=importlib",
   "--strict-config",
   "--strict-markers",
   "-p",
@@ -49,6 +49,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
+src = []
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -81,7 +82,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Tests build JSON documents from literals, which `Any` types honestly.
-"scripts/**/tests/*.py" = ["ANN401"]
+"**/tests/*.py" = ["ANN401"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -93,13 +94,10 @@ convention = "numpy"
 python-version = "3.12"
 python-platform = "all"
 extra-paths = [
-  "scripts/build_docs",
-  "scripts/check_resolved_pins",
-  "scripts/check_workspace",
-  "scripts/ci_plan",
-  "scripts/swift_test",
-  "scripts/update_mode_matrix",
+  "build_docs",
+  "check_resolved_pins",
+  "check_workspace",
+  "ci_plan",
+  "swift_test",
+  "update_mode_matrix",
 ]
-
-[tool.ty.src]
-include = ["scripts"]
