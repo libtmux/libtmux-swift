@@ -1,484 +1,188 @@
 # Writing
 
-How this repository writes prose, for humans and agents alike. It governs
-`README.md` and the product READMEs under `Sources/`, `CHANGELOG.md`, release
-notes, commit messages, the DocC catalogue, doc comments, source comments, and
-anything the MCP server or an error says to a person.
+Prose in this repository follows the shared organization writing guide at
+[`libtmux/.github/WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md)
+for voice, plain CommonMark, code blocks, README shape
+([ADR 0005](https://github.com/libtmux/central/blob/master/docs/decisions/0005-readme-shape.md)),
+the three-gate source-comment ceiling, slop prevention, and commit and pull
+request formatting. This file records the rules specific to `libtmux-swift`:
+`README.md` and the product READMEs under `Sources/`, per-product changelogs,
+release notes and bare-semver release tags, the DocC catalogue, `///` doc
+comments, and generated tables.
 
 For building, testing, the gates, pull requests, and releases, see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## Voice
+## Checkable claims
 
-State facts rather than praise them. A reader who opened the page needs an
-answer, not persuasion, and specificity is the personality — "one dependency"
-and "eight tmux releases on every push" say more than "lightweight" and
-"well-tested" ever will.
-
-Every claim should be something a compiler, a script, or CI can contradict.
-That is what the gates are for: the examples compile, the version pins are
-checked against the version, and the benchmark writes its own table. Write
-claims that could fail, then let them be checked.
-
-- **Lead with the thing described, and stop.** The most useful editing
-  operation is deleting the introductory sentence.
-- **Present tense, active voice.** "Building refuses a session that already has
-  the name", not "a session that already has the name will be refused".
-- **Contractions are fine.** This is technical English, not enterprise prose.
-- **Assume competence.** Explain the unusual decision, not the obvious syntax.
-- **Name constraints, and name non-goals.** "This talks to tmux; it does not
-  draw one" answers a question that would otherwise arrive as an issue.
-- **Prefer the concrete noun to the pronoun.** "`Resolver` passes the
-  `Configuration` to `PackageLoader`" beats "this then uses it to configure the
-  former" — for a reader, and for anything retrieving a fragment out of order.
-
-| Instead of | Prefer |
-| --- | --- |
-| "powerful", "robust", "elegant" | name the capability, or the failure handled |
-| "seamless", "effortless" | say what the caller does not have to do |
-| "simply", "just", "easily" | omit |
-| "blazing-fast", "optimized" | give the magnitude, or omit |
-| "production-ready" | state the guarantee |
-| "comprehensive" | name what is covered |
-| "leverage", "utilize" | "use" |
-| "in order to" | "to" |
-| "please note that" | state the fact |
-| "under the hood" | omit unless it is observable |
-| "various fixes" | name the components |
-| "we added…" | "`Server` now…" |
+Every claim in repository documentation should be something the compiler, a
+script, or CI can contradict: documented Swift examples compile from
+`Examples/`, version pins are checked against `LibTmuxVersion.current`, and the
+mode benchmark writes its own tables. Write claims that can fail, and let the
+gates check them.
 
 ## README shape
 
-The README is a technical product sheet, not a landing page. A reader should
-get it from the highway: short headings, bullets, one runnable example per
-step. It answers, in this order: what is this, can I use it, show me, what are
-the constraints, where do I go deeper.
+Root and product READMEs follow the shared
+[README shape decision](https://github.com/libtmux/central/blob/master/docs/decisions/0005-readme-shape.md)
+with these Swift-specific rules and gates:
 
-- **The header** is the logo block, the centred title, and a badge row: CI, the
-  registry version, libtmux.org, license. A badge or link to a registry or
-  libtmux.org page that does not answer 200 stays out.
-- **The first paragraph says what the package provides and for whom.** No
-  adjectives that a reader would have to take on trust.
-- **A compiling example above the fold.** Swift readers judge an API surface in
-  ten seconds — argument labels, `async`/`await`, value semantics, `Sendable`
-  posture. That block is the real description.
-- **The API warning states the same terms every port states**, word for word:
-  "Releases are numbered `0.1.N`, and each release increments `N`. The API is
-  not settled: any release may change or remove exported identifiers, and the
-  changelog marks each break. Pin an exact version to avoid one."
-- **Quick start first, then tasks in the reader's words.** One `##` section per
-  task, ordered from first use to deeper use: "Find sessions, windows, and
-  panes", not "Querying".
-- **A `###` heading is an API and its job.** The API is linked to its
-  libtmux.org page, then a colon and what it does in plain words: the heading
-  for `Server.sessions()` reads "`Server.sessions()`: what tmux has now", with
-  the API name linked.
-- **Under a heading:** a line or two naming the call and its linked siblings,
-  the example, what it prints, at most one short note, and a `More:` link to
-  the guide.
-- **No paragraph over three lines, and no walls.** A list of facts is a bullet
-  list. A prose block is at most 240 characters once its markup is removed, and
-  `scripts/check_readme_links/check_readme_links.py` fails a longer one in a product README. Detail
-  a caller does not need to run the package goes in [`docs/`](../docs/) or on
-  libtmux.org, linked from a short bullet.
-- **No feature inventory.** The sections and their examples show what exists.
-- **Requirements are floors a reader can act on:** "tmux 3.3a or newer", "Swift
-  6.2 or newer". No patch versions of the toolchain that built it, no CI matrix,
-  no kernel or libc trivia in the README; link the page that holds it. A feature
-  that needs a particular release says so beside that feature.
-- **Cut what a reader would assume or never need:** that examples are tested,
-  how the docs are built, what the checks cover, and words such as "evidence",
-  "qualified", and "contract".
-- **Products:** a table, then one heading per product that links its directory
-  on `master`, a one-line description, and a link line for the reference,
-  registry, and changelog.
-- **"What it leaves out" and "Support and status"** are short bold-lead bullets.
-  Non-goals get their own sentences; they answer the question behind the issues
-  nobody has filed yet.
-- **Stable, literal headings.** "Install", "Requirements", "Tests" retrieve;
-  "Getting going" and "A few knobs" do not.
-- **Link the API where it is named.** Every API, MCP tool, and CLI command links
-  to its libtmux.org page on its first mention in each section, with the
-  definitions collected at the foot of the file. A code fence holds no link.
+- **Header and stability callout.** Open `README.md` with the logo block,
+  centred title, and badge row (CI, Swift Package Index release and Swift
+  versions, [libtmux.org](https://libtmux.org/en/swift/), license), followed by
+  a concise summary and the plain CommonMark `0.1.N` blockquote (`> Releases are
+  numbered ...`), never GitHub-only `> [!WARNING]` or `> [!NOTE]` markers.
+- **Order and API-linked headings.** Put `## Install` and `## Quick start`
+  first, then one `##` section per reader task. Head each subsection with a
+  public API symbol in backticks linked to its `libtmux.org` reference page, a
+  colon, and its job in plain words.
+- **Prose ceiling.** Keep prose blocks to at most 240 rendered characters once
+  markup is stripped; `scripts/check_readme_links/check_readme_links.py` fails
+  a longer paragraph, list item, or blockquote in `README.md` or a product
+  README. Move deeper protocol or CLI contracts to [`docs/`](../docs/) or
+  `libtmux.org`.
+- **Products and required links.** `README.md` and `Sources/LibTmux/README.md`
+  include one heading per shipped product linking its directory on `master`,
+  and `README.md` links the primary `LibTmux`, `TmuxWorkspace`, and
+  `LibTmuxMCP` entry-point types; `check_readme_links.py` enforces both.
+- **Compiled and executed examples.** Every `swift` fence in `README.md`,
+  `Sources/*/README.md`, or `Sources/**/*.docc/*.md` must match consumer code
+  under `Examples/Sources/` (or an explicit `Package.swift` excerpt in
+  `MANIFEST_EXCERPTS`), enforced by
+  `scripts/check_examples/check_examples.py`. Open each section's first example
+  with its `import` lines, provision private servers through `withTmuxServer`
+  from `TmuxFixture` rather than shell `tmux` setup, and cover `FilterExpr`,
+  `TmuxCommandList`, `TmuxMode`, and `Server.connected(attachingTo:_:)`.
+- **Version pins and tmux floor.** Every `exact:` pin names
+  `LibTmuxVersion.current` and every `from:` bound names a final release no
+  newer than it (`scripts/check_version/check_version.py`). Floor pages state
+  `tmux <oldest> or newer` matching `scripts/ci_plan/tmux-matrix.json`
+  (`scripts/ci_plan/check_ci.py`).
 
-What the examples must do:
+## Changelogs and release notes
 
-- **Start with their imports,** so a reader can paste one into a file and run
-  it. The first example of each section shows its `import` lines; later ones in
-  the section may continue from it.
-- **Start and clean up their own tmux server through the library,** never with
-  `tmux` or `rm` in the shell. `withTmuxServer` from `TmuxFixture` provisions a
-  private server and reaps it, and the whole programs under `Examples/Sources/`
-  do the same. When a step cannot be done through the library, say so under
-  "What it leaves out" and keep the shell step.
-- **Come from a file CI runs.** Every `swift` fence in `README.md`, a product
-  README, or the DocC catalogue must also exist as a file under
-  `Examples/Sources/`. `scripts/check_examples/check_examples.py` fails otherwise, so a
-  documented example is compiled code and most of it is run. A fence may open
-  with `import` lines; each must be one that file makes.
-- **Show the features the port has,** each under an API-linked heading: filters
-  (`FilterExpr`), command lists (`TmuxCommandList`), modes and their cost
-  (`TmuxMode`), and control mode (`Server.connected(attachingTo:_:)`). There is
-  no query planner or `explain` to show; a section for one waits for an API.
-
-Two more rules are enforced rather than trusted:
-
-- Every `exact:` pin must name the version in `LibTmuxVersion.current`, and
-  every `from:` bound a final release no newer than it.
-  `scripts/check_version/check_version.py` fails otherwise.
-- A README must say "tmux" and the oldest release in
-  `scripts/ci_plan/tmux-matrix.json` followed by "or newer", and a tmux range it
-  states must match the manifest. `scripts/ci_plan/check_ci.py` fails otherwise.
-
-Quoting a command's output in the README makes that output a claim. Run the
-command and paste what it printed; do not remember it.
-
-## Changelog
-
-`CHANGELOG.md` is the ledger and it follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/): `### Added`,
-`### Changed`, `### Fixed`, `### Deprecated`, `### Removed`, `### Security`,
-under a `## [<version>] - <date>` heading with an ISO date and a bare semver.
-New entries land under `## [Unreleased]`; the release commit is what assigns
-them a version.
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+under `## [Unreleased]` and `## [<version>] - <date>` headings with an ISO date
+and bare semver.
 
 Each public product keeps its own changelog, and an entry goes in the file of
-the product it names: `Sources/TmuxWorkspace/CHANGELOG.md` for `TmuxWorkspace`
-and the `tmux-workspace` command, `Sources/LibTmuxMCP/CHANGELOG.md` for
-`LibTmuxMCP` and the `libtmux-mcp` server, and the root `CHANGELOG.md` for
-`LibTmux`. An entry that names more than one product, and a change that spans
-products, such as documentation, CI or release tooling, goes in the root file.
-The products share one version, so every file has a heading for every release,
-and a release with nothing for a product says ``No entries for `TmuxWorkspace`.``
-under it.
+the product it names:
 
-Write for someone deciding whether to upgrade:
+- `Sources/TmuxWorkspace/CHANGELOG.md` for `TmuxWorkspace` and `tmux-workspace`
+- `Sources/LibTmuxMCP/CHANGELOG.md` for `LibTmuxMCP` and `libtmux-mcp`
+- `CHANGELOG.md` at the root for `LibTmux`, cross-product entries, and
+  repository-wide changes
 
-- **Lead with the identifier and a concrete verb.** Name symbols literally —
-  `Server.waitForOutput(in:matching:)`, not "the new waiting API".
-- **State the consequence, not the commit subject.** "Refactors subprocess
-  handling" tells a consumer nothing. What they notice, and what they have to
-  do about it, is the entry.
-- **State a changed default explicitly, and an incompatibility more explicitly
-  still, with the way forward in the same bullet.** A reader hitting a compile
-  error should find the fix in the line that predicted it.
-- **As long as the change needs, and no longer.** A subtle fix earns its
-  paragraph; a new overload does not.
-- **Do not sell a fix, and do not describe effort.** No "major improvements",
-  no "extensive rework".
+All products share one version, so every changelog has a heading for every
+release; a release with nothing for a product states ``No entries for
+`TmuxWorkspace`.`` under it (`scripts/changelogs/changelogs.py check`). Lead
+entries with exact Swift identifiers (such as
+`Server.waitForOutput(in:matching:)`), checked against the declared symbols by
+`scripts/check_changelog_symbols/check_changelog_symbols.py`, and state changed
+defaults or incompatibilities with their migration path in the same bullet.
 
-Leave out what a consumer cannot observe: CI bumps, formatting, test
-reorganisation, internal refactors, and documentation-only changes — unless
-they move a supported platform, the toolchain floor, or the published surface.
+`.github/workflows/release.yml` assembles GitHub Release notes directly from
+those changelog sections (root first, then each product under its name) and
+refuses a tag if any section is missing. Open a release's notes with a brief
+upgrade summary and put migration steps ahead of the detailed list.
 
-## Release notes
+## Commits and release tags
 
-The changelog is the ledger; the GitHub release page is the briefing. It opens
-with one hand-written paragraph answering "should I take this upgrade", names
-the toolchain floor if it moved, and puts migration instructions ahead of the
-exhaustive list. Nobody should read forty bullets to discover the compile error
-they are about to get.
-
-`.github/workflows/release.yml` lifts the notes out of the changelogs — the
-section for the version being tagged in `CHANGELOG.md`, then each product's
-under its name, becomes the release body, and a file with no section for the
-version, or no entry anywhere, fails the release rather than publishing it. So
-the notes are written before the tag, in the changelogs, in the voice above.
-
-## Commit messages
-
-```
-Scope(type[detail]): concise description
-
-why: Explanation of necessity or impact.
-
-what:
-- Specific technical changes made
-- Focused on a single topic
-```
-
-Keep the subject to 50 characters or fewer, excluding any trailing `(#NN)` pull
-request reference, and wrap body lines at 72. Separate the `why:` and `what:`
-blocks with a blank line.
-
-The `why:` block is where rationale lives — the alternative weighed, the
-tradeoff taken, the cost of leaving it alone. It is timestamped, attached to
-the exact diff, and free to maintain, which is why the source comment above the
-code does not have to carry it. State a cost before listing changes: what was
-being paid for, and by whom.
-
-Common types:
-
-- **feat**: new features or enhancements
-- **fix**: bug fixes
-- **refactor**: restructuring without functional change
-- **docs**: documentation updates
-- **chore**: maintenance — dependencies, tooling, config
-- **test**: test-related updates
-- **style**: code style and formatting
-- **swift(deps)**: dependencies
-- **swift(deps[dev])**: dev dependencies
-- **ai(rules[AGENTS])**: agent rule updates
-
-Example:
-
-```
-Pane(feat[sendKeys]): Add support for a literal flag
-
-why: Send characters without tmux interpreting them.
-
-what:
-- Add a literal parameter to sendKeys(_:)
-- Pass -l when it is set
-```
-
-For multi-line messages, use a heredoc so the formatting survives the shell:
-
-```console
-$ git commit -m "$(cat <<'EOF'
-Scope(feat[detail]): Concise description
-
-why: Explanation of the change.
-
-what:
-- First change
-- Second change
-EOF
-)"
-```
+Follow the `Scope(type[detail]):` commit format in
+[`libtmux/.github/WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md)
+(subject at most 50 characters excluding `(#NN)`, body wrapped at 72, blank line
+between `why:` and `what:`). Swift-specific dependency and rule scopes use
+`swift(deps)`, `swift(deps[dev])`, and `ai(rules[AGENTS])`.
 
 ### Release commits
 
-Never create tags. Never push tags. The maintainer handles tagging and tag
-pushes, because pushing a tag is what publishes.
+Never create or push tags; the maintainer handles tagging because pushing a tag
+publishes the release.
 
-Release commit subjects are plain and short: `Tag <version>`. The detailed
-why and what go in the body. Do not use the `Scope(type[detail]):` format for a
-release — it buries the lede.
+- **Subject:** `Tag <version>` (plain and short, not `Scope(type[detail]):`),
+  followed by `why:` and `what:` in the body.
+- **Bare semver without `v`:** SwiftPM ecosystems (`swift-nio`, `swift-log`,
+  `swift-collections`, `swift-argument-parser`, `Yams`, `swift-subprocess`)
+  resolve tags as `1.2.3` rather than `v1.2.3`.
 
-A version is bare semver with no `v`, because that is what every established
-Swift package tags: swift-nio, swift-log, swift-collections,
-swift-argument-parser, Alamofire, Yams and swift-subprocess all resolve from
-`1.2.3` rather than `v1.2.3`.
-
-What a release commit must do, and what `release.yml` refuses the tag without,
-is in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the release checklist enforced by
+`release.yml`.
 
 ## API documentation
 
-Doc comments are `///`, and they are the reference: DocC compiles them, Xcode
-quick help renders them, the Swift Package Index hosts them, and an agent reads
-the same source. One artifact, four consumers.
+Doc comments use `///` and serve four consumers from one source: DocC, Xcode
+quick help, Swift Package Index, and agents reading the declarations.
 
-Begin with a summary that stands alone — a sentence fragment ending in a
-period. A third-person verb for a method, a noun phrase for a property:
+Begin with a standalone summary fragment ending in a period — a third-person
+verb for a method, a noun phrase for a property:
 
 ```swift
 /// Sends keys to the pane.
 /// The number of clients attached to this server.
 ```
 
-One line, a period, a blank line, then the discussion. Use `- Parameters:`,
-`- Returns:`, and `- Throws:` only where they say something the signature does
-not. A parameter named `pane` of type `Pane` does not need a line explaining
-that it is the pane.
+Follow the summary with a blank line before any discussion. Include
+`- Parameters:`, `- Returns:`, and `- Throws:` only when they add information
+beyond the declaration. Document what the Swift type system cannot express:
+ownership and lifetime, suspension or blocking, cancellation semantics, actor
+isolation and `Sendable` assumptions, ordering guarantees, `tmux` version
+differences, `TmuxError` mapping, and whether a value is a snapshot or a live
+stream.
 
-Document what the type system cannot express, which for this package usually
-means: ownership and lifetime, whether a call blocks, cancellation semantics,
-actor isolation and `Sendable` assumptions, ordering guarantees, which tmux
-releases behave differently, how a tmux error is mapped, and whether a value is
-a snapshot or a live view. Never narrate the declaration — the compiler already
-said what the parameters are.
+Link symbols with double backticks (` ``Server`` `,
+` ``OutputWait/Outcome/stopped`` `) rather than single backticks so DocC
+resolves them; DocC warnings fail CI.
 
-Link symbols with double backticks, not prose backticks. ``Server`` and
-``OutputWait/Outcome/stopped`` resolve, survive a rename, and can be followed;
-`Server` in single backticks is just text. DocC warnings fail CI, so a broken
-link is an error rather than a note.
-
-Deprecation is a machine-actionable migration, and Swift is unusually good at
-it. Prefer the attribute to a prose note:
+Prefer `@available` attributes over prose deprecation notes so compiler fix-its
+guide callers:
 
 ```swift
 @available(*, deprecated, renamed: "send(_:enter:)")
 public func sendKeys(_ keys: String) async throws
 ```
 
-A doc comment may carry a `swift` fence, and that fence is subject to the same
-rule as the README's: it must exist as a file under `Examples/Sources/`.
+Any `swift` fence inside a `///` doc comment or `.docc` article must also appear
+under `Examples/Sources/`.
 
 ## Source comments
 
-A comment ships only if it passes all three gates. Fail any: delete or rewrite.
-Borderline: delete — borderline means the information is reconstructible, which
-is what makes deletion cheap.
+Apply the three source-comment gates (Loss, Standard-library ceiling, Upkeep)
+from
+[`libtmux/.github/WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md).
+The upkeep gate rejects hand-synced counts from our own code while keeping
+frozen external `tmux` facts:
 
-**Loss.** Three years from now, would losing this cost a maintainer real time
-rediscovering intent, an invariant, a constraint, or a failure mode the code and
-tests do not already make obvious?
-
-**Elite.** Would SQLite, Redis, the Go standard library, or CPython write this
-comment, at this length? Those projects state the constraint and stop. They do
-not argue with an imagined objector.
-
-**Upkeep.** Will it stay true without maintenance? A comment that hand-syncs a
-value the code owns — a count, an offset, a line reference, a duplicated
-constant — is false the first time that value moves.
-
-### Ceiling
-
-One or two lines. A comment reaching four is either carrying several facts, in
-which case split it, or arguing, in which case cut it to the fact.
-
-Rationale, alternatives weighed, and the story of how the code got here belong
-in the commit message: timestamped, attached to the exact diff, and free to
-maintain.
-
-A comment often holds both a constraint and the deliberation that found it. Keep
-the constraint, cut the deliberation. "Runs at most once per second" survives;
-"this is the right trade for now" does not.
-
-### Keep
-
-- Why over how: upstream quirks, protocol and compatibility constraints,
-  performance tradeoffs still part of the contract.
-- Invariants, preconditions, ordering, lifetime, and concurrency requirements
-  that types and tests cannot express.
-- Code that looks wrong but is not, so a later cleanup does not reintroduce the
-  bug.
-- A high-level sketch of an algorithm whose local operations do not reveal the
-  whole.
-
-### Delete
-
-- Narration of the next lines; code translated into English.
-- Restated names, types, defaults, or control flow.
-- Values duplicated from the code and hand-synced.
-- Justification, hedging, or apology for a choice.
-- Speculation about future requirements.
-- History version control already holds, including commented-out code.
-- Ticket and issue numbers. They say nothing to a reader without tracker access,
-  and they rot when the tracker moves. Unfinished work goes in the tracker, not
-  the source.
-- Transient observations — "currently", "for now", "the latest release" —
-  that go stale with no nearby edit.
-
-### The upkeep gate in practice
-
-It reaches values that track our own code. It does not reach frozen external
-facts.
-
-Bad (Delete):
+Bad (delete):
 
 ```swift
 // There are 321 tests to complete for servers.
 ```
 
-Good (Keep):
+Good (keep):
 
 ```swift
 // tmux < 3.2 reports the pane ID only after the command completes,
 // so this query must stay separate.
 ```
 
-### Documentation exception
+DocC `///` summaries and `- Parameter` / `- Returns` / `- Throws` fields are
+exempt from the loss gate because they document caller contracts, while keeping
+the same brevity and upkeep bar.
 
-Doctests, minimal usage examples, and param, return, and raises lines on public
-API are exempt from the loss gate — they serve the caller, not the maintainer.
-They are exempt from nothing else. Ceiling: a good man page entry.
+## Terminology and Markdown conventions
 
-DocC summaries and `- Parameter` and `- Returns` fields fall under this
-exception.
-
-## Terminology and capitalization
-
-- **Sentence-case headings.** "Platform support", not "Platform Support".
-- **tmux is lowercase**, always, including at the start of a sentence — it is
-  the program's name. So is `libtmux`.
-- **The project is "libtmux for Swift".** Not "LibTmux-Swift", not "the Swift
-  port of libtmux" in a title position.
-- **Backticks mean technical identity**: types, keywords, flags, paths,
-  environment variables, socket names, tmux commands and format strings. Not
-  every technical noun — "the Swift compiler" is prose, `Sendable` is not.
-- **Use Swift's vocabulary exactly.** Value and reference, actor isolation,
-  language mode, strict concurrency, trait, product, target, module. A "class"
-  is a class; a `struct` is not one.
-- **Use tmux's vocabulary exactly.** Server, session, window, pane, client,
-  format, hook, control mode. The library models tmux's nouns, so a synonym
-  invented here costs the reader the mapping.
-- **Spell out the first use of an initialism** other than MCP, YAML, JSON, and
-  CI.
-
-## Markdown
-
-Prose in Markdown files wraps at 80 columns. Table rows, reference-link
-definitions, and code blocks are exempt: a wrapped table row does not render.
-Pull request and issue bodies do not wrap at all — GitHub renders a single
-newline in a comment as a hard break.
-
-Links in `README.md` are reference-style, collected at the foot of the file, so
-a paragraph stays readable in source.
-
-Asides differ by renderer, and both forms are correct in their own place:
-`README.md` uses GitHub's alert syntax (`> [!WARNING]`), and the DocC catalogue
-uses DocC's own (`> Important:`). Do not carry one into the other's file.
-
-Content between `<!-- ...:start -->` and `<!-- ...:end -->` is generated. Never
-edit it by hand; run the generator.
-`scripts/update_mode_matrix/update_mode_matrix.py --check` fails when the table
-has drifted, and CI runs that check.
-
-## Code blocks
-
-Code blocks are paste-and-run units: pasting one block runs exactly one
-intended action. Doctests and other executed examples are exempt — the test
-suite runs them, nobody pastes them.
-
-- **One command per block.** Multiple steps may share a block only when
-  explicitly chained with `&&`, `;`, or `\` continuations — the chain is
-  then one logical command.
-- **Explanations go in prose above the block**, never as `#` comments inside it.
-- **Command menus are per-command blocks with prose lead-ins**, not tables.
-- **Shell commands use the `console` tag with a `$ ` prefix.** This separates
-  interactive commands from scripts and enables prompt-aware copy.
-- **Split long commands with `\`** — one flag or flag+value pair per indented
-  continuation line, positional arguments last.
-
-Good:
-
-Show the last ten commits as a graph:
-
-```console
-$ git log \
-    --max-count=10 \
-    --graph \
-    --oneline
-```
-
-Bad:
-
-```console
-# Show the last ten commits as a graph
-$ git log --max-count=10 --graph --oneline
-```
-
-## Slop prevention
-
-Slop is review-hostile noise. It is not proof that the text or the code is
-wrong, but it costs a reviewer attention that the change itself deserved.
-
-- **No AI signatures.** No "Generated by", no co-author trailers for a tool, no
-  emoji, no cheerful filler.
-- **No brittle references.** Line numbers, file counts, percentages nobody
-  regenerates, bare commit SHAs, local absolute paths, and "as of today" all
-  rot in place. Name the symbol or the file instead.
-- **No diff narration.** The diff already shows what changed; prose that
-  restates it earns nothing.
-- **No branch-internal narrative.** An approach tried and abandoned mid-branch
-  is not a fact about the software. It belongs in the commit that abandoned it,
-  if anywhere.
-- **No ownerless TODOs.** Unfinished work goes in the tracker.
-- **No coded labels.** `[R1]`, "Option B", and "as discussed above" mean
-  nothing to a reader arriving from a search result.
-
-The carve-out: a comment explaining *why* is the point of this document, not
-slop. Delete narration, keep constraints.
+- **Project name:** "libtmux for Swift" in prose and titles, never
+  "LibTmux-Swift". Keep `tmux` and `libtmux` lowercase everywhere.
+- **Swift and tmux vocabulary:** Use exact Swift terms (value, reference, actor
+  isolation, language mode, strict concurrency, trait, product, target, module;
+  a `struct` is not a class) and exact `tmux` nouns (`server`, `session`,
+  `window`, `pane`, `client`, `format`, `hook`, `control mode`). Spell out the
+  first use of an initialism other than MCP, YAML, JSON, and CI.
+- **Reference links and callouts:** Collect links in `README.md` as
+  reference-style definitions at the foot of the file. Repository `.md` files
+  use plain CommonMark blockquotes (`> ...`) and never GitHub alert markers
+  (`> [!NOTE]`, `> [!WARNING]`); `.docc` articles use DocC callouts
+  (`> Important:`).
+- **Generated markers:** Content between `<!-- ...:start -->` and
+  `<!-- ...:end -->` is written by
+  `scripts/update_mode_matrix/update_mode_matrix.py`; never edit it by hand.
