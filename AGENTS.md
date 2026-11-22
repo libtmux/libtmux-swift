@@ -68,7 +68,7 @@ gate can and cannot see.
   review, releases, and compatibility:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - Reporting or assessing a vulnerability:
-  [`.github/SECURITY.md`](.github/SECURITY.md)
+  [`libtmux/.github/SECURITY.md`](https://github.com/libtmux/.github/blob/main/SECURITY.md)
 
 Each of those is the single home for its subject. Where a rule seems to be
 stated twice, the file listed above is the one that governs.

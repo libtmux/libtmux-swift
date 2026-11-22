@@ -17,7 +17,10 @@ compiler rejects a text operator on a number, and it holds no closures, so it
 can be encoded:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = try FilterExpr<Pane>.where(
+    \.currentCommand,
+    .isIn(["nvim", "vim"])
+)
 let matching = try await server.panes().filter(expression)
 ```
 

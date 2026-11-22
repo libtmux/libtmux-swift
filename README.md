@@ -30,20 +30,50 @@ back. Every call throws [`TmuxError`][api-tmuxerror].
 - **Values.** A `Session` you hold is what tmux reported when you asked. Ask
   again for a newer view.
 
-> [!WARNING]
 > Releases are numbered `0.1.N`, and each release increments `N`. The API is
 > not settled: any release may change or remove exported identifiers, and the
 > [changelog](CHANGELOG.md) marks each break. Pin an exact version to avoid one.
 
-**Contents** — [Quick start](#quick-start) · [Install](#install) ·
-[Asking](#find-sessions-windows-and-panes) ·
-[Changing](#change-what-tmux-holds) ·
-[Waiting](#type-into-a-pane-and-wait) ·
-[Modes](#choosing-how-to-reach-tmux) ·
-[Workspaces](#workspaces-from-a-file-or-from-swift) ·
-[MCP](#tmux-as-mcp-tools) · [Testing](#testing-your-own-code) ·
-[Products](#products) · [Leaves out](#what-it-leaves-out) ·
-[Status](#support-and-status) · [Docs](#documentation) · [Tests](#tests)
+## Install
+
+Depend on a release from `0.1.0` on:
+
+```swift
+.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")
+```
+
+Add [`LibTmux`][mod-libtmux] to your target dependencies:
+
+```swift
+.product(name: "LibTmux", package: "libtmux-swift")
+```
+
+- **Needs** Swift 6.2 or newer and tmux 3.3a or newer; see
+  [Support and status](#support-and-status).
+- **`from:` spans minors.** It accepts every `0.1.N` and any later `0.x`,
+  breaking releases included; `exact:` pins one release.
+
+> This page documents `master`, which may be ahead of the latest release. A
+> release tag's README matches that release. To compile this page's examples,
+> depend on `master`:
+
+```swift
+.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
+```
+
+### [`Workspace.decode(yaml:)`][api-workspace-decode-yaml]: enable `YAMLWorkspaces`
+
+YAML needs a parser, so it is opt-in. Without the trait nothing resolves
+[Yams][]; with it, [`Workspace.decode(yaml:)`][api-workspace-decode-yaml]
+exists:
+
+```swift
+.package(
+    url: "https://github.com/libtmux/libtmux-swift.git",
+    from: "0.1.0",
+    traits: ["YAMLWorkspaces"]
+)
+```
 
 ## Quick start
 
@@ -71,46 +101,6 @@ private server, creates two sessions, prints them, and removes the server:
 
 ```console
 $ swift run --package-path Examples ApiSessions
-```
-
-## Install
-
-Depend on a release from `0.1.0` on:
-
-```swift
-.package(url: "https://github.com/libtmux/libtmux-swift.git", from: "0.1.0")
-```
-
-- **Needs** Swift 6.2 or newer and tmux 3.3a or newer;
-  see [Support and status](#support-and-status).
-- **`from:` spans minors.** It accepts every `0.1.N` and any later `0.x`,
-  breaking releases included.
-- **`exact:` pins one release.** Read the changelog before you move it.
-
-```swift
-.product(name: "LibTmux", package: "libtmux-swift")
-```
-
-> [!NOTE]
-> This page documents `master`, which may be ahead of the latest release. A
-> release tag's README matches that release. To compile this page's examples,
-> depend on `master`:
-
-```swift
-.package(url: "https://github.com/libtmux/libtmux-swift.git", branch: "master")
-```
-
-### `YAMLWorkspaces`: read YAML
-
-YAML needs a parser, so it is opt-in. Without the trait nothing resolves Yams;
-with it, [`Workspace.decode(yaml:)`][api-workspace-decode-yaml] exists:
-
-```swift
-.package(
-    url: "https://github.com/libtmux/libtmux-swift.git",
-    from: "0.1.0",
-    traits: ["YAMLWorkspaces"]
-)
 ```
 
 ## Find sessions, windows, and panes
@@ -205,7 +195,10 @@ closure-free, so it encodes. Filter with the standard library when the
 predicate stays in your code:
 
 ```swift
-let expression = try FilterExpr<Pane>.where(\.currentCommand, .isIn(["nvim", "vim"]))
+let expression = try FilterExpr<Pane>.where(
+    \.currentCommand,
+    .isIn(["nvim", "vim"])
+)
 let matching = try await server.panes().filter(expression)
 ```
 
@@ -245,7 +238,11 @@ pane:
 import LibTmux
 
 let session = try await server.newSession(named: "work", windowName: "editor")
-_ = try await server.setOption("@purpose", to: "development", scope: .session(session))
+_ = try await server.setOption(
+    "@purpose",
+    to: "development",
+    scope: .session(session)
+)
 let logs = try await server.newWindow(in: session, named: "logs").window
 let pane = try await server.splitWindow(logs, direction: .right)
 try await server.run("tail -f /tmp/build.log", in: pane)
@@ -503,7 +500,8 @@ A connection reports what changed without being asked. It needs tmux 3.7 or
 newer; an older daemon refuses it before anything attaches:
 
 ```swift
-let firstLine: String? = try await server.connected(attachingTo: "work") { server, events in
+let firstLine: String? = try await server.connected(attachingTo: "work") {
+    server, events in
     for try await notification in events.notifications
     where notification.name == "output" {
         return notification.arguments
@@ -619,9 +617,9 @@ executable reads. The two are separate readers of one format:
 
 ## tmux as MCP tools
 
-[`libtmux-mcp`][mod-libtmux-mcp] is a [Model Context Protocol][MCP] server. It
-speaks JSON-RPC 2.0 over stdio, one message per line, so anything that launches
-an MCP server can drive tmux through it.
+[`libtmux-mcp`][mod-libtmux-mcp] is a [Model Context Protocol][MCP] server over
+stdio, and [`LibTmuxMCP`][mod-libtmuxmcp] packages the same tools as a library
+to embed in a Swift server of your own.
 
 ### [`libtmux-mcp`][mod-libtmux-mcp]: start the server
 
@@ -639,8 +637,8 @@ $ claude mcp add tmux \
     -- /path/to/.build/debug/libtmux-mcp
 ```
 
-Other clients take a JSON configuration. The server takes no flags: its startup
-environment fixes which tmux it talks to and which tools it exposes.
+Other clients take a JSON configuration. Startup environment variables select
+the tmux socket and exposed tools:
 
 ```json
 {
@@ -656,44 +654,18 @@ environment fixes which tmux it talks to and which tools it exposes.
 }
 ```
 
-| Variable | Default | What it selects |
-| --- | --- | --- |
-| `LIBTMUX_SOCKET_PATH` | — | Absolute socket path, passed to tmux as `-S`; wins when `LIBTMUX_SOCKET` is also set |
-| `LIBTMUX_SOCKET` | — | Plain tmux socket name, passed to tmux as `-L` |
-| `LIBTMUX_TMUX_CONFIG` | none | Absolute tmux configuration path |
-| `LIBTMUX_TOOLSETS` | `inspect,manage,execute` | Comma-separated subset of the four toolsets; empty selects none |
-| `LIBTMUX_TOOLS` | empty | Exact names added after toolset expansion |
-| `LIBTMUX_EXCLUDE_TOOLS` | empty | Exact names removed last, including nested authority |
-| `LIBTMUX_TMUX_BIN` | `tmux` | The tmux to run — a bare name is resolved on `PATH`, or give a path |
-| `LIBTMUX_MCP_WAIT_MAX_SECONDS` | `120` | The ceiling every wait is clamped to, itself capped at 300 |
-
-- **Default launch.** With neither socket variable set, tmux picks the server:
-  the one in `TMUX` when the launching client is inside tmux, else its default
-  socket.
-- **Nothing of its own.** The server starts no daemon and loads no
-  configuration.
-- **Socket names.** `LIBTMUX_SOCKET` is a name tmux resolves inside
-  `TMUX_TMPDIR`; set that in the same `env` block if your sockets live
-  elsewhere.
-- **Bad values fail early.** Unknown names and empty list tokens stop startup
-  before the socket opens. A blank variable counts as unset.
-- **Shutdown.** When stdio ends, the process exits and leaves tmux as it found
-  it. Anything for a human goes to stderr, because stdout is the protocol.
-
-More: [`docs/mcp-contract.md`][r-docs-mcp-contract-md-default-launch-and-teardown].
+- **Socket selection.** `LIBTMUX_SOCKET_PATH` (`-S`) and `LIBTMUX_SOCKET` (`-L`)
+  choose the server; with neither set, tmux uses `TMUX` or its default socket
+  without starting a daemon.
+- **Environment.** [`Sources/libtmux-mcp/README.md`][p-server-readme] lists
+  `LIBTMUX_TOOLS`, `LIBTMUX_EXCLUDE_TOOLS`, `LIBTMUX_TMUX_BIN`, and
+  `LIBTMUX_MCP_WAIT_MAX_SECONDS`.
 
 ### [`Toolset`][api-toolset]: the tools a client is offered
 
-A toolset is a named group of tools, and it is what an operator grants or
-withholds:
-
-- **`inspect`** reads tmux and what panes show.
-- **`manage`** renames, resizes, selects, and moves what exists.
-- **`execute`** creates sessions, windows, and panes, and sends input to them.
-- **`teardown`** kills sessions, windows, and panes, and clears scrollback.
-
-A default launch exposes `inspect`, `manage`, and `execute`. `teardown` joins
-only when `LIBTMUX_TOOLSETS` names it. Every tool sits in exactly one toolset:
+A default launch exposes `inspect`, `manage`, and `execute`; `teardown` joins
+only when `LIBTMUX_TOOLSETS` names it. The `execute` tools run with the tmux
+user's authority, so grant them only to trusted clients.
 
 | Tool | What it answers or does |
 | --- | --- |
@@ -713,93 +685,13 @@ only when `LIBTMUX_TOOLSETS` names it. Every tool sits in exactly one toolset:
 | [`set_synchronize_panes`] | Makes later pane input fan out across a window |
 | [`clear_pane_scrollback`] [`kill_pane`] [`kill_window`] [`kill_session`] | Deletes retained or live tmux state |
 
-The `execute` tools run with the tmux user's authority whatever toolsets are
-selected, so grant them only to clients trusted to act as that user.
-
-More: the [tool index][ref-mcp-tools] has one page per tool.
-
-### [`send_keys`]: the checks before pane input
-
-Pane input reads fresh state and fails closed when it is missing or
-inconsistent:
-
-- **Refused.** Dead and moded panes, and panes whose caller or
-  terminal-attendance context is incomplete.
-- **Attended panes are protected.** A zoomed terminal client protects its active
-  pane; an unzoomed one protects every pane in its active window. Control
-  clients do not count.
-- **`force=true` is narrow.** It bypasses only an exact caller-pane match.
-
-More: [`docs/mcp-contract.md`][r-docs-mcp-contract-md-pane-input] covers
-synchronized panes, [`send_keys_batch`], [`paste_text`], and
-[`run_shell_command`].
-
-### [`capture_pane`]: history, snapshots, and pane modes
-
-A pane in a mode belongs to the human attached to it:
-
-- **Read history** with `capture_pane` and its `start`/`end` range, or find it
-  with [`search_panes`].
-- **Read pane and content together** with [`snapshot_pane`]. They are two
-  reads, so a pane can change between them.
-- **Follow output** across turns with the opaque cursor from
-  [`capture_since`].
-- **In a mode,** read `pane_in_mode` or `pane_mode` through
-  [`get_tmux_variables`], report it, and leave the pane to its owner.
-
-More: [`docs/mcp-contract.md`][r-docs-mcp-contract-md-pane-modes].
-
-### [`wait_for_text`]: limits on waits and reads
-
-- **Waits have deadlines.** Every wait is clamped to a ceiling and reports what
-  was enforced. `notifications/cancelled` stops one the client dropped.
-- **Reads and searches are budgeted.** [`search_panes`] says which ceiling
-  truncated it.
-- **It will not end the conversation.** Teardown tools refuse the pane, window,
-  or session the server runs in unless the call passes `force`.
-
-More: [`docs/mcp-contract.md`][r-docs-mcp-contract-md-output-budgets-and-deadlines]
-holds the budgets, and also covers [`wait_for_channel`] and
-[`call_read_tools_batch`].
-
-### [`tmux://capabilities`][ref-capabilities]: what each tool says about itself
-
-- **One registry** drives registration, dispatch, descriptions, filtering, and
-  the `tmux://capabilities` report, the only MCP resource. There are no prompts.
-- **Each tool declares** native input and output schemas, and carries its
-  capability row under `_meta["com.git-pull.libtmux-mcp/capability"]`.
-- **The rows describe a tool for consent and enforce nothing.** Terminal
-  content, environment values, and tmux metadata may hold secrets or untrusted
-  instructions.
-
-More: [`docs/mcp-contract.md`][r-docs-mcp-contract-md-capability-metadata].
-
-### Migrating from the earlier MCP surface
-
-Earlier alpha releases used ordered safety tiers and other tool names.
-[`docs/mcp-contract.md`][r-docs-mcp-contract-md-migrating] maps each old tool,
-resource, and variable to its replacement.
-
-### [`list_panes`]: what it feels like
-
-> **You:** Which of my panes are sitting in an editor?
->
-> **Agent:** Three — `%4` and `%7` are running `nvim`, `%12` is running `vim`.
-> `%4` is in `~/work/api`, the other two are in `~/work/web`.
-
-The agent called `list_panes`, filtered on the current command, and answered
-from typed metadata. It ran no shell and parsed no `tmux list-panes` output.
-
-### When it earns its keep
-
-For a single `tmux send-keys`, run tmux.
-
-It earns its keep when something must be *asked* or *waited for*: which pane
-runs the failing test, whether the dev server came up, whether a session
-already exists.
-
-[`LibTmuxMCP`][mod-libtmuxmcp] is the same tools as a library, to embed in a
-server of your own.
+- **Contracts and migration.** [`docs/mcp-contract.md`][r-mcp-contract] covers
+  startup and teardown, pane-input and pane-mode guards, output budgets and
+  deadlines, [`tmux://capabilities`][ref-capabilities], and migrating from
+  earlier alpha tool names.
+- **Embedding and tools.** [`Sources/LibTmuxMCP/README.md`][p-mcp-readme] covers
+  embedding [`TmuxTools`][api-tmuxtools], and the [tool index][ref-mcp-tools]
+  has one page per tool.
 
 ## Testing your own code
 
@@ -930,18 +822,9 @@ let tools = TmuxTools(server: server, authority: authority)
 ### [`libtmux-mcp`][dir-libtmux-mcp]: the MCP server
 
 A [Model Context Protocol][MCP] server over stdio, started by an MCP client.
-Reference: the [overview][ref-mcp], the [client guide][ref-mcp-guide], and
-one page per [tool][ref-mcp-tools].
-
-Register a built binary with Claude Code, limited to the `inspect` toolset:
-
-```console
-$ claude mcp add tmux \
-    -e LIBTMUX_TOOLSETS=inspect \
-    -- /path/to/.build/debug/libtmux-mcp
-```
-
-Other clients take the JSON configuration under
+Reference: the [overview][ref-mcp], the [client guide][ref-mcp-guide],
+[`Sources/libtmux-mcp/README.md`][p-server-readme], and one page per
+[tool][ref-mcp-tools]. Client registration and `mcpServers` examples are under
 [tmux as MCP tools](#tmux-as-mcp-tools).
 
 ### [`TmuxFixture`][dir-tmuxfixture]: a real tmux for tests
@@ -1036,47 +919,9 @@ $ swift package --disable-sandbox preview-documentation --target LibTmux
 - [Swift Package Index][spi-libtmux], which documents [`LibTmux`][mod-libtmux],
   [`TmuxWorkspace`][mod-tmuxworkspace], and [`LibTmuxMCP`][mod-libtmuxmcp]
 - [`docs/`][r-docs]: the CLI and MCP contracts that are too long for a README
-- [`Examples/`][examples]: every example on this page, and whole programs that
-  run against real tmux ([how they are matched][r-examples])
-
-Check that each example on this page is in `Examples/`:
-
-```console
-$ uv run scripts/check_examples/check_examples.py
-```
-
-## Tests
-
-Real tmux, no mocks: one private socket per case, and servers are reaped even
-when a run is killed.
-
-```console
-$ scripts/swift_test/swift_test.py --traits YAMLWorkspaces
-```
-
-- **`scripts/swift_test/swift_test.py`** is `swift test` with `TMUX`,
-  `TMUX_PANE`, and `LIBTMUX_SOCKET*` removed and a private `TMUX_TMPDIR`, so a
-  run from inside tmux cannot reach that tmux.
-- **The YAML tests** run only with the trait, so the command names it.
-
-Point the suite at a particular tmux to test against it:
-
-```console
-$ LIBTMUX_TMUX_BIN=/path/to/tmux scripts/swift_test/swift_test.py
-```
-
-More: [CI and running against any tmux](.github/CONTRIBUTING.md#running-ci-against-any-tmux).
-
-## Repository layout
-
-| Path | What is in it |
-| --- | --- |
-| [`Sources/`][sources] | The five runtime products |
-| [`Tests/`][tests] | The suite, and the [`TmuxFixture`][mod-tmuxfixture] product every suite provisions servers through |
-| [`Examples/`][examples] | Every documented example, its own package so they compile as a consumer does — and most run against a live tmux |
-| [`Benchmarks/`][benchmarks] | The mode benchmark, its own package so the shipped manifest names only what ships |
-| [`Tools/McpSwap/`](Tools/McpSwap/) | The private native MCP config swap utility; its nested package is not shipped |
-| `scripts/` | The Python tooling CI runs, one directory per script |
+- [`Examples/`][examples]: complete programs and snippets run against real tmux
+- [`CONTRIBUTING.md`][r-github-contributing-md]: building, running the suite,
+  and release checks
 
 ## Related projects
 
@@ -1093,23 +938,11 @@ submit and wait for a maintainer's invitation before preparing a pull request.
 See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
 [AI_POLICY.md](https://github.com/libtmux/.github/blob/HEAD/AI_POLICY.md).
 
-## Attribution
-
-Please use the following BibTeX template to cite libtmux-swift in scientific
-discourse:
-
-```bibtex
-@misc{libtmux-swift,
-   author = {Tony Narlock},
-   year = {2026},
-   note = {https://libtmux.org/en/swift/},
-   title = {libtmux-swift: Swift wrapper for tmux}
-}
-```
-
 ## License
 
 MIT. See [LICENSE][r-license].
+
+Full documentation and sibling ports are at [libtmux.org](https://libtmux.org/).
 
 [libtmux]: https://github.com/tmux-python/libtmux
 [tmuxp]: https://tmuxp.git-pull.com/
@@ -1117,14 +950,13 @@ MIT. See [LICENSE][r-license].
 [Yams]: https://github.com/jpsim/Yams
 [MCP]: https://modelcontextprotocol.io
 [DocC]: https://www.swift.org/documentation/docc/
-[sources]: Sources/
-[tests]: Tests/
 [examples]: Examples/
-[benchmarks]: Benchmarks/
 [p-lib]: Sources/LibTmux/
 [p-ws]: Sources/TmuxWorkspace/
 [p-mcp]: Sources/LibTmuxMCP/
+[p-mcp-readme]: Sources/LibTmuxMCP/README.md
 [p-server]: Sources/libtmux-mcp/
+[p-server-readme]: Sources/libtmux-mcp/README.md
 [p-test]: Tests/TmuxFixture/
 [py-mcp]: https://libtmux-mcp.git-pull.com
 [tao]: https://leanpub.com/the-tao-of-tmux
@@ -1214,13 +1046,8 @@ MIT. See [LICENSE][r-license].
 [mod-tmux-workspace]: https://libtmux.org/en/swift/latest/workspace/cli/
 [mod-tmuxfixture]: https://libtmux.org/en/swift/latest/guides/testing-with-libtmux/
 [mod-tmuxworkspace]: https://libtmux.org/en/swift/latest/workspace/reference/
-[r-docs-mcp-contract-md-capability-metadata]: docs/mcp-contract.md#capability-metadata
-[r-docs-mcp-contract-md-default-launch-and-teardown]: docs/mcp-contract.md#default-launch-and-teardown
-[r-docs-mcp-contract-md-output-budgets-and-deadlines]: docs/mcp-contract.md#output-budgets-and-deadlines
-[r-docs-mcp-contract-md-pane-input]: docs/mcp-contract.md#pane-input
-[r-docs-mcp-contract-md-pane-modes]: docs/mcp-contract.md#pane-modes
+[r-mcp-contract]: docs/mcp-contract.md
 [r-docs]: docs/
-[r-examples]: Examples/
 [r-github-contributing-md]: .github/CONTRIBUTING.md
 [r-platformsupport-md]: Sources/LibTmux/LibTmux.docc/PlatformSupport.md
 [r-capabilities-json]: capabilities.json
@@ -1296,4 +1123,3 @@ MIT. See [LICENSE][r-license].
 [ex-split-pane]: Examples/Sources/ApiSplitPane/ApiSplitPane.swift
 [ex-capture]: Examples/Sources/ApiCapture/ApiCapture.swift
 [ref-concept-transports]: https://libtmux.org/en/swift/latest/concepts/transports/
-[r-docs-mcp-contract-md-migrating]: docs/mcp-contract.md#migrating-from-the-earlier-mcp-surface
