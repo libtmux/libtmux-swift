@@ -45,10 +45,12 @@ The counts, as the tables the documents carry:
 $ swift run --package-path Benchmarks libtmux-bench --markdown
 ```
 
-Measure a particular tmux release instead of whichever one is on `PATH`:
+Measure a particular tmux release instead of whichever one is on `PATH`
+(`LIBTMUX_TMUX_BIN` remains a fallback):
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.4/bin/tmux swift run --package-path Benchmarks libtmux-bench
+$ LIBTMUX_TEST_TMUX=~/tmux-3.4/bin/tmux \
+    swift run --package-path Benchmarks libtmux-bench
 ```
 
 ## The tables in the documents are generated

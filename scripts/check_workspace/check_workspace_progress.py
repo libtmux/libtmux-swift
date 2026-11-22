@@ -5,10 +5,11 @@
 # ///
 """Verify native progress, stream separation and cancellation on private tmux.
 
-The arguments are the staged `tmux-workspace` executable (`<cli>`) and the tmux
-to run it against:
+The arguments are the staged `tmux-workspace` executable (`<cli>`) and optionally
+the tmux to run it against (defaulting to `LIBTMUX_TEST_TMUX`,
+`LIBTMUX_TMUX_BIN`, then `PATH`):
 
-    uv run scripts/check_workspace/check_workspace_progress.py <cli> <tmux>
+    uv run scripts/check_workspace/check_workspace_progress.py <cli> [tmux]
 
 Each check runs against a private temporary directory under
 `/tmp/libtmux-swift-dev/` and prints one JSON line when it passes.
@@ -33,7 +34,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-from owned_terminal import stop_server
+from owned_terminal import resolve_tmux, stop_server, without_ambient_selectors
 
 FIXTURE = Path(__file__).with_name("fixture_program.py")
 KEEPER = ["new-session", "-d", "-s", "keeper"]
@@ -285,16 +286,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run every progress check against the executable and tmux named in `argv`."""
     arguments = sys.argv[1:] if argv is None else list(argv)
     binary = str(Path(arguments[0]).resolve())
-    tmux = str(Path(arguments[1]).resolve())
+    tmux = resolve_tmux(arguments[1] if len(arguments) > 1 else None)
     base = Path("/tmp/libtmux-swift-dev")
     base.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="progress-", dir=base) as directory:
         root = Path(directory)
-        env = dict(os.environ, LIBTMUX_TMUX_BIN=tmux, TERM="xterm", HOME=directory)
+        env = without_ambient_selectors(
+            os.environ, LIBTMUX_TMUX_BIN=tmux, TERM="xterm", HOME=directory
+        )
         for name in [
-            "TMUX",
-            "TMUX_PANE",
-            *(n for n in env if n.startswith("LIBTMUX_SOCKET")),
             "TMUXP_PROGRESS",
             "TMUXP_PROGRESS_LINES",
             "TMUXP_PROGRESS_FORMAT",

@@ -136,3 +136,30 @@ def test_a_missing_table_is_reported(
 
     assert matrix.main() == 1
     assert "no noticing table" in capsys.readouterr().err
+
+
+def test_measured_strips_ambient_selectors_and_keeps_test_tmux(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The benchmark subprocess inherits LIBTMUX_TEST_TMUX without ambient selectors."""
+    captured: dict[str, str] = {}
+
+    def recording_run(*_arguments: object, **options: object) -> Benchmark:
+        env = options.get("env")
+        assert isinstance(env, dict)
+        captured.update(env)
+        return Benchmark(BENCHMARK)
+
+    monkeypatch.setenv("LIBTMUX_TEST_TMUX", "/opt/tmux-3.7b/bin/tmux")
+    monkeypatch.setenv("TMUX", "/tmp/s,1,0")
+    monkeypatch.setenv("TMUX_PANE", "%3")
+    monkeypatch.setenv("LIBTMUX_SOCKET", "dev")
+    monkeypatch.setenv("LIBTMUX_SOCKET_PATH", "/tmp/dev.sock")
+    monkeypatch.setattr(subprocess, "run", recording_run)
+
+    matrix.measured()
+
+    assert captured["LIBTMUX_TEST_TMUX"] == "/opt/tmux-3.7b/bin/tmux"
+    assert not (
+        {"TMUX", "TMUX_PANE", "LIBTMUX_SOCKET", "LIBTMUX_SOCKET_PATH"} & set(captured)
+    )

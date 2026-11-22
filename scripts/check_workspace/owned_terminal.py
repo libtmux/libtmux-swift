@@ -10,12 +10,54 @@ also stop it with `stop_server`.
 import os
 import pty
 import select
+import shutil
 import signal
 import socket
 import subprocess
 import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
+from pathlib import Path
+
+
+def without_ambient_selectors(
+    environment: Mapping[str, str], **extra: str
+) -> dict[str, str]:
+    """Return `environment` without `TMUX`, `TMUX_PANE` or `LIBTMUX_SOCKET*`."""
+    cleaned = {
+        name: value
+        for name, value in environment.items()
+        if name not in {"TMUX", "TMUX_PANE"} and not name.startswith("LIBTMUX_SOCKET")
+    }
+    cleaned.update(extra)
+    return cleaned
+
+
+def resolve_tmux(
+    explicit: str | None = None,
+    environment: Mapping[str, str] = os.environ,
+) -> str:
+    """Resolve the tmux executable under test.
+
+    An explicit non-blank argument wins; otherwise `LIBTMUX_TEST_TMUX`, then
+    `LIBTMUX_TMUX_BIN`, then `tmux` on `PATH`. Empty and whitespace-only values
+    count as unset, and non-blank values are kept untrimmed.
+    """
+    candidates = (
+        explicit or "",
+        environment.get("LIBTMUX_TEST_TMUX", ""),
+        environment.get("LIBTMUX_TMUX_BIN", ""),
+    )
+    search_path = environment.get("PATH")
+    for candidate in candidates:
+        if not candidate.strip():
+            continue
+        if candidate.startswith("/") or candidate != candidate.strip():
+            return candidate
+        if "/" in candidate:
+            return str(Path(candidate).resolve())
+        return shutil.which(candidate, path=search_path) or candidate
+    return shutil.which("tmux", path=search_path) or "/usr/bin/tmux"
 
 
 class Terminal:

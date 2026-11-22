@@ -18,6 +18,14 @@ products, such as documentation, CI and release tooling, are listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- `tmuxExecutablePath()` in `TmuxFixture` reads `LIBTMUX_TEST_TMUX` ahead of
+  `LIBTMUX_TMUX_BIN`, `PATH` and the standard install locations, treating an
+  empty or whitespace-only value in either variable as unset while keeping
+  non-blank values untrimmed. `LIBTMUX_TMUX_BIN` remains accepted as a fallback
+  when `LIBTMUX_TEST_TMUX` is unset. (#160)
+
 ### Fixed
 
 - `Server.killServer()` returns once the daemon has stopped accepting
@@ -59,6 +67,10 @@ products, such as documentation, CI and release tooling, are listed here.
 - `scripts/swift_test/swift_test.py` passes SIGINT and SIGTERM to `swift test`,
   and refuses a shared `/tmp/libtmux-swift-test` that another user owns or can
   write to.
+- `scripts/swift_test/swift_test.py`, `scripts/check_workspace/` and CI select
+  the `tmux` executable under test with `LIBTMUX_TEST_TMUX` (falling back to
+  `LIBTMUX_TMUX_BIN`), and example, benchmark and workspace CLI checks strip
+  ambient `TMUX`, `TMUX_PANE` and `LIBTMUX_SOCKET*` variables. (#160)
 
 ## [0.1.1] - 2026-11-01
 

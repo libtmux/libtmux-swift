@@ -374,10 +374,11 @@ public func waitForSocketClosure(_ path: String) async throws -> Bool {
     }
 }
 
-/// The lane binary when a matrix runner selected one, otherwise the first `tmux` on
-/// `PATH`, otherwise the first usual install location that exists. A bare name in
-/// the variable is searched for on `PATH`. Resolved to a path because the transport
-/// never searches `PATH`.
+/// The lane binary when `LIBTMUX_TEST_TMUX` (or `LIBTMUX_TMUX_BIN`) selects one,
+/// otherwise the first `tmux` on `PATH`, otherwise the first usual install location
+/// that exists. An empty or whitespace-only variable counts as unset; any other
+/// value is used untrimmed, and a bare name is searched for on `PATH`. Resolved to
+/// a path because the transport never searches `PATH`.
 public func tmuxExecutablePath() -> String {
     tmuxExecutablePath(resolving: ProcessInfo.processInfo.environment)
 }
@@ -389,8 +390,12 @@ func tmuxExecutablePath(
         "/usr/bin/tmux", "/usr/local/bin/tmux", "/opt/homebrew/bin/tmux",
     ]
 ) -> String {
-    if let selected = environment["LIBTMUX_TMUX_BIN"], !selected.isEmpty {
-        return resolvedExecutable(selected, searching: environment)
+    for variable in ["LIBTMUX_TEST_TMUX", "LIBTMUX_TMUX_BIN"] {
+        if let selected = environment[variable],
+            !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return resolvedExecutable(selected, searching: environment)
+        }
     }
     let found = resolvedExecutable("tmux", searching: environment)
     if found.contains("/") { return found }

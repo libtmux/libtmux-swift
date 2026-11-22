@@ -72,18 +72,23 @@ struct SandboxTests {
 
     @Test("cleaning keeps other variables and sets the directory only when asked")
     func cleaningTouchesOnlySelectors() {
-        let caller = Self.decoys.merging(["PATH": "/usr/bin", "LIBTMUX_TMUX_BIN": "/opt/tmux"]) {
-            first, _ in first
-        }
+        let caller = Self.decoys.merging([
+            "PATH": "/usr/bin",
+            "LIBTMUX_TEST_TMUX": "/opt/test-tmux",
+            "LIBTMUX_TMUX_BIN": "/opt/tmux",
+        ]) { first, _ in first }
         let cleaned = sandboxedEnvironment(caller)
         let named = sandboxedEnvironment(caller, tmuxTemporaryDirectory: "/tmp/private")
         let inherited = sandboxedEnvironment(caller.merging(["TMUX_TMPDIR": "/users/own"]) { $1 })
 
-        let unchanged = cleaned["PATH"] == "/usr/bin" && cleaned["LIBTMUX_TMUX_BIN"] == "/opt/tmux"
+        let unchanged =
+            cleaned["PATH"] == "/usr/bin"
+            && cleaned["LIBTMUX_TEST_TMUX"] == "/opt/test-tmux"
+            && cleaned["LIBTMUX_TMUX_BIN"] == "/opt/tmux"
         let directorySet = named["TMUX_TMPDIR"] == "/tmp/private"
         let directoryKept = inherited["TMUX_TMPDIR"] == "/users/own"
 
-        #expect(cleaned.keys.sorted() == ["LIBTMUX_TMUX_BIN", "PATH"])
+        #expect(cleaned.keys.sorted() == ["LIBTMUX_TEST_TMUX", "LIBTMUX_TMUX_BIN", "PATH"])
         #expect(unchanged, "a variable that is not a selector changed")
         #expect(directorySet, "the directory asked for was not set")
         #expect(directoryKept, "an inherited directory was replaced")

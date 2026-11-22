@@ -57,6 +57,11 @@ def measured() -> dict[str, str]:
     # A toolchain manager may front `swift`, so it can be off PATH; `SWIFT`
     # names the command.
     swift = shlex.split(os.environ.get("SWIFT", "swift"))
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in {"TMUX", "TMUX_PANE"} and not name.startswith("LIBTMUX_SOCKET")
+    }
     result = subprocess.run(
         [
             *swift,
@@ -68,6 +73,7 @@ def measured() -> dict[str, str]:
             "--markdown",
         ],
         cwd=ROOT,
+        env=environment,
         capture_output=True,
         text=True,
         check=False,

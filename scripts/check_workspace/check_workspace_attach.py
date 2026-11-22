@@ -6,9 +6,10 @@
 """Verify native workspace attachment and explicit terminal choices.
 
 The arguments are the staged `tmux-workspace` executable (`<cli>`), the tmux to
-run it against, and optionally the names of the choices to check:
+run it against (or empty to resolve `LIBTMUX_TEST_TMUX`, `LIBTMUX_TMUX_BIN`,
+then `PATH`), and optionally the names of the choices to check:
 
-    uv run scripts/check_workspace/check_workspace_attach.py <cli> <tmux> [name ...]
+    uv run scripts/check_workspace/check_workspace_attach.py <cli> [tmux] [name ...]
 
 Each choice runs against a private temporary directory under
 `/tmp/libtmux-swift-dev/` and prints one JSON line when all pass.
@@ -27,7 +28,12 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
-from owned_terminal import Terminal, stop_server
+from owned_terminal import (
+    Terminal,
+    resolve_tmux,
+    stop_server,
+    without_ambient_selectors,
+)
 
 FIXTURE = Path(__file__).with_name("fixture_program.py")
 
@@ -545,7 +551,7 @@ def check(choice: str, binary: str, tmux: str, base: Path) -> None:
     """Exercise one load choice against an owned terminal and server."""
     with tempfile.TemporaryDirectory(prefix="attach-", dir=base) as directory:
         root = Path(directory)
-        environment = dict(
+        environment = without_ambient_selectors(
             os.environ,
             TERM="xterm-256color",
             HOME=str(root),
@@ -556,12 +562,6 @@ def check(choice: str, binary: str, tmux: str, base: Path) -> None:
             LIBTMUX_TMUX_BIN=tmux,
             TMUX_TMPDIR=str(root),
         )
-        for name in [
-            "TMUX",
-            "TMUX_PANE",
-            *(n for n in environment if n.startswith("LIBTMUX_SOCKET")),
-        ]:
-            environment.pop(name, None)
         fixture = Fixture(binary, tmux, root, environment)
         try:
             fixture.prepare(
@@ -583,7 +583,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Check the choices named in `argv`, or every choice, and print the result."""
     arguments = sys.argv[1:] if argv is None else list(argv)
     binary = str(Path(arguments[0]).resolve())
-    tmux = str(Path(arguments[1]).resolve())
+    tmux = resolve_tmux(arguments[1] if len(arguments) > 1 else None)
     base = Path("/tmp/libtmux-swift-dev")
     base.mkdir(exist_ok=True)
     # tmux 3.8 removed the `active-pane` client flag, so a client cannot be made

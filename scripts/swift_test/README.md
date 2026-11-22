@@ -45,7 +45,8 @@ It never changes the mode of a directory that exists.
 
 The tests run the script against stand-ins for `swift` and for the tmux client,
 Python programs under `tests/stand_ins/`, and against a real tmux for the leak
-cases, which skip when none is on `PATH`. `LIBTMUX_TMUX_BIN` picks the release.
+cases, which skip when none is on `PATH`. `LIBTMUX_TEST_TMUX` picks the release
+(with `LIBTMUX_TMUX_BIN` as a fallback).
 
 ```console
 $ uv run --project scripts --group dev pytest scripts/swift_test
