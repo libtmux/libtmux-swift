@@ -86,7 +86,7 @@ extension Server {
         _ name: String,
         in scope: EnvironmentScope = .global
     ) async throws(TmuxError) -> String? {
-        let command = TmuxCommand("show-environment", scope.arguments + ["--", name])
+        let command = TmuxCommand("show-environment", ["-s"] + scope.arguments + ["--", name])
         let reply = try await run(command.argumentsSpelledAsData)
         guard reply.isSuccess else {
             if reply.errorText == "unknown variable: \(name)" { return nil }
@@ -94,12 +94,15 @@ extension Server {
         }
         var text = reply.text
         if text.hasSuffix("\n") { text.removeLast() }
-        if text == "-\(name)" { return nil }
+        if text == "unset \(name);" { return nil }
         let prefix = "\(name)="
-        guard text.hasPrefix(prefix) else {
+        var index = prefix.unicodeScalars.count
+        guard text.hasPrefix(prefix),
+            let value = shellEnvironmentValue(Array(text.unicodeScalars), startingAt: &index)
+        else {
             throw .invocationFailed(reason: "show-environment returned an unexpected variable.")
         }
-        return String(text.dropFirst(prefix.count))
+        return value
     }
 
     /// Sets a variable, replacing whatever was there.
@@ -165,9 +168,8 @@ extension TmuxEnvironmentVariable {
     /// Reads `show-environment -s`, which prints `NAME="value"; export NAME;`
     /// for a variable and `unset NAME;` for one marked for removal.
     ///
-    /// tmux escapes `"`, `$`, `` ` `` and `\` inside the quotes and nothing
-    /// else, so a value runs to the first unescaped `"` and may span lines.
-    /// Text that has neither shape is skipped to the end of its line.
+    /// Values may span lines; decode their quoting as data. Text that has
+    /// neither shape is skipped to the end of its line.
     static func variables(shellListing text: String) -> [TmuxEnvironmentVariable] {
         let scalars = Array(text.unicodeScalars)
         var variables: [TmuxEnvironmentVariable] = []
@@ -205,26 +207,12 @@ extension TmuxEnvironmentVariable {
                 } else {
                     skipLine()
                 }
-            } else if let variable = name(endingAt: "="), index < scalars.count,
-                scalars[index] == "\""
-            {
-                index += 1
-                var value = String.UnicodeScalarView()
-                var closed = false
-                while index < scalars.count, !closed {
-                    let scalar = scalars[index]
-                    index += 1
-                    if scalar == "\\", index < scalars.count {
-                        value.append(scalars[index])
-                        index += 1
-                    } else if scalar == "\"" {
-                        closed = true
-                    } else {
-                        value.append(scalar)
-                    }
+            } else if let variable = name(endingAt: "=") {
+                guard let value = shellEnvironmentValue(scalars, startingAt: &index) else {
+                    skipLine()
+                    continue
                 }
-                guard closed else { break }
-                variables.append(TmuxEnvironmentVariable(name: variable, value: String(value)))
+                variables.append(TmuxEnvironmentVariable(name: variable, value: value))
                 skipLine()
             } else {
                 skipLine()
@@ -232,4 +220,31 @@ extension TmuxEnvironmentVariable {
         }
         return variables
     }
+}
+
+private func shellEnvironmentValue(
+    _ scalars: [Unicode.Scalar], startingAt index: inout Int
+) -> String? {
+    guard index < scalars.count, scalars[index] == "\"" else { return nil }
+    index += 1
+    var value = String.UnicodeScalarView()
+    while index < scalars.count {
+        let scalar = scalars[index]
+        index += 1
+        if scalar == "\\", index < scalars.count,
+            "\"$`\\".unicodeScalars.contains(scalars[index])
+        {
+            value.append(scalars[index])
+            index += 1
+        } else if scalar == "\"" {
+            return String(value)
+        } else {
+            // tmux 3.4 adds an output escape after shell-quoting dollars. A
+            // dollar reached here was not consumed with its shell escape,
+            // so the preceding decoded slash is the extra one.
+            if scalar == "$", value.last == "\\" { value.removeLast() }
+            value.append(scalar)
+        }
+    }
+    return nil
 }
