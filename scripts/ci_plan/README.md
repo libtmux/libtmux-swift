@@ -65,5 +65,5 @@ Each rule has a case that breaks a copy of the tree and expects the guard to
 say so.
 
 ```console
-$ uv run --group dev pytest scripts/ci_plan
+$ uv run --project scripts --group dev pytest scripts/ci_plan
 ```

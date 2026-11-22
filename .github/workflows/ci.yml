@@ -259,27 +259,27 @@ jobs:
       # run a tmux binary stay on the release they were written against, which
       # the whole table includes and a push does not.
 
-      # ruff, ty and pytest come from uv.lock, so a new release of any of them
-      # cannot turn CI red on a commit that touched no Python. The leak tests
-      # start the leg's tmux, so they run against the release under test
+      # ruff, ty and pytest come from scripts/uv.lock, so a new release of any
+      # of them cannot turn CI red on a commit that touched no Python. The leak
+      # tests start the leg's tmux, so they run against the release under test
       # instead of whatever the runner carries.
       - name: Check the format of the scripts
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: uv run --locked --group dev ruff format --check scripts
+        run: uv run --project scripts --locked --group dev ruff format --check scripts
 
       - name: Lint the scripts
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: uv run --locked --group dev ruff check scripts
+        run: uv run --project scripts --locked --group dev ruff check scripts
 
       - name: Check the types of the scripts
         if: runner.os == 'Linux' && matrix.repo_checks
-        run: uv run --locked --group dev ty check
+        run: uv run --project scripts --locked --group dev ty check --project scripts
 
       - name: Test the scripts
         if: runner.os == 'Linux' && matrix.repo_checks
         env:
           LIBTMUX_TMUX_BIN: ${{ steps.tmux.outputs.binary }}
-        run: uv run --locked --group dev pytest
+        run: uv run --project scripts --locked --group dev pytest scripts
 
       # The examples package compiles every documented example, so one that no
       # longer builds fails the job below. This checks the other half: that the

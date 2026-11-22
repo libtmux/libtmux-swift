@@ -22,5 +22,5 @@ $ uv run scripts/check_readme_links/check_readme_links.py
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_readme_links
+$ uv run --project scripts --group dev pytest scripts/check_readme_links
 ```

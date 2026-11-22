@@ -16,5 +16,5 @@ $ uv run scripts/check_changelog_symbols/check_changelog_symbols.py
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_changelog_symbols
+$ uv run --project scripts --group dev pytest scripts/check_changelog_symbols
 ```

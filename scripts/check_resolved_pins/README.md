@@ -18,5 +18,5 @@ $ uv run scripts/check_resolved_pins/check_resolved_pins.py
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_resolved_pins
+$ uv run --project scripts --group dev pytest scripts/check_resolved_pins
 ```

@@ -19,5 +19,5 @@ $ uv run scripts/check_continuations/check_continuations.py
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_continuations
+$ uv run --project scripts --group dev pytest scripts/check_continuations
 ```

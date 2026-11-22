@@ -7,8 +7,6 @@
 # `TmuxFixture` target and `Snippets/` holds the snippet targets, so ignoring
 # either produces an archive whose manifest names sources that are not there.
 scripts/ export-ignore
-pyproject.toml export-ignore
-uv.lock export-ignore
 Benchmarks/ export-ignore
 .github/ export-ignore
 .gitattributes export-ignore

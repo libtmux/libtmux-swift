@@ -358,24 +358,25 @@ $ swift package \
 ```
 
 The support scripts under `scripts/` are typed Python, and
-[`SCRIPTS.md`](SCRIPTS.md) says what may stay there. `pyproject.toml` holds the
-ruff, ty and pytest settings, and `uv.lock` pins the tools, so a new release of
-one cannot turn CI red on a commit that touched no Python. Check formatting:
+[`SCRIPTS.md`](SCRIPTS.md) says what may stay there. `scripts/pyproject.toml`
+holds the ruff, ty and pytest settings, and `scripts/uv.lock` pins the tools,
+so a new release of one cannot turn CI red on a commit that touched no Python.
+Check formatting:
 
 ```console
-$ uv run --group dev ruff format --check scripts
+$ uv run --project scripts --group dev ruff format --check scripts
 ```
 
 Lint:
 
 ```console
-$ uv run --group dev ruff check scripts
+$ uv run --project scripts --group dev ruff check scripts
 ```
 
 Type-check:
 
 ```console
-$ uv run --group dev ty check
+$ uv run --project scripts --group dev ty check --project scripts
 ```
 
 Run the scripts' own tests, with doctests collected. The leak tests in
@@ -383,7 +384,7 @@ Run the scripts' own tests, with doctests collected. The leak tests in
 first on `PATH`:
 
 ```console
-$ uv run --group dev pytest
+$ uv run --project scripts --group dev pytest scripts
 ```
 
 Every documented example maps to consumer source, and the floor keeps its

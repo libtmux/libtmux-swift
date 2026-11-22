@@ -28,5 +28,5 @@ $ uv run scripts/check_version/check_version.py \
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_version
+$ uv run --project scripts --group dev pytest scripts/check_version
 ```

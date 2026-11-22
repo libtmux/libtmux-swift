@@ -15,5 +15,5 @@ Fix a failure with `chmod +x <path> && git add <path>`.
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_script_modes
+$ uv run --project scripts --group dev pytest scripts/check_script_modes
 ```
