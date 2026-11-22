@@ -28,5 +28,5 @@ $ uv run scripts/build_docs/build_docs.py \
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/build_docs
+$ uv run --project scripts --group dev pytest scripts/build_docs
 ```

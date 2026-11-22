@@ -25,5 +25,5 @@ $ uv run scripts/changelogs/changelogs.py notes 0.1.1
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/changelogs
+$ uv run --project scripts --group dev pytest scripts/changelogs
 ```

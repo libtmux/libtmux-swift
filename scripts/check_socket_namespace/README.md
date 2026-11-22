@@ -20,5 +20,5 @@ $ uv run scripts/check_socket_namespace/check_socket_namespace.py
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_socket_namespace
+$ uv run --project scripts --group dev pytest scripts/check_socket_namespace
 ```

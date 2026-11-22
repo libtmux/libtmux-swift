@@ -28,5 +28,5 @@ The tests replace the benchmark with a fixed output, so they start no tmux and
 build no Swift.
 
 ```console
-$ uv run --group dev pytest scripts/update_mode_matrix
+$ uv run --project scripts --group dev pytest scripts/update_mode_matrix
 ```

@@ -48,5 +48,5 @@ Python programs under `tests/stand_ins/`, and against a real tmux for the leak
 cases, which skip when none is on `PATH`. `LIBTMUX_TMUX_BIN` picks the release.
 
 ```console
-$ uv run --group dev pytest scripts/swift_test
+$ uv run --project scripts --group dev pytest scripts/swift_test
 ```

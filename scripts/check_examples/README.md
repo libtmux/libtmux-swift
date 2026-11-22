@@ -20,5 +20,5 @@ an example and what the check cannot see.
 ## Tests
 
 ```console
-$ uv run --group dev pytest scripts/check_examples
+$ uv run --project scripts --group dev pytest scripts/check_examples
 ```

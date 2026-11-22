@@ -53,5 +53,5 @@ to fail, and cover the terminal helper, `stop_server` and the version ordering.
 The passing cases are CI's run against the executable it built.
 
 ```console
-$ uv run --group dev pytest scripts/check_workspace
+$ uv run --project scripts --group dev pytest scripts/check_workspace
 ```
