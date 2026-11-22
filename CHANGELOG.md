@@ -20,6 +20,8 @@ products, such as documentation, CI and release tooling, are listed here.
 
 ### Fixed
 
+- `Server.environment(_:)` and `Server.environmentValue(_:in:)` return
+  dollar signs and literal backslashes as stored on tmux 3.4. (#159)
 - `Server.killServer()` returns once the daemon has stopped accepting
   connections. tmux answers `kill-server` before the daemon exits and drops
   every connection it accepts until then, so a `new-session` sent straight

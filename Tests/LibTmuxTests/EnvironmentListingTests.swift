@@ -20,6 +20,21 @@ private let clientIsUTF8: Bool = {
 @Suite("environment listing", .timeLimit(.minutes(5)))
 struct EnvironmentListingTests {
     @Test(
+        "dollar escapes printed by tmux 3.3a and 3.4 keep the same value",
+        arguments: [
+            (#"\$HOME"#, "$HOME"),
+            (#"\\$HOME"#, "$HOME"),
+            (#"\\\$HOME"#, #"\$HOME"#),
+            (#"\\\\$HOME"#, #"\$HOME"#),
+        ])
+    func dollarEscapes(_ quotedValue: String, _ value: String) {
+        let text = "SWIFTPROBE_A=\"\(quotedValue)\"; export SWIFTPROBE_A;\n"
+        #expect(
+            TmuxEnvironmentVariable.variables(shellListing: text)
+                == [TmuxEnvironmentVariable(name: "SWIFTPROBE_A", value: value)])
+    }
+
+    @Test(
         "a value with a newline is one variable, not two",
         .enabled(if: clientIsUTF8, "the client must be UTF-8 for tmux to print the newline"))
     func newlineInAValueIsNotAVariable() async throws {
@@ -46,6 +61,7 @@ struct EnvironmentListingTests {
             _ = try await server.setEnvironment("SWIFTPROBE_A", to: value)
             _ = try await server.setEnvironment("SWIFTPROBE_E", to: "after")
             _ = try await server.removeEnvironment("SWIFTPROBE_F")
+            #expect(try await server.environmentValue("SWIFTPROBE_A") == value)
 
             let listed = try await server.environment().filter {
                 $0.name.hasPrefix("SWIFTPROBE_")
@@ -57,6 +73,38 @@ struct EnvironmentListingTests {
                     TmuxEnvironmentVariable(name: "SWIFTPROBE_F", value: nil),
                 ]
             )
+        }
+    }
+
+    @Test("dollar text keeps its literal backslashes")
+    func dollarsKeepLiteralBackslashes() async throws {
+        try await withTmuxServer { server in
+            for suffix in ["$HOME", "${name}", "$_name", "$9", "$", "$-"] {
+                for count in 0...3 {
+                    let value = String(repeating: "\\", count: count) + suffix
+                    _ = try await server.setEnvironment("SWIFTPROBE_A", to: value)
+                    #expect(try await server.environmentValue("SWIFTPROBE_A") == value)
+
+                    let listed = try await server.environment().filter {
+                        $0.name == "SWIFTPROBE_A"
+                    }
+                    #expect(listed == [TmuxEnvironmentVariable(name: "SWIFTPROBE_A", value: value)])
+                }
+            }
+        }
+    }
+
+    @Test("an individual read keeps tmux's spelling for carriage returns")
+    func carriageReturnSpellingIsPreserved() async throws {
+        try await withTmuxServer { server in
+            for value in ["one\rtwo", #"one\rtwo"#, #"one\qtwo"#] {
+                _ = try await server.setEnvironment("SWIFTPROBE_A", to: value)
+                let reply = try await server.run(
+                    TmuxCommand("show-environment", ["-g", "SWIFTPROBE_A"]))
+                #expect(reply.isSuccess)
+                let expected = String(reply.text.dropFirst("SWIFTPROBE_A=".count).dropLast())
+                #expect(try await server.environmentValue("SWIFTPROBE_A") == expected)
+            }
         }
     }
 
