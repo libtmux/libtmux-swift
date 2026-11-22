@@ -35,16 +35,18 @@ $ uv run scripts/check_workspace/check_workspace_terminal.py \
 ```console
 $ uv run scripts/check_workspace/check_workspace_progress.py \
     .build/debug/tmux-workspace \
-    "$LIBTMUX_TMUX_BIN"
+    "$LIBTMUX_TEST_TMUX"
 ```
 
 ```console
 $ uv run scripts/check_workspace/check_workspace_attach.py \
     .build/debug/tmux-workspace \
-    "$LIBTMUX_TMUX_BIN"
+    "$LIBTMUX_TEST_TMUX"
 ```
 
-`check_workspace_attach.py` takes choice names after the tmux to run a subset.
+When `<tmux>` is omitted or empty, both scripts resolve `LIBTMUX_TEST_TMUX`,
+`LIBTMUX_TMUX_BIN`, and then `tmux` on `PATH`. `check_workspace_attach.py` takes
+choice names after the tmux argument to run a subset.
 
 ## Tests
 

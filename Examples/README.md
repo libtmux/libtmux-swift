@@ -161,5 +161,5 @@ $ swift run --jobs 5 ApiExample
 ```
 
 Use Swift 6.2 or newer on Linux, or Xcode 26's Swift toolchain on macOS, and
-tmux 3.3a or newer. Set `LIBTMUX_TMUX_BIN` to an absolute tmux executable path
-to select a particular release.
+tmux 3.3a or newer. Set `LIBTMUX_TEST_TMUX` to an absolute tmux executable path
+to select a particular release (`LIBTMUX_TMUX_BIN` remains a fallback).

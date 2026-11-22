@@ -530,7 +530,9 @@ struct VersionCheckLaneTests {
     func ciNamesItsLane() {
         let environment = ProcessInfo.processInfo.environment
         if environment["CI"] != nil {
-            #expect(environment["LIBTMUX_TMUX_BIN"]?.isEmpty == false, "CI must select its tmux")
+            let selected = environment["LIBTMUX_TEST_TMUX"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            #expect(selected?.isEmpty == false, "CI must select its tmux in LIBTMUX_TEST_TMUX")
         }
         if environment["LIBTMUX_EXPECT_REFUSAL"]?.isEmpty == false {
             #expect(laneIsBelowFloor, "the refusal job ran on a supported tmux")

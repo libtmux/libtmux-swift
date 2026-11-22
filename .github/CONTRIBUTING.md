@@ -120,13 +120,14 @@ which is a data race whether or not it has bitten yet. A child process a case
 starts takes `sandboxedEnvironment()` instead of the process environment, so it
 holds none of those variables either way.
 
-Every test resolves its binary through the fixture: `LIBTMUX_TMUX_BIN`, then the
-first `tmux` on `PATH`, then the usual installed locations. Point the suite at
-one tmux release with the variable, which exercises the release named rather
-than whichever one `PATH` finds first:
+Every test resolves its binary through the fixture: `LIBTMUX_TEST_TMUX` (or the
+legacy `LIBTMUX_TMUX_BIN` fallback), then the first `tmux` on `PATH`, then the
+usual installed locations; an empty or whitespace-only value counts as unset.
+Point the suite at one tmux release with `LIBTMUX_TEST_TMUX`, which exercises
+the release named rather than whichever one `PATH` finds first:
 
 ```console
-$ LIBTMUX_TMUX_BIN=~/tmux-3.3a/bin/tmux \
+$ LIBTMUX_TEST_TMUX=~/tmux-3.3a/bin/tmux \
     scripts/swift_test/swift_test.py \
     --force-resolved-versions
 ```
@@ -152,12 +153,12 @@ $ uv run scripts/check_workspace/check_workspace_terminal.py \
 
 ```console
 $ uv run scripts/check_workspace/check_workspace_progress.py \
-    .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
+    .build/debug/tmux-workspace "$LIBTMUX_TEST_TMUX"
 ```
 
 ```console
 $ uv run scripts/check_workspace/check_workspace_attach.py \
-    .build/debug/tmux-workspace "$LIBTMUX_TMUX_BIN"
+    .build/debug/tmux-workspace "$LIBTMUX_TEST_TMUX"
 ```
 
 `Package.resolved` tracks a superset that includes Yams even when the trait is
@@ -260,7 +261,11 @@ ref once per toolchain. `scope=full` runs the whole table, the pinned master and
 the refusal cells, as a tag does.
 
 ```console
-$ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.8 -f swift=6.1,6.2
+$ gh workflow run ci.yml \
+    --ref my-branch \
+    -f scope=custom \
+    -f tmux-ref=3.8 \
+    -f swift=6.1,6.2
 ```
 
 `tmate=on-failure` opens an
@@ -269,10 +274,14 @@ failing leg, and `tmate=before-tests` opens one before the build and tests. Only
 the account that dispatched the run can connect, so it needs a public SSH key on
 its GitHub profile. The plan accepts a session on exactly one leg, which means
 one `tmux-ref` and at most one `swift`. The build step prints the install
-prefix, and `LIBTMUX_TMUX_BIN` points the suite at its `bin/tmux`.
+prefix, and `LIBTMUX_TEST_TMUX` points the suite at its `bin/tmux`.
 
 ```console
-$ gh workflow run ci.yml --ref my-branch -f scope=custom -f tmux-ref=3.7b -f tmate=on-failure
+$ gh workflow run ci.yml \
+    --ref my-branch \
+    -f scope=custom \
+    -f tmux-ref=3.7b \
+    -f tmate=on-failure
 ```
 
 The dispatch form is only available once `ci.yml` carries the inputs on the
@@ -380,8 +389,8 @@ $ uv run --project scripts --group dev ty check --project scripts
 ```
 
 Run the scripts' own tests, with doctests collected. The leak tests in
-`scripts/swift_test` start a tmux, the one `LIBTMUX_TMUX_BIN` names or else the
-first on `PATH`:
+`scripts/swift_test` start a tmux, the one `LIBTMUX_TEST_TMUX` names (falling
+back to `LIBTMUX_TMUX_BIN`) or else the first on `PATH`:
 
 ```console
 $ uv run --project scripts --group dev pytest scripts

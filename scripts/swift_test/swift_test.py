@@ -46,7 +46,7 @@ import string
 import subprocess
 import sys
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 
@@ -188,18 +188,29 @@ def gone(path: Path) -> bool:
     return True
 
 
+def nonblank(name: str, environ: Mapping[str, str] = os.environ) -> str:
+    """Return `environ[name]` untrimmed when non-blank, and empty otherwise."""
+    value = environ.get(name, "")
+    return value if value.strip() else ""
+
+
+def candidate_clients(environ: Mapping[str, str] = os.environ) -> tuple[str, ...]:
+    """Return the tmux executables a run may have started servers with."""
+    return (
+        nonblank("LIBTMUX_TEST_TMUX", environ),
+        nonblank("LIBTMUX_TMUX_BIN", environ),
+        nonblank("LIBTMUX_TMUX_CLIENT_BIN", environ),
+        "tmux",
+    )
+
+
 def stop_server(path: Path) -> bool:
     """Ask each client the run may have used to stop the server on `path`.
 
     A client cannot stop a daemon of a release it cannot speak to. What a client
     says is not trusted: `gone` is what decides.
     """
-    clients = (
-        os.environ.get("LIBTMUX_TMUX_BIN", ""),
-        os.environ.get("LIBTMUX_TMUX_CLIENT_BIN", ""),
-        "tmux",
-    )
-    for client in clients:
+    for client in candidate_clients():
         if not client or shutil.which(client) is None:
             continue
         try:

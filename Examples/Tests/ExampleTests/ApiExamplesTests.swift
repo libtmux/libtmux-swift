@@ -43,6 +43,9 @@ struct ApiExamplesTests {
             try #require(FileManager.default.fileExists(atPath: source.path))
             let process = Process()
             process.executableURL = examples.appendingPathComponent(".build/debug/\(example.name)")
+            process.environment = ProcessInfo.processInfo.environment.filter {
+                $0.key != "TMUX" && $0.key != "TMUX_PANE" && !$0.key.hasPrefix("LIBTMUX_SOCKET")
+            }
             let output = Pipe()
             process.standardOutput = output
             try process.run()

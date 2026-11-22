@@ -106,7 +106,16 @@ def run(
     return finished, Recorded(text)
 
 
-TMUX = os.environ.get("LIBTMUX_TMUX_BIN") or shutil.which("tmux")
+def _resolve_test_tmux() -> str | None:
+    """Resolve the tmux executable for the leak tests."""
+    for name in ("LIBTMUX_TEST_TMUX", "LIBTMUX_TMUX_BIN"):
+        value = os.environ.get(name, "")
+        if value.strip():
+            return shutil.which(value) or value
+    return shutil.which("tmux")
+
+
+TMUX = _resolve_test_tmux()
 
 needs_tmux = pytest.mark.skipif(TMUX is None, reason="needs a tmux to leak")
 
@@ -174,7 +183,7 @@ def leak_run(
     """Run the wrapper over the leaking stand-in; return it and the server id.
 
     With `client`, the wrapper's tmux is the stand-in client in that mode,
-    which cannot stop a server, both on PATH and in LIBTMUX_TMUX_BIN.
+    which cannot stop a server, both on PATH and in LIBTMUX_TEST_TMUX.
     """
     scratch, pid_file, parent = leaker
     broken = f"{scratch / 'client'}{os.pathsep}" if client else ""
@@ -185,7 +194,7 @@ def leak_run(
         "PID_FILE": str(pid_file),
         "OUTSIDE": str(scratch / "outside.sock"),
         "TMUX_UNDER_TEST": str(TMUX),
-        "LIBTMUX_TMUX_BIN": str(scratch / "client" / "tmux") if client else str(TMUX),
+        "LIBTMUX_TEST_TMUX": str(scratch / "client" / "tmux") if client else str(TMUX),
         "LIBTMUX_TEST_TMUX_TMPDIR": str(parent),
         **extra,
     }
@@ -227,13 +236,40 @@ def test_the_recorder_sees_a_selector_when_nothing_removes_it(
 
 def test_unrelated_variables_survive(tmp_path: Path, stand_in: Path) -> None:
     """Other LIBTMUX_ variables are the suite's own settings, not selectors."""
-    kept = {"LIBTMUX_TMUX_BIN", "LIBTMUX_TMUX_CLIENT_BIN", "LIBTMUX_EXPECT_REFUSAL"}
+    kept = {
+        "LIBTMUX_TEST_TMUX",
+        "LIBTMUX_TMUX_BIN",
+        "LIBTMUX_TMUX_CLIENT_BIN",
+        "LIBTMUX_EXPECT_REFUSAL",
+    }
     finished, seen = run(
         tmp_path, stand_in, environment={**dict.fromkeys(kept, "kept"), **DECOYS}
     )
 
     assert finished.returncode == 0, finished.stderr
     assert sorted(kept - seen.names) == []
+
+
+@pytest.mark.parametrize("blank", ["", " ", " \t\n "])
+def test_candidate_clients_orders_test_tmux_ahead_of_fallbacks_and_ignores_blank(
+    blank: str,
+) -> None:
+    """LIBTMUX_TEST_TMUX comes first untrimmed; blank values count as unset."""
+    assert swift_test.candidate_clients(
+        {
+            "LIBTMUX_TEST_TMUX": " /opt/test/tmux ",
+            "LIBTMUX_TMUX_BIN": "/opt/legacy/tmux",
+            "LIBTMUX_TMUX_CLIENT_BIN": "/opt/client/tmux",
+        }
+    ) == (" /opt/test/tmux ", "/opt/legacy/tmux", "/opt/client/tmux", "tmux")
+
+    assert swift_test.candidate_clients(
+        {
+            "LIBTMUX_TEST_TMUX": blank,
+            "LIBTMUX_TMUX_BIN": "/opt/legacy/tmux",
+            "LIBTMUX_TMUX_CLIENT_BIN": blank,
+        }
+    ) == ("", "/opt/legacy/tmux", "", "tmux")
 
 
 def test_tmux_tmpdir_is_a_fresh_private_directory_under_the_root(

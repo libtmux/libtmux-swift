@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 
-from owned_terminal import Terminal
+from owned_terminal import Terminal, without_ambient_selectors
 
 FIXTURE = Path(__file__).with_name("fixture_program.py")
 
@@ -61,7 +61,9 @@ def check_terminal_editor(
     """
     pid_file, value_file = root / "terminal-child", root / "marker"
     mode = "edit" if number is None else "hold"
-    environment = dict(os.environ, EDITOR=editor(mode, pid_file, value_file))
+    environment = without_ambient_selectors(
+        os.environ, EDITOR=editor(mode, pid_file, value_file)
+    )
     terminal = Terminal([binary, "edit", str(workspace)], environment)
     attributes = termios.tcgetattr(terminal.fd)
     terminal.send(b"\n")
@@ -99,7 +101,7 @@ def check_control_bytes(binary: str, workspace: Path) -> None:
     """Keep the editor's control bytes out of `--ndjson` output."""
     machine = subprocess.run(
         [binary, "edit", str(workspace), "--ndjson"],
-        env=dict(os.environ, EDITOR=editor("escape")),
+        env=without_ambient_selectors(os.environ, EDITOR=editor("escape")),
         capture_output=True,
         timeout=5,
         check=False,
@@ -115,7 +117,7 @@ def check_interrupt(binary: str, workspace: Path, root: Path, number: int) -> No
     pid_file = root / f"child-{number}"
     process = subprocess.Popen(
         [binary, "edit", str(workspace), "--json"],
-        env=dict(os.environ, EDITOR=editor("idle", pid_file)),
+        env=without_ambient_selectors(os.environ, EDITOR=editor("idle", pid_file)),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

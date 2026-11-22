@@ -48,8 +48,8 @@ holds one session, `bootstrap`, and `CancellationTests` makes this assertion.
 
 This product starts a real tmux and mocks nothing:
 
-- **Order.** `LIBTMUX_TMUX_BIN`, then the first `tmux` on `PATH`, then the usual
-  installed locations.
+- **Order.** `LIBTMUX_TEST_TMUX` (or `LIBTMUX_TMUX_BIN`), then the first `tmux`
+  on `PATH`, then the usual installed locations.
 - **Which ran.** [`tmuxExecutablePath`][api-tmuxexecutablepath] reports the one
   a run resolved.
 

@@ -15,11 +15,27 @@ import check_workspace_attach as attach
 import check_workspace_progress as progress
 import check_workspace_terminal as terminal
 import pytest
-from owned_terminal import Terminal, listening, stop_server
+from owned_terminal import (
+    Terminal,
+    listening,
+    resolve_tmux,
+    stop_server,
+    without_ambient_selectors,
+)
 
 PLAIN = {"PATH": "/usr/bin:/bin"}
 
-TMUX = os.environ.get("LIBTMUX_TMUX_BIN") or shutil.which("tmux")
+
+def _resolve_test_tmux() -> str | None:
+    """Resolve the tmux executable for the workspace check tests."""
+    for name in ("LIBTMUX_TEST_TMUX", "LIBTMUX_TMUX_BIN"):
+        value = os.environ.get(name, "")
+        if value.strip():
+            return shutil.which(value) or value
+    return shutil.which("tmux")
+
+
+TMUX = _resolve_test_tmux()
 
 needs_tmux = pytest.mark.skipif(TMUX is None, reason="needs a tmux")
 
@@ -51,6 +67,83 @@ def test_release_key_refuses_a_token_that_is_not_a_version(
 
     assert stopped.value.code == 1
     assert "cannot read a tmux version" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("blank", ["", " ", "\t\n"])
+def test_resolve_tmux_reads_test_tmux_then_legacy_then_path(
+    tmp_path: Path, blank: str
+) -> None:
+    """LIBTMUX_TEST_TMUX beats LIBTMUX_TMUX_BIN and PATH; blank values fall back."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    path_tmux = bin_dir / "tmux"
+    path_tmux.write_text("#!/bin/sh\n", encoding="utf-8")
+    path_tmux.chmod(0o755)
+    env_base = {"PATH": str(bin_dir)}
+
+    assert (
+        resolve_tmux(
+            explicit="/explicit/tmux",
+            environment={
+                **env_base,
+                "LIBTMUX_TEST_TMUX": "/test/tmux",
+                "LIBTMUX_TMUX_BIN": "/legacy/tmux",
+            },
+        )
+        == "/explicit/tmux"
+    )
+    assert (
+        resolve_tmux(
+            explicit=blank,
+            environment={
+                **env_base,
+                "LIBTMUX_TEST_TMUX": " /test/tmux ",
+                "LIBTMUX_TMUX_BIN": "/legacy/tmux",
+            },
+        )
+        == " /test/tmux "
+    )
+    assert (
+        resolve_tmux(
+            explicit=blank,
+            environment={
+                **env_base,
+                "LIBTMUX_TEST_TMUX": blank,
+                "LIBTMUX_TMUX_BIN": "/legacy/tmux",
+            },
+        )
+        == "/legacy/tmux"
+    )
+    assert resolve_tmux(
+        explicit=blank,
+        environment={
+            **env_base,
+            "LIBTMUX_TEST_TMUX": blank,
+            "LIBTMUX_TMUX_BIN": blank,
+        },
+    ) == str(path_tmux)
+
+
+def test_without_ambient_selectors_strips_server_selectors() -> None:
+    """TMUX, TMUX_PANE and LIBTMUX_SOCKET* are removed; other variables remain."""
+    cleaned = without_ambient_selectors(
+        {
+            "PATH": "/usr/bin",
+            "LIBTMUX_TEST_TMUX": "/opt/tmux",
+            "TMUX": "/tmp/s,1,0",
+            "TMUX_PANE": "%1",
+            "LIBTMUX_SOCKET": "dev",
+            "LIBTMUX_SOCKET_PATH": "/tmp/dev.sock",
+            "LIBTMUX_SOCKET_EXTRA": "extra",
+        },
+        TERM="xterm",
+    )
+
+    assert cleaned == {
+        "PATH": "/usr/bin",
+        "LIBTMUX_TEST_TMUX": "/opt/tmux",
+        "TERM": "xterm",
+    }
 
 
 def test_a_terminal_relays_input_and_reports_the_exit_status() -> None:
